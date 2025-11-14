@@ -42,17 +42,25 @@ public:
   DragDirection drag_direction = MsbFirst;
 };
 
+// Forward declaration for settings dialog
+class SettingsDlg;
+
 // Placeholder for settings dialog in Raylib environment
 class SettingsDlg {
 public:
   SettingsDlg(void* parent = nullptr);
+  void show();
+  void hide();
+  bool isVisible() const;
+  void update();
+  void draw();
   void save();
-  
+
   // Placeholder fields (not actual UI elements in Raylib)
   int* fps = nullptr;
   int* cached_minutes = nullptr;
   int* chart_height = nullptr;
-  int* chart_series_type = nullptr; 
+  int* chart_series_type = nullptr;
   int* theme = nullptr;
   bool log_livestream = false;
   std::string log_path;
