@@ -1,26 +1,22 @@
 #pragma once
 
-#include <QComboBox>
-#include <QDialog>
+#include <string>
+#include <memory>
 
-#include "selfdrive/ui/qt/api.h"
+#include "tools/lib/api.hpp"
 
-class RouteListWidget;
 class OneShotHttpRequest;
 
-class RoutesDialog : public QDialog {
-  Q_OBJECT
+class RoutesDialog {
 public:
-  RoutesDialog(QWidget *parent);
-  QString route();
+  RoutesDialog();
+  std::string route();
 
 protected:
-  void parseDeviceList(const QString &json, bool success, QNetworkReply::NetworkError err);
-  void parseRouteList(const QString &json, bool success, QNetworkReply::NetworkError err);
+  void parseDeviceList(const std::string &json, bool success);
+  void parseRouteList(const std::string &json, bool success);
   void fetchRoutes();
 
-  QComboBox *device_list_;
-  QComboBox *period_selector_;
-  RouteListWidget *route_list_;
-  OneShotHttpRequest *route_requester_;
+  std::string selected_route_;
+  std::unique_ptr<OneShotHttpRequest> route_requester_;
 };

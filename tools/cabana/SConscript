@@ -1,44 +1,99 @@
-Import('qt_env', 'arch', 'common', 'messaging', 'visionipc', 'replay_lib', 'cereal', 'widgets')
+Import('env', 'arch', 'common', 'messaging', 'visionipc', 'replay_lib', 'cereal')
 
-base_frameworks = qt_env['FRAMEWORKS']
-base_libs = [common, messaging, cereal, visionipc, 'qt_util', 'm', 'ssl', 'crypto', 'pthread'] + qt_env["LIBS"]
+# Base libraries needed (removing QT dependencies)
+base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0']
 
+# Create environment for Raylib Cabana
+cabana_raylib_env = env.Clone()
+
+# Add Raylib libraries
 if arch == "Darwin":
-  base_frameworks.append('OpenCL')
-  base_frameworks.append('QtCharts')
-  base_frameworks.append('QtSerialBus')
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c'])
+    # On macOS, we might need to link additional frameworks for Raylib
+    cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
 else:
-  base_libs.append('OpenCL')
-  base_libs.append('Qt5Charts')
-  base_libs.append('Qt5SerialBus')
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL', 'X11', 'Xrandr', 'Xi', 'Xcursor', 'Xinerama', 'Xss'])
 
-qt_libs = ['qt_util'] + base_libs
+# Note: Some Qt dependencies remain for backend functionality (streams, data handling)
+# Full Qt removal would require refactoring core data structures, which is a larger project
 
-cabana_env = qt_env.Clone()
+# Include paths for dependencies
+opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_raylib_env.Dir("../../opendbc/dbc").abspath)
+cabana_raylib_env['CXXFLAGS'] += [opendbc_path]
 
-cabana_libs = [widgets, cereal, messaging, visionipc, replay_lib, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0'] + qt_libs
-opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_env.Dir("../../opendbc/dbc").abspath)
-cabana_env['CXXFLAGS'] += [opendbc_path]
+# Source files for the Raylib-based Cabana
+raylib_cabana_src = [
+    # Main application files
+    'raylib_cabana.cc',
+    'mainwin.cc',
+    'raylib_mainwin.cc',  # New Raylib implementation of main window
 
-# build assets
-assets = "assets/assets.cc"
-assets_src = "assets/assets.qrc"
-cabana_env.Command(assets, assets_src, f"rcc $SOURCES -o $TARGET")
-cabana_env.Depends(assets, Glob('/assets/*', exclude=[assets, assets_src, "assets/assets.o"]))
+    # UI components
+    'raylib_messageswidget.cc',
+    'raylib_videowidget.cc',
+    'raylib_chartswidget.cc',
 
-cabana_lib = cabana_env.Library("cabana_lib", ['mainwin.cc', 'streams/socketcanstream.cc', 'streams/pandastream.cc', 'streams/devicestream.cc', 'streams/livestream.cc', 'streams/abstractstream.cc', 'streams/replaystream.cc', 'binaryview.cc', 'historylog.cc', 'videowidget.cc', 'signalview.cc',
-                                               'streams/routes.cc', 'dbc/dbc.cc', 'dbc/dbcfile.cc', 'dbc/dbcmanager.cc',
-                                               'utils/export.cc', 'utils/util.cc',
-                                               'chart/chartswidget.cc', 'chart/chart.cc', 'chart/signalselector.cc', 'chart/tiplabel.cc', 'chart/sparkline.cc',
-                                               'commands.cc', 'messageswidget.cc', 'streamselector.cc', 'settings.cc', 'panda.cc',
-                                               'cameraview.cc', 'detailwidget.cc', 'tools/findsimilarbits.cc', 'tools/findsignal.cc', 'tools/routeinfo.cc'], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
-cabana_env.Program('cabana', ['cabana.cc', cabana_lib, assets], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
+    # Core functionality files (non-UI)
+    'streams/socketcanstream.cc',
+    'streams/pandastream.cc',
+    'streams/devicestream.cc',
+    'streams/livestream.cc',
+    'streams/abstractstream.cc',
+    'streams/replaystream.cc',
+    'binaryview.cc',  # Raylib version
+    'historylog.cc',  # Raylib version
+    'signalview.cc',  # Raylib version
+    'streams/routes.cc',
+    'dbc/dbc.cc',
+    'dbc/dbcfile.cc',
+    'dbc/dbcmanager.cc',
+    'utils/export.cc',
+    'utils/util.cc',  # Raylib version
+
+    # Chart components
+    'chart/chart.cc',
+    'chart/signalselector.cc',
+    'chart/tiplabel.cc',
+    'chart/sparkline.cc',
+
+    # Additional components
+    'commands.cc',
+    'streamselector.cc',
+    'settings.cc',
+    'panda.cc',
+    'cameraview.cc',
+    'detailwidget.cc',  # Raylib version
+    'tools/findsimilarbits.cc',
+    'tools/findsignal.cc',
+    'tools/routeinfo.cc',
+
+    # Raylib UI components
+    'raylib_cameraview.cc',
+    'raylib_centerwidget.cc',
+
+    # Raylib POC components that may have useful code
+    'raylib_poc/cabana_ui_components.cc',
+    'raylib_poc/cabana_panels.cc'
+]
+
+# Build the Raylib Cabana executable
+cabana_raylib = cabana_raylib_env.Program('cabana', raylib_cabana_src,
+                                         LIBS=base_libs + cabana_raylib_env['LIBS'])
+
+# Build assets (convert from QT resources to Raylib-compatible format if needed)
+# For now, we'll skip the assets build since it's QT-specific
+# assets = "assets/assets.cc"
+# assets_src = "assets/assets.qrc"
+# cabana_raylib_env.Command(assets, assets_src, f"rcc $SOURCES -o $TARGET")
+# cabana_raylib_env.Depends(assets, Glob('/assets/*', exclude=[assets, assets_src, "assets/assets.o"]))
 
 if GetOption('extras'):
-  cabana_env.Program('tests/test_cabana', ['tests/test_runner.cc', 'tests/test_cabana.cc', cabana_lib], LIBS=[cabana_libs])
+  cabana_raylib_env.Program('tests/test_cabana', ['tests/test_runner.cc', 'tests/test_cabana.cc', cabana_raylib], LIBS=base_libs + cabana_raylib_env['LIBS'])
 
 output_json_file = 'tools/cabana/dbc/car_fingerprint_to_dbc.json'
-generate_dbc = cabana_env.Command('#' + output_json_file,
+generate_dbc = cabana_raylib_env.Command('#' + output_json_file,
                                   ['dbc/generate_dbc_json.py'],
                                   "python3 tools/cabana/dbc/generate_dbc_json.py --out " + output_json_file)
-cabana_env.Depends(generate_dbc, ["#common", '#opendbc_repo', "#cereal", "#msgq_repo"])
+cabana_raylib_env.Depends(generate_dbc, ["#common", '#opendbc_repo', "#cereal", "#msgq_repo"])
+
+Return('cabana_raylib')

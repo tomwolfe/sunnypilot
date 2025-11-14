@@ -2,9 +2,7 @@
 
 #include <memory>
 #include <vector>
-
-#include <QComboBox>
-#include <QFormLayout>
+#include <string>
 
 #include "tools/cabana/streams/livestream.h"
 #include "tools/cabana/panda.h"
@@ -19,17 +17,16 @@ struct BusConfig {
 };
 
 struct PandaStreamConfig {
-  QString serial = "";
+  std::string serial = "";
   std::vector<BusConfig> bus_config;
 };
 
 class PandaStream : public LiveStream {
-  Q_OBJECT
 public:
-  PandaStream(QObject *parent, PandaStreamConfig config_ = {});
+  PandaStream(PandaStreamConfig config_ = {});
   ~PandaStream() { stop(); }
-  inline QString routeName() const override {
-    return QString("Panda: %1").arg(config.serial);
+  inline std::string routeName() const override {
+    return "Panda: " + config.serial;
   }
 
 protected:
@@ -40,18 +37,17 @@ protected:
   PandaStreamConfig config = {};
 };
 
-class OpenPandaWidget : public AbstractOpenStreamWidget {
-  Q_OBJECT
-
+// Qt-free version of the widget
+class OpenPandaInterface {
 public:
-  OpenPandaWidget(QWidget *parent = nullptr);
-  AbstractStream *open() override;
+  OpenPandaInterface();
+  AbstractStream* open();
 
 private:
   void refreshSerials();
   void buildConfigForm();
 
-  QComboBox *serial_edit;
-  QFormLayout *form_layout;
+  // Placeholder for UI elements that would be handled differently in a Qt-free implementation
+  std::string serial_value;
   PandaStreamConfig config = {};
 };

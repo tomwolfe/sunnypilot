@@ -2,21 +2,20 @@
 
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include <vector>
-
-#include <QBasicTimer>
+#include <thread>
+#include <chrono>
 
 #include "tools/cabana/streams/abstractstream.h"
 
 class LiveStream : public AbstractStream {
-  Q_OBJECT
-
 public:
-  LiveStream(QObject *parent);
+  LiveStream();
   virtual ~LiveStream();
   void start() override;
   void stop();
-  inline QDateTime beginDateTime() const { return begin_date_time; }
+  inline SimpleDateTime beginDateTime() const { return begin_date_time; }
   inline uint64_t beginMonoTime() const override { return begin_event_ts; }
   double maxSeconds() const override { return std::max(1.0, (lastest_event_ts - begin_event_ts) / 1e9); }
   void setSpeed(float speed) override { speed_ = speed; }
@@ -31,17 +30,16 @@ protected:
 
 private:
   void startUpdateTimer();
-  void timerEvent(QTimerEvent *event) override;
   void updateEvents();
 
   std::mutex lock;
-  QThread *stream_thread;
+  std::unique_ptr<std::thread> stream_thread;
   std::vector<const CanEvent *> received_events_;
 
-  int timer_id;
-  QBasicTimer update_timer;
+  // Instead of Qt timer, using standard timers
+  std::chrono::steady_clock::time_point last_update_time;
 
-  QDateTime begin_date_time;
+  SimpleDateTime begin_date_time;
   uint64_t begin_event_ts = 0;
   uint64_t lastest_event_ts = 0;
   uint64_t current_event_ts = 0;

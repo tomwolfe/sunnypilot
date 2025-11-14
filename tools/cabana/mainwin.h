@@ -1,110 +1,77 @@
 #pragma once
 
-#include <QDockWidget>
-#include <QJsonDocument>
-#include <QMainWindow>
-#include <QMenu>
-#include <QProgressBar>
-#include <QSplitter>
-#include <QStatusBar>
-#include <set>
+#include <vector>
+#include <string>
+#include <memory>
 
+#include "raylib.h"
+#include "tools/cabana/streams/abstractstream.h"
 #include "tools/cabana/chart/chartswidget.h"
 #include "tools/cabana/dbc/dbcmanager.h"
 #include "tools/cabana/detailwidget.h"
 #include "tools/cabana/messageswidget.h"
 #include "tools/cabana/videowidget.h"
 #include "tools/cabana/tools/findsimilarbits.h"
+#include "tools/cabana/raylib_centerwidget.h"
 
-class MainWindow : public QMainWindow {
-  Q_OBJECT
-
+// Main window implementation using Raylib instead of QT
+class CabanaMainWindow {
 public:
-  MainWindow(AbstractStream *stream, const QString &dbc_file);
-  void toggleChartsDocking();
-  void showStatusMessage(const QString &msg, int timeout = 0) { statusBar()->showMessage(msg, timeout); }
-  void loadFile(const QString &fn, SourceSet s = SOURCE_ALL);
-  ChartsWidget *charts_widget = nullptr;
+  CabanaMainWindow();
+  ~CabanaMainWindow();
+  void run();
+  void update();
+  void render();
+  void handleInput();
+  void showMessage(const std::string &msg, int timeout = 0);
 
-public slots:
-  void selectAndOpenStream();
-  void openStream(AbstractStream *stream, const QString &dbc_file = {});
-  void closeStream();
-  void exportToCSV();
+  // Public members for accessing UI components
+  std::unique_ptr<VideoWidget> video_widget;
+  std::unique_ptr<MessagesWidget> messages_widget;
+  std::unique_ptr<ChartsWidget> charts_widget;
+  std::unique_ptr<CenterWidget> center_widget;
 
-  void newFile(SourceSet s = SOURCE_ALL);
-  void openFile(SourceSet s = SOURCE_ALL);
-  void loadDBCFromOpendbc(const QString &name);
-  void save();
-  void saveAs();
-  void saveToClipboard();
-
-signals:
-  void showMessage(const QString &msg, int timeout);
-  void updateProgressBar(uint64_t cur, uint64_t total, bool success);
-
-protected:
-  bool eventFilter(QObject *obj, QEvent *event) override;
-  void remindSaveChanges();
-  void closeFile(SourceSet s = SOURCE_ALL);
-  void closeFile(DBCFile *dbc_file);
-  void saveFile(DBCFile *dbc_file);
-  void saveFileAs(DBCFile *dbc_file);
-  void saveFileToClipboard(DBCFile *dbc_file);
-  void loadFingerprints();
-  void loadFromClipboard(SourceSet s = SOURCE_ALL, bool close_all = true);
-  void updateRecentFiles(const QString &fn);
-  void updateRecentFileMenu();
-  void createActions();
-  void createDockWindows();
+private:
+  void createUIComponents();
+  void createMenu();
   void createStatusBar();
-  void createShortcuts();
-  void closeEvent(QCloseEvent *event) override;
-  void DBCFileChanged();
-  void updateDownloadProgress(uint64_t cur, uint64_t total, bool success);
-  void setOption();
-  void findSimilarBits();
-  void findSignal();
-  void undoStackCleanChanged(bool clean);
-  void onlineHelp();
-  void toggleFullScreen();
-  void updateStatus();
-  void updateLoadSaveMenus();
-  void createDockWidgets();
-  void eventsMerged();
+  void createDockWindows();
 
-  VideoWidget *video_widget = nullptr;
-  QDockWidget *video_dock;
-  QDockWidget *messages_dock;
-  MessagesWidget *messages_widget = nullptr;
-  CenterWidget *center_widget;
-  QWidget *floating_window = nullptr;
-  QVBoxLayout *charts_layout;
-  QProgressBar *progress_bar;
-  QLabel *status_label;
-  QJsonDocument fingerprint_to_dbc;
-  QSplitter *video_splitter = nullptr;
-  enum { MAX_RECENT_FILES = 15 };
-  QMenu *open_recent_menu = nullptr;
-  QMenu *manage_dbcs_menu = nullptr;
-  QMenu *tools_menu = nullptr;
-  QAction *close_stream_act = nullptr;
-  QAction *export_to_csv_act = nullptr;
-  QAction *save_dbc = nullptr;
-  QAction *save_dbc_as = nullptr;
-  QAction *copy_dbc_to_clipboard = nullptr;
-  QString car_fingerprint;
-  QByteArray default_state;
+  bool running = true;
+  std::string status_message;
+  float status_timeout = 0.0f;
+  double last_time = 0.0;
+
+  // UI Component dimensions and positioning
+  Rectangle menu_bar_rect;
+  Rectangle messages_panel_rect;
+  Rectangle video_panel_rect;
+  Rectangle charts_panel_rect;
+  Rectangle status_bar_rect;
+
+  // UI State
+  bool show_messages_panel = true;
+  bool show_video_panel = true;
+  bool show_charts_panel = true;
+  bool is_fullscreen = false;
 };
 
-class HelpOverlay : public QWidget {
-  Q_OBJECT
+class CabanaUIElement {
 public:
-  HelpOverlay(MainWindow *parent);
+  CabanaUIElement(float x, float y, float width, float height);
+  virtual ~CabanaUIElement() = default;
+
+  virtual void update() = 0;
+  virtual void render() = 0;
+  virtual void handleInput();
+
+  void setPosition(float x, float y);
+  void setSize(float width, float height);
+  Rectangle getBounds() const { return bounds; }
+  void setVisible(bool visible) { isVisible = visible; }
+  bool getVisible() const { return isVisible; }
 
 protected:
-  void drawHelpForWidget(QPainter &painter, QWidget *w);
-  void paintEvent(QPaintEvent *event) override;
-  void mouseReleaseEvent(QMouseEvent *event) override;
-  bool eventFilter(QObject *obj, QEvent *event) override;
+  Rectangle bounds;
+  bool isVisible;
 };

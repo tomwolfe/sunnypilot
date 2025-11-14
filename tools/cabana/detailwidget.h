@@ -1,71 +1,95 @@
 #pragma once
 
-#include <QDialogButtonBox>
-#include <QSplitter>
-#include <QTabWidget>
-#include <QTextEdit>
 #include <set>
+#include <string>
 
-#include "selfdrive/ui/qt/widgets/controls.h"
-#include "tools/cabana/binaryview.h"
-#include "tools/cabana/chart/chartswidget.h"
-#include "tools/cabana/historylog.h"
-#include "tools/cabana/signalview.h"
+#include "raylib.h"
+#include "tools/cabana/raylib_binaryview.h"
+#include "tools/cabana/raylib_chartswidget.h"
+#include "tools/cabana/raylib_signalview.h"
+#include "tools/cabana/raylib_historylog.h"
 #include "tools/cabana/utils/util.h"
 
-class EditMessageDialog : public QDialog {
-public:
-  EditMessageDialog(const MessageId &msg_id, const QString &title, int size, QWidget *parent);
-  void validateName(const QString &text);
-
-  MessageId msg_id;
-  QString original_name;
-  QDialogButtonBox *btn_box;
-  QLineEdit *name_edit;
-  QLineEdit *node;
-  QTextEdit *comment_edit;
-  QLabel *error_label;
-  QSpinBox *size_spin;
+// Data structures for message details
+struct MessageDetails {
+    MessageId msg_id;
+    std::string name;
+    int address;
+    int size;
+    std::string comment;
+    std::string node;
 };
 
-class DetailWidget : public QWidget {
-  Q_OBJECT
-
+// Raylib-based DetailWidget
+class DetailWidget {
 public:
-  DetailWidget(ChartsWidget *charts, QWidget *parent);
-  void setMessage(const MessageId &message_id);
-  void refresh();
+    DetailWidget(void* charts_widget, void* parent = nullptr);
+    ~DetailWidget();
+    
+    void update();
+    void render(const Rectangle& bounds);
+    void handleInput();
+    
+    void setMessage(const MessageId &message_id);
+    void refresh();
+    
+    // Accessor methods
+    const MessageDetails& getMessageDetails() const { return msg_details_; }
+    void setChartsWidget(void* charts) { charts_ = charts; }
+    
+    // Signals equivalent (using callbacks)
+    std::function<void()> onMessageEdited;
+    std::function<void()> onMessageRemoved;
 
 private:
-  void createToolBar();
-  void showTabBarContextMenu(const QPoint &pt);
-  void editMsg();
-  void removeMsg();
-  void updateState(const std::set<MessageId> *msgs = nullptr);
-
-  MessageId msg_id;
-  QLabel *warning_icon, *warning_label;
-  ElidedLabel *name_label;
-  QWidget *warning_widget;
-  TabBar *tabbar;
-  QTabWidget *tab_widget;
-  QAction *action_remove_msg;
-  LogsWidget *history_log;
-  BinaryView *binary_view;
-  SignalView *signal_view;
-  ChartsWidget *charts;
-  QSplitter *splitter;
+    void createToolBar();
+    void updateState();
+    
+    MessageDetails msg_details_;
+    MessageId msg_id_;
+    
+    // UI Components
+    std::unique_ptr<BinaryView> binary_view_;
+    std::unique_ptr<SignalView> signal_view_;
+    std::unique_ptr<LogsWidget> history_log_;
+    
+    // References
+    void* charts_ = nullptr;
+    void* parent_ = nullptr;
+    
+    // UI state
+    Rectangle bounds_;
+    bool is_visible_ = true;
+    
+    // Layout state
+    bool show_binary_view_ = true;
+    bool show_signal_view_ = true;
+    bool show_history_log_ = true;
+    int active_tab_ = 0;  // 0=Binary, 1=Signals, 2=History
 };
 
-class CenterWidget : public QWidget {
-  Q_OBJECT
+// Raylib-based CenterWidget
+class CenterWidget {
 public:
-  CenterWidget(QWidget *parent);
-  void setMessage(const MessageId &msg_id);
-  void clear();
-
+    CenterWidget(void* parent = nullptr);
+    ~CenterWidget();
+    
+    void update();
+    void render(const Rectangle& bounds);
+    void handleInput();
+    
+    void setMessage(const MessageId &msg_id);
+    void clear();
+    
+    // Accessor methods
+    DetailWidget* getDetailWidget() { return detail_widget_.get(); }
+    
 private:
-  QWidget *createWelcomeWidget();
-  DetailWidget *detail_widget = nullptr;
-  QWidget *welcome_widget = nullptr;
+    std::unique_ptr<DetailWidget> detail_widget_;
+    std::unique_ptr<void> welcome_widget_; // Placeholder for welcome interface
+    
+    Rectangle bounds_;
+    bool is_visible_ = true;
+    bool show_welcome_ = true;
+    MessageId current_msg_id_;
 };

@@ -1,0 +1,35 @@
+# SConscript for Raylib-based Cabana (QT-free version)
+import os
+
+Import('env', 'arch', 'common', 'messaging', 'visionipc', 'replay_lib', 'cereal', 'widgets')
+
+# Base libraries needed (removing QT dependencies)
+base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0']
+
+# Create environment for Raylib Cabana
+cabana_raylib_env = env.Clone()
+
+# Add Raylib libraries
+if arch == "Darwin":
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c'])
+    # On macOS, we might need to link additional frameworks for Raylib
+    cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
+else:
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL', 'X11', 'Xrandr', 'Xi', 'Xcursor', 'Xinerama', 'Xss'])
+
+# Include paths for dependencies
+opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_raylib_env.Dir("../../opendbc/dbc").abspath)
+cabana_raylib_env['CXXFLAGS'] += [opendbc_path]
+
+# Source files for the Raylib-based Cabana
+raylib_cabana_src = [
+    'raylib_poc/cabana_raylib_main.cc',
+    'raylib_poc/cabana_ui_components.cc',
+    'raylib_poc/cabana_panels.cc'
+]
+
+# Build the Raylib Cabana executable
+cabana_raylib = cabana_raylib_env.Program('cabana_raylib', raylib_cabana_src, 
+                                         LIBS=base_libs + cabana_raylib_env['LIBS'])
+
+Return('cabana_raylib')

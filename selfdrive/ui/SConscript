@@ -11,6 +11,9 @@ def get_ui_cflags(target, testing):
     '-DUSE_RAYLIB',
   ]
 
+  # Remove any Qt-related flags if they exist
+  cflags = [flag for flag in cflags if 'QT' not in flag]
+
   return cflags
 
 def get_ui_common_sources():
