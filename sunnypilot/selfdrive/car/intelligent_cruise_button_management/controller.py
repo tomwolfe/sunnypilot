@@ -4,6 +4,8 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from typing import Dict, Any
+
 from cereal import car, custom
 from opendbc.car import structs, apply_hysteresis
 from openpilot.common.constants import CV
@@ -20,7 +22,7 @@ HYST_GAP = 0.0  # currently disabled; TODO-SP: might need to be brand-specific
 INACTIVE_TIMER = 0.4
 
 
-SEND_BUTTONS = {
+SEND_BUTTONS: Dict[State, SendButtonState] = {
   State.increasing: SendButtonState.increase,
   State.decreasing: SendButtonState.decrease,
 }
@@ -28,22 +30,22 @@ SEND_BUTTONS = {
 
 class IntelligentCruiseButtonManagement:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP):
-    self.CP = CP
-    self.CP_SP = CP_SP
+    self.CP: structs.CarParams = CP
+    self.CP_SP: custom.CarParamsSP = CP_SP
 
-    self.v_target = 0
-    self.v_cruise_cluster = 0
-    self.v_cruise_min = 0
-    self.cruise_button = SendButtonState.none
-    self.state = State.inactive
-    self.pre_active_timer = 0
+    self.v_target: int = 0
+    self.v_cruise_cluster: int = 0
+    self.v_cruise_min: int = 0
+    self.cruise_button: SendButtonState = SendButtonState.none
+    self.state: State = State.inactive
+    self.pre_active_timer: int = 0
 
-    self.is_ready = False
-    self.is_ready_prev = False
-    self.v_target_ms_last = 0.0
-    self.is_metric = False
+    self.is_ready: bool = False
+    self.is_ready_prev: bool = False
+    self.v_target_ms_last: float = 0.0
+    self.is_metric: bool = False
 
-    self.cruise_button_timers = CRUISE_BUTTON_TIMER
+    self.cruise_button_timers: Dict[Any, int] = CRUISE_BUTTON_TIMER.copy()
 
   @property
   def v_cruise_equal(self) -> bool:

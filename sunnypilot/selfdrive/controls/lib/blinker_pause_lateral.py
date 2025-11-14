@@ -4,6 +4,8 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+from typing import Union
+
 from cereal import car
 
 from openpilot.common.constants import CV
@@ -12,11 +14,11 @@ from openpilot.common.params import Params
 
 class BlinkerPauseLateral:
   def __init__(self):
-    self.params = Params()
+    self.params: Params = Params()
 
-    self.enabled = self.params.get_bool("BlinkerPauseLateralControl")
-    self.is_metric = self.params.get_bool("IsMetric")
-    self.min_speed = 0
+    self.enabled: bool = self.params.get_bool("BlinkerPauseLateralControl")
+    self.is_metric: bool = self.params.get_bool("IsMetric")
+    self.min_speed: Union[int, float] = 0
 
   def get_params(self) -> None:
     self.enabled = self.params.get_bool("BlinkerPauseLateralControl")

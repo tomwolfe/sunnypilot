@@ -5,6 +5,8 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+from typing import TYPE_CHECKING, cast
+
 from cereal import log, custom
 
 from opendbc.car import structs
@@ -12,6 +14,9 @@ from opendbc.car.hyundai.values import HyundaiFlags
 from openpilot.common.params import Params
 from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
 from openpilot.sunnypilot.mads.state import StateMachine, GEARS_ALLOW_PAUSED_SILENT
+
+if TYPE_CHECKING:
+  from openpilot.selfdrive.selfdrived.selfdrived import SelfdriveD
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -25,22 +30,22 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 
 
 class ModularAssistiveDrivingSystem:
-  def __init__(self, selfdrive):
-    self.CP = selfdrive.CP
-    self.CP_SP = selfdrive.CP_SP
-    self.params = selfdrive.params
+  def __init__(self, selfdrive: 'SelfdriveD'):
+    self.CP: structs.CarParams = selfdrive.CP
+    self.CP_SP: custom.CarParamsSP = selfdrive.CP_SP
+    self.params: Params = selfdrive.params
 
-    self.enabled = False
-    self.active = False
-    self.available = False
-    self.allow_always = False
-    self.no_main_cruise = False
-    self.selfdrive = selfdrive
-    self.selfdrive.enabled_prev = False
-    self.state_machine = StateMachine(self)
-    self.events = self.selfdrive.events
-    self.events_sp = self.selfdrive.events_sp
-    self.disengage_on_accelerator = Params().get_bool("DisengageOnAccelerator")
+    self.enabled: bool = False
+    self.active: bool = False
+    self.available: bool = False
+    self.allow_always: bool = False
+    self.no_main_cruise: bool = False
+    self.selfdrive: SelfdriveD = selfdrive
+    self.selfdrive.enabled_prev: bool = False
+    self.state_machine: StateMachine = StateMachine(self)
+    self.events: log.OnroadEvents = self.selfdrive.events
+    self.events_sp: custom.OnroadEventsSP = self.selfdrive.events_sp
+    self.disengage_on_accelerator: bool = Params().get_bool("DisengageOnAccelerator")
     if self.CP.brand == "hyundai":
       if self.CP.flags & (HyundaiFlags.HAS_LDA_BUTTON | HyundaiFlags.CANFD):
         self.allow_always = True
@@ -51,12 +56,12 @@ class ModularAssistiveDrivingSystem:
       self.no_main_cruise = True
 
     # read params on init
-    self.enabled_toggle = self.params.get_bool("Mads")
-    self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
-    self.steering_mode_on_brake = read_steering_mode_param(self.CP, self.CP_SP, self.params)
-    self.unified_engagement_mode = self.params.get_bool("MadsUnifiedEngagementMode")
+    self.enabled_toggle: bool = self.params.get_bool("Mads")
+    self.main_enabled_toggle: bool = self.params.get_bool("MadsMainCruiseAllowed")
+    self.steering_mode_on_brake: MadsSteeringModeOnBrake = read_steering_mode_param(self.CP, self.CP_SP, self.params)
+    self.unified_engagement_mode: bool = self.params.get_bool("MadsUnifiedEngagementMode")
 
-  def read_params(self):
+  def read_params(self) -> None:
     self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
     self.unified_engagement_mode = self.params.get_bool("MadsUnifiedEngagementMode")
 
@@ -96,15 +101,15 @@ class ModularAssistiveDrivingSystem:
     else:
       self.events.remove(EventName.wrongCarMode)
 
-  def transition_paused_state(self):
+  def transition_paused_state(self) -> None:
     if self.state_machine.state != State.paused:
       self.events_sp.add(EventNameSP.silentLkasDisable)
 
-  def replace_event(self, old_event: int, new_event: int):
+  def replace_event(self, old_event: int, new_event: int) -> None:
     self.events.remove(old_event)
     self.events_sp.add(new_event)
 
-  def update_events(self, CS: structs.CarState):
+  def update_events(self, CS: structs.CarState) -> None:
     if not self.selfdrive.enabled and self.enabled:
       if CS.standstill:
         if self.events.has(EventName.doorOpen):
@@ -191,7 +196,7 @@ class ModularAssistiveDrivingSystem:
     self.events.remove(EventName.pedalPressed)
     self.events.remove(EventName.wrongCruiseMode)
 
-  def update(self, CS: structs.CarState):
+  def update(self, CS: structs.CarState) -> None:
     if not self.enabled_toggle:
       return
 
