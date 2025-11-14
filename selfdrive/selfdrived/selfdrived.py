@@ -629,9 +629,20 @@ class SelfdriveD(CruiseHelper):
       statlog.sample('SelfdriveD.time_in_exp_mode', current_total_time if self.experimental_mode else 0)
       statlog.sample('SelfdriveD.time_in_standard_mode', current_total_time if not self.experimental_mode else 0)
 
-    except Exception:
+      # Additional monitoring: Alert if experimental mode has been active for too long
+      if self.experimental_mode and current_total_time > 3600:  # 1 hour
+        cloudlog.warning(f"Experimental mode has been active for {current_total_time:.0f} seconds")
+
+      # Log experimental mode usage periodically
+      if int(current_time) % 300 == 0:  # Log every 5 minutes
+        cloudlog.event("experimental_mode_monitoring",
+                      experimental_mode=self.experimental_mode,
+                      time_in_exp_mode=self._exp_mode_time['on'],
+                      time_in_standard_mode=self._exp_mode_time['off'])
+
+    except Exception as e:
       # Avoid any monitoring issues from affecting functionality
-      pass
+      cloudlog.exception(f"Error in experimental mode monitoring: {e}")
 
   def run(self):
     e = threading.Event()

@@ -173,6 +173,15 @@ class HudRenderer(Widget):
     speed_pos = rl.Vector2(rect.x + rect.width / 2 - speed_text_size.x / 2, 180 - speed_text_size.y / 2)
     rl.draw_text_ex(self._font_bold, speed_text, speed_pos, FONT_SIZES.current_speed, 0, COLORS.white)
 
+    # Draw EXP indicator when experimental mode is active
+    if ui_state.sm['selfdriveState'].experimentalMode:
+      exp_text = "EXP"
+      exp_text_size = measure_text_cached(self._font_medium, exp_text, FONT_SIZES.speed_unit)
+      # Position EXP indicator above the speed display
+      exp_pos = rl.Vector2(rect.x + rect.width / 2 - exp_text_size.x / 2, 140 - exp_text_size.y / 2)
+      # Draw with a red color to make it stand out
+      rl.draw_text_ex(self._font_medium, exp_text, exp_pos, FONT_SIZES.speed_unit, 0, rl.Color(255, 50, 50, 255))
+
     unit_text = "km/h" if ui_state.is_metric else "mph"
     unit_text_size = measure_text_cached(self._font_medium, unit_text, FONT_SIZES.speed_unit)
     unit_pos = rl.Vector2(rect.x + rect.width / 2 - unit_text_size.x / 2, 290 - unit_text_size.y / 2)

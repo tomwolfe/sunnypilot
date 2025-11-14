@@ -29,8 +29,17 @@ _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
 
-def get_max_accel(v_ego):
-  return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+def get_max_accel(v_ego, experimental_mode=False):
+  base_max = np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+
+  if experimental_mode:
+    # In experimental mode, allow slightly higher but still safe acceleration limits
+    # Increase max acceleration by a controlled amount (e.g., 20% increase)
+    exp_multiplier = 1.2  # 20% increase in max acceleration
+    exp_limit = min(base_max * exp_multiplier, 2.0)  # Cap at 2.0 m/s^2 max
+    return exp_limit
+  else:
+    return base_max
 
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
@@ -93,6 +102,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     return x, v, a, j, throttle_prob
 
   def update(self, sm):
+    # Experimental mode uses different acceleration behavior
+    # Using 'acc' mode but with expanded limits when experimental mode is enabled
     mode = 'blended' if sm['selfdriveState'].experimentalMode else 'acc'
     if not self.mlsim:
       self.mpc.mode = mode
@@ -124,11 +135,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
     if mode == 'acc':
-      accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+      accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
     else:
-      accel_clip = [ACCEL_MIN, ACCEL_MAX]
+      # In blended mode, still apply reasonable limits for experimental mode
+      max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX
+      accel_clip = [ACCEL_MIN, min(max_accel, ACCEL_MAX)]
 
     if reset_state:
       self.v_desired_filter.x = v_ego

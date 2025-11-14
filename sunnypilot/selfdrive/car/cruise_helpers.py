@@ -44,7 +44,15 @@ class CruiseHelper:
 
   def update_experimental_mode(self, events, experimental_mode) -> None:
     if self.button_frame_counts[ButtonType.gapAdjustCruise] >= DISTANCE_LONG_PRESS and not self.experimental_mode_switched:
-      self._experimental_mode = not experimental_mode
-      self.params.put_bool_nonblocking("ExperimentalMode", self._experimental_mode)
-      events.add(EventNameSP.experimentalModeSwitched)
+      # Only allow switching to experimental mode if it's been confirmed
+      if not experimental_mode and not self.params.get_bool("ExperimentalModeConfirmed"):
+        # Don't allow enabling if not confirmed - add an event to notify user
+        events.add(EventNameSP.experimentalModeConfirmationRequired)
+      else:
+        self._experimental_mode = not experimental_mode
+        self.params.put_bool_nonblocking("ExperimentalMode", self._experimental_mode)
+        # Set confirmation when experimental mode is first enabled
+        if self._experimental_mode and not self.params.get_bool("ExperimentalModeConfirmed"):
+          self.params.put_bool_nonblocking("ExperimentalModeConfirmed", True)
+        events.add(EventNameSP.experimentalModeSwitched)
       self.experimental_mode_switched = True

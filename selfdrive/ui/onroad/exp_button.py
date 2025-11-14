@@ -69,6 +69,7 @@ class ExpButton(Widget):
 
   def _is_toggle_allowed(self):
     if not self._params.get_bool("ExperimentalModeConfirmed"):
+      # Show a confirmation dialog before enabling experimental mode
       return False
 
     car_params = ui_state.sm["carParams"]

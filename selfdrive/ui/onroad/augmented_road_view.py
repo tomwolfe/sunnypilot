@@ -111,14 +111,31 @@ class AugmentedRoadView(CameraView):
     rl.draw_rectangle_lines_ex(rect, UI_BORDER_SIZE, border_color)
 
   def _switch_stream_if_needed(self, sm):
+    # Only allow camera switching in experimental mode if safety conditions are met
     if sm['selfdriveState'].experimentalMode and WIDE_CAM in self.available_streams:
       v_ego = sm['carState'].vEgo
-      if v_ego < WIDE_CAM_MAX_SPEED:
-        target = WIDE_CAM
-      elif v_ego > ROAD_CAM_MIN_SPEED:
-        target = ROAD_CAM
+      car_state = sm['carState']
+
+      # Add safety checks before switching cameras
+      # Don't switch during potentially dangerous situations
+      safe_to_switch = (
+        not car_state.brakePressed and        # No brake pressed
+        not car_state.gasPressed and          # No gas pressed
+        not car_state.steeringPressed and     # No steering override
+        car_state.cruiseState.enabled and     # Cruise control enabled
+        not car_state.standstill              # Not at standstill
+      )
+
+      if safe_to_switch:
+        if v_ego < WIDE_CAM_MAX_SPEED:
+          target = WIDE_CAM
+        elif v_ego > ROAD_CAM_MIN_SPEED:
+          target = ROAD_CAM
+        else:
+          # Hysteresis zone - keep current stream
+          target = self.stream_type
       else:
-        # Hysteresis zone - keep current stream
+        # If not safe to switch, stay with current camera
         target = self.stream_type
     else:
       target = ROAD_CAM

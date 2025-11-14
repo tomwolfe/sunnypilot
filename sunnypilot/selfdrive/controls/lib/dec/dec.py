@@ -264,9 +264,9 @@ class DynamicExperimentalController:
 
     if not (position_valid and orientation_valid):
       # Invalid trajectory - this itself might indicate a stop scenario
-      # Apply moderate urgency for incomplete trajectories at speed
-      if self._v_ego_kph > 20.0:
-        urgency = 0.3
+      # Apply more conservative urgency for incomplete trajectories at speed
+      if self._v_ego_kph > 5.0:  # Even at low speeds, consider possible stop
+        urgency = 0.6
 
       self._slow_down_filter.add_data(urgency)
       urgency_filtered = self._slow_down_filter.get_value() or 0.0
@@ -287,30 +287,30 @@ class DynamicExperimentalController:
                                WMACConstants.SLOW_DOWN_DIST)
     self._expected_distance = expected_distance
 
-    # Calculate urgency based on trajectory shortage
+    # Calculate urgency based on trajectory shortage with more aggressive calculation
     if endpoint_x < expected_distance:
       shortage = expected_distance - endpoint_x
       shortage_ratio = shortage / expected_distance
 
-      # Base urgency on shortage ratio
-      urgency = min(1.0, shortage_ratio * 2.0)
+      # Base urgency on shortage ratio with more aggressive scaling
+      urgency = min(1.0, shortage_ratio * 3.0)  # Increased from 2.0 to 3.0
 
-      # Increase urgency for very short trajectories (imminent stops)
-      critical_distance = expected_distance * 0.3
+      # Increase urgency for very short trajectories (imminent stops) - more aggressive
+      critical_distance = expected_distance * 0.5  # Increased from 0.3 to 0.5
       if endpoint_x < critical_distance:
-        urgency = min(1.0, urgency * 2.0)
+        urgency = min(1.0, urgency * 3.0)  # Increased from 2.0 to 3.0
 
-      # Speed-based urgency adjustment
-      if self._v_ego_kph > 25.0:
-        speed_factor = 1.0 + (self._v_ego_kph - 25.0) / 80.0
+      # Speed-based urgency adjustment - more aggressive
+      if self._v_ego_kph > 10.0:  # Lower threshold for speed-based adjustment
+        speed_factor = 1.0 + (self._v_ego_kph - 10.0) / 40.0  # Adjusted for more responsiveness
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(urgency)
     urgency_filtered = self._slow_down_filter.get_value() or 0.0
 
-    # Update state with lower threshold for better stop detection
-    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.8)
+    # Update state - use the original threshold instead of reduced one for more precise stop detection
+    self._has_slow_down = urgency_filtered > WMACConstants.SLOW_DOWN_PROB
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
@@ -321,19 +321,21 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # Standstill: use blended
+    # Standstill: use blended with high confidence to ensure complete stop
     if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=0.9)
+      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
+    # More aggressive standstill enforcement when approaching stop
     if self._has_slow_down:
-      if self._urgency > 0.7:
+      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
         # Emergency: immediate blended mode for high urgency stops
-        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
+        self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
-        confidence = min(1.0, self._urgency * 1.5)
+        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.5 for more responsiveness
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
@@ -359,19 +361,21 @@ class DynamicExperimentalController:
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
+    # More aggressive standstill enforcement when approaching stop
     if self._has_slow_down:
-      if self._urgency > 0.7:
+      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
         # Emergency: immediate blended mode for high urgency stops
-        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
+        self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
-        confidence = min(1.0, self._urgency * 1.3)
+        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.3 for more responsiveness
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
-    # Standstill: use blended
+    # Standstill: use blended with high confidence to ensure complete stop
     if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=0.9)
+      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
@@ -389,10 +393,17 @@ class DynamicExperimentalController:
 
     self._update_calculations(sm)
 
+    # Check if we should enforce standstill mode explicitly
+    enforce_standstill = self._should_enforce_standstill(sm)
+
     if self._CP.radarUnavailable:
       self._radarless_mode()
     else:
       self._radar_mode()
+
+    # If we should enforce standstill, make sure we stay in blended mode
+    if enforce_standstill:
+      self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
 
     self._mode_manager.update()
     self._active = sm['selfdriveState'].experimentalMode and self._enabled
@@ -421,6 +432,27 @@ class DynamicExperimentalController:
       self._last_mode_change_time = time.monotonic()
 
     self._last_mode = current_mode
+
+  def _should_enforce_standstill(self, sm: messaging.SubMaster) -> bool:
+    """Explicitly check if the vehicle should be at complete standstill."""
+    car_state = sm['carState']
+
+    # If car is currently at standstill, enforce blended mode to maintain the stop
+    if car_state.standstill:
+      return True
+
+    # If longitudinal plan indicates should stop and vEgo is very low, enforce standstill
+    long_plan = sm['longitudinalPlan']
+    if long_plan.shouldStop and car_state.vEgo < 0.5:  # Less than 0.5 m/s should be considered stopped
+      return True
+
+    # Check if in a stop scenario (traffic light, stop sign, etc.) from model
+    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'stopState'):
+      # If model indicates stop state and we're at very low speed
+      if sm['modelV2'].meta.stopState and car_state.vEgo < 2.0:
+        return True
+
+    return False
 
   def _send_metrics(self, sm) -> None:
     """Send monitoring metrics to stats system."""
