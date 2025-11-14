@@ -215,22 +215,36 @@ class ModelManagerSP:
   def main_thread(self) -> None:
     """Main thread for model management"""
     rk = Ratekeeper(1, print_delay_threshold=None)
+    last_model_count = -1  # Track for logging changes
 
     while True:
       try:
         self.available_models = self.model_fetcher.get_available_bundles()
         self.active_bundle = get_active_bundle(self.params)
 
+        # Log model count changes to help with debugging
+        if len(self.available_models) != last_model_count:
+          cloudlog.info(f"Model manager: {len(self.available_models)} available model bundles, active: {self.active_bundle.displayName if self.active_bundle else 'default'}")
+          last_model_count = len(self.available_models)
+
         if index_to_download := self.params.get("ModelManager_DownloadIndex"):
           if model_to_download := next((model for model in self.available_models if model.index == index_to_download), None):
+            cloudlog.info(f"Initiating download for model: {model_to_download.displayName}")
             try:
               self.download(model_to_download, Paths.model_root())
+              cloudlog.info(f"Download completed successfully for model: {model_to_download.displayName}")
             except Exception as e:
-              cloudlog.exception(e)
+              cloudlog.error(f"Download failed for model {model_to_download.displayName}: {str(e)}")
+              # Store error info for UI to display
+              self.params.put("ModelManager_LastError", f"Download failed: {str(e)[:250]}")  # Limit length
             finally:
               self.params.remove("ModelManager_DownloadIndex")
+          else:
+            cloudlog.warning(f"Requested model index {index_to_download} not found in available models")
+            self.params.put("ModelManager_LastError", f"Model index {index_to_download} not found")
 
         if self.params.get("ModelManager_ClearCache"):
+            cloudlog.info("Clearing model cache")
             self.clear_model_cache()
             self.params.remove("ModelManager_ClearCache")
 

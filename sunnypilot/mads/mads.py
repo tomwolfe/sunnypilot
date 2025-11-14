@@ -209,6 +209,7 @@ class ModularAssistiveDrivingSystem:
       if self.steering_mode_on_brake == MadsSteeringModeOnBrake.PAUSE:
         if self.pedal_pressed_non_gas_pressed(CS):
           self.transition_paused_state()
+          self.events_sp.add(EventNameSP.madsPaused)
 
       # Remove standard events that are handled by MADS
       self.events.remove(EventName.preEnableStandstill)
@@ -279,6 +280,7 @@ class ModularAssistiveDrivingSystem:
         if self.enabled and self.state_machine.state != State.paused:
           # Only pause if currently enabled and not already paused
           self.transition_paused_state()
+          self.events_sp.add(EventNameSP.madsPaused)
 
     # Enable silent LKAS when appropriate
     if self.should_silent_lkas_enable(CS):

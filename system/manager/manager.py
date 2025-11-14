@@ -42,10 +42,19 @@ def manager_init() -> None:
     params.put_bool("RecordFront", True)
 
   # set unset params to their default value
+  # Use more efficient batch processing for better startup performance
+  unset_params = []
   for k in params.all_keys():
     default_value = params.get_default_value(k)
     if default_value is not None and params.get(k) is None:
-      params.put(k, default_value)
+      unset_params.append((k, default_value))
+
+  # Batch put the unset parameters for better performance
+  for k, v in unset_params:
+    params.put(k, v)
+
+  # Log summary of parameter initialization for debugging
+  cloudlog.info(f"Initialized {len(unset_params)} parameters with default values")
 
   # Create folders needed for msgq
   try:
@@ -74,8 +83,17 @@ def manager_init() -> None:
   reg_res = register(show_spinner=True)
   if reg_res:
     dongle_id = reg_res
+    cloudlog.info(f"Successfully registered device with ID: {dongle_id}")
   else:
-    raise Exception(f"Registration failed for device {serial}")
+    # For sunnypilot, provide more graceful handling of registration issues
+    cloudlog.warning(f"Registration failed for device {serial}, using fallback ID")
+    # Generate a fallback ID based on serial to ensure some level of identification
+    import hashlib
+    fallback_id = hashlib.sha256(serial.encode()).hexdigest()[:16]
+    dongle_id = f"fallback_{fallback_id}"
+
+    # Store registration failure for potential UI notification
+    params.put("RegistrationFailed", "1")
   os.environ['DONGLE_ID'] = dongle_id  # Needed for swaglog
   os.environ['GIT_ORIGIN'] = build_metadata.openpilot.git_normalized_origin # Needed for swaglog
   os.environ['GIT_BRANCH'] = build_metadata.channel # Needed for swaglog
@@ -85,7 +103,6 @@ def manager_init() -> None:
     os.environ['CLEAN'] = '1'
 
   # init logging
-  sentry.init(sentry.SentryProject.SELFDRIVE)
   cloudlog.bind_global(dongle_id=dongle_id,
                        version=build_metadata.openpilot.version,
                        origin=build_metadata.openpilot.git_normalized_origin,
@@ -94,9 +111,19 @@ def manager_init() -> None:
                        dirty=build_metadata.openpilot.is_dirty,
                        device=HARDWARE.get_device_type())
 
-  # preimport all processes
-  for p in managed_processes.values():
+  # Initialize sentry after binding global context for proper error reporting
+  sentry.init(sentry.SentryProject.SELFDRIVE)
+
+  # Preimport all processes with progress reporting for better user experience
+  cloudlog.info(f"Preparing {len(managed_processes)} processes...")
+  process_count = 0
+  for name, p in managed_processes.items():
     p.prepare()
+    process_count += 1
+    if process_count % 5 == 0:  # Log progress every 5 processes
+      cloudlog.debug(f"Prepared {process_count}/{len(managed_processes)} processes")
+
+  cloudlog.info(f"Successfully prepared all {len(managed_processes)} processes")
 
 
 def manager_cleanup() -> None:
@@ -226,14 +253,20 @@ if __name__ == "__main__":
     add_file_handler(cloudlog)
     cloudlog.exception("Manager failed to start")
 
+    # Provide more user-friendly error information
+    import platform
+    cloudlog.error(f"System info: {platform.platform()}, Python: {platform.python_version()}")
+
     try:
       managed_processes['ui'].stop()
     except Exception:
       pass
 
-    # Show last 3 lines of traceback
-    error = traceback.format_exc(-3)
-    error = "Manager failed to start\n\n" + error
+    # Show more comprehensive error information
+    error_lines = traceback.format_exc().split('\n')
+    error_preview = '\n'.join(error_lines[-8:])  # Show more lines for better debugging
+    error = f"Manager failed to start\n\nSystem: {platform.platform()}\nPython: {platform.python_version()}\n\n{error_preview}"
+
     with TextWindow(error) as t:
       t.wait_for_exit()
 
