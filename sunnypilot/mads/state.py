@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 from typing import Tuple
+import logging
 
 from cereal import log, custom
 from openpilot.selfdrive.selfdrived.events import ET
@@ -50,6 +51,7 @@ class StateMachine:
     self._events_sp = mads.selfdrive.events_sp
 
     self.state = State.disabled
+    self._prev_state = State.disabled  # Track previous state for better logging
 
   def add_current_alert_types(self, alert_type) -> None:
     """
@@ -95,55 +97,64 @@ class StateMachine:
         - enabled: True if MADS is enabled (in any state other than disabled)
         - active: True if MADS is actively controlling the vehicle
     """
+    # Store the previous state for comparison
+    self._prev_state = self.state
+
     # soft disable timer and current alert types are from the state machine of openpilot
     # decrement the soft disable timer at every step, as it's reset on
     # entrance in SOFT_DISABLING state
 
-    # ENABLED, SOFT DISABLING, PAUSED, OVERRIDING
-    if self.state != State.disabled:
-      # user and immediate disable always have priority in a non-disabled state
-      if self.check_contains(ET.USER_DISABLE):
-        if self._events_sp.has(EventNameSP.silentLkasDisable):
-          self.state = State.paused
-        else:
-          self.state = State.disabled
-        self.ss_state_machine.current_alert_types.append(ET.USER_DISABLE)
-
-      elif self.check_contains(ET.IMMEDIATE_DISABLE):
-        self.state = State.disabled
-        self.add_current_alert_types(ET.IMMEDIATE_DISABLE)
-
+    # Priority 1: Disable events always take precedence
+    if self.check_contains(ET.USER_DISABLE):
+      if self._events_sp.has(EventNameSP.silentLkasDisable):
+        self.state = State.paused
       else:
-        # ENABLED
+        self.state = State.disabled
+      self.ss_state_machine.current_alert_types.append(ET.USER_DISABLE)
+    elif self.check_contains(ET.IMMEDIATE_DISABLE):
+      self.state = State.disabled
+      self.add_current_alert_types(ET.IMMEDIATE_DISABLE)
+    else:
+      # Process state transitions based on current state
+      if self.state == State.disabled:
+        # Check if we should transition to an enabled state
+        if self.check_contains(ET.ENABLE):
+          if self.check_contains(ET.NO_ENTRY):
+            if self.check_contains_in_list():
+              self.state = State.paused
+            self.add_current_alert_types(ET.NO_ENTRY)
+          else:
+            if self.check_contains(ET.OVERRIDE_LATERAL):
+              self.state = State.overriding
+            else:
+              self.state = State.enabled
+            self.add_current_alert_types(ET.ENABLE)
+
+      elif self.state in (State.enabled, State.softDisabling, State.overriding, State.paused):
+        # Process transitions from non-disabled states
         if self.state == State.enabled:
           if self.check_contains(ET.SOFT_DISABLE):
             self.state = State.softDisabling
             if not self.selfdrive.enabled:
               self.ss_state_machine.soft_disable_timer = int(SOFT_DISABLE_TIME / DT_CTRL)
               self.ss_state_machine.current_alert_types.append(ET.SOFT_DISABLE)
-
           elif self.check_contains(ET.OVERRIDE_LATERAL):
             self.state = State.overriding
             self.add_current_alert_types(ET.OVERRIDE_LATERAL)
 
-        # SOFT DISABLING
         elif self.state == State.softDisabling:
           if not self.check_contains(ET.SOFT_DISABLE):
             # no more soft disabling condition, so go back to ENABLED
             self.state = State.enabled
-
           elif self.ss_state_machine.soft_disable_timer > 0:
             self.add_current_alert_types(ET.SOFT_DISABLE)
-
           elif self.ss_state_machine.soft_disable_timer <= 0:
             self.state = State.disabled
 
-        # PAUSED
         elif self.state == State.paused:
           if self.check_contains(ET.ENABLE):
             if self.check_contains(ET.NO_ENTRY):
               self.add_current_alert_types(ET.NO_ENTRY)
-
             else:
               if self.check_contains(ET.OVERRIDE_LATERAL):
                 self.state = State.overriding
@@ -151,7 +162,6 @@ class StateMachine:
                 self.state = State.enabled
               self.add_current_alert_types(ET.ENABLE)
 
-        # OVERRIDING
         elif self.state == State.overriding:
           if self.check_contains(ET.SOFT_DISABLE):
             self.state = State.softDisabling
@@ -163,25 +173,14 @@ class StateMachine:
           else:
             self.ss_state_machine.current_alert_types += [ET.OVERRIDE_LATERAL]
 
-    # DISABLED
-    elif self.state == State.disabled:
-      if self.check_contains(ET.ENABLE):
-        if self.check_contains(ET.NO_ENTRY):
-          if self.check_contains_in_list():
-            self.state = State.paused
-          self.add_current_alert_types(ET.NO_ENTRY)
-
-        else:
-          if self.check_contains(ET.OVERRIDE_LATERAL):
-            self.state = State.overriding
-          else:
-            self.state = State.enabled
-          self.add_current_alert_types(ET.ENABLE)
-
-    # check if MADS is engaged and actuators are enabled
+    # Check if MADS is engaged and actuators are enabled
     enabled = self.state in ENABLED_STATES
     active = self.state in ACTIVE_STATES
     if active:
       self.add_current_alert_types(ET.WARNING)
+
+    # Log state changes for debugging and user experience insight
+    if self.state != self._prev_state:
+      logging.debug(f"MADS state changed from {self._prev_state} to {self.state}")
 
     return enabled, active

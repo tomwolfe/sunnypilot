@@ -10,6 +10,7 @@ from opendbc.car import structs
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
 from opendbc.sunnypilot.car.tesla.values import TeslaFlagsSP
+from sunnypilot.common.params_validation import ParamsValidator
 
 
 MADS_NO_ACC_MAIN_BUTTON = ("rivian", "tesla")
@@ -22,6 +23,7 @@ class MadsSteeringModeOnBrake:
 
 
 def get_mads_limited_brands(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> bool:
+  """Determine if MADS functionality is limited for certain brands."""
   if CP.brand == 'rivian':
     return True
   if CP.brand == 'tesla':
@@ -31,13 +33,35 @@ def get_mads_limited_brands(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -
 
 
 def read_steering_mode_param(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params):
+  """Safely read MADS steering mode parameter with proper validation."""
   if get_mads_limited_brands(CP, CP_SP):
     return MadsSteeringModeOnBrake.DISENGAGE
 
-  return params.get("MadsSteeringMode", return_default=True)
+  # Use the new validation system
+  validator = ParamsValidator(params)
+  validated_value = validator.get_validated_param(
+    "MadsSteeringMode",
+    ParamsValidator.validate_mads_steering_mode,
+    str(MadsSteeringModeOnBrake.PAUSE)
+  )
+
+  try:
+    mode_int = int(validated_value)
+    # Ensure the value is within the expected range
+    if mode_int in [MadsSteeringModeOnBrake.REMAIN_ACTIVE,
+                    MadsSteeringModeOnBrake.PAUSE,
+                    MadsSteeringModeOnBrake.DISENGAGE]:
+      return mode_int
+    else:
+      # Invalid value despite validation, return default
+      return MadsSteeringModeOnBrake.PAUSE
+  except (ValueError, TypeError):
+    # Error parsing validated parameter, return default
+    return MadsSteeringModeOnBrake.PAUSE
 
 
 def set_alternative_experience(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params):
+  """Set alternative experience flags based on MADS configuration with better validation."""
   enabled = params.get_bool("Mads")
   steering_mode = read_steering_mode_param(CP, CP_SP, params)
 
@@ -51,6 +75,7 @@ def set_alternative_experience(CP: structs.CarParams, CP_SP: structs.CarParamsSP
 
 
 def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params):
+  """Set car-specific parameters with improved validation and error handling."""
   if CP.brand == "hyundai":
     # TODO-SP: This should be separated from MADS module for future implementations
     #          Use "HyundaiLongitudinalMainCruiseToggleable" param
@@ -59,15 +84,30 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       CP_SP.flags |= HyundaiFlagsSP.LONGITUDINAL_MAIN_CRUISE_TOGGLEABLE.value
       CP_SP.safetyParam |= HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE
 
+  # Use the new validation system
+  validator = ParamsValidator(params)
+
+  # Validate all MADS parameters
+  validator.validate_all_mads_params(CP)
+
   # MADS Partial Support
   # MADS is currently partially supported for these platforms due to lack of consistent states to engage controls
   # Only MadsSteeringModeOnBrake.DISENGAGE is supported for these platforms
   # TODO-SP: To enable MADS full support for Rivian and most Tesla, identify consistent signals for MADS toggling
   mads_partial_support = get_mads_limited_brands(CP, CP_SP)
   if mads_partial_support:
-    params.put("MadsSteeringMode", 2)
+    # Ensure proper mode is set for limited brands using validated parameters
+    params.put("MadsSteeringMode", str(MadsSteeringModeOnBrake.DISENGAGE))
     params.put_bool("MadsUnifiedEngagementMode", True)
+    # Re-validate after setting values
+    validator.validate_all_mads_params(CP)
 
   # no ACC MAIN button for these brands
   if CP.brand in MADS_NO_ACC_MAIN_BUTTON:
-    params.remove("MadsMainCruiseAllowed")
+    # Only remove if the param exists to avoid errors
+    try:
+      params.get("MadsMainCruiseAllowed")
+      params.remove("MadsMainCruiseAllowed")
+    except Exception:
+      # Parameter doesn't exist, nothing to remove
+      pass

@@ -19,6 +19,9 @@ class BlinkerPauseLateral:
     self.enabled: bool = self.params.get_bool("BlinkerPauseLateralControl")
     self.is_metric: bool = self.params.get_bool("IsMetric")
     self.min_speed: Union[int, float] = 0
+    self.blinker_timer = 0
+
+  BL_DEBOUNCE_FRAMES = 20 # 1 second at 20Hz
 
   def get_params(self) -> None:
     self.enabled = self.params.get_bool("BlinkerPauseLateralControl")
@@ -27,10 +30,16 @@ class BlinkerPauseLateral:
 
   def update(self, CS: car.CarState) -> bool:
     if not self.enabled:
+      self.blinker_timer = 0
       return False
 
     one_blinker = CS.leftBlinker != CS.rightBlinker
     speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
     min_speed_ms = self.min_speed * speed_factor
 
-    return bool(one_blinker and CS.vEgo < min_speed_ms)
+    if one_blinker:
+      self.blinker_timer += 1
+    else:
+      self.blinker_timer = 0
+
+    return bool(self.blinker_timer >= self.BL_DEBOUNCE_FRAMES and CS.vEgo < min_speed_ms)

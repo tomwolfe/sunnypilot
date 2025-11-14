@@ -171,6 +171,7 @@ struct ModelManagerSP @0xaedffd8f31e7b55d {
     index @0 :UInt32;
     internalName @1 :Text;
     displayName @2 :Text;
+    description @12 :Text; # New field for model bundle description
     models @3 :List(Model);
     status @4 :DownloadStatus;
     generation @5 :UInt32;

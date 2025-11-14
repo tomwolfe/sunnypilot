@@ -82,18 +82,18 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventNameSP.manualSteeringRequired: {
     ET.USER_DISABLE: Alert(
-      "Automatic Lane Centering is OFF",
+      "MADS: Lane Centering OFF",
       "Manual Steering Required",
       AlertStatus.normal, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 1.),
+      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.disengage, 2.),
   },
 
   EventNameSP.manualLongitudinalRequired: {
     ET.WARNING: Alert(
-      "Smart/Adaptive Cruise Control: OFF",
+      "MADS: Cruise Control OFF",
       "Manual Speed Control Required",
       AlertStatus.normal, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
   EventNameSP.silentLkasEnable: {
@@ -117,7 +117,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, 0.),
     ET.NO_ENTRY: Alert(
       "Gear not D",
-      "openpilot Unavailable",
+      "MADS Unavailable",
       AlertStatus.normal, AlertSize.mid,
       Priority.LOW, VisualAlert.none, AudibleAlert.none, 0.),
   },
@@ -125,7 +125,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   EventNameSP.silentReverseGear: {
     ET.PERMANENT: Alert(
       "Reverse\nGear",
-      "",
+      "MADS Disabled",
       AlertStatus.normal, AlertSize.full,
       Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2, creation_delay=0.5),
     ET.NO_ENTRY: NoEntryAlert("Reverse Gear"),
@@ -159,50 +159,58 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventNameSP.controlsMismatchLateral: {
-    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("Controls Mismatch: Lateral"),
-    ET.NO_ENTRY: NoEntryAlert("Controls Mismatch: Lateral"),
+    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("MADS: Controls Mismatch"),
+    ET.NO_ENTRY: NoEntryAlert("MADS: Controls Mismatch"),
   },
 
   EventNameSP.experimentalModeSwitched: {
-    ET.WARNING: NormalPermanentAlert("Experimental Mode Switched", duration=1.5)
+    ET.WARNING: NormalPermanentAlert("MADS: Experimental Mode Active", duration=1.5)
   },
 
   EventNameSP.wrongCarModeAlertOnly: {
-    ET.WARNING: wrong_car_mode_alert,
+    ET.WARNING: Alert(
+      "Car Settings Changed",
+      "MADS may need to be re-engaged",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
   EventNameSP.pedalPressedAlertOnly: {
-    ET.WARNING: NoEntryAlert("Pedal Pressed")
+    ET.WARNING: Alert(
+      "Pedal Pressed",
+      "MADS temporarily paused",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
   EventNameSP.laneTurnLeft: {
     ET.WARNING: Alert(
-      "Turning Left",
+      "Approaching Left Turn",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
   EventNameSP.laneTurnRight: {
     ET.WARNING: Alert(
-      "Turning Right",
+      "Approaching Right Turn",
       "",
       AlertStatus.normal, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
   EventNameSP.speedLimitActive: {
     ET.WARNING: Alert(
-      "Automatically adjusting to the posted speed limit",
-      "",
+      "Adjusting to Speed Limit",
+      "MADS automatically controlling speed",
       AlertStatus.normal, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.),
   },
 
   EventNameSP.speedLimitChanged: {
     ET.WARNING: Alert(
-      "Set speed changed",
-      "",
+      "Speed Limit Changed",
+      "MADS adjusting to new limit",
       AlertStatus.normal, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.),
   },
@@ -213,8 +221,8 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
 
   EventNameSP.speedLimitPending: {
     ET.WARNING: Alert(
-      "Automatically adjusting to the last speed limit",
-      "",
+      "Speed Limit Pending",
+      "MADS ready to adjust when possible",
       AlertStatus.normal, AlertSize.small,
       Priority.LOW, VisualAlert.none, AudibleAlertSP.promptSingleHigh, 5.),
   },

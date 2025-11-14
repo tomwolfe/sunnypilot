@@ -229,6 +229,9 @@ class ModularAssistiveDrivingSystem:
         self.events_sp.add(EventNameSP.pedalPressedAlertOnly)
 
       if self.block_unified_engagement_mode():
+        # Add clearer feedback when unified engagement mode blocks engagement
+        if self.unified_engagement_mode and not self.enabled and self.selfdrive.enabled:
+          self.events_sp.add(EventNameSP.manualLongitudinalRequired)
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
     else:
@@ -236,27 +239,31 @@ class ModularAssistiveDrivingSystem:
         if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
           self.events_sp.add(EventNameSP.lkasEnable)
 
-    # Process button events for MADS control
+    # Process button events for MADS control with clearer logic
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
         if not self.selfdrive.enabled and self.selfdrive.enabled_prev:
           self.events_sp.add(EventNameSP.manualLongitudinalRequired)
-      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
+      elif be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
+        # Provide clearer feedback based on current state
         if self.enabled:
           if self.selfdrive.enabled:
+            # MADS is enabled but openpilot is also active - warn user
             self.events_sp.add(EventNameSP.manualSteeringRequired)
           else:
+            # MADS is enabled but openpilot is not - proper disengage
             self.events_sp.add(EventNameSP.lkasDisable)
         else:
+          # MADS is not enabled - enable it
           self.events_sp.add(EventNameSP.lkasEnable)
 
-    # Handle cruise availability changes
+    # Handle cruise availability changes with clearer feedback
     if not CS.cruiseState.available and not self.no_main_cruise:
       self.events.remove(EventName.buttonEnable)
       if self.selfdrive.CS_prev.cruiseState.available:
         self.events_sp.add(EventNameSP.lkasDisable)
 
-    # Handle brake-based steering behavior
+    # Handle brake-based steering behavior with clearer logic
     if self.steering_mode_on_brake == MadsSteeringModeOnBrake.DISENGAGE:
       if self.pedal_pressed_non_gas_pressed(CS):
         if self.enabled:
@@ -266,6 +273,12 @@ class ModularAssistiveDrivingSystem:
           if self.events_sp.contains(EventNameSP.lkasEnable):
             self.events_sp.remove(EventNameSP.lkasEnable)
             self.events_sp.add(EventNameSP.pedalPressedAlertOnly)
+    elif self.steering_mode_on_brake == MadsSteeringModeOnBrake.PAUSE:
+      # Handle pause behavior on brake
+      if self.pedal_pressed_non_gas_pressed(CS):
+        if self.enabled and self.state_machine.state != State.paused:
+          # Only pause if currently enabled and not already paused
+          self.transition_paused_state()
 
     # Enable silent LKAS when appropriate
     if self.should_silent_lkas_enable(CS):

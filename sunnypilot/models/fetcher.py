@@ -59,6 +59,7 @@ class ModelParser:
     model_bundle.index = int(bundle["index"])
     model_bundle.internalName = bundle["short_name"]
     model_bundle.displayName = bundle["display_name"]
+    model_bundle.description = bundle.get("description", "")
     model_bundle.models = [ModelParser._parse_model(model) for model in bundle.get("models",[])]
     model_bundle.status = 0
     model_bundle.generation = int(bundle["generation"])
