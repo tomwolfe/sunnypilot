@@ -300,7 +300,6 @@ void Device::updateWakefulness(const UIState &s) {
   setAwake(s.scene.ignition || interactive_timeout > 0);
 }
 
-#ifndef SUNNYPILOT
 UIState *uiState_raylib() {
   static UIState ui_state;
   return &ui_state;
@@ -310,9 +309,10 @@ Device *device_raylib() {
   static Device _device;
   return &_device;
 }
-#endif
 
 // Implementation of UI state functionality for Raylib
+// When SUNNYPILOT is defined, the sunnypilot layer will provide the global functions
+#ifndef SUNNYPILOT
 UIState *uiState() {
   return uiState_raylib();
 }
@@ -320,3 +320,4 @@ UIState *uiState() {
 Device *device() {
   return device_raylib();
 }
+#endif
