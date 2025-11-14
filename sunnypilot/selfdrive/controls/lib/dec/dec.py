@@ -9,6 +9,7 @@ See the LICENSE.md file in the root directory for more details.
 from cereal import messaging
 from opendbc.car import structs
 from numpy import interp
+import math
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
@@ -258,9 +259,29 @@ class DynamicExperimentalController:
     self._endpoint_x = float('inf')
     self._trajectory_valid = False
 
-    #Require exact trajectory size
-    position_valid = len(md.position.x) == TRAJECTORY_SIZE
-    orientation_valid = len(md.orientation.x) == TRAJECTORY_SIZE
+    # Validate trajectory data - check if we have the expected size
+    position_valid = len(md.position.x) == TRAJECTORY_SIZE if hasattr(md.position, 'x') else False
+    orientation_valid = len(md.orientation.x) == TRAJECTORY_SIZE if hasattr(md.orientation, 'x') else False
+
+    # Additional safety checks for trajectory data validity
+    if (position_valid and hasattr(md.position, 'x') and
+        len(md.position.x) > 0):
+
+      # Check for NaN or infinity values in the trajectory data
+      try:
+        for x in md.position.x:
+          if math.isnan(x) or math.isinf(x):
+            position_valid = False
+            break
+      except (TypeError, ValueError):
+        # If there's an issue with checking for NaN/inf, mark as invalid
+        position_valid = False
+
+      # Check if the endpoint value is reasonable (not negative or extremely large)
+      if position_valid:
+        endpoint_x = md.position.x[TRAJECTORY_SIZE - 1]
+        if not (endpoint_x >= 0 and endpoint_x < 1000):  # Reasonable range for trajectory endpoint
+          position_valid = False
 
     if not (position_valid and orientation_valid):
       # Invalid trajectory - this itself might indicate a stop scenario

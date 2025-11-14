@@ -25,8 +25,7 @@ cabana_raylib_env['CXXFLAGS'] += [opendbc_path]
 raylib_cabana_src = [
     # Main application files
     'raylib_cabana.cc',
-    'mainwin.cc',
-    'raylib_mainwin.cc',  # New Raylib implementation of main window
+    'raylib_mainwin.cc',  # Use Raylib implementation of main window (instead of mainwin.cc)
 
     # UI components
     'raylib_messageswidget.cc',
@@ -40,32 +39,17 @@ raylib_cabana_src = [
     'streams/livestream.cc',
     'streams/abstractstream.cc',
     'streams/replaystream.cc',
-    'binaryview.cc',  # Raylib version
-    'historylog.cc',  # Raylib version
-    'signalview.cc',  # Raylib version
     'streams/routes.cc',
     'dbc/dbc.cc',
     'dbc/dbcfile.cc',
     'dbc/dbcmanager.cc',
     'utils/export.cc',
-    'utils/util.cc',  # Raylib version
-
-    # Chart components
-    'chart/chart.cc',
-    'chart/signalselector.cc',
-    'chart/tiplabel.cc',
-    'chart/sparkline.cc',
 
     # Additional components
-    'commands.cc',
-    'streamselector.cc',
-    'settings.cc',
+    'raylib_settings.cc',  # Raylib implementation instead of settings.cc
+    'raylib_binaryview.cc',  # Raylib implementation instead of binaryview.cc
+    'raylib_detailwidget.cc',  # Raylib implementation instead of detailwidget.cc
     'panda.cc',
-    'cameraview.cc',
-    'detailwidget.cc',  # Raylib version
-    'tools/findsimilarbits.cc',
-    'tools/findsignal.cc',
-    'tools/routeinfo.cc',
 
     # Raylib UI components
     'raylib_cameraview.cc',
