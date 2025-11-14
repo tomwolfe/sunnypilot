@@ -1,16 +1,55 @@
 #pragma once
 
-#include <QApplication>
-#include <QDir>
-#include <QFile>
-#include <QStandardPaths>
+#include <optional>
+#include <vector>
 
-// Minimal util functions for cabana compatibility
-inline QString getcwd() {
-  return QDir::currentPath();
-}
+#include <QDateTime>
+#include <QFileSystemWatcher>
+#include <QPainter>
+#include <QPixmap>
+#include <QSurfaceFormat>
+#include <QWidget>
 
-inline QString getAvailableSpace(const QString &path = QStandardPaths::writableLocation(QStandardPaths::HomeLocation)) {
-  // Return a default string for compatibility
-  return "Unknown";
-}
+#include "cereal/gen/cpp/car.capnp.h"
+#include "common/params.h"
+
+QString getVersion();
+QString getBrand();
+QString getUserAgent();
+std::optional<QString> getDongleId();
+QMap<QString, QString> getSupportedLanguages();
+void setQtSurfaceFormat();
+void sigTermHandler(int s);
+QString timeAgo(const QDateTime &date);
+void swagLogMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg);
+void initApp(int argc, char *argv[], bool disable_hidpi = true);
+QWidget* topWidget(QWidget* widget);
+QPixmap loadPixmap(const QString &fileName, const QSize &size = {}, Qt::AspectRatioMode aspectRatioMode = Qt::KeepAspectRatio);
+QPixmap bootstrapPixmap(const QString &id);
+bool hasLongitudinalControl(const cereal::CarParams::Reader &car_params);
+
+struct InterFont : public QFont {
+  Q_OBJECT
+  InterFont(int pixel_size, QFont::Weight weight = QFont::Normal) : QFont("Inter") {
+    setPixelSize(pixel_size);
+    setWeight(weight);
+  }
+};
+
+class ParamWatcher : public QObject {
+  Q_OBJECT
+
+public:
+  ParamWatcher(QObject *parent);
+  void addParam(const QString &param_name);
+
+signals:
+  void paramChanged(const QString &param_name, const QString &param_value);
+
+private:
+  void fileChanged(const QString &path);
+
+  QFileSystemWatcher *watcher;
+  QHash<QString, QString> params_hash;
+  Params params;
+};

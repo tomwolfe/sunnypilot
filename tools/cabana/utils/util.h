@@ -10,6 +10,7 @@
 #include <QDoubleValidator>
 #include <QFont>
 #include <QFontMetrics>
+#include <QLabel>
 #include <QPainter>
 #include <QRegExpValidator>
 #include <QSocketNotifier>
@@ -20,6 +21,37 @@
 
 #include "tools/cabana/dbc/dbc.h"
 #include "tools/cabana/settings.h"
+
+class ElidedLabel : public QLabel {
+  Q_OBJECT
+
+public:
+  ElidedLabel(QWidget *parent = nullptr) : QLabel(parent) {}
+  ElidedLabel(const QString &text, QWidget *parent = nullptr) : QLabel(text, parent) {}
+
+  void setText(const QString &text) {
+    original_text = text;
+    QLabel::setText(text);
+    updateDisplayText();
+  }
+
+  QString text() const { return original_text; }
+
+protected:
+  void resizeEvent(QResizeEvent *event) override {
+    updateDisplayText();
+    QLabel::resizeEvent(event);
+  }
+
+private:
+  void updateDisplayText() {
+    QFontMetrics fm = fontMetrics();
+    QString elided_text = fm.elidedText(original_text, Qt::ElideRight, width());
+    QLabel::setText(elided_text);
+  }
+
+  QString original_text;
+};
 
 class LogSlider : public QSlider {
   Q_OBJECT

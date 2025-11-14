@@ -1,0 +1,17 @@
+Import('qt_env')
+
+# Build Qt UI util library
+qt_util_sources = [
+    'util.cc',
+]
+
+qt_util_lib = qt_env.Library('qt_util', qt_util_sources)
+Export('qt_util')
+
+# Build Qt widgets library
+widget_sources = [
+    'widgets/controls.cc',
+]
+
+widgets_lib = qt_env.Library('widgets', widget_sources)
+Export('widgets')
