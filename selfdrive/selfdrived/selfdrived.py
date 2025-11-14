@@ -29,6 +29,7 @@ from openpilot.sunnypilot.selfdrive.car.car_specific import CarSpecificEventsSP
 from openpilot.sunnypilot.selfdrive.car.cruise_helpers import CruiseHelper
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.controller import IntelligentCruiseButtonManagement
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
+from openpilot.system.statsd import statlog
 
 REPLAY = "REPLAY" in os.environ
 SIMULATION = "SIMULATION" in os.environ
@@ -143,6 +144,11 @@ class SelfdriveD(CruiseHelper):
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
     self.ignored_processes = {'mapd', }
+
+    # Experimental mode monitoring
+    self._last_exp_mode: bool | None = None
+    self._exp_mode_time = {'on': 0.0, 'off': 0.0}
+    self._last_exp_mode_change_time = time.time()
 
     # Determine startup event
     is_remote = build_metadata.openpilot.comma_remote or build_metadata.openpilot.sunnypilot_remote
@@ -591,11 +597,41 @@ class SelfdriveD(CruiseHelper):
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
+
+      # Track experimental mode changes for monitoring
+      prev_exp_mode = self.experimental_mode
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
 
+      # Monitor experimental mode changes
+      if prev_exp_mode != self.experimental_mode and prev_exp_mode is not None:
+        # Log time spent in previous mode
+        current_time = time.time()
+        time_in_prev_mode = current_time - self._last_exp_mode_change_time
+        mode_key = 'on' if prev_exp_mode else 'off'
+        self._exp_mode_time[mode_key] += time_in_prev_mode
+        self._last_exp_mode_change_time = current_time
+
       self.mads.read_params()
       time.sleep(0.1)
+
+  def _monitor_experimental_mode(self):
+    """Monitor experimental mode usage and send metrics."""
+    try:
+      # Update time in current mode
+      current_time = time.time()
+      time_in_current_mode = current_time - self._last_exp_mode_change_time
+      mode_key = 'on' if self.experimental_mode else 'off'
+      current_total_time = self._exp_mode_time[mode_key] + time_in_current_mode
+
+      # Send metrics
+      statlog.gauge('SelfdriveD.experimentalMode', float(self.experimental_mode))
+      statlog.sample('SelfdriveD.time_in_exp_mode', current_total_time if self.experimental_mode else 0)
+      statlog.sample('SelfdriveD.time_in_standard_mode', current_total_time if not self.experimental_mode else 0)
+
+    except Exception:
+      # Avoid any monitoring issues from affecting functionality
+      pass
 
   def run(self):
     e = threading.Event()
@@ -604,6 +640,11 @@ class SelfdriveD(CruiseHelper):
       t.start()
       while True:
         self.step()
+
+        # Monitor experimental mode periodically
+        if self.rk.frame % int(1.0 / DT_CTRL) == 0:  # Every second
+          self._monitor_experimental_mode()
+
         self.rk.monitor_time()
     finally:
       e.set()

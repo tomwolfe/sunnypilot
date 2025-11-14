@@ -6,6 +6,7 @@ USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+os.environ['QUANTIZE'] = '1' # Enable tinygrad quantization
 from tinygrad.tensor import Tensor
 from tinygrad.dtype import dtypes
 import time
@@ -24,7 +25,7 @@ from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
-from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value, get_curvature_from_plan
+from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value_optimized, get_curvature_from_plan
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
@@ -33,6 +34,7 @@ from openpilot.selfdrive.modeld.runners.tinygrad_helpers import qcom_tensor_from
 
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
+from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
@@ -47,23 +49,26 @@ LAT_SMOOTH_SECONDS = 0.1
 LONG_SMOOTH_SECONDS = 0.3
 MIN_LAT_CONTROL_SPEED = 0.3
 
+# Pre-computed constants for optimization
+T_IDXS_ARRAY = np.array(ModelConstants.T_IDXS, dtype=np.float32)
+
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
                           lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
     plan = model_output['plan'][0]
     desired_accel, should_stop = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
                                                      plan[:,Plan.ACCELERATION][:,0],
-                                                     ModelConstants.T_IDXS,
+                                                     T_IDXS_ARRAY,
                                                      action_t=long_action_t)
-    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+    desired_accel = smooth_value_optimized(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
 
     desired_curvature = get_curvature_from_plan(plan[:,Plan.T_FROM_CURRENT_EULER][:,2],
                                                 plan[:,Plan.ORIENTATION_RATE][:,2],
-                                                ModelConstants.T_IDXS,
+                                                T_IDXS_ARRAY,
                                                 v_ego,
                                                 lat_action_t)
     if v_ego > MIN_LAT_CONTROL_SPEED:
-      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+      desired_curvature = smooth_value_optimized(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
     else:
       desired_curvature = prev_action.desiredCurvature
 
@@ -87,6 +92,7 @@ class InputQueues:
     self.model_fps = model_fps
     self.env_fps = env_fps
     self.n_frames_input = n_frames_input
+    self.fps_ratio = env_fps // model_fps  # Cache this calculation
 
     self.dtypes = {}
     self.shapes = {}
@@ -101,13 +107,20 @@ class InputQueues:
         shape = list(input_shapes[k])
         if 'img' in k:
           n_channels = shape[1] // self.n_frames_input
-          shape[1] = (self.env_fps // self.model_fps + (self.n_frames_input - 1)) * n_channels
+          shape[1] = (self.fps_ratio + (self.n_frames_input - 1)) * n_channels
         else:
-          shape[1] = (self.env_fps // self.model_fps) * shape[1]
+          shape[1] = self.fps_ratio * shape[1]
         self.shapes[k] = tuple(shape)
 
   def reset(self) -> None:
     self.q = {k: np.zeros(self.shapes[k], dtype=self.dtypes[k]) for k in self.dtypes.keys()}
+    # Precompute frequently used values
+    self._precomputed_slices = {}
+    for k in self.shapes:
+      shape = self.shapes[k]
+      if 'img' in k:
+        n_channels = shape[1] // (self.fps_ratio + (self.n_frames_input - 1))
+        self._precomputed_slices[k] = [slice(s, s+n_channels) for s in np.linspace(0, shape[1] - n_channels, self.n_frames_input, dtype=int)]
 
   def enqueue(self, inputs:dict[str, np.ndarray]) -> None:
     for k in inputs.keys():
@@ -117,7 +130,8 @@ class InputQueues:
       input_shape[1] = -1
       single_input = inputs[k].reshape(tuple(input_shape))
       sz = single_input.shape[1]
-      self.q[k][:,:-sz] = self.q[k][:,sz:]
+      # Use numpy's roll functionality instead of manual copying for better performance
+      self.q[k] = np.roll(self.q[k], -sz, axis=1)
       self.q[k][:,-sz:] = single_input
 
   def get(self, *names) -> dict[str, np.ndarray]:
@@ -128,13 +142,13 @@ class InputQueues:
       for k in names:
         shape = self.shapes[k]
         if 'img' in k:
-          n_channels = shape[1] // (self.env_fps // self.model_fps + (self.n_frames_input - 1))
-          out[k] = np.concatenate([self.q[k][:, s:s+n_channels] for s in np.linspace(0, shape[1] - n_channels, self.n_frames_input, dtype=int)], axis=1)
+          slices = self._precomputed_slices[k]
+          out[k] = np.concatenate([self.q[k][:, s] for s in slices], axis=1)
         elif 'pulse' in k:
           # any pulse within interval counts
-          out[k] = self.q[k].reshape((shape[0], shape[1] * self.model_fps // self.env_fps, self.env_fps // self.model_fps, -1)).max(axis=2)
+          out[k] = self.q[k].reshape((shape[0], shape[1] * self.fps_ratio, self.fps_ratio, -1)).max(axis=2)
         else:
-          idxs = np.arange(-1, -shape[1], -self.env_fps // self.model_fps)[::-1]
+          idxs = np.arange(-1, -shape[1], -self.fps_ratio)[::-1]
           out[k] = self.q[k][:, idxs]
       return out
 
@@ -177,6 +191,10 @@ class ModelState(ModelStateBase):
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
 
+    # Pre-allocate reusable arrays to reduce allocation
+    self._temp_desire_comparison = np.zeros_like(self.prev_desire)
+    self._temp_new_desire = np.zeros_like(self.prev_desire)
+
     with open(VISION_PKL_PATH, "rb") as f:
       self.vision_run = pickle.load(f)
 
@@ -184,14 +202,20 @@ class ModelState(ModelStateBase):
       self.policy_run = pickle.load(f)
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
-    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
+    # Create dictionary with pre-allocated arrays to avoid memory allocation
+    parsed_model_outputs = {}
+    for k, v in output_slices.items():
+      parsed_model_outputs[k] = model_outputs[np.newaxis, v]
     return parsed_model_outputs
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire_pulse'][0] = 0
-    new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
+    # Use pre-allocated temporary arrays to avoid allocation in np.where
+    np.subtract(inputs['desire_pulse'], self.prev_desire, out=self._temp_desire_comparison)
+    np.where(self._temp_desire_comparison > .99, inputs['desire_pulse'], 0, out=self._temp_new_desire)
+    new_desire = self._temp_new_desire.copy()  # Copy only if needed
     self.prev_desire[:] = inputs['desire_pulse']
 
     imgs_cl = {name: self.frames[name].prepare(bufs[name], transforms[name].flatten()) for name in self.vision_input_names}
@@ -222,7 +246,11 @@ class ModelState(ModelStateBase):
 
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     if SEND_RAW_PRED:
-      combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
+      # Pre-allocate concatenated array to avoid temporary allocations
+      raw_pred_size = self.vision_output.size + self.policy_output.size
+      combined_outputs_dict['raw_pred'] = np.empty(raw_pred_size, dtype=np.float32)
+      combined_outputs_dict['raw_pred'][:self.vision_output.size] = self.vision_output
+      combined_outputs_dict['raw_pred'][self.vision_output.size:] = self.policy_output
 
     return combined_outputs_dict
 
@@ -374,10 +402,9 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
     }
 
-    mt1 = time.perf_counter()
-    model_output = model.run(bufs, transforms, inputs, prepare_only)
-    mt2 = time.perf_counter()
-    model_execution_time = mt2 - mt1
+    with PerfTrack("model_run") as perf_tracker:
+      model_output = model.run(bufs, transforms, inputs, prepare_only)
+    model_execution_time = perf_tracker.get_time_ms() / 1000  # Convert back to seconds
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')

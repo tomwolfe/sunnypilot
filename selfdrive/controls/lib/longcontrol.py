@@ -56,6 +56,11 @@ class LongControl:
                              (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              k_f=CP.longitudinalTuning.kf, rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
+    # Cache frequently used values
+    self.stop_accel = self.CP.stopAccel
+    self.stopping_decel_rate = self.CP.stoppingDecelRate
+    self.start_accel = self.CP.startAccel
+    self.ego_starting_speed = self.CP.vEgoStarting
 
   def reset(self):
     self.pid.reset()
@@ -74,13 +79,13 @@ class LongControl:
 
     elif self.long_control_state == LongCtrlState.stopping:
       output_accel = self.last_output_accel
-      if output_accel > self.CP.stopAccel:
+      if output_accel > self.stop_accel:  # Use cached value
         output_accel = min(output_accel, 0.0)
-        output_accel -= self.CP.stoppingDecelRate * DT_CTRL
+        output_accel -= self.stopping_decel_rate * DT_CTRL  # Use cached value
       self.reset()
 
     elif self.long_control_state == LongCtrlState.starting:
-      output_accel = self.CP.startAccel
+      output_accel = self.start_accel  # Use cached value
       self.reset()
 
     else:  # LongCtrlState.pid

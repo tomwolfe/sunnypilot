@@ -71,6 +71,12 @@ def sp_stats(end_event):
     'InstallDate',
     'UptimeOffroad',
     'UptimeOnroad',
+    # Experimental mode related parameters
+    'ExperimentalMode',
+    'ExperimentalModeConfirmed',
+    'DynamicExperimentalControl',
+    'DynamicExperimentalControlLog',
+    'DynamicExperimentalControllerLogging',
   ]
 
   while not end_event.is_set():

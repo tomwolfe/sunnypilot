@@ -16,7 +16,7 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_base import LatControlTorqueExtBase, sign
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
-from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.model import NNTorqueModel
+from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad import NNTorqueModelTinygrad
 
 LOW_SPEED_X = [0, 10, 20, 30]
 LOW_SPEED_Y = [12, 3, 1, 0]
@@ -41,7 +41,7 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     # NN model takes current v_ego, lateral_accel, lat accel/jerk error, roll, and past/future/planned data
     # of lat accel and roll
     # Past value is computed using previous desired lat accel and observed roll
-    self.model = NNTorqueModel(CP_SP.neuralNetworkLateralControl.model.path)
+    self.model = NNTorqueModelTinygrad(CP_SP.neuralNetworkLateralControl.model.path)
 
     self.pitch = FirstOrderFilter(0.0, 0.5, 0.01)
     self.pitch_last = 0.0

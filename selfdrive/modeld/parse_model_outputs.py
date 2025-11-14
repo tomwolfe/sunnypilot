@@ -1,8 +1,12 @@
 import numpy as np
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
+import logging
+
 def safe_exp(x, out=None):
   # -11 is around 10**14, more causes float16 overflow
+  if np.any(x > 11):
+    logging.warning(f"safe_exp clipping detected: max input value was {np.max(x)}")
   return np.exp(np.clip(x, -np.inf, 11), out=out)
 
 def sigmoid(x):

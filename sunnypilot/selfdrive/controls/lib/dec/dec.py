@@ -12,7 +12,9 @@ from numpy import interp
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
+from openpilot.system.statsd import statlog
 from typing import Literal
+import time
 
 # d-e2e, from modeldata.h
 TRAJECTORY_SIZE = 33
@@ -139,6 +141,15 @@ class DynamicExperimentalController:
     self._active: bool = False
     self._frame: int = 0
     self._urgency = 0.0
+
+    # Monitoring variables
+    self._last_mode: ModeType | None = None
+    self._mode_switch_count = 0
+    self._mode_timer = {'acc': 0, 'blended': 0}
+    self._last_mode_change_time = time.monotonic()
+    self._monitoring_enabled = True
+    self._monitoring_frame_counter = 0
+    self._monitoring_interval = int(1.0 / DT_MDL)  # Send metrics every second
 
     self._mode_manager = ModeTransitionManager()
 
@@ -386,3 +397,64 @@ class DynamicExperimentalController:
     self._mode_manager.update()
     self._active = sm['selfdriveState'].experimentalMode and self._enabled
     self._frame += 1
+
+    # Perform monitoring
+    if self._monitoring_enabled:
+      self._monitor_modes()
+      self._monitoring_frame_counter += 1
+
+      # Send metrics every second
+      if self._monitoring_frame_counter >= self._monitoring_interval:
+        self._send_metrics(sm)
+        self._monitoring_frame_counter = 0
+
+  def _monitor_modes(self) -> None:
+    """Monitor mode changes and time spent in each mode."""
+    current_mode = self._mode_manager.get_mode()
+
+    # Track mode changes
+    if self._last_mode is not None and self._last_mode != current_mode:
+      self._mode_switch_count += 1
+      # Log time spent in previous mode
+      time_in_last_mode = time.monotonic() - self._last_mode_change_time
+      self._mode_timer[self._last_mode] += time_in_last_mode
+      self._last_mode_change_time = time.monotonic()
+
+    self._last_mode = current_mode
+
+  def _send_metrics(self, sm) -> None:
+    """Send monitoring metrics to stats system."""
+    try:
+      current_mode = self._mode_manager.get_mode()
+      current_time = time.monotonic()
+
+      # Update time in current mode (since last update)
+      time_in_current_mode = current_time - self._last_mode_change_time
+      self._mode_timer[current_mode] += time_in_current_mode
+      self._last_mode_change_time = current_time
+
+      # Send metrics
+      if self._active:  # Only send when the system is actually active
+        statlog.sample('DynamicExperimentalController.mode_switches', self._mode_switch_count)
+        statlog.gauge('DynamicExperimentalController.current_mode', 1.0 if current_mode == 'blended' else 0.0)
+        statlog.sample('DynamicExperimentalController.time_in_acc_mode', self._mode_timer['acc'])
+        statlog.sample('DynamicExperimentalController.time_in_blended_mode', self._mode_timer['blended'])
+
+        # Additional context metrics
+        statlog.gauge('DynamicExperimentalController.v_ego_kph', self._v_ego_kph)
+        statlog.gauge('DynamicExperimentalController.v_cruise_kph', self._v_cruise_kph)
+        statlog.gauge('DynamicExperimentalController.has_lead_filtered', float(self._has_lead_filtered))
+        statlog.gauge('DynamicExperimentalController.has_slow_down', float(self._has_slow_down))
+        statlog.gauge('DynamicExperimentalController.has_slowness', float(self._has_slowness))
+        statlog.gauge('DynamicExperimentalController.has_mpc_fcw', float(self._has_mpc_fcw))
+        statlog.gauge('DynamicExperimentalController.has_standstill', float(self._has_standstill))
+        statlog.gauge('DynamicExperimentalController.urgency', self._urgency)
+        statlog.gauge('DynamicExperimentalController.enabled', float(self._enabled))
+        statlog.gauge('DynamicExperimentalController.active', float(self._active))
+
+        # Reset counters for next interval
+        self._mode_switch_count = 0
+
+    except Exception as e:
+      # Avoid any monitoring issues from affecting functionality
+      pass
