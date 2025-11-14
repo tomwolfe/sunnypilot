@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
   // FIXME: pytest-cpp considers this print as a test case
   std::cout << "Loading language: " << language_file << std::endl;
 
-  // Translation system would need to be implemented without Qt if needed
+  // Translation system implemented with Raylib
 
   const int res = Catch::Session().run(argc, argv);
   return (res < 0xff ? res : 0xff);

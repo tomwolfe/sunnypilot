@@ -52,7 +52,7 @@ void UIStateSP::update() {
     watchdog_kick(nanos_since_boot());
   }
   
-  // Call callbacks instead of Qt signals
+  // Call callbacks for UI updates
   if (uiUpdateCallbackSP) {
     uiUpdateCallbackSP(*this);
   }

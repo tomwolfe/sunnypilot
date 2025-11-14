@@ -12,7 +12,7 @@
 #include "common/util.h"
 #include "system/hardware/hw.h"
 
-// Replacing Qt QColor with custom color structure
+// Custom color structure for Raylib
 struct UIColor {
   unsigned char r, g, b, a;
   UIColor(unsigned char r = 0, unsigned char g = 0, unsigned char b = 0, unsigned char a = 255)
@@ -24,7 +24,7 @@ struct UIColor {
   }
 };
 
-// Prime state definitions (replacing Qt dependency)
+// Prime state definitions
 enum class PrimeType {
   UNKNOWN = -2,
   UNPAIRED = -1,
@@ -91,7 +91,7 @@ typedef struct UIScene {
 #define UIScene UISceneSP
 #endif
 
-// UI State class using Raylib instead of Qt
+// UI State class using Raylib
 class UIState {
 public:
   UIState();
@@ -106,7 +106,7 @@ public:
   std::string language;
   PrimeState *prime_state;
 
-  // Callback function for UI updates (replaces Qt signals)
+  // Callback function for UI updates
   std::function<void(const UIState&)> uiUpdateCallback;
   std::function<void(bool)> offroadTransitionCallback;
   std::function<void(bool)> engagedChangedCallback;
@@ -123,7 +123,7 @@ protected:
 UIState *uiState_raylib();
 #endif
 
-// Device management class using Raylib instead of Qt
+// Device management class using Raylib
 class Device {
 public:
   Device();

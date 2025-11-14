@@ -102,7 +102,7 @@ public:
   }
   void reset_onroad_sleep_timer(OnroadTimerStatusToggle toggleTimerStatus = OnroadTimerStatusToggle::NONE);
 
-  // Callbacks for events (replacing Qt signals)
+  // Callbacks for events
   std::function<void(bool)> sunnylinkRoleChangedCallback;
   std::function<void(std::vector<RoleModel>)> sunnylinkRolesChangedCallback;
   std::function<void(std::vector<UserModel>)> sunnylinkDeviceUsersChangedCallback;
@@ -111,7 +111,7 @@ public:
 private:
   std::vector<RoleModel> sunnylinkRoles = {};
   std::vector<UserModel> sunnylinkUsers = {};
-  void* param_watcher; // Replace with appropriate non-Qt type
+  void* param_watcher; // Parameter watcher for UI updates
 };
 
 UIStateSP *uiStateSP();

@@ -65,7 +65,7 @@ AddOption('--stock-ui',
           action='store_true',
           dest='stock_ui',
           default=False,
-          help='Build stock openpilot UI instead of sunnypilot UI')
+          help='Deprecated option - Raylib UI is now standard. This flag is maintained for compatibility.')
 
 ## Architecture name breakdown (arch)
 ## - larch64: linux tici aarch64
@@ -163,9 +163,9 @@ else:
 if arch != "Darwin":
   ldflags += ["-Wl,--as-needed", "-Wl,--no-undefined"]
 
-if not GetOption('stock_ui'):
-  cflags += ["-DSUNNYPILOT"]
-  cxxflags += ["-DSUNNYPILOT"]
+# Always include SUNNYPILOT flag since Raylib UI is now standard
+cflags += ["-DSUNNYPILOT"]
+cxxflags += ["-DSUNNYPILOT"]
 
 ccflags_option = GetOption('ccflags')
 if ccflags_option:
@@ -293,7 +293,7 @@ else:
   qt_libs = [f"Qt5{m}" for m in qt_modules]
   if arch == "larch64":
     qt_libs += ["GLESv2", "wayland-client"]
-    qt_env.PrependENVPath('PATH', Dir("#third_party/qt5/larch64/bin/").abspath)
+
   elif arch != "Darwin":
     qt_libs += ["GL"]
 qt_env['QT3DIR'] = qt_env['QTDIR']

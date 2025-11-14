@@ -216,7 +216,6 @@ jobs:
             --exclude='**/__pycache__/' \
             --exclude='**/selfdrive/ui/*.h' \
             --exclude='**/selfdrive/ui/**/*.h' \
-            --exclude='**/selfdrive/ui/qt/offroad/sunnypilot/' \
             --exclude='${{env.SCONS_CACHE_DIR}}' \
             --exclude='**/.git/' \
             --exclude='**/SConstruct' \

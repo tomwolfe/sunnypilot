@@ -35,7 +35,7 @@ Font FontManager::loadFont(int size) {
     // In a real implementation, we'd load from the assets directory
     
     // For now, return the default font at the requested size if possible
-    // In a full implementation, we would load the Inter font family as used in the Qt version
+    // In a full implementation, we would load the Inter font family
     Font defaultFont = GetFontDefault();
     
     // Create a font image at the requested size

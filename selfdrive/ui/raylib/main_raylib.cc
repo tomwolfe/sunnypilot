@@ -10,7 +10,7 @@
 
 // Initialize the application (this would include logging setup, etc.)
 void initApp_raylib(int argc, char *argv[]) {
-  // In the real implementation, this would do the same initialization as the Qt version
+  // Initialize application with Raylib
   // For now, we'll just set up basic parameters
   Params().initialize();
 }

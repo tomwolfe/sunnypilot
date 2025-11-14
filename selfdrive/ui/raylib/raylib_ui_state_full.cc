@@ -312,7 +312,7 @@ Device *device_raylib() {
 }
 #endif
 
-// Define the functions that match the original Qt interface for compatibility
+// Implementation of UI state functionality for Raylib
 UIState *uiState() {
   return uiState_raylib();
 }

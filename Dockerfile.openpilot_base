@@ -57,7 +57,7 @@ RUN mkdir -p /tmp/opencl-driver-intel && \
 
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute
-ENV QTWEBENGINE_DISABLE_SANDBOX=1
+
 
 RUN dbus-uuidgen > /etc/machine-id
 RUN apt-get update && apt-get install -y fonts-noto-cjk fonts-noto-color-emoji
