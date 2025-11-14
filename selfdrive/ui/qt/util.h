@@ -29,7 +29,6 @@ QPixmap bootstrapPixmap(const QString &id);
 bool hasLongitudinalControl(const cereal::CarParams::Reader &car_params);
 
 struct InterFont : public QFont {
-  Q_OBJECT
   InterFont(int pixel_size, QFont::Weight weight = QFont::Normal) : QFont("Inter") {
     setPixelSize(pixel_size);
     setWeight(weight);
