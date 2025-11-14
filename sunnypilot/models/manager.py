@@ -88,7 +88,7 @@ class ModelManagerSP:
             del self._download_start_times[model.fileName]
             return  # Success, exit the retry loop
 
-      except asyncio.TimeoutError:
+      except TimeoutError:
         cloudlog.warning(f"Download timeout for {model.fileName} (attempt {attempt + 1}/{max_retries})")
         if attempt == max_retries - 1:  # Last attempt
           raise
@@ -224,7 +224,8 @@ class ModelManagerSP:
 
         # Log model count changes to help with debugging
         if len(self.available_models) != last_model_count:
-          cloudlog.info(f"Model manager: {len(self.available_models)} available model bundles, active: {self.active_bundle.displayName if self.active_bundle else 'default'}")
+          active_bundle_name = self.active_bundle.displayName if self.active_bundle else 'default'
+          cloudlog.info(f"Model manager: {len(self.available_models)} available model bundles, active: {active_bundle_name}")
           last_model_count = len(self.available_models)
 
         if index_to_download := self.params.get("ModelManager_DownloadIndex"):

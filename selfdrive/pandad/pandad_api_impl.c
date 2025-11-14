@@ -9413,7 +9413,7 @@ static PyObject *__Pyx_DecompressString(const char *s, Py_ssize_t length, int al
     return decompressed;
 import_failed:
     PyErr_Format(PyExc_ImportError,
-        "Failed to import '%.20s.decompress' - cannot initialise module strings. "
+        "Failed to import '%.20s.decompress' - cannot initialize module strings. "
         "String compression was configured with the C macro 'CYTHON_COMPRESS_STRINGS=%d'.",
         module_name, algo);
 bad:

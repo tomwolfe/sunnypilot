@@ -12,7 +12,7 @@ from sunnypilot.common.params_validation import ParamsValidator
 
 class TestParamsValidator(unittest.TestCase):
   """Test cases for the ParamsValidator class."""
-  
+
   def setUp(self):
     """Set up test fixtures."""
     self.mock_params = Mock()
@@ -42,7 +42,7 @@ class TestParamsValidator(unittest.TestCase):
     self.assertTrue(ParamsValidator.validate_mads_unified_engagement_mode("false"))
     self.assertTrue(ParamsValidator.validate_mads_unified_engagement_mode("on"))
     self.assertTrue(ParamsValidator.validate_mads_unified_engagement_mode("off"))
-    
+
     # Invalid values
     self.assertFalse(ParamsValidator.validate_mads_unified_engagement_mode("2"))
     self.assertFalse(ParamsValidator.validate_mads_unified_engagement_mode("yes"))
@@ -55,7 +55,7 @@ class TestParamsValidator(unittest.TestCase):
     self.assertTrue(ParamsValidator.validate_speed_limit_mode("0"))
     self.assertTrue(ParamsValidator.validate_speed_limit_mode("1"))
     self.assertTrue(ParamsValidator.validate_speed_limit_mode("2"))
-    
+
     # Invalid values
     self.assertFalse(ParamsValidator.validate_speed_limit_mode("3"))
     self.assertFalse(ParamsValidator.validate_speed_limit_mode("abc"))
@@ -88,17 +88,17 @@ class TestParamsValidator(unittest.TestCase):
     # Test true values
     self.mock_params.get.return_value = "1"
     self.assertTrue(self.validator.get_bool_param("TestParam", False))
-    
+
     self.mock_params.get.return_value = "true"
     self.assertTrue(self.validator.get_bool_param("TestParam", False))
-    
+
     self.mock_params.get.return_value = "on"
     self.assertTrue(self.validator.get_bool_param("TestParam", False))
-    
+
     # Test false values
     self.mock_params.get.return_value = "0"
     self.assertFalse(self.validator.get_bool_param("TestParam", True))
-    
+
     self.mock_params.get.return_value = "false"
     self.assertFalse(self.validator.get_bool_param("TestParam", True))
 
@@ -106,7 +106,7 @@ class TestParamsValidator(unittest.TestCase):
     """Test getting boolean parameter with invalid value (should return default)."""
     self.mock_params.get.return_value = "invalid"
     self.assertTrue(self.validator.get_bool_param("TestParam", True))  # Should return default
-    
+
     self.mock_params.get.return_value = None
     self.assertFalse(self.validator.get_bool_param("TestParam", False))  # Should return default
 

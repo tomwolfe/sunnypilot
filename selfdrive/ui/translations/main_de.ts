@@ -2180,7 +2180,7 @@ Data</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>⦿ Combined: Use combined Speed Limit data from Car &amp; OpenStreetMaps</source>
+        <source>⦿ Combined: Nutze die niedrigere Geschwindigkeitsbegrenzung aus den Daten des Fahrzeugs und OpenStreetMaps</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2227,7 +2227,7 @@ Data</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>⦿ Assist: Adjusts the vehicle&apos;s cruise speed based on the current road&apos;s speed limit when operating the +/- buttons.</source>
+        <source>⦿ Assist: Passt die Geschwindigkeitsregelung des Fahrzeugs an die aktuelle Geschwindigkeitsbegrenzung der Straße an, wenn die Tasten +/- betätigt werden. Die Geschwindigkeit wird nur angepasst, wenn der Fahrer dies aktiv über die Tasten anfordert.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

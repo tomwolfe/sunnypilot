@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 import time
 
 import requests
-from requests.exceptions import (SSLError, RequestException, HTTPError)
+from requests.exceptions import (SSLError, HTTPError)
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from sunnypilot.models.helpers import is_bundle_version_compatible

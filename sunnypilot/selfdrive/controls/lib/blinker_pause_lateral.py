@@ -18,7 +18,7 @@ class BlinkerPauseLateral:
 
     self.enabled: bool = self.params.get_bool("BlinkerPauseLateralControl")
     self.is_metric: bool = self.params.get_bool("IsMetric")
-    self.min_speed: Union[int, float] = 0
+    self.min_speed: int | float = 0
     self.blinker_timer = 0
 
   BL_DEBOUNCE_FRAMES = 20 # 1 second at 20Hz

@@ -32,6 +32,8 @@ ModelManager = custom.ModelManagerSP
 
 import asyncio
 
+from openpilot.common.swaglog import cloudlog
+
 async def verify_file(file_path: str, expected_hash: str) -> bool:
   """Verifies file hash against expected hash"""
   if not os.path.exists(file_path):

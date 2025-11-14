@@ -4,9 +4,13 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-from typing import Dict, Any
+
+from typing import TYPE_CHECKING
 
 from cereal import car, custom
+
+if TYPE_CHECKING:
+  from cereal import custom
 from opendbc.car import structs, apply_hysteresis
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_CTRL
@@ -22,7 +26,7 @@ HYST_GAP = 0.0  # currently disabled; TODO-SP: might need to be brand-specific
 INACTIVE_TIMER = 0.4
 
 
-SEND_BUTTONS: Dict[State, SendButtonState] = {
+SEND_BUTTONS: dict['State', 'SendButtonState'] = {
   State.increasing: SendButtonState.increase,
   State.decreasing: SendButtonState.decrease,
 }
@@ -36,8 +40,8 @@ class IntelligentCruiseButtonManagement:
     self.v_target: int = 0
     self.v_cruise_cluster: int = 0
     self.v_cruise_min: int = 0
-    self.cruise_button: SendButtonState = SendButtonState.none
-    self.state: State = State.inactive
+    self.cruise_button: 'SendButtonState' = SendButtonState.none
+    self.state: 'State' = State.inactive
     self.pre_active_timer: int = 0
 
     self.is_ready: bool = False
@@ -45,7 +49,7 @@ class IntelligentCruiseButtonManagement:
     self.v_target_ms_last: float = 0.0
     self.is_metric: bool = False
 
-    self.cruise_button_timers: Dict[Any, int] = CRUISE_BUTTON_TIMER.copy()
+    self.cruise_button_timers: dict[str, int] = CRUISE_BUTTON_TIMER.copy()
 
   @property
   def v_cruise_equal(self) -> bool:
@@ -61,7 +65,7 @@ class IntelligentCruiseButtonManagement:
     self.v_cruise_min = get_minimum_set_speed(self.is_metric)
     self.v_cruise_cluster = round(CS.cruiseState.speedCluster * speed_conv)
 
-  def update_state_machine(self) -> custom.IntelligentCruiseButtonManagement.SendButtonState:
+  def update_state_machine(self) -> 'custom.IntelligentCruiseButtonManagement.SendButtonState':
     self.pre_active_timer = max(0, self.pre_active_timer - 1)
 
     # HOLDING, ACCELERATING, DECELERATING, PRE_ACTIVE

@@ -117,7 +117,7 @@ def manager_init() -> None:
   # Preimport all processes with progress reporting for better user experience
   cloudlog.info(f"Preparing {len(managed_processes)} processes...")
   process_count = 0
-  for name, p in managed_processes.items():
+  for _name, p in managed_processes.items():
     p.prepare()
     process_count += 1
     if process_count % 5 == 0:  # Log progress every 5 processes

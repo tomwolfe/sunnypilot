@@ -5,7 +5,6 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from typing import Tuple
 import logging
 
 from cereal import log, custom
@@ -84,7 +83,7 @@ class StateMachine:
     """
     return bool(self._events.contains_in_list(GEARS_ALLOW_PAUSED) or self._events_sp.contains_in_list(GEARS_ALLOW_PAUSED_SILENT))
 
-  def update(self) -> Tuple[bool, bool]:
+  def update(self) -> tuple[bool, bool]:
     """
     Update the MADS state based on current events and conditions.
 
@@ -184,3 +183,4 @@ class StateMachine:
       logging.debug(f"MADS state changed from {self._prev_state} to {self.state}")
 
     return enabled, active
+

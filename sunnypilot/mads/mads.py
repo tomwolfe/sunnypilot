@@ -5,7 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from cereal import log, custom
 
@@ -57,7 +57,7 @@ class ModularAssistiveDrivingSystem:
     self.allow_always: bool = False  # Allow MADS engagement regardless of cruise state for certain vehicles
     self.no_main_cruise: bool = False  # Vehicle doesn't support standard cruise control main button
     self.selfdrive: SelfdriveD = selfdrive
-    self.selfdrive.enabled_prev: bool = False
+    self.enabled_prev: bool = False  # Track previous enabled state within MADS
     self.state_machine: StateMachine = StateMachine(self)
     self.events: log.OnroadEvents = self.selfdrive.events
     self.events_sp: custom.OnroadEventsSP = self.selfdrive.events_sp
@@ -137,7 +137,7 @@ class ModularAssistiveDrivingSystem:
     if self.enabled:
       return True
 
-    if self.selfdrive.enabled and self.selfdrive.enabled_prev:
+    if self.selfdrive.enabled and self.enabled_prev:
       return True
 
     return False
@@ -243,7 +243,7 @@ class ModularAssistiveDrivingSystem:
     # Process button events for MADS control with clearer logic
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
-        if not self.selfdrive.enabled and self.selfdrive.enabled_prev:
+        if not self.selfdrive.enabled and self.enabled_prev:
           self.events_sp.add(EventNameSP.manualLongitudinalRequired)
       elif be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
         # Provide clearer feedback based on current state
@@ -304,7 +304,7 @@ class ModularAssistiveDrivingSystem:
       # When MADS is not enabled, ensure we don't interfere with standard operation
       self.enabled = False
       self.active = False
-      self.selfdrive.enabled_prev = self.selfdrive.enabled
+      self.enabled_prev = self.selfdrive.enabled
       return
 
     self.update_events(CS)
@@ -317,4 +317,4 @@ class ModularAssistiveDrivingSystem:
       self.active = False
 
     # Copy of previous SelfdriveD states for MADS events handling
-    self.selfdrive.enabled_prev = self.selfdrive.enabled
+    self.enabled_prev = self.selfdrive.enabled
