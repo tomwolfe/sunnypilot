@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Sunnypilot Model Inference Engine
+
+This module provides enhanced neural network inference capabilities for sunnypilot,
+extending the base openpilot modeld with additional features such as lateral delay
+compensation, lane turn detection, and extended model data output.
+"""
 import os
 import time
 import numpy as np
@@ -50,6 +57,10 @@ class FrameMeta:
       self.frame_id, self.timestamp_sof, self.timestamp_eof = vipc.frame_id, vipc.timestamp_sof, vipc.timestamp_eof
 
 class ModelState(ModelStateBase):
+  """
+  Enhanced model state that extends the base model state with sunnypilot-specific
+  features including neural network lateral control and additional model outputs.
+  """
   frame: ModelFrame
   wide_frame: ModelFrame
   inputs: dict[str, np.ndarray]
@@ -58,25 +69,36 @@ class ModelState(ModelStateBase):
   model: ModelRunner
 
   def __init__(self, context: CLContext):
+    """
+    Initialize the enhanced model state.
+
+    Args:
+      context: OpenCL context for GPU computation
+    """
     ModelStateBase.__init__(self)
     self.frame = ModelFrame(context)
     self.wide_frame = ModelFrame(context)
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
+
+    # Load model bundle and configure smoothing parameters
     bundle = get_active_bundle()
     overrides = {override.key: override.value for override in bundle.overrides}
     self.LAT_SMOOTH_SECONDS = float(overrides.get('lat', ".0"))
     self.LONG_SMOOTH_SECONDS = float(overrides.get('long', ".0"))
 
+    # Initialize model paths and metadata
     model_paths = get_model_path()
     self.model_metadata = load_metadata()
     self.inputs = prepare_inputs(self.model_metadata)
     self.meta = load_meta_constants(self.model_metadata)
 
+    # Prepare model output arrays
     self.output_slices = self.model_metadata['output_slices']
     net_output_size = self.model_metadata['output_shapes']['outputs'][1]
     self.output = np.zeros(net_output_size, dtype=np.float32)
     self.parser = Parser()
 
+    # Initialize the model runner with appropriate paths and configuration
     self.model = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
     self.model.addInput("input_imgs", None)
     self.model.addInput("big_input_imgs", None)
@@ -84,6 +106,15 @@ class ModelState(ModelStateBase):
       self.model.addInput(k, v)
 
   def slice_outputs(self, model_outputs: np.ndarray) -> dict[str, np.ndarray]:
+    """
+    Slice the raw model outputs into named components based on metadata.
+
+    Args:
+      model_outputs: Raw model output array
+
+    Returns:
+      Dictionary of named model output components
+    """
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in self.output_slices.items()}
     if SEND_RAW_PRED:
       parsed_model_outputs['raw_pred'] = model_outputs.copy()
@@ -91,6 +122,20 @@ class ModelState(ModelStateBase):
 
   def run(self, buf: VisionBuf, wbuf: VisionBuf, transform: np.ndarray, transform_wide: np.ndarray,
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+    """
+    Run the neural network model with the provided inputs and image buffers.
+
+    Args:
+      buf: Vision buffer for primary camera
+      wbuf: Vision buffer for wide camera (optional)
+      transform: Camera transformation matrix for primary camera
+      transform_wide: Camera transformation matrix for wide camera
+      inputs: Dictionary of model inputs
+      prepare_only: If True, only prepare inputs without running model
+
+    Returns:
+      Dictionary of model outputs or None if prepare_only is True
+    """
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire'][0] = 0
     self.inputs['desire'][:-ModelConstants.DESIRE_LEN] = self.inputs['desire'][ModelConstants.DESIRE_LEN:]
@@ -112,13 +157,16 @@ class ModelState(ModelStateBase):
     self.model.execute()
     outputs = self.parser.parse_outputs(self.slice_outputs(self.output))
 
+    # Update feature buffer for temporal consistency
     self.inputs['features_buffer'][:-ModelConstants.FEATURE_LEN] = self.inputs['features_buffer'][ModelConstants.FEATURE_LEN:]
     self.inputs['features_buffer'][-ModelConstants.FEATURE_LEN:] = outputs['hidden_state'][0, :]
 
+    # Update lateral planner state if available
     if "lat_planner_solution" in outputs and "lat_planner_state" in self.inputs.keys():
       self.inputs['lat_planner_state'][2] = interp(DT_MDL, ModelConstants.T_IDXS, outputs['lat_planner_solution'][0, :, 2])
       self.inputs['lat_planner_state'][3] = interp(DT_MDL, ModelConstants.T_IDXS, outputs['lat_planner_solution'][0, :, 3])
 
+    # Update previous desired curvature if available
     if "desired_curvature" in outputs:
       if "prev_desired_curvs" in self.inputs.keys():
         self.inputs['prev_desired_curvs'][:-1] = self.inputs['prev_desired_curvs'][1:]
@@ -131,6 +179,17 @@ class ModelState(ModelStateBase):
 
   def get_action_from_model(self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
                             long_action_t: float) -> log.ModelDataV2.Action:
+    """
+    Extract longitudinal action from model outputs and smooth with previous action.
+
+    Args:
+      model_output: Dictionary of model outputs
+      prev_action: Previous action for smoothing
+      long_action_t: Longitudinal action time
+
+    Returns:
+      New longitudinal action
+    """
     plan = model_output['plan'][0]
     desired_accel, should_stop = get_accel_from_plan(plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], ModelConstants.T_IDXS,
                                                      action_t=long_action_t)
@@ -140,6 +199,15 @@ class ModelState(ModelStateBase):
 
 
 def main(demo=False):
+  """
+  Main entry point for the sunnypilot modeld process.
+
+  Initializes the model, connects to vision IPC, and runs the main inference loop
+  that processes camera frames and publishes model outputs with sunnypilot extensions.
+
+  Args:
+    demo: If True, use demo car parameters instead of loading from system
+  """
   cloudlog.warning("modeld init")
 
   sentry.set_tag("daemon", PROCESS_NAME)

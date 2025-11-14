@@ -325,6 +325,10 @@ if GetOption("clazy"):
 
 Export('env', 'qt_env', 'arch', 'real_arch')
 
+# Define a dictionary to hold sunnypilot overrides
+SP_OVERRIDES = {}
+Export('SP_OVERRIDES') # Make it available to SConscripts
+
 # Build common module
 SConscript(['common/SConscript'])
 Import('_common', '_gpucommon')
@@ -368,7 +372,16 @@ SConscript(['third_party/SConscript'])
 
 SConscript(['selfdrive/SConscript'])
 
+# Process sunnypilot SConscript to populate SP_OVERRIDES
+# This call should *not* build anything directly, only register overrides
 SConscript(['sunnypilot/SConscript'])
+
+# Now, iterate through registered overrides and process them
+for original_sconscript, override_sconscript in SP_OVERRIDES.items():
+    print(f"Processing sunnypilot override: {override_sconscript} for {original_sconscript}")
+    # For now, we'll just build the override, which will implicitly overwrite.
+    # The key is that the *registration* is explicit.
+    SConscript([override_sconscript])
 
 if Dir('#tools/cabana/').exists() and GetOption('extras'):
   SConscript(['tools/replay/SConscript'])

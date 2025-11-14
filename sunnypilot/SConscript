@@ -1,3 +1,6 @@
-SConscript(['modeld/SConscript'])
+Import('SP_OVERRIDES')
+
+SP_OVERRIDES['selfdrive/modeld/SConscript'] = 'sunnypilot/modeld/SConscript'
+SP_OVERRIDES['selfdrive/locationd/SConscript'] = 'sunnypilot/selfdrive/locationd/SConscript'
+
 SConscript(['modeld_v2/SConscript'])
-SConscript(['selfdrive/locationd/SConscript'])

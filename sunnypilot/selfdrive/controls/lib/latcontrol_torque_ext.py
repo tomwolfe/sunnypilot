@@ -19,7 +19,24 @@ if TYPE_CHECKING:
 
 
 class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverride):
+  """
+  Enhanced lateral torque controller that integrates neural network feedforward control
+  with traditional PID control for improved steering performance and safety.
+
+  This class extends both NeuralNetworkLateralControl and LatControlTorqueExtOverride
+  to provide advanced steering control with machine learning-based enhancements.
+  """
+
   def __init__(self, lac_torque: 'LatControlTorque', CP: 'structs.CarParams', CP_SP: 'custom.CarParamsSP', CI: 'CarInterfaceBase'):
+    """
+    Initialize the enhanced lateral torque controller.
+
+    Args:
+      lac_torque: Base lateral control torque instance
+      CP: Car parameters
+      CP_SP: Sunnypilot-specific car parameters
+      CI: Car interface instance
+    """
     NeuralNetworkLateralControl.__init__(self, lac_torque, CP, CP_SP, CI)
     LatControlTorqueExtOverride.__init__(self, CP)
 
@@ -42,6 +59,35 @@ class LatControlTorqueExt(NeuralNetworkLateralControl, LatControlTorqueExtOverri
              actual_curvature: float,
              steer_limited_by_safety: bool,
              output_torque: float) -> tuple:
+    """
+    Update the lateral control state and compute output.
+
+    This method stores internal state and delegates to neural network and calculation
+    methods to compute the final control output.
+
+    Args:
+      CS: Car state
+      VM: Vehicle model constants
+      pid: PID controller instance
+      params: Control parameters
+      ff: Feedforward value
+      pid_log: PID logging data
+      setpoint: Control setpoint
+      measurement: Current measurement
+      calibrated_pose: Calibrated vehicle pose
+      roll_compensation: Roll angle compensation
+      desired_lateral_accel: Desired lateral acceleration
+      actual_lateral_accel: Actual lateral acceleration
+      lateral_accel_deadzone: Lateral acceleration deadzone
+      gravity_adjusted_lateral_accel: Gravity-adjusted lateral acceleration
+      desired_curvature: Desired curvature
+      actual_curvature: Actual curvature
+      steer_limited_by_safety: Whether steering is limited by safety
+      output_torque: Current output torque
+
+    Returns:
+      Tuple of (pid_log, output_torque) for the control system
+    """
     self._ff: float = ff
     self._pid = pid
     self._pid_log = pid_log

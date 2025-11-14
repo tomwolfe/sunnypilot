@@ -22,6 +22,17 @@ ALL_SOURCES = tuple(SpeedLimitSource.schema.enumerants.values())
 
 
 class SpeedLimitResolver:
+  """
+  The SpeedLimitResolver class handles speed limit detection and resolution from multiple sources.
+
+  It integrates speed limit data from:
+  - Car state (cruise control set speed, speed limiter)
+  - Map data (GPS-based speed limit signs)
+
+  The resolver applies configurable policies to determine which speed limit source to use,
+  and applies configurable offsets to the final speed limit.
+  """
+
   limit_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
   distance_solutions: dict[custom.LongitudinalPlanSP.SpeedLimit.Source, float]
   v_ego: float
@@ -34,6 +45,9 @@ class SpeedLimitResolver:
   speed_limit_offset: float
 
   def __init__(self):
+    """
+    Initialize the SpeedLimitResolver with default values and parameters.
+    """
     self.params = Params()
     self.frame = -1
 
@@ -41,13 +55,15 @@ class SpeedLimitResolver:
     self.limit_solutions = {}  # Store for speed limit solutions from different sources
     self.distance_solutions = {}  # Store for distance to current speed limit start for different sources
 
-    self.policy = self.params.get("SpeedLimitPolicy", return_default=True)
+    # Initialize policy with parameter validation
     self.policy = get_sanitize_int_param(
       "SpeedLimitPolicy",
       Policy.min().value,
       Policy.max().value,
       self.params
     )
+
+    # Map policies to source priority lists
     self._policy_to_sources_map = {
       Policy.car_state_only: [SpeedLimitSource.car],
       Policy.map_data_only: [SpeedLimitSource.map],
@@ -55,10 +71,12 @@ class SpeedLimitResolver:
       Policy.map_data_priority: [SpeedLimitSource.map, SpeedLimitSource.car],
       Policy.combined: [SpeedLimitSource.car, SpeedLimitSource.map],
     }
+
     self.source = SpeedLimitSource.none
     for source in ALL_SOURCES:
       self._reset_limit_sources(source)
 
+    # Initialize parameters with validation
     self.is_metric = self.params.get_bool("IsMetric")
     self.offset_type = get_sanitize_int_param(
       "SpeedLimitOffsetType",
@@ -68,6 +86,7 @@ class SpeedLimitResolver:
     )
     self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
 
+    # Initialize speed limit variables
     self.speed_limit = 0.
     self.speed_limit_last = 0.
     self.speed_limit_final = 0.
@@ -75,6 +94,10 @@ class SpeedLimitResolver:
     self.speed_limit_offset = 0.
 
   def update_speed_limit_states(self) -> None:
+    """
+    Update the final speed limit with the applied offset.
+    Also update the 'last' values when a new valid speed limit is found.
+    """
     self.speed_limit_final = self.speed_limit + self.speed_limit_offset
 
     if self.speed_limit > 0.:
@@ -83,13 +106,29 @@ class SpeedLimitResolver:
 
   @property
   def speed_limit_valid(self) -> bool:
+    """
+    Check if the current speed limit is valid (greater than 0).
+
+    Returns:
+      True if speed limit is valid, False otherwise
+    """
     return self.speed_limit > 0.
 
   @property
   def speed_limit_last_valid(self) -> bool:
+    """
+    Check if the last recorded speed limit is valid (greater than 0).
+
+    Returns:
+      True if last speed limit is valid, False otherwise
+    """
     return self.speed_limit_last > 0.
 
   def update_params(self):
+    """
+    Periodically update parameters from system parameters.
+    This method should be called regularly to pick up configuration changes.
+    """
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
       self.policy = self.params.get("SpeedLimitPolicy", return_default=True)
       self.is_metric = self.params.get_bool("IsMetric")
@@ -97,6 +136,12 @@ class SpeedLimitResolver:
       self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
 
   def _get_speed_limit_offset(self) -> float:
+    """
+    Calculate the speed limit offset based on the configured offset type and value.
+
+    Returns:
+      The speed limit offset in m/s
+    """
     if self.offset_type == OffsetType.off:
       return 0
     elif self.offset_type == OffsetType.fixed:
@@ -107,22 +152,47 @@ class SpeedLimitResolver:
       raise NotImplementedError("Offset not supported")
 
   def _reset_limit_sources(self, source: custom.LongitudinalPlanSP.SpeedLimit.Source) -> None:
+    """
+    Reset the limit and distance solutions for a given source.
+
+    Args:
+      source: The speed limit source to reset
+    """
     self.limit_solutions[source] = 0.
     self.distance_solutions[source] = 0.
 
   def _get_from_car_state(self, sm: messaging.SubMaster) -> None:
+    """
+    Get speed limit information from car state.
+
+    Args:
+      sm: SubMaster instance containing message data
+    """
     self._reset_limit_sources(SpeedLimitSource.car)
     self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit
     self.distance_solutions[SpeedLimitSource.car] = 0.
 
   def _get_from_map_data(self, sm: messaging.SubMaster) -> None:
+    """
+    Get speed limit information from map data.
+
+    Args:
+      sm: SubMaster instance containing message data
+    """
     self._reset_limit_sources(SpeedLimitSource.map)
     self._process_map_data(sm)
 
   def _process_map_data(self, sm: messaging.SubMaster) -> None:
+    """
+    Process GPS and map data to extract speed limit information.
+
+    Args:
+      sm: SubMaster instance containing message data
+    """
     gps_data = sm[self._gps_location_service]
     map_data = sm['liveMapDataSP']
 
+    # Check if GPS data is fresh enough
     gps_fix_age = time.monotonic() - gps_data.unixTimestampMillis * 1e-3
     if gps_fix_age > LIMIT_MAX_MAP_DATA_AGE:
       return
@@ -133,6 +203,14 @@ class SpeedLimitResolver:
     self._calculate_map_data_limits(sm, speed_limit, next_speed_limit)
 
   def _calculate_map_data_limits(self, sm: messaging.SubMaster, speed_limit: float, next_speed_limit: float) -> None:
+    """
+    Calculate speed limit limits based on map data and vehicle state.
+
+    Args:
+      sm: SubMaster instance containing message data
+      speed_limit: Current speed limit from map data
+      next_speed_limit: Upcoming speed limit from map data
+    """
     gps_data = sm[self._gps_location_service]
     map_data = sm['liveMapDataSP']
 
@@ -152,6 +230,12 @@ class SpeedLimitResolver:
         self.distance_solutions[SpeedLimitSource.map] = distance_to_speed_limit_ahead
 
   def _get_source_solution_according_to_policy(self) -> custom.LongitudinalPlanSP.SpeedLimit.Source:
+    """
+    Determine which speed limit source to use based on the configured policy.
+
+    Returns:
+      The selected speed limit source according to policy
+    """
     sources_for_policy = self._policy_to_sources_map[self.policy]
 
     if self.policy != Policy.combined:
@@ -163,12 +247,20 @@ class SpeedLimitResolver:
 
     sources_with_limits = [(s, limit) for s, limit in [(s, self.limit_solutions[s]) for s in sources_for_policy] if limit > 0.]
     if sources_with_limits:
-      return min(sources_with_limits, key=lambda x: x[1])[0]
+      return min(sources_with_limits, key=lambda x: x[1])[0]  # Select minimum speed limit in combined mode
 
     return SpeedLimitSource.none
 
   def _resolve_limit_sources(self, sm: messaging.SubMaster) -> tuple[float, float, custom.LongitudinalPlanSP.SpeedLimit.Source]:
-    """Get limit solutions from each data source"""
+    """
+    Get speed limit solutions from all data sources according to policy.
+
+    Args:
+      sm: SubMaster instance containing message data
+
+    Returns:
+      Tuple of (speed_limit, distance, source) from selected source
+    """
     self._get_from_car_state(sm)
     self._get_from_map_data(sm)
 
@@ -179,6 +271,13 @@ class SpeedLimitResolver:
     return speed_limit, distance, source
 
   def update(self, v_ego: float, sm: messaging.SubMaster) -> None:
+    """
+    Main update method to process new vehicle speed and sensor data.
+
+    Args:
+      v_ego: Current vehicle speed in m/s
+      sm: SubMaster instance with message data
+    """
     self.v_ego = v_ego
     self.update_params()
 
