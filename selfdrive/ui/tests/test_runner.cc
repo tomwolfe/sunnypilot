@@ -1,25 +1,17 @@
 #define CATCH_CONFIG_RUNNER
 #include "catch2/catch.hpp"
 
-#include <QApplication>
-#include <QDebug>
-#include <QDir>
-#include <QTranslator>
+#include <iostream>
+#include <string>
 
 int main(int argc, char **argv) {
-  // unit tests for Qt
-  QApplication app(argc, argv);
-
-  QString language_file = "main_test_en";
+  // Unit tests for Raylib UI implementation
+  
+  std::string language_file = "main_test_en";
   // FIXME: pytest-cpp considers this print as a test case
-  qDebug() << "Loading language:" << language_file;
+  std::cout << "Loading language: " << language_file << std::endl;
 
-  QTranslator translator;
-  QString translationsPath = QDir::cleanPath(qApp->applicationDirPath() + "/../translations");
-  if (!translator.load(language_file, translationsPath)) {
-    qDebug() << "Failed to load translation file!";
-  }
-  app.installTranslator(&translator);
+  // Translation system would need to be implemented without Qt if needed
 
   const int res = Catch::Session().run(argc, argv);
   return (res < 0xff ? res : 0xff);

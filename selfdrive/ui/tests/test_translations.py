@@ -36,7 +36,7 @@ class TestTranslations:
   def test_unfinished_translations(self):
     cur_translations = self._read_translation_file(TRANSLATIONS_DIR, self.file)
     assert UNFINISHED_TRANSLATION_TAG not in cur_translations, \
-                    f"{self.file} ({self.name}) translation file has unfinished translations. Finish translations or mark them as completed in Qt Linguist"
+                    f"{self.file} ({self.name}) translation file has unfinished translations. Finish translations or mark them as completed"
 
   def test_vanished_translations(self):
     cur_translations = self._read_translation_file(TRANSLATIONS_DIR, self.file)

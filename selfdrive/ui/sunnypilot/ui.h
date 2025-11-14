@@ -8,12 +8,46 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <vector>
 
-#include "selfdrive/ui/sunnypilot/qt/network/sunnylink/models/user_model.h"
-#include "selfdrive/ui/sunnypilot/qt/network/sunnylink/models/role_model.h"
-#include "selfdrive/ui/sunnypilot/qt/network/sunnylink/models/sponsor_role_model.h"
 #include "selfdrive/ui/ui.h"
-#include "selfdrive/ui/qt/util.h"
+#include "selfdrive/ui/raylib/raylib_ui_state_full.h"
+
+// Define SunnyLink models with basic structures (to be updated with full definitions later)
+enum class RoleType {
+  Admin,
+  Sponsor,
+  User
+};
+
+enum class SponsorTier {
+  Free,
+  Tier1,
+  Tier2,
+  Tier3
+};
+
+struct RoleModel {
+  RoleType roleType;
+
+  template<typename T>
+  T as() const {
+    // Basic casting functionality
+    return T();
+  }
+};
+
+struct SponsorRoleModel {
+  RoleType roleType;
+  SponsorTier roleTier;
+
+  SponsorRoleModel(RoleType type, SponsorTier tier) : roleType(type), roleTier(tier) {}
+};
+
+struct UserModel {
+  std::string user_id;
+};
 
 enum OnroadTimerStatusToggle {
   NONE,
@@ -21,11 +55,10 @@ enum OnroadTimerStatusToggle {
   RESUME
 };
 
+// Since UIState is now the Raylib version, UIStateSP extends that
 class UIStateSP : public UIState {
-  Q_OBJECT
-
 public:
-  UIStateSP(QObject *parent = 0);
+  UIStateSP();
   void updateStatus() override;
   inline bool engaged() const override {
     return scene.started && (
@@ -69,19 +102,16 @@ public:
   }
   void reset_onroad_sleep_timer(OnroadTimerStatusToggle toggleTimerStatus = OnroadTimerStatusToggle::NONE);
 
-signals:
-  void sunnylinkRoleChanged(bool subscriber);
-  void sunnylinkRolesChanged(std::vector<RoleModel> roles);
-  void sunnylinkDeviceUsersChanged(std::vector<UserModel> users);
-  void uiUpdate(const UIStateSP &s);
-
-private slots:
-  void update() override;
+  // Callbacks for events (replacing Qt signals)
+  std::function<void(bool)> sunnylinkRoleChangedCallback;
+  std::function<void(std::vector<RoleModel>)> sunnylinkRolesChangedCallback;
+  std::function<void(std::vector<UserModel>)> sunnylinkDeviceUsersChangedCallback;
+  std::function<void(const UIStateSP&)> uiUpdateCallbackSP;
 
 private:
   std::vector<RoleModel> sunnylinkRoles = {};
   std::vector<UserModel> sunnylinkUsers = {};
-  ParamWatcher *param_watcher;
+  void* param_watcher; // Replace with appropriate non-Qt type
 };
 
 UIStateSP *uiStateSP();
@@ -89,10 +119,8 @@ inline UIStateSP *uiState() { return uiStateSP(); };
 
 // device management class
 class DeviceSP : public Device {
-  Q_OBJECT
-
 public:
-  DeviceSP(QObject *parent = 0);
+  DeviceSP();
 
 private:
   Params params;

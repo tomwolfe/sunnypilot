@@ -8,6 +8,8 @@
 #include "selfdrive/ui/sunnypilot/ui.h"
 
 #include "common/watchdog.h"
+#include "common/params.h"
+#include "selfdrive/ui/raylib/raylib_ui_state_full.h"
 
 void UIStateSP::updateStatus() {
   UIState::updateStatus();
@@ -22,7 +24,7 @@ void UIStateSP::updateStatus() {
   }
 }
 
-UIStateSP::UIStateSP(QObject *parent) : UIState(parent) {
+UIStateSP::UIStateSP() {
   sm = std::make_unique<SubMaster>(std::vector<const char*>{
     "modelV2", "controlsState", "liveCalibration", "radarState", "deviceState",
     "pandaStates", "carParams", "driverMonitoringState", "carState", "driverStateV2",
@@ -32,30 +34,28 @@ UIStateSP::UIStateSP(QObject *parent) : UIState(parent) {
     "carStateSP", "liveParameters", "liveMapDataSP", "carParamsSP"
   });
 
-  // update timer
-  timer = new QTimer(this);
-  QObject::connect(timer, &QTimer::timeout, this, &UIStateSP::update);
-  timer->start(1000 / UI_FREQ);
+  // Initialize timer values in the Raylib version
+  last_update_time = GetTime();
+  update_interval = 1.0f / UI_FREQ;
 
-  // Param watcher for UIScene param updates
-  param_watcher = new ParamWatcher(this);
-  connect(param_watcher, &ParamWatcher::paramChanged, [=](const QString &param_name, const QString &param_value) {
-    ui_update_params_sp(this);
-  });
-  param_watcher->addParam("DevUIInfo");
-  param_watcher->addParam("StandstillTimer");
+  // Param watcher implementation would need to be adapted
+  param_watcher = nullptr; // Replace with appropriate Raylib-compatible implementation
 }
 
 // This method overrides completely the update method from the parent class intentionally.
 void UIStateSP::update() {
-  update_sockets(this);
-  update_state(this);
+  update_sockets_raylib(this);
+  update_state_raylib(this);
   updateStatus();
 
   if (sm->frame % UI_FREQ == 0) {
     watchdog_kick(nanos_since_boot());
   }
-  emit uiUpdate(*this);
+  
+  // Call callbacks instead of Qt signals
+  if (uiUpdateCallbackSP) {
+    uiUpdateCallbackSP(*this);
+  }
 }
 
 void ui_update_params_sp(UIStateSP *s) {
@@ -89,9 +89,13 @@ void UIStateSP::reset_onroad_sleep_timer(OnroadTimerStatusToggle toggleTimerStat
   }
 }
 
-DeviceSP::DeviceSP(QObject *parent) : Device(parent) {
-  QObject::connect(uiStateSP(), &UIStateSP::uiUpdate, this, &DeviceSP::update);
-  QObject::connect(this, &Device::displayPowerChanged, this, &DeviceSP::handleDisplayPowerChanged);
+DeviceSP::DeviceSP() {
+  // Initialize awake state and other properties
+  awake = true;
+  interactive_timeout = 0;
+  offroad_brightness = BACKLIGHT_OFFROAD;
+  last_brightness = 0;
+  resetInteractiveTimeout();
 }
 
 UIStateSP *uiStateSP() {
@@ -101,12 +105,16 @@ UIStateSP *uiStateSP() {
 
 void UIStateSP::setSunnylinkRoles(const std::vector<RoleModel>& roles) {
   sunnylinkRoles = roles;
-  emit sunnylinkRolesChanged(roles);
+  if (sunnylinkRolesChangedCallback) {
+    sunnylinkRolesChangedCallback(roles);
+  }
 }
 
 void UIStateSP::setSunnylinkDeviceUsers(const std::vector<UserModel>& users) {
   sunnylinkUsers = users;
-  emit sunnylinkDeviceUsersChanged(users);
+  if (sunnylinkDeviceUsersChangedCallback) {
+    sunnylinkDeviceUsersChangedCallback(users);
+  }
 }
 
 DeviceSP *deviceSP() {
@@ -116,7 +124,8 @@ DeviceSP *deviceSP() {
 
 void DeviceSP::handleDisplayPowerChanged(bool on) {
   // if enabled, trigger offroad mode when device goes to sleep
-  if (params.get("DeviceBootMode") == "1" && not on) {
+  Params params;
+  if (params.get("DeviceBootMode") == "1" && !on) {
     params.putBool("OffroadMode", true);
   }
 }
