@@ -1,4 +1,4 @@
-Import('env', 'envCython', 'arch', 'msgq_python', 'common_python', 'np_version')
+Import('env', 'envCython', 'envCythonC', 'arch', 'msgq_python', 'common_python', 'np_version')
 
 gen = "c_generated_code"
 
@@ -82,7 +82,7 @@ acados_ocp_solver_common = File("#third_party/acados/acados_template/acados_solv
 libacados_ocp_solver_pxd = File(f'{gen}/acados_solver.pxd')
 libacados_ocp_solver_c = File(f'{gen}/acados_ocp_solver_pyx.c')
 
-lenv2 = envCython.Clone()
+lenv2 = envCythonC.Clone()
 lenv2["LIBPATH"] += [lib_solver[0].dir.abspath]
 lenv2["RPATH"] += [lenv2.Literal('\\$$ORIGIN')]
 lenv2.Command(libacados_ocp_solver_c,

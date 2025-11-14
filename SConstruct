@@ -252,6 +252,7 @@ envCython = env.Clone()
 envCython["CPPPATH"] += [py_include, np.get_include()]
 envCython["CCFLAGS"] += ["-Wno-#warnings", "-Wno-shadow", "-Wno-deprecated-declarations"]
 envCython["CCFLAGS"].remove("-Werror")
+envCython["CYTHONFLAGS"] = ["--cplus"]
 
 envCython["LIBS"] = []
 if arch == "Darwin":
@@ -261,6 +262,20 @@ else:
 
 np_version = SCons.Script.Value(np.__version__)
 Export('envCython', 'np_version')
+
+# Cython build environment for C-only files
+envCythonC = env.Clone()
+envCythonC["CPPPATH"] += [py_include, np.get_include()]
+envCythonC["CCFLAGS"] += ["-Wno-#warnings", "-Wno-shadow", "-Wno-deprecated-declarations"]
+envCythonC["CCFLAGS"].remove("-Werror")
+
+envCythonC["LIBS"] = []
+if arch == "Darwin":
+  envCythonC["LINKFLAGS"] = ["-bundle", "-undefined", "dynamic_lookup"] + darwin_rpath_link_flags
+else:
+  envCythonC["LINKFLAGS"] = ["-pthread", "-shared"]
+
+Export('envCythonC')
 
 # Qt build environment
 qt_env = env.Clone()
@@ -299,7 +314,7 @@ else:
 qt_env['QT3DIR'] = qt_env['QTDIR']
 qt_env.Tool('qt3')
 
-qt_env['CPPPATH'] += qt_dirs + ["#third_party/qrcode"]
+qt_env['CPPPATH'] += qt_dirs + ["#third_party/qrcode", "#selfdrive/ui/qt", "#selfdrive/ui/qt/widgets"]
 qt_flags = [
   "-D_REENTRANT",
   "-DQT_NO_DEBUG",
