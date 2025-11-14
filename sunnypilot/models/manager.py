@@ -49,33 +49,71 @@ class ModelManagerSP:
     return max(1, int(eta))  # Return at least 1 second if download is ongoing
 
   async def _download_file(self, url: str, path: str, model) -> None:
-    """Downloads a file with progress tracking"""
+    """Downloads a file with progress tracking and retry logic"""
     self._download_start_times[model.fileName] = time.monotonic()
 
-    async with aiohttp.ClientSession() as session:
-      async with session.get(url) as response:
-        response.raise_for_status()
-        total_size = int(response.headers.get("content-length", 0))
-        bytes_downloaded = 0
+    # Add headers to make request more robust
+    headers = {
+        'User-Agent': 'sunnypilot-model-downloader/1.0',
+        'Accept': '*/*',
+        'Accept-Encoding': 'identity',  # Avoid compression for proper progress tracking
+        'Connection': 'keep-alive'
+    }
 
-        with open(path, 'wb') as f:
-          async for chunk in response.content.iter_chunked(self._chunk_size):  # type: bytes
-            f.write(chunk)
-            bytes_downloaded += len(chunk)
+    max_retries = 3
+    for attempt in range(max_retries):
+      try:
+        async with aiohttp.ClientSession() as session:
+          async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=300)) as response:  # 5 minute timeout per file
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            bytes_downloaded = 0
 
-            if total_size > 0:
-              progress = (bytes_downloaded / total_size) * 100
-              model.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloading
-              model.downloadProgress.progress = progress
-              model.downloadProgress.eta = self._calculate_eta(model.fileName, progress)
-              self._report_status()
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(path), exist_ok=True)
 
-        # Clean up start time after download completes
-        del self._download_start_times[model.fileName]
+            with open(path, 'wb') as f:
+              async for chunk in response.content.iter_chunked(self._chunk_size):  # type: bytes
+                f.write(chunk)
+                bytes_downloaded += len(chunk)
+
+                if total_size > 0:
+                  progress = (bytes_downloaded / total_size) * 100
+                  model.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloading
+                  model.downloadProgress.progress = progress
+                  model.downloadProgress.eta = self._calculate_eta(model.fileName, progress)
+                  self._report_status()
+
+            # Clean up start time after download completes
+            del self._download_start_times[model.fileName]
+            return  # Success, exit the retry loop
+
+      except asyncio.TimeoutError:
+        cloudlog.warning(f"Download timeout for {model.fileName} (attempt {attempt + 1}/{max_retries})")
+        if attempt == max_retries - 1:  # Last attempt
+          raise
+      except aiohttp.ClientResponseError as e:
+        cloudlog.warning(f"HTTP error downloading {model.fileName}: {e.status} {e.message} (attempt {attempt + 1}/{max_retries})")
+        if e.status in [401, 403, 404]:  # Don't retry on these errors
+          raise
+        if attempt == max_retries - 1:  # Last attempt
+          raise
+      except aiohttp.ClientError as e:
+        cloudlog.warning(f"Network error downloading {model.fileName}: {str(e)} (attempt {attempt + 1}/{max_retries})")
+        if attempt == max_retries - 1:  # Last attempt
+          raise
+      except Exception as e:
+        cloudlog.warning(f"Unexpected error downloading {model.fileName}: {str(e)} (attempt {attempt + 1}/{max_retries})")
+        if attempt == max_retries - 1:  # Last attempt
+          raise
+      # Wait before retrying (with exponential backoff)
+      if attempt < max_retries - 1:
+        await asyncio.sleep(min(2 ** attempt, 10))  # Max 10 seconds between retries
 
   async def _process_artifact(self, artifact, destination_path: str) -> None:
     """Processes a single model download including verification"""
     if not artifact.downloadUri.uri:
+      cloudlog.warning(f"No download URI provided for artifact: {artifact.fileName}")
       return None
 
     url = artifact.downloadUri.uri
@@ -86,6 +124,7 @@ class ModelManagerSP:
     try:
       # Check existing file
       if os.path.exists(full_path) and await verify_file(full_path, expected_hash):
+        cloudlog.info(f"Using cached model file: {filename}")
         artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.cached
         artifact.downloadProgress.progress = 100
         artifact.downloadProgress.eta = 0
@@ -93,21 +132,29 @@ class ModelManagerSP:
         return
 
       # Download and verify
+      cloudlog.info(f"Starting download for {filename} from {url}")
       await self._download_file(url, full_path, artifact)
       if not await verify_file(full_path, expected_hash):
         raise ValueError(f"Hash validation failed for {filename}")
 
+      cloudlog.info(f"Successfully downloaded and verified {filename}")
       artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloaded
       artifact.downloadProgress.eta = 0
       self._report_status()
 
     except Exception as e:
-      cloudlog.error(f"Error downloading {filename}: {str(e)}")
+      cloudlog.error(f"Error processing artifact {filename}: {str(e)}")
       if os.path.exists(full_path):
-        os.remove(full_path)
+        try:
+          os.remove(full_path)
+          cloudlog.debug(f"Removed incomplete download file: {full_path}")
+        except OSError as rm_error:
+          cloudlog.warning(f"Failed to remove incomplete file {full_path}: {str(rm_error)}")
+
       artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.failed
       artifact.downloadProgress.eta = 0
-      self.selected_bundle.status = custom.ModelManagerSP.DownloadStatus.failed
+      if self.selected_bundle:  # Only update bundle status if we're currently downloading
+        self.selected_bundle.status = custom.ModelManagerSP.DownloadStatus.failed
       self._report_status()
       # Clean up start time if it exists
       self._download_start_times.pop(artifact.fileName, None)
@@ -157,7 +204,13 @@ class ModelManagerSP:
 
   def download(self, model_bundle: custom.ModelManagerSP.ModelBundle, destination_path: str) -> None:
     """Main entry point for downloading a model bundle"""
-    asyncio.run(self._download_bundle(model_bundle, destination_path))
+    cloudlog.info(f"Starting download of model bundle: {model_bundle.displayName} (index: {model_bundle.index})")
+    try:
+      asyncio.run(self._download_bundle(model_bundle, destination_path))
+      cloudlog.info(f"Successfully completed download of model bundle: {model_bundle.displayName}")
+    except Exception as e:
+      cloudlog.error(f"Failed to download model bundle {model_bundle.displayName}: {str(e)}")
+      raise
 
   def main_thread(self) -> None:
     """Main thread for model management"""

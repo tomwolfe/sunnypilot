@@ -30,17 +30,27 @@ METADATA_PATH = Path(__file__).parent / '../models/supercombo_metadata.pkl'
 ModelManager = custom.ModelManagerSP
 
 
+import asyncio
+
 async def verify_file(file_path: str, expected_hash: str) -> bool:
   """Verifies file hash against expected hash"""
   if not os.path.exists(file_path):
     return False
 
-  sha256_hash = hashlib.sha256()
-  with open(file_path, "rb") as file:
-    for chunk in iter(lambda: file.read(4096), b""):
-      sha256_hash.update(chunk)
+  # Use async file reading to avoid blocking
+  def _compute_hash():
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as file:
+      for chunk in iter(lambda: file.read(8192), b""):  # Larger chunks for better performance
+        sha256_hash.update(chunk)
+    return sha256_hash.hexdigest().lower()
 
-  return sha256_hash.hexdigest().lower() == expected_hash.lower()
+  try:
+    actual_hash = await asyncio.get_event_loop().run_in_executor(None, _compute_hash)
+    return actual_hash == expected_hash.lower()
+  except Exception as e:
+    cloudlog.warning(f"Error computing hash for {file_path}: {str(e)}")
+    return False
 
 
 def is_bundle_version_compatible(bundle: dict) -> bool:

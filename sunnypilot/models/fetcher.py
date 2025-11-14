@@ -129,7 +129,14 @@ class ModelFetcher:
     Returns None on transport errors. Raises on 404 and other fatal HTTP errors.
     """
     try:
-      response = requests.get(self.MODEL_URL, timeout=10)
+      # Add user-agent to better identify requests
+      headers = {
+        'User-Agent': 'sunnypilot-model-fetcher/1.0',
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache'
+      }
+
+      response = requests.get(self.MODEL_URL, timeout=15, headers=headers)  # Increase timeout
 
       # Explicitly handle 404 differently
       if response.status_code == 404:
@@ -141,17 +148,27 @@ class ModelFetcher:
 
       json_data = response.json()
       self.model_cache.set(json_data)
-      cloudlog.debug("Successfully updated models cache")
+      cloudlog.info("Successfully updated models cache with %d bundles", len(json_data.get("bundles", [])))
       return self.model_parser.parse_models(json_data)
 
     except ConnectionError as e:
-      cloudlog.warning(f"DNS/connection error while fetching models: {e}")
+      cloudlog.warning(f"DNS/connection error while fetching models: {e}. This may be due to network connectivity issues.")
+      self.params.put_bool("NetworkError", True)
     except SSLError as e:
-      cloudlog.warning(f"SSL error while fetching models: {e}")
-    except RequestException as e:
-      cloudlog.warning(f"Request transport error while fetching models: {e}")
+      cloudlog.warning(f"SSL error while fetching models: {e}. The SSL certificate may be invalid or expired.")
+      self.params.put_bool("SSLError", True)
+    except requests.exceptions.Timeout as e:
+      cloudlog.warning(f"Timeout while fetching models from {self.MODEL_URL}: {e}. Server may be slow or network connection may be poor.")
+      self.params.put_bool("TimeoutError", True)
+    except requests.exceptions.RequestException as e:
+      cloudlog.warning(f"Request error while fetching models: {e}")
+      self.params.put_bool("RequestError", True)
+    except ValueError as e:  # Specifically for JSON decode errors
+      cloudlog.error(f"Invalid JSON response from {self.MODEL_URL}: {e}")
+      self.params.put_bool("JSONError", True)
     except Exception as e:
       cloudlog.exception(f"Unexpected error fetching models: {e}")
+      self.params.put_bool("ModelError", True)
 
     return None
 
@@ -161,17 +178,26 @@ class ModelFetcher:
 
     if cached_data and not is_expired:
       cloudlog.debug("Using valid cached models data")
-      return self.model_parser.parse_models(cached_data)
+      bundles = self.model_parser.parse_models(cached_data)
+      cloudlog.info(f"Returning {len(bundles)} cached model bundles")
+      return bundles
 
     fetched_bundles = self._fetch_and_cache_models()
     if fetched_bundles is not None:
+      cloudlog.info(f"Successfully fetched {len(fetched_bundles)} model bundles from remote")
       return fetched_bundles
 
     if not cached_data:
       cloudlog.warning("Failed to fetch fresh data and no cache available")
+      # Clear any error flags that might be misleading when there's no cache
+      for error_key in ["NetworkError", "SSLError", "TimeoutError", "RequestError", "JSONError", "ModelError"]:
+        self.params.delete(error_key)
+      return []
 
     cloudlog.warning("Failed to fetch fresh data. Using expired cache as fallback")
-    return self.model_parser.parse_models(cached_data)
+    bundles = self.model_parser.parse_models(cached_data)
+    cloudlog.info(f"Returning {len(bundles)} expired cached model bundles as fallback")
+    return bundles
 
 if __name__ == "__main__":
   params = Params()

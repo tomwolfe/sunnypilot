@@ -865,15 +865,15 @@ DEPARTING</source>
 <context>
     <name>LateralPanel</name>
     <message>
-        <source>Modular Assistive Driving System (MADS)</source>
+        <source>Modular Assistive Driving System (MADS) - Advanced Driver Assistance</source>
         <translation>모듈형 보조 주행 시스템 (MADS)</translation>
     </message>
     <message>
-        <source>Enable the beloved MADS feature. Disable toggle to revert back to stock sunnypilot engagement/disengagement.</source>
+        <source>Activates MADS, providing enhanced control over engagement and disengagement. Disabling this reverts to standard sunnypilot behavior.</source>
         <translation>인기 있는 MADS 기능을 활성화하세요. 토글을 끄면 기본 sunnypilot 작동/해제 방식으로 되돌아갑니다.</translation>
     </message>
     <message>
-        <source>Customize MADS</source>
+        <source>MADS Settings</source>
         <translation>MADS 사용자 지정</translation>
     </message>
     <message>
@@ -975,11 +975,11 @@ DEPARTING</source>
         <translation>메인 크루즈와 연동</translation>
     </message>
     <message>
-        <source>Unified Engagement Mode (UEM)</source>
+        <source>Unified Engagement Mode (UEM) - Engage with Cruise Control</source>
         <translation>통합 주행 보조 모드 (UEM)</translation>
     </message>
     <message>
-        <source>Steering Mode on Brake Pedal</source>
+        <source>Steering Behavior on Brake Press</source>
         <translation>브레이크 조작 시 조향 모드</translation>
     </message>
     <message>
@@ -987,7 +987,7 @@ DEPARTING</source>
         <translation>참고: LFA/LKAS 버튼이 없는 차량의 경우, 이 기능을 비활성화하면 조향 제어가 작동하지 않습니다.</translation>
     </message>
     <message>
-        <source>Engage lateral and longitudinal control with cruise control engagement.</source>
+        <source>When enabled, both lateral (steering) and longitudinal (speed) control activate simultaneously with cruise control engagement.</source>
         <translation>크루즈 컨트롤을 켜면 가감속과 조향을 동시에 시작합니다.</translation>
     </message>
     <message>

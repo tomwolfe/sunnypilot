@@ -299,12 +299,20 @@ class ModularAssistiveDrivingSystem:
       CS: Current car state
     """
     if not self.enabled_toggle:
+      # When MADS is not enabled, ensure we don't interfere with standard operation
+      self.enabled = False
+      self.active = False
+      self.selfdrive.enabled_prev = self.selfdrive.enabled
       return
 
     self.update_events(CS)
 
     if not self.CP.passive and self.selfdrive.initialized:
       self.enabled, self.active = self.state_machine.update()
+    else:
+      # Ensure MADS is properly disabled when car is passive or selfdrive not initialized
+      self.enabled = False
+      self.active = False
 
     # Copy of previous SelfdriveD states for MADS events handling
     self.selfdrive.enabled_prev = self.selfdrive.enabled
