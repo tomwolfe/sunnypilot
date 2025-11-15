@@ -5,9 +5,26 @@ import logging
 
 def safe_exp(x, out=None):
   # -11 is around 10**14, more causes float16 overflow
-  if np.any(x > 11):
-    logging.warning(f"safe_exp clipping detected: max input value was {np.max(x)}")
-  return np.exp(np.clip(x, -np.inf, 11), out=out)
+  # Check if x is a tinygrad tensor by checking for attributes not available in numpy arrays
+  # tinygrad tensors don't have the same API as numpy arrays
+  if hasattr(x, 'numpy') and hasattr(x, 'exp') and hasattr(x, 'clip'):
+    # This is a tinygrad tensor - doesn't support 'out' parameter
+    if out is not None:
+      # For tinygrad tensor, we can't use out parameter, so issue a warning
+      # logging.warning("out parameter not supported for tinygrad tensors in safe_exp")
+      pass
+
+    # Convert to numpy to check condition, then back to tensor for computation
+    if (x > 11).any().numpy().item():
+      logging.warning(f"safe_exp clipping detected: max input value was {(x).max().numpy().item()}")
+
+    clipped_x = x.clip(-float('inf'), 11)
+    return clipped_x.exp()
+  else:
+    # This is a numpy array
+    if np.any(x > 11):
+      logging.warning(f"safe_exp clipping detected: max input value was {np.max(x)}")
+    return np.exp(np.clip(x, -np.inf, 11), out=out)
 
 def sigmoid(x):
   return 1. / (1. + safe_exp(-x))

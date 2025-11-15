@@ -46,7 +46,8 @@ class PIDController:
       else:
         return np.interp(self.speed, self._k_p[0], self._k_p[1])
     else:
-      return self._k_p[1][1] if hasattr(self._k_p[1], '__len__') else self._k_p
+      # If _k_p[1] is a list/array, get the first element; otherwise return _k_p directly
+      return self._k_p[1][0] if hasattr(self._k_p[1], '__len__') and len(self._k_p[1]) > 0 else self._k_p
 
   def _get_k_i(self):
     if self._use_interp:
@@ -57,7 +58,8 @@ class PIDController:
       else:
         return np.interp(self.speed, self._k_i[0], self._k_i[1])
     else:
-      return self._k_i[1][1] if hasattr(self._k_i[1], '__len__') else self._k_i
+      # If _k_i[1] is a list/array, get the first element; otherwise return _k_i directly
+      return self._k_i[1][0] if hasattr(self._k_i[1], '__len__') and len(self._k_i[1]) > 0 else self._k_i
 
   def _get_k_d(self):
     if self._use_interp:
@@ -68,7 +70,8 @@ class PIDController:
       else:
         return np.interp(self.speed, self._k_d[0], self._k_d[1])
     else:
-      return self._k_d[1][1] if hasattr(self._k_d[1], '__len__') else self._k_d
+      # If _k_d[1] is a list/array, get the first element; otherwise return _k_d directly
+      return self._k_d[1][0] if hasattr(self._k_d[1], '__len__') and len(self._k_d[1]) > 0 else self._k_d
 
   def reset(self):
     self.p = 0.0
