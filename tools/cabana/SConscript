@@ -16,9 +16,10 @@ if arch == "Darwin":
     # On macOS, we might need to link additional frameworks for Raylib
     cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
 else:
-    # For other architectures, use the system path approach
+    # For Linux/other architectures, link the local raylib library
     cabana_raylib_env.Append(LIBPATH=['#third_party/raylib/' + arch.lower()])
-    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL', 'X11', 'Xrandr', 'Xi', 'Xcursor', 'Xinerama', 'Xss'])
+    # Use only the essential libraries, X11 libraries can cause issues in headless CI environments
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL'])
 
 # All Qt dependencies have been removed and replaced with Raylib implementations
 
