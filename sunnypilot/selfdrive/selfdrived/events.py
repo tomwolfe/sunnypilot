@@ -232,7 +232,7 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       "Experimental Mode Confirmation Required",
       "Press distance button for 5 seconds again to confirm",
       AlertStatus.normal, AlertSize.mid,
-      Priority.MED, VisualAlert.steerRequired, AudibleAlert.warningSoft, 3.),
+      Priority.MID, VisualAlert.steerRequired, AudibleAlert.warningSoft, 3.),
   },
 
   EventNameSP.e2eChime: {
