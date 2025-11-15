@@ -1,4 +1,5 @@
 #include "raylib_chartswidget.h"
+#include <cmath>  // for sin function
 
 ChartsWidget::ChartsWidget(void* parent) {
     // Initialize with default chart configuration
@@ -6,7 +7,7 @@ ChartsWidget::ChartsWidget(void* parent) {
     chart_config_.x_label = "Time (s)";
     chart_config_.y_label = "Value";
     chart_config_.auto_scale = true;
-    chart_config_.line_color = BLUE;
+    chart_config_.line_color = RAYLIB_BLUE;
     chart_config_.show_grid = true;
     chart_config_.show_legend = true;
     
@@ -14,7 +15,7 @@ ChartsWidget::ChartsWidget(void* parent) {
     for (int i = 0; i < 100; ++i) {
         ChartPoint point;
         point.x = i * 0.1;  // 0.1 second intervals
-        point.y = sin(i * 0.1) * 50 + 50;  // Sine wave
+        point.y = std::sin(i * 0.1) * 50 + 50;  // Sine wave
         point.msg_id = {0, 0x100};  // Example message ID
         point.signal_name = "STEERING_ANGLE";
         data_points_.push_back(point);
@@ -59,10 +60,10 @@ void ChartsWidget::render(const Rectangle& bounds) {
     
     // Draw panel background
     DrawRectangleRec(bounds, Color{250, 250, 250, 255}); // Light background
-    DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, LIGHTGRAY);
+    DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
 
     // Draw title
-    DrawText(chart_config_.title.c_str(), bounds.x + 10, bounds.y + 5, 16, DARKGRAY);
+    DrawText(chart_config_.title.c_str(), bounds.x + 10, bounds.y + 5, 16, RAYLIB_DARKGRAY);
 
     // Calculate chart area (leaving space for labels and legend)
     Rectangle chart_area = {bounds.x + 60, bounds.y + 30, bounds.width - 80, bounds.height - 70};
@@ -71,8 +72,8 @@ void ChartsWidget::render(const Rectangle& bounds) {
     }
 
     // Draw chart background
-    DrawRectangleRec(chart_area, RAYWHITE);
-    DrawRectangleLines(chart_area.x, chart_area.y, chart_area.width, chart_area.height, GRAY);
+    DrawRectangleRec(chart_area, RAYLIB_RAYWHITE);
+    DrawRectangleLines(chart_area.x, chart_area.y, chart_area.width, chart_area.height, RAYLIB_GRAY);
 
     // Draw grid if enabled
     if (chart_config_.show_grid) {
@@ -91,13 +92,13 @@ void ChartsWidget::render(const Rectangle& bounds) {
     }
 
     // Draw axis labels
-    DrawText(chart_config_.x_label.c_str(), 
+    DrawText(chart_config_.x_label.c_str(),
              bounds.x + bounds.width / 2 - MeasureText(chart_config_.x_label.c_str(), 10) / 2,
-             bounds.y + bounds.height - 20, 10, DARKGRAY);
+             bounds.y + bounds.height - 20, 10, RAYLIB_DARKGRAY);
              
     // Rotate and draw Y label
     // For simplicity, we'll just draw it normally; in a full implementation we'd rotate it
-    DrawText(chart_config_.y_label.c_str(), bounds.x + 5, bounds.y + bounds.height / 2, 10, DARKGRAY);
+    DrawText(chart_config_.y_label.c_str(), bounds.x + 5, bounds.y + bounds.height / 2, 10, RAYLIB_DARKGRAY);
 }
 
 void ChartsWidget::drawChartGrid(const Rectangle& chart_area) {
@@ -105,45 +106,45 @@ void ChartsWidget::drawChartGrid(const Rectangle& chart_area) {
     int grid_lines = 10;
     for (int i = 1; i < grid_lines; ++i) {
         float y = chart_area.y + (chart_area.height * i) / grid_lines;
-        DrawLine(chart_area.x, y, chart_area.x + chart_area.width, y, LIGHTGRAY);
+        DrawLine(chart_area.x, y, chart_area.x + chart_area.width, y, RAYLIB_LIGHTGRAY);
     }
 
     // Draw vertical grid lines
     for (int i = 1; i < grid_lines; ++i) {
         float x = chart_area.x + (chart_area.width * i) / grid_lines;
-        DrawLine(x, chart_area.y, x, chart_area.y + chart_area.height, LIGHTGRAY);
+        DrawLine(x, chart_area.y, x, chart_area.y + chart_area.height, RAYLIB_LIGHTGRAY);
     }
 }
 
 void ChartsWidget::drawChartAxes(const Rectangle& chart_area) {
     // Draw X and Y axes
-    DrawLine(chart_area.x, chart_area.y + chart_area.height, 
-             chart_area.x + chart_area.width, chart_area.y + chart_area.height, BLACK);  // X-axis
-    DrawLine(chart_area.x, chart_area.y, 
-             chart_area.x, chart_area.y + chart_area.height, BLACK);  // Y-axis
-    
+    DrawLine(chart_area.x, chart_area.y + chart_area.height,
+             chart_area.x + chart_area.width, chart_area.y + chart_area.height, RAYLIB_BLACK);  // X-axis
+    DrawLine(chart_area.x, chart_area.y,
+             chart_area.x, chart_area.y + chart_area.height, RAYLIB_BLACK);  // Y-axis
+
     // Draw axis ticks and labels
     // X-axis labels
     for (int i = 0; i <= 5; ++i) {
         float x = chart_area.x + (chart_area.width * i) / 5;
-        DrawLine(x, chart_area.y + chart_area.height, x, chart_area.y + chart_area.height + 5, BLACK);
-        
+        DrawLine(x, chart_area.y + chart_area.height, x, chart_area.y + chart_area.height + 5, RAYLIB_BLACK);
+
         double value = x_min_ + (x_max_ - x_min_) * i / 5;
         char label[32];
         snprintf(label, sizeof(label), "%.1f", value);
-        DrawText(label, x - 10, chart_area.y + chart_area.height + 8, 8, DARKGRAY);
+        DrawText(label, x - 10, chart_area.y + chart_area.height + 8, 8, RAYLIB_DARKGRAY);
     }
-    
+
     // Y-axis labels
     for (int i = 0; i <= 5; ++i) {
         float y = chart_area.y + chart_area.height - (chart_area.height * i) / 5;
-        DrawLine(chart_area.x - 5, y, chart_area.x, y, BLACK);
-        
+        DrawLine(chart_area.x - 5, y, chart_area.x, y, RAYLIB_BLACK);
+
         double value = y_min_ + (y_max_ - y_min_) * i / 5;
         char label[32];
         snprintf(label, sizeof(label), "%.1f", value);
         int label_width = MeasureText(label, 8);
-        DrawText(label, chart_area.x - label_width - 8, y - 5, 8, DARKGRAY);
+        DrawText(label, chart_area.x - label_width - 8, y - 5, 8, RAYLIB_DARKGRAY);
     }
 }
 
@@ -201,21 +202,21 @@ void ChartsWidget::drawLegend(const Rectangle& bounds) {
     
     // Background for legend
     DrawRectangleRec(legend_area, Color{240, 240, 240, 255});
-    DrawRectangleLines(legend_area.x, legend_area.y, legend_area.width, legend_area.height, LIGHTGRAY);
-    
+    DrawRectangleLines(legend_area.x, legend_area.y, legend_area.width, legend_area.height, RAYLIB_LIGHTGRAY);
+
     int signal_index = 0;
     int current_x = legend_area.x + 5;
-    
+
     for (const auto& [signal_name, points] : signal_data_) {
         if (signal_index >= 5) break;  // Limit number of items in legend for space
-        
+
         Color color = signal_colors_[signal_index % signal_colors_.size()];
-        
+
         // Draw color indicator
         DrawRectangle(current_x, legend_area.y + 10, 10, 10, color);
-        
+
         // Draw signal name
-        DrawText(signal_name.c_str(), current_x + 15, legend_area.y + 8, 10, DARKGRAY);
+        DrawText(signal_name.c_str(), current_x + 15, legend_area.y + 8, 10, RAYLIB_DARKGRAY);
         
         current_x += 15 + MeasureText(signal_name.c_str(), 10) + 10;
         signal_index++;

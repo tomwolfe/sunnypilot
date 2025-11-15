@@ -92,5 +92,4 @@ private:
     std::vector<Color> signal_colors_ = {
         RAYLIB_BLUE, RAYLIB_RED, RAYLIB_GREEN, RAYLIB_YELLOW, RAYLIB_PURPLE, RAYLIB_ORANGE, RAYLIB_PINK, RAYLIB_DARKBLUE, RAYLIB_DARKGREEN, RAYLIB_MAROON
     };
-    int next_color_index_ = 0;
 };
