@@ -183,3 +183,81 @@ DBCManager *dbc() {
   static DBCManager dbc_manager;
   return &dbc_manager;
 }
+
+// Implementation of DBCManager emit methods
+void DBCManager::emitSignalAdded(MessageId id, const cabana::Signal *sig) {
+  for (auto& callback : signalAddedCallbacks) {
+    callback(id, sig);
+  }
+}
+
+void DBCManager::emitSignalRemoved(const cabana::Signal *sig) {
+  for (auto& callback : signalRemovedCallbacks) {
+    callback(sig);
+  }
+}
+
+void DBCManager::emitSignalUpdated(const cabana::Signal *sig) {
+  for (auto& callback : signalUpdatedCallbacks) {
+    callback(sig);
+  }
+}
+
+void DBCManager::emitMsgUpdated(MessageId id) {
+  for (auto& callback : msgUpdatedCallbacks) {
+    callback(id);
+  }
+}
+
+void DBCManager::emitMsgRemoved(MessageId id) {
+  for (auto& callback : msgRemovedCallbacks) {
+    callback(id);
+  }
+}
+
+void DBCManager::emitDBCFileChanged() {
+  for (auto& callback : dbcFileChangedCallbacks) {
+    callback();
+  }
+}
+
+void DBCManager::emitMaskUpdated() {
+  for (auto& callback : maskUpdatedCallbacks) {
+    callback();
+  }
+}
+
+int DBCManager::connectSignalAdded(const SignalAddedCallback& callback) {
+  signalAddedCallbacks.push_back(callback);
+  return signalAddedCallbacks.size() - 1; // Return connection ID
+}
+
+int DBCManager::connectSignalRemoved(const SignalRemovedCallback& callback) {
+  signalRemovedCallbacks.push_back(callback);
+  return signalRemovedCallbacks.size() - 1;
+}
+
+int DBCManager::connectSignalUpdated(const SignalUpdatedCallback& callback) {
+  signalUpdatedCallbacks.push_back(callback);
+  return signalUpdatedCallbacks.size() - 1;
+}
+
+int DBCManager::connectMsgUpdated(const MsgUpdatedCallback& callback) {
+  msgUpdatedCallbacks.push_back(callback);
+  return msgUpdatedCallbacks.size() - 1;
+}
+
+int DBCManager::connectMsgRemoved(const MsgRemovedCallback& callback) {
+  msgRemovedCallbacks.push_back(callback);
+  return msgRemovedCallbacks.size() - 1;
+}
+
+int DBCManager::connectDBCFileChanged(const DBCFileChangedCallback& callback) {
+  dbcFileChangedCallbacks.push_back(callback);
+  return dbcFileChangedCallbacks.size() - 1;
+}
+
+int DBCManager::connectMaskUpdated(const MaskUpdatedCallback& callback) {
+  maskUpdatedCallbacks.push_back(callback);
+  return maskUpdatedCallbacks.size() - 1;
+}

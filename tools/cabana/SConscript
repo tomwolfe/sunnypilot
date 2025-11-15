@@ -44,11 +44,13 @@ raylib_cabana_src = [
     'raylib_devicestream.cc',  # Use Raylib implementation instead of streams/devicestream.cc
     'streams/livestream.cc',  # Core functionality without Qt dependencies
     'streams/abstractstream.cc',  # Core functionality without Qt dependencies
+    'streams/abstract_stream_base.cc',  # Core base implementations
     'raylib_replaystream.cc',  # Use Raylib implementation instead of streams/replaystream.cc
     'streams/routes.cc',
     'dbc/dbc.cc',
     'dbc/dbcfile.cc',
     'dbc/dbcmanager.cc',
+    'utils/util.cc',
     'utils/export.cc',
 
     # Additional components
