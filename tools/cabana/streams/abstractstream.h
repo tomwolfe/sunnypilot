@@ -18,39 +18,8 @@
 #include "tools/replay/util.h"
 #include "tools/cabana/streams/abstract_stream_base.h"  // Include our Raylib-compatible base
 
-struct CanData {
-  void compute(const MessageId &msg_id, const uint8_t *dat, const int size, double current_sec,
-               double playback_speed, const std::vector<uint8_t> &mask, double in_freq = 0);
-
-  double ts = 0.;
-  uint32_t count = 0;
-  double freq = 0;
-  std::vector<uint8_t> dat;
-  std::vector<SimpleColor> colors;  // Using SimpleColor instead of QColor
-
-  struct ByteLastChange {
-    double ts = 0;
-    int delta = 0;
-    int same_delta_counter = 0;
-    bool suppressed = false;
-  };
-  std::vector<ByteLastChange> last_changes;
-  std::vector<std::array<uint32_t, 8>> bit_flip_counts;
-  double last_freq_update_ts = 0;
-};
-
-struct CanEvent {
-  uint8_t src;
-  uint32_t address;
-  uint64_t mono_time;
-  uint8_t size;
-  uint8_t dat[];
-};
-
-struct CompareCanEvent {
-  constexpr bool operator()(const CanEvent *const e, uint64_t ts) const { return e->mono_time < ts; }
-  constexpr bool operator()(uint64_t ts, const CanEvent *const e) const { return ts < e->mono_time; }
-};
+// CanData, CanEvent, and CompareCanEvent are defined in abstract_stream_base.h to avoid redefinition
+// This file should only include the class definitions that inherit from the base
 
 typedef std::unordered_map<MessageId, std::vector<const CanEvent *>> MessageEventsMap;
 using CanEventIter = std::vector<const CanEvent *>::const_iterator;

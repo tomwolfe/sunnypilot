@@ -5,12 +5,17 @@
 #include <vector>
 
 #include "tools/cabana/utils/util.h"
+
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
+
+// Now include the capnp-dependent headers
 #include "tools/replay/logreader.h"
 #include "tools/cabana/streams/replaystream.h"
-#include "raylib.h"
 
-// Enum for different camera view types
-enum class VisionStreamType {
+// Enum for different camera view types - avoid conflict with other VisionStreamType
+enum class CabanaVisionStreamType {
   ROAD = 0,
   DRIVER = 1,
   WIDE_ROAD = 2
@@ -21,7 +26,7 @@ class TimeSlider {
 public:
   TimeSlider(float x, float y, float width, float height);
   void update();
-  void render();
+  void render(const Rectangle& bounds = {});
   void handleInput();
   
   double getCurrentSecond() const { return current_value_ / factor_; }
@@ -45,7 +50,7 @@ private:
 // Stream camera view for Raylib-based UI
 class StreamCameraView {
 public:
-  StreamCameraView(std::string stream_name, VisionStreamType stream_type, void* parent = nullptr);
+  StreamCameraView(std::string stream_name, CabanaVisionStreamType stream_type, void* parent = nullptr);
   void render(const Rectangle& bounds);
   void update();
   void handleInput();
@@ -59,10 +64,10 @@ private:
   void drawTime(const Rectangle& rect, double seconds);
 
   std::string stream_name_;
-  VisionStreamType stream_type_;
+  CabanaVisionStreamType stream_type_; // Used in parsing and display logic
   bool is_paused_overlay_visible_ = false;
   std::map<uint64_t, Image> thumbnails_;  // Simplified thumbnail storage
-  double thumbnail_display_time_ = -1;
+  double thumbnail_display_time_ = -1; // Used in drawTime method
 };
 
 // Raylib-based VideoWidget
@@ -78,7 +83,7 @@ private:
   void createPlaybackController();
   void createSpeedDropdown();
   void loopPlaybackClicked();
-  void vipcAvailableStreamsUpdated(const std::set<VisionStreamType>& streams);
+  void vipcAvailableStreamsUpdated(const std::set<CabanaVisionStreamType>& streams);
   void showRouteInfo();
   std::string formatTime(double sec, bool include_milliseconds = false);
 

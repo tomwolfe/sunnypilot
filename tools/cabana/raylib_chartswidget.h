@@ -5,8 +5,11 @@
 #include <memory>
 #include <map>
 
-#include "raylib.h"
 #include "tools/cabana/dbc/dbcmanager.h"
+
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
 
 // Data structure for chart points
 struct ChartPoint {
@@ -24,7 +27,7 @@ struct ChartConfig {
     bool auto_scale = true;
     double min_y = 0.0;
     double max_y = 100.0;
-    Color line_color = BLUE;
+    Color line_color = RAYLIB_BLUE;
     bool show_grid = true;
     bool show_legend = true;
 };
@@ -87,7 +90,7 @@ private:
     
     // Colors for different signals
     std::vector<Color> signal_colors_ = {
-        BLUE, RED, GREEN, YELLOW, PURPLE, ORANGE, PINK, DARKBLUE, DARKGREEN, MAROON
+        RAYLIB_BLUE, RAYLIB_RED, RAYLIB_GREEN, RAYLIB_YELLOW, RAYLIB_PURPLE, RAYLIB_ORANGE, RAYLIB_PINK, RAYLIB_DARKBLUE, RAYLIB_DARKGREEN, RAYLIB_MAROON
     };
     int next_color_index_ = 0;
 };

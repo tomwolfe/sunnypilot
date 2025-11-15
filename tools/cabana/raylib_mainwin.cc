@@ -81,16 +81,16 @@ void CabanaMainWindow::update() {
 void CabanaMainWindow::render() {
   // Begin drawing
   BeginDrawing();
-  ClearBackground(RAYWHITE);
+  ClearBackground(RAYLIB_RAYWHITE);
 
   // Render menu bar
-  DrawRectangleRec(menu_bar_rect, LIGHTGRAY);
-  DrawText("Cabana - CAN Bus Analyzer", 10, 10, 16, DARKGRAY);
-  
+  DrawRectangleRec(menu_bar_rect, RAYLIB_LIGHTGRAY);
+  DrawText("Cabana - CAN Bus Analyzer", 10, 10, 16, RAYLIB_DARKGRAY);
+
   // Render status bar
-  DrawRectangleRec(status_bar_rect, LIGHTGRAY);
+  DrawRectangleRec(status_bar_rect, RAYLIB_LIGHTGRAY);
   if (!status_message.empty()) {
-    DrawText(status_message.c_str(), 10, 775, 12, DARKGRAY);
+    DrawText(status_message.c_str(), 10, 775, 12, RAYLIB_DARKGRAY);
   }
 
   // Render UI components based on visibility settings

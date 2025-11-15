@@ -6,8 +6,9 @@
 // Forward declarations for UI components
 class VideoWidget;
 class MessagesWidget;
-// Include Raylib for basic types like Rectangle
-#include "raylib.h"
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
 
 class CabanaUIElement {
 public:

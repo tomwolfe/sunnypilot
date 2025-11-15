@@ -6,7 +6,9 @@
 #include <string>
 #include <utility>
 
-#include "raylib.h"
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
 #include "tools/cabana/dbc/dbc.h"
 #include "tools/cabana/raylib_settings.h"
 

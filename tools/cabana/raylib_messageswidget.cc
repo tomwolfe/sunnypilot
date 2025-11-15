@@ -149,69 +149,69 @@ MessagesWidget::~MessagesWidget() = default;
 
 void MessagesWidget::update() {
   // Update internal state
-  filtered_items_ = model_->getItems();
   handleScrolling();
 }
 
 void MessagesWidget::render(const Rectangle& bounds) {
   if (!is_visible) return;
-  
+
   bounds_ = bounds;
-  
+
   // Draw panel background
   DrawRectangleRec(bounds, Color{240, 240, 240, 255}); // Light gray
-  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, LIGHTGRAY);
+  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
 
   // Draw title
-  DrawText(title.c_str(), bounds.x + 10, bounds.y + 5, 14, DARKGRAY);
-  
+  DrawText(title.c_str(), bounds.x + 10, bounds.y + 5, 14, RAYLIB_DARKGRAY);
+
   // Draw header row
   float header_height = 20;
   DrawRectangle(bounds.x, bounds.y + 20, bounds.width, header_height, Color{200, 200, 200, 255});
-  
+
   // Draw header labels
   const char* headers[] = {"Name", "Source", "Address", "Node", "Freq", "Count", "Data"};
   float col_positions[] = {0.0f, 0.15f, 0.30f, 0.45f, 0.60f, 0.75f, 0.90f};
   float col_widths[] = {0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.10f};
-  
+
   for (int i = 0; i < 7; ++i) {
     float x = bounds.x + bounds.width * col_positions[i];
     float width = bounds.width * col_widths[i];
-    DrawText(headers[i], x + 5, bounds.y + 22, 12, DARKGRAY);
-    DrawLine(bounds.x + x + width, bounds.y + 20, bounds.x + x + width, bounds.y + 20 + header_height, GRAY);
+    DrawText(headers[i], x + 5, bounds.y + 22, 12, RAYLIB_DARKGRAY);
+    DrawLine(bounds.x + x + width, bounds.y + 20, bounds.x + x + width, bounds.y + 20 + header_height, RAYLIB_GRAY);
   }
-  
+
   // Draw messages
+  const auto& model_items = model_->getItems();
   float yPos = bounds.y + 40 + scroll_offset;
   int displayedCount = 0;
   const int maxDisplay = static_cast<int>((bounds.height - 45) / 20);
-  
-  for (size_t i = 0; i < filtered_items_.size() && displayedCount < maxDisplay; ++i) {
+
+  for (size_t i = 0; i < model_items.size() && displayedCount < maxDisplay; ++i) {
     if (yPos > bounds.y + 40 && yPos < bounds.y + bounds.height) {
-      drawRow(i, yPos, bounds, filtered_items_[i]);
+      drawRow(i, yPos, bounds, model_items[i]);
       yPos += 20;
       displayedCount++;
     } else if (yPos < bounds.y + 40) {
       yPos += 20;
     }
   }
-  
+
   // Draw scroll indicator
-  if (!filtered_items_.empty()) {
-    float scroll_ratio = -scroll_offset / (filtered_items_.size() * 20.0f - bounds.height + 45);
+  if (!model_items.empty()) {
+    float scroll_ratio = -scroll_offset / (model_items.size() * 20.0f - bounds.height + 45);
     float scrollbar_height = bounds.height * 0.1f;
     if (scrollbar_height < 20.0f) scrollbar_height = 20.0f;
     if (scrollbar_height > bounds.height - 45) scrollbar_height = bounds.height - 45;
-    
+
     float scrollbar_y = bounds.y + 40 + (bounds.height - 85) * scroll_ratio;
-    
-    DrawRectangle(bounds.x + bounds.width - 15, scrollbar_y, 10, scrollbar_height, GRAY);
+
+    DrawRectangle(bounds.x + bounds.width - 15, scrollbar_y, 10, scrollbar_height, RAYLIB_GRAY);
   }
 }
 
 void MessagesWidget::drawRow(int index, float yPos, const Rectangle& bounds, const MessageListModel::Item& item) {
-  Color textColor = (index == selected_message_index) ? BLUE : DARKGRAY;
-  Color bgColor = (index == selected_message_index) ? Color{200, 200, 255, 255} : RAYWHITE;
+  Color textColor = (index == selected_message_index) ? RAYLIB_BLUE : RAYLIB_DARKGRAY;
+  Color bgColor = (index == selected_message_index) ? Color{200, 200, 255, 255} : RAYLIB_RAYWHITE;
 
   // Draw row background if selected
   if (index == selected_message_index) {
@@ -221,11 +221,13 @@ void MessagesWidget::drawRow(int index, float yPos, const Rectangle& bounds, con
   // Draw row data
   std::string address_str = "0x" + std::to_string(item.id.address);
   std::string source_str = std::to_string(item.id.src);
-  
-  const std::string* values[] = {&item.name, &source_str, &address_str, &item.node, &std::string("10Hz"), &std::string("100"), &std::string("00 00 00 00")};
+  std::string freq_str = "10Hz";
+  std::string count_str = "100";
+  std::string data_str = "00 00 00 00";
+
+  const std::string* values[] = {&item.name, &source_str, &address_str, &item.node, &freq_str, &count_str, &data_str};
   float col_positions[] = {0.0f, 0.15f, 0.30f, 0.45f, 0.60f, 0.75f, 0.90f};
-  float col_widths[] = {0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.10f};
-  
+
   for (int i = 0; i < 7; ++i) {
     float x = bounds.x + bounds.width * col_positions[i] + 5;
     DrawText(values[i]->c_str(), static_cast<int>(x), static_cast<int>(yPos), 10, textColor);
@@ -237,13 +239,14 @@ void MessagesWidget::handleInput() {
     Vector2 mousePos = GetMousePosition();
     if (CheckCollisionPointRec(mousePos, bounds_)) {
       // Calculate which message was clicked based on scroll position
+      const auto& model_items = model_->getItems();
       float relativeY = mousePos.y - bounds_.y - 40; // Adjust for header
       int messageIndex = static_cast<int>((relativeY - scroll_offset) / 20); // Approximate message height
-      
-      if (messageIndex >= 0 && messageIndex < static_cast<int>(filtered_items_.size())) {
+
+      if (messageIndex >= 0 && messageIndex < static_cast<int>(model_items.size())) {
         selected_message_index = messageIndex;
         if (onMsgSelectionChanged) {
-          onMsgSelectionChanged(filtered_items_[messageIndex].id);
+          onMsgSelectionChanged(model_items[messageIndex].id);
         }
       }
     }
@@ -254,16 +257,17 @@ void MessagesWidget::handleInput() {
 }
 
 void MessagesWidget::handleScrolling() {
+  const auto& model_items = model_->getItems();
   if (IsKeyDown(KEY_UP) || GetMouseWheelMove() > 0) {
     scroll_offset += 20;
     if (scroll_offset > 0) scroll_offset = 0;
   }
   if (IsKeyDown(KEY_DOWN) || GetMouseWheelMove() < 0) {
     scroll_offset -= 20;
-    float maxScroll = -static_cast<int>(filtered_items_.size()) * 20 + bounds_.height - 45;
+    float maxScroll = -static_cast<int>(model_items.size()) * 20 + bounds_.height - 45;
     if (scroll_offset < maxScroll) scroll_offset = maxScroll;
   }
-  
+
   // Mouse drag scrolling
   if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
     Vector2 current_mouse = GetMousePosition();
@@ -275,11 +279,11 @@ void MessagesWidget::handleScrolling() {
     } else if (is_dragging) {
       float deltaY = current_mouse.y - last_mouse_pos.y;
       scroll_offset += deltaY;
-      
-      float maxScroll = -static_cast<int>(filtered_items_.size()) * 20 + bounds_.height - 45;
+
+      float maxScroll = -static_cast<int>(model_items.size()) * 20 + bounds_.height - 45;
       if (scroll_offset > 0) scroll_offset = 0;
       if (scroll_offset < maxScroll) scroll_offset = maxScroll;
-      
+
       last_mouse_pos = current_mouse;
     }
   } else {
@@ -288,8 +292,9 @@ void MessagesWidget::handleScrolling() {
 }
 
 void MessagesWidget::selectMessage(const MessageId &message_id) {
-  for (size_t i = 0; i < filtered_items_.size(); ++i) {
-    if (filtered_items_[i].id == message_id) {
+  const auto& model_items = model_->getItems();
+  for (size_t i = 0; i < model_items.size(); ++i) {
+    if (model_items[i].id == message_id) {
       selected_message_index = i;
       // Scroll to make the selected message visible
       float item_pos = i * 20 + scroll_offset;
@@ -305,14 +310,14 @@ void MessagesWidget::selectMessage(const MessageId &message_id) {
 
 void MessagesWidget::updateTitle() {
   // Update title based on current state
-  title = "MESSAGES (" + std::to_string(filtered_items_.size()) + ")";
+  title = "MESSAGES (" + std::to_string(model_->getItems().size()) + ")";
   if (onTitleChanged) {
     onTitleChanged(title);
   }
 }
 
 const std::vector<MessageListModel::Item>& MessagesWidget::getItems() const {
-  return filtered_items_;
+  return model_->getItems();
 }
 
 void MessagesWidget::setModel(std::unique_ptr<MessageListModel> model) {

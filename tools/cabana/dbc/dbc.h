@@ -17,7 +17,27 @@ constexpr int CAN_MAX_DATA_BYTES = 64;
 
 struct MessageId {
   uint8_t source = 0;
+  uint8_t src = 0;  // Alias for source field
   uint32_t address = 0;
+
+  // Constructor to keep source and src in sync
+  MessageId() = default;
+
+  MessageId(uint8_t s, uint32_t addr) : source(s), src(s), address(addr) {}
+
+  // Assignment operator to keep source and src in sync
+  MessageId& operator=(const MessageId& other) {
+    source = other.source;
+    src = other.source;  // Keep in sync with source
+    address = other.address;
+    return *this;
+  }
+
+  // Helper method to update both source and src together
+  void setSource(uint8_t s) {
+    source = s;
+    src = s;
+  }
 
   std::string toString() const {
     char buffer[32];
@@ -46,6 +66,16 @@ struct MessageId {
 struct MessageIdHash {
   std::size_t operator()(const MessageId &k) const noexcept {
     return std::hash<uint8_t>{}(k.source) ^ (std::hash<uint32_t>{}(k.address) << 1);
+  }
+};
+
+// Specialization for std::hash - this is what's missing
+namespace std {
+  template<>
+  struct hash<MessageId> {
+    std::size_t operator()(const MessageId &k) const noexcept {
+      return MessageIdHash{}(k);
+    }
   };
 };
 

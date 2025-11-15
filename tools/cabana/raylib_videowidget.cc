@@ -24,23 +24,24 @@ void TimeSlider::update() {
   }
 }
 
-void TimeSlider::render() {
+void TimeSlider::render(const Rectangle& bounds) {
+  Rectangle render_bounds = bounds.x != 0 || bounds.y != 0 || bounds.width != 0 || bounds.height != 0 ? bounds : bounds_;
   // Draw slider background
-  DrawRectangleRec(bounds_, LIGHTGRAY);
-  
+  DrawRectangleRec(render_bounds, RAYLIB_LIGHTGRAY);
+
   // Draw filled portion
-  float fill_width = ((current_value_ - min_) / (max_ - min_)) * bounds_.width;
-  Rectangle fill_rect = {bounds_.x, bounds_.y, fill_width, bounds_.height};
-  DrawRectangleRec(fill_rect, BLUE);
-  
+  float fill_width = ((current_value_ - min_) / (max_ - min_)) * render_bounds.width;
+  Rectangle fill_rect = {render_bounds.x, render_bounds.y, fill_width, render_bounds.height};
+  DrawRectangleRec(fill_rect, RAYLIB_BLUE);
+
   // Draw thumb
-  float thumb_x = bounds_.x + fill_width - 3;  // Small adjustment for thumb position
-  Rectangle thumb = {thumb_x, bounds_.y - 2, 6, bounds_.height + 4};
-  DrawRectangleRec(thumb, DARKBLUE);
-  
+  float thumb_x = render_bounds.x + fill_width - 3;  // Small adjustment for thumb position
+  Rectangle thumb = {thumb_x, render_bounds.y - 2, 6, render_bounds.height + 4};
+  DrawRectangleRec(thumb, RAYLIB_DARKBLUE);
+
   // Draw time markers (simple implementation)
-  DrawLine(bounds_.x, bounds_.y - 5, bounds_.x, bounds_.y + bounds_.height + 5, GRAY);
-  DrawLine(bounds_.x + bounds_.width, bounds_.y - 5, bounds_.x + bounds_.width, bounds_.y + bounds_.height + 5, GRAY);
+  DrawLine(render_bounds.x, render_bounds.y - 5, render_bounds.x, render_bounds.y + render_bounds.height + 5, RAYLIB_GRAY);
+  DrawLine(render_bounds.x + render_bounds.width, render_bounds.y - 5, render_bounds.x + render_bounds.width, render_bounds.y + render_bounds.height + 5, RAYLIB_GRAY);
 }
 
 void TimeSlider::handleInput() {
@@ -48,7 +49,7 @@ void TimeSlider::handleInput() {
 }
 
 // StreamCameraView implementation
-StreamCameraView::StreamCameraView(std::string stream_name, VisionStreamType stream_type, void* parent)
+StreamCameraView::StreamCameraView(std::string stream_name, CabanaVisionStreamType stream_type, void* parent)
   : stream_name_(stream_name), stream_type_(stream_type) {
   // Initialize camera view
 }
@@ -56,17 +57,22 @@ StreamCameraView::StreamCameraView(std::string stream_name, VisionStreamType str
 void StreamCameraView::render(const Rectangle& bounds) {
   // Draw camera view background
   DrawRectangleRec(bounds, Color{30, 30, 30, 255}); // Dark background
-  
+
   // Draw placeholder video content
   const char* camera_text = "CAMERA VIEW";
   int text_width = MeasureText(camera_text, 20);
   int text_x = bounds.x + (bounds.width - text_width) / 2;
   int text_y = bounds.y + bounds.height / 2 - 10;
-  DrawText(camera_text, text_x, text_y, 20, GRAY);
-  
+  DrawText(camera_text, text_x, text_y, 20, RAYLIB_GRAY);
+
   // Draw stream name
-  DrawText(stream_name_.c_str(), bounds.x + 10, bounds.y + 10, 14, LIGHTGRAY);
-  
+  DrawText(stream_name_.c_str(), bounds.x + 10, bounds.y + 10, 14, RAYLIB_LIGHTGRAY);
+
+  // Draw stream type indicator (using stream_type_)
+  const char* type_name = stream_type_ == CabanaVisionStreamType::ROAD ? "ROAD" :
+                          stream_type_ == CabanaVisionStreamType::DRIVER ? "DRIVER" : "WIDE ROAD";
+  DrawText(type_name, bounds.x + 10, bounds.y + 25, 10, RAYLIB_LIGHTGRAY);
+
   // Draw paused overlay if needed
   if (is_paused_overlay_visible_) {
     DrawRectangleRec(bounds, Color{0, 0, 0, 128}); // Semi-transparent overlay
@@ -74,7 +80,7 @@ void StreamCameraView::render(const Rectangle& bounds) {
     int p_text_width = MeasureText(paused_text, 30);
     int p_text_x = bounds.x + (bounds.width - p_text_width) / 2;
     int p_text_y = bounds.y + bounds.height / 2 - 15;
-    DrawText(paused_text, p_text_x, p_text_y, 30, WHITE);
+    DrawText(paused_text, p_text_x, p_text_y, 30, RAYLIB_WHITE);
   }
 }
 
@@ -109,6 +115,11 @@ void StreamCameraView::drawThumbnail(const Rectangle& bounds) {
 void StreamCameraView::drawScrubThumbnail(const Rectangle& bounds) {
   // Draw thumbnail during scrubbing
   // Implementation would handle scrubbing preview
+  // Reference thumbnail_display_time_ in implementation
+  if (thumbnail_display_time_ >= 0) {
+    // Show thumbnail at specific time if available
+    DrawText("Thumbnail", bounds.x + 10, bounds.y + 10, 10, RAYLIB_WHITE);
+  }
 }
 
 void StreamCameraView::drawTime(const Rectangle& rect, double seconds) {
@@ -123,13 +134,13 @@ void StreamCameraView::drawTime(const Rectangle& rect, double seconds) {
   
   // Draw background for text to make it more visible
   DrawRectangle(text_x - 5, text_y - 2, text_width + 10, 20, Color{0, 0, 0, 128});
-  DrawText(time_str, text_x, text_y, 16, WHITE);
+  DrawText(time_str, text_x, text_y, 16, RAYLIB_WHITE);
 }
 
 // VideoWidget implementation
 VideoWidget::VideoWidget(void* parent) {
   // Initialize with default values
-  cam_widget_ = std::make_unique<StreamCameraView>("Road Camera", VisionStreamType::ROAD, parent);
+  cam_widget_ = std::make_unique<StreamCameraView>("Road Camera", CabanaVisionStreamType::ROAD, parent);
 }
 
 void VideoWidget::update() {
@@ -166,7 +177,7 @@ void VideoWidget::render(const Rectangle& bounds) {
   
   // Draw panel background
   DrawRectangleRec(bounds, Color{50, 50, 50, 255}); // Dark gray
-  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, LIGHTGRAY);
+  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
 
   // Calculate video area (leaving space for controls)
   Rectangle video_rect = {bounds.x + 5, bounds.y + 5, bounds.width - 10, bounds.height - 60};
@@ -181,36 +192,36 @@ void VideoWidget::render(const Rectangle& bounds) {
   snprintf(time_text, sizeof(time_text), "%s / %s", 
            formatTime(current_time_).c_str(), 
            formatTime(total_time_).c_str());
-  DrawText(time_text, bounds.x + 10, bounds.y + bounds.height - 50, 14, WHITE);
+  DrawText(time_text, bounds.x + 10, bounds.y + bounds.height - 50, 14, RAYLIB_WHITE);
 
   // Draw playback controls
   float control_x = bounds.x + bounds.width - 150;
   float control_y = bounds.y + bounds.height - 50;
-  
+
   // Play/Pause button
   Rectangle play_button = {control_x, control_y, 30, 20};
-  DrawRectangleRec(play_button, is_playing_ ? RED : GREEN);
-  DrawText(is_playing_ ? "||" : ">", play_button.x + 10, play_button.y + 2, 14, WHITE);
-  
+  DrawRectangleRec(play_button, is_playing_ ? RAYLIB_RED : RAYLIB_GREEN);
+  DrawText(is_playing_ ? "||" : ">", play_button.x + 10, play_button.y + 2, 14, RAYLIB_WHITE);
+
   // Loop button
   Rectangle loop_button = {control_x + 35, control_y, 30, 20};
-  DrawRectangleRec(loop_button, is_looping_ ? YELLOW : GRAY);
-  DrawText("O", loop_button.x + 12, loop_button.y + 2, 14, is_looping_ ? BLACK : WHITE);
-  
+  DrawRectangleRec(loop_button, is_looping_ ? RAYLIB_YELLOW : RAYLIB_GRAY);
+  DrawText("O", loop_button.x + 12, loop_button.y + 2, 14, is_looping_ ? RAYLIB_BLACK : RAYLIB_WHITE);
+
   // Speed button
   Rectangle speed_button = {control_x + 70, control_y, 40, 20};
-  DrawRectangleRec(speed_button, GRAY);
-  DrawText(speed_options_[current_speed_index_].c_str(), speed_button.x + 2, speed_button.y + 2, 10, WHITE);
-  
+  DrawRectangleRec(speed_button, RAYLIB_GRAY);
+  DrawText(speed_options_[current_speed_index_].c_str(), speed_button.x + 2, speed_button.y + 2, 10, RAYLIB_WHITE);
+
   // Fullscreen button
   Rectangle fs_button = {control_x + 115, control_y, 30, 20};
-  DrawRectangleRec(fs_button, GRAY);
-  DrawText("[]", fs_button.x + 8, fs_button.y + 2, 14, WHITE);
+  DrawRectangleRec(fs_button, RAYLIB_GRAY);
+  DrawText("[]", fs_button.x + 8, fs_button.y + 2, 14, RAYLIB_WHITE);
   
   // Draw time slider if it exists
   if (slider_) {
     Rectangle slider_rect = {bounds.x + 50, bounds.y + bounds.height - 25, bounds.width - 100, 15};
-    slider_->render();
+    slider_->render(slider_rect);
   }
 }
 
@@ -273,7 +284,8 @@ void VideoWidget::handleInput() {
 }
 
 void VideoWidget::showThumbnail(double seconds) {
-  thumbnail_display_time_ = seconds;
+  // Thumbnail display functionality
+  // Implementation would show a thumbnail at the specified time based on video processing
   // Implementation would show a thumbnail at the specified time
 }
 
@@ -311,7 +323,7 @@ void VideoWidget::loopPlaybackClicked() {
   is_looping_ = !is_looping_;
 }
 
-void VideoWidget::vipcAvailableStreamsUpdated(const std::set<VisionStreamType>& streams) {
+void VideoWidget::vipcAvailableStreamsUpdated(const std::set<CabanaVisionStreamType>& streams) {
   // Handle available streams update
   // Implementation would update available camera options
 }

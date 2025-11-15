@@ -7,7 +7,9 @@
 
 #include "tools/cabana/dbc/dbcmanager.h" // This includes cereal/messaging/messaging.h
 #include "tools/cabana/streams/abstractstream.h"
-#include "raylib.h"
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
 
 // Message list model for Raylib-based UI
 class MessageListModel {
@@ -29,8 +31,8 @@ public:
   bool filterAndSort();
   void dbcModified();
   
-  std::vector<Item> getItems() const { return items_; }
-  void setItems(std::vector<Item> newItems) { items_ = newItems; }
+  const std::vector<Item>& getItems() const { return filtered_items_; }
+  void setItems(const std::vector<Item>& newItems) { items_ = newItems; filterAndSort(); }
   
   enum Column {
     NAME = 0,
@@ -49,6 +51,7 @@ private:
   std::vector<Item> items_;
   bool show_inactive_messages = true;
   
+  std::vector<Item> filtered_items_;
   std::map<int, std::string> filters_;
   std::set<MessageId> dbc_messages_;
   int sort_column = 0;
@@ -81,7 +84,6 @@ private:
   void handleScrolling();
   
   std::unique_ptr<MessageListModel> model_;
-  std::vector<MessageListModel::Item> filtered_items_;
   int selected_message_index = -1;
   float scroll_offset = 0.0f;
   std::string title = "MESSAGES";
