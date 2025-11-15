@@ -47,7 +47,7 @@ raylib_cabana_src = [
     'streams/abstract_stream_base.cc',  # Core base implementations
     'raylib_replaystream.cc',  # Use Raylib implementation instead of streams/replaystream.cc
     'streams/routes.cc',
-    'tools/replay/util.cc',
+    '../replay/util.cc',
     'dbc/dbc.cc',
     'dbc/dbcfile.cc',
     'dbc/dbcmanager.cc',
