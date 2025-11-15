@@ -13,6 +13,7 @@
 #include "common/params.h"
 #include "common/util.h"
 #include "system/hardware/hw.h"
+#include "common/transformations/orientation.h"
 
 // Custom color structure for Raylib
 struct UIColor {
@@ -55,8 +56,14 @@ const int UI_HEADER_HEIGHT = 420;
 const int UI_FREQ = 20; // Hz
 const int BACKLIGHT_OFFROAD = 50;
 
-// Define background colors
-extern const UIColor bg_colors[];
+// Define background colors using Raylib compatible format
+const UIColor bg_colors [] = {
+  [STATUS_DISENGAGED] = UIColor(0x17, 0x33, 0x49, 0xc8),
+  [STATUS_OVERRIDE] = UIColor(0x91, 0x9b, 0x95, 0xf1),
+  [STATUS_ENGAGED] = UIColor(0x17, 0x86, 0x44, 0xf1),
+  [STATUS_LAT_ONLY] = UIColor(0x00, 0xc8, 0xc8, 0xf1),
+  [STATUS_LONG_ONLY] = UIColor(0x96, 0x1C, 0xA8, 0xf1),
+};
 
 typedef enum UIStatus {
   STATUS_DISENGAGED,
@@ -66,19 +73,9 @@ typedef enum UIStatus {
   STATUS_LONG_ONLY,
 } UIStatus;
 
-const UIColor bg_colors [] = {
-  [STATUS_DISENGAGED] = UIColor(0x17, 0x33, 0x49, 0xc8),
-  [STATUS_OVERRIDE] = UIColor(0x91, 0x9b, 0x95, 0xf1),
-  [STATUS_ENGAGED] = UIColor(0x17, 0x86, 0x44, 0xf1),
-  [STATUS_LAT_ONLY] = UIColor(0x00, 0xc8, 0xc8, 0xf1),
-  [STATUS_LONG_ONLY] = UIColor(0x96, 0x1C, 0xA8, 0xf1),
-};
-
 typedef struct UIScene {
-  // Placeholder for calibration matrices - will be filled later
-  // For now, we'll use the same structure as before
-  float view_from_calib[9];
-  float view_from_wide_calib[9];
+  Eigen::Matrix3f view_from_calib = VIEW_FROM_DEVICE;
+  Eigen::Matrix3f view_from_wide_calib = VIEW_FROM_DEVICE;
   cereal::PandaState::PandaType pandaType;
 
   cereal::LongitudinalPersonality personality;
@@ -86,15 +83,15 @@ typedef struct UIScene {
   float light_sensor = -1;
   bool started, ignition, is_metric, recording_audio;
   uint64_t started_frame;
-  
+
   // Camera texture for road view
   Texture2D roadCameraTexture = {0};
   bool roadCameraValid = false;
-  
+
   // Camera texture for wide road view
   Texture2D wideRoadCameraTexture = {0};
   bool wideRoadCameraValid = false;
-  
+
   // Camera texture for driver monitoring
   Texture2D driverCameraTexture = {0};
   bool driverCameraValid = false;
@@ -129,7 +126,7 @@ public:
   void updateRoadCameraTexture();
   void updateWideRoadCameraTexture();
   void updateDriverCameraTexture();
-  
+
 protected:
   // Timer functionality using Raylib
   float last_update_time;

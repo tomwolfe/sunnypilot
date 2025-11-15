@@ -1,5 +1,5 @@
 #include "selfdrive/ui/raylib/raylib_settings_components.h"
-#include "selfdrive/ui/raylib/raylib_ui_state.h"
+#include "selfdrive/ui/raylib/raylib_ui_state_full.h"
 #include "selfdrive/ui/raylib/raylib_font_manager.h"
 #include "selfdrive/ui/raylib/raylib_texture_manager.h"
 

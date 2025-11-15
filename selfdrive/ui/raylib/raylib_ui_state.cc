@@ -1,4 +1,4 @@
-#include "selfdrive/ui/raylib/raylib_ui_state.h"
+#include "selfdrive/ui/ui.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,24 +12,6 @@
 
 // Import Eigen for matrix operations (from the original header)
 #include <eigen3/Eigen/Dense>
-
-// Define the calibration matrices (from the original header)
-const Eigen::Matrix3f VIEW_FROM_DEVICE = (Eigen::Matrix3f() <<
-  0.0, 1.0, 0.0,
-  0.0, 0.0, 1.0,
-  1.0, 0.0, 0.0).finished();
-
-const Eigen::Matrix3f FCAM_INTRINSIC_MATRIX = (Eigen::Matrix3f() <<
-  2648.0, 0.0, 1928.0 / 2,
-  0.0, 2648.0, 1208.0 / 2,
-  0.0, 0.0, 1.0).finished();
-
-// tici ecam focal probably wrong? magnification is not consistent across frame
-// Need to retrain model before this can be changed
-const Eigen::Matrix3f ECAM_INTRINSIC_MATRIX = (Eigen::Matrix3f() <<
-  567.0, 0.0, 1928.0 / 2,
-  0.0, 567.0, 1208.0 / 2,
-  0.0, 0.0, 1.0).finished();
 
 void update_sockets_raylib(UIState *s) {
   s->sm->update(0);

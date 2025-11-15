@@ -1,5 +1,5 @@
 #include "selfdrive/ui/raylib/raylib_extra_components.h"
-#include "selfdrive/ui/raylib/raylib_ui_state.h"
+#include "selfdrive/ui/raylib/raylib_ui_state_full.h"
 #include "selfdrive/ui/raylib/raylib_font_manager.h"
 #include "selfdrive/ui/raylib/raylib_texture_manager.h"
 
@@ -24,42 +24,38 @@ void DriverViewWindowElement::update(const UIState &s) {
 
 void DriverViewWindowElement::render() const {
   if (!isVisible) return;
-  
-  // Draw driver view background
-  drawRect(bounds, UIColor(0, 0, 0, 255));  // Black background for camera view
-  
-  renderCameraView();
-  renderOverlays();
+
+  // Render driver monitoring screen
+  renderDriverCamera();
+  renderDriverMonitoringData();
 }
 
-void DriverViewWindowElement::renderCameraView() const {
-  // Draw the camera feed (simulated)
-  // This would show the actual driver camera feed in a real implementation
-  Rectangle camera_rect = bounds;
-  DrawRectangleRec(camera_rect, (Color){20, 20, 20, 255});  // Dark gray as placeholder
-  
-  // Draw some elements to represent camera data
-  DrawCircle(bounds.x + bounds.width/2, bounds.y + bounds.height/2, 100, 
-             (Color){80, 80, 80, 200});  // Center point
+void DriverViewWindowElement::renderDriverCamera() const {
+  // Draw full-screen camera view for driver monitoring
+  Rectangle camera_rect = {bounds.x, bounds.y, bounds.width, bounds.height};
+  // In a real implementation, this would draw the actual driver camera feed
+  DrawRectangleRec(camera_rect, (Color){20, 20, 30, 255});  // Dark background
+
+  // Draw some mock driver camera elements for visualization
+  DrawCircle(bounds.width/2, bounds.height/2, 150, (Color){100, 100, 150, 200});  // Head position
+  DrawCircle(bounds.width/2 - 60, bounds.height/2 - 30, 20, (Color){255, 255, 255, 255});  // Left eye
+  DrawCircle(bounds.width/2 + 60, bounds.height/2 - 30, 20, (Color){255, 255, 255, 255});  // Right eye
+  DrawRectangle(bounds.width/2 - 40, bounds.height/2 + 30, 80, 20, (Color){200, 200, 200, 200});  // Mouth
+
+  // Draw exit button
+  Rectangle exit_btn = {bounds.x + 20, bounds.y + 20, 60, 60};
+  DrawRectangleRec(exit_btn, (Color){50, 50, 60, 200});
+  drawText("X", bounds.x + 35, bounds.y + 30, 36, UIColor(255, 255, 255, 255));
 }
 
-void DriverViewWindowElement::renderOverlays() const {
-  // Draw UI overlays on top of camera view
-  // Draw close button
-  Rectangle close_btn = {bounds.x + bounds.width - 70, bounds.y + 20, 50, 50};
-  DrawRectangleRec(close_btn, (Color){50, 50, 50, 200});
-  drawText("X", close_btn.x + 15, close_btn.y + 10, 30, UIColor(255, 255, 255, 255));
-  
-  // Draw other overlays like grid lines, etc.
-  for (int i = 1; i < 5; i++) {
-    int x = bounds.x + i * (bounds.width / 5);
-    DrawLine(x, bounds.y, x, bounds.y + bounds.height, (Color){100, 100, 100, 100});
-  }
-  
-  for (int i = 1; i < 3; i++) {
-    int y = bounds.y + i * (bounds.height / 3);
-    DrawLine(bounds.x, y, bounds.x + bounds.width, y, (Color){100, 100, 100, 100});
-  }
+void DriverViewWindowElement::renderDriverMonitoringData() const {
+  // Draw driver monitoring information overlay
+  // This would show drowsiness, attention status, etc.
+  std::string monitoring_status = "Driver Status: Attentive";
+  Rectangle status_rect = {bounds.x + 20, bounds.y + bounds.height - 80, bounds.width - 40, 60};
+  drawRect(status_rect, UIColor(30, 30, 40, 200));
+  drawText(monitoring_status.c_str(), bounds.x + 40, bounds.y + bounds.height - 60, 30,
+           UIColor(200, 255, 200, 255));
 }
 
 // Implementation of BodyWindowElement
@@ -74,28 +70,45 @@ void BodyWindowElement::update(const UIState &s) {
 
 void BodyWindowElement::render() const {
   if (!isVisible) return;
-  
-  // Draw body view background
-  drawRect(bounds, UIColor(35, 35, 45, 255));
-  
-  renderBodyView();
-  renderControls();
+
+  // Render body control screen elements
+  renderBodyControls();
+  renderVehicleStatus();
 }
 
-void BodyWindowElement::renderBodyView() const {
-  // Draw body view content - this is for non-car mode
-  std::string title = "Generic Robot Mode";
-  drawText(title.c_str(), bounds.x + 100, bounds.y + 100, 48, UIColor(255, 255, 255, 255));
-  
-  std::string desc = "Operating in generic robot mode";
-  drawText(desc.c_str(), bounds.x + 100, bounds.y + 180, 32, UIColor(200, 200, 200, 255));
+void BodyWindowElement::renderBodyControls() const {
+  // Draw body control interface - for controlling vehicle systems
+  Rectangle control_rect = {bounds.x + 50, bounds.y + 50, bounds.width - 100, bounds.height - 100};
+  drawRect(control_rect, UIColor(40, 40, 50, 200));
+
+  // Draw title
+  drawText("Body Controls", bounds.x + 100, bounds.y + 80, 48, UIColor(255, 255, 255, 255));
+
+  // Draw control buttons for various body functions
+  // Example: door locks, windows, trunk, etc.
+  std::vector<std::string> controls = {
+    "Door Locks", "Windows", "Trunk", "Horn", "Lights"
+  };
+
+  for (size_t i = 0; i < controls.size(); ++i) {
+    int btn_y = bounds.y + 180 + (i * 80);
+    Rectangle btn_rect = {bounds.x + 100, btn_y, bounds.width - 200, 60};
+
+    // Draw button background
+    DrawRectangleRec(btn_rect, (Color){60, 60, 70, 255});
+    DrawRectangleLinesEx(btn_rect, 2, (Color){100, 100, 110, 255});
+
+    // Draw button text
+    drawText(controls[i].c_str(), btn_rect.x + 20, btn_rect.y + 15, 30, UIColor(255, 255, 255, 255));
+  }
 }
 
-void BodyWindowElement::renderControls() const {
-  // Draw controls specific to body mode
-  Rectangle control_area = {bounds.x + 50, bounds.y + 300, bounds.width - 100, 400};
-  drawRect(control_area, UIColor(45, 45, 55, 200));
-  
-  drawText("Robot Controls", control_area.x + 20, control_area.y + 20, 36, 
-           UIColor(255, 255, 255, 255));
+void BodyWindowElement::renderVehicleStatus() const {
+  // Draw vehicle status information
+  drawText("Vehicle Status", bounds.x + 100, bounds.y + 650, 36, UIColor(200, 200, 200, 255));
+
+  // Draw additional vehicle information
+  // This would connect to actual vehicle data
+  std::string status_info = "Connected";
+  drawText(status_info.c_str(), bounds.x + 100, bounds.y + 700, 30, UIColor(200, 200, 200, 255));
 }

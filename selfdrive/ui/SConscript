@@ -28,7 +28,6 @@ def get_ui_sources(target, testing):
   sources += [
     "raylib/raylib_window.cc",
     "raylib/raylib_ui_state.cc",
-    "raylib/raylib_ui_state_full.cc",
     "raylib/raylib_ui_window.cc",
     "raylib/raylib_ui_components.cc",
     "raylib/raylib_settings_components.cc",

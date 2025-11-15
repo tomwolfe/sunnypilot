@@ -27,6 +27,8 @@ public:
   void render() const override;
 
 private:
+  UIStatus currentStatus = STATUS_ENGAGED; // Store status from update
+  UIScene currentScene = {}; // Store scene from update
   void renderDriverCamera() const;
   void renderUIElements() const;
   void renderAlerts() const;

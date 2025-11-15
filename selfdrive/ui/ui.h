@@ -9,7 +9,7 @@
 #include "common/params.h"
 #include "common/util.h"
 #include "system/hardware/hw.h"
-#include "selfdrive/ui/raylib/raylib_ui_state_full.h"
+#include "selfdrive/ui/raylib/raylib_ui_state.h"
 
 const int UI_BORDER_SIZE = 30;
 const int UI_HEADER_HEIGHT = 420;
@@ -34,6 +34,7 @@ const Eigen::Matrix3f ECAM_INTRINSIC_MATRIX = (Eigen::Matrix3f() <<
   0.0, 567.0, 1208.0 / 2,
   0.0, 0.0, 1.0).finished();
 
+// These values are maintained for compatibility with other code that uses the original UI
 typedef enum UIStatus {
   STATUS_DISENGAGED,
   STATUS_OVERRIDE,
@@ -52,24 +53,13 @@ const Color bg_colors [] = {
   [STATUS_LONG_ONLY] = (Color){0x96, 0x1C, 0xA8, 0xf1},
 };
 
-typedef struct UIScene {
-  Eigen::Matrix3f view_from_calib = VIEW_FROM_DEVICE;
-  Eigen::Matrix3f view_from_wide_calib = VIEW_FROM_DEVICE;
-  cereal::PandaState::PandaType pandaType;
-
-  cereal::LongitudinalPersonality personality;
-
-  float light_sensor = -1;
-  bool started, ignition, is_metric, recording_audio;
-  uint64_t started_frame;
-} UIScene;
-
 #ifdef SUNNYPILOT
 #include "sunnypilot/ui_scene.h"
 #define UIScene UISceneSP
 #endif
 
-// Just use the Raylib UI state which is defined in raylib_ui_state_full.h
+// UIState and Device functions are defined in raylib_ui_state_full.h
+// This file provides the interface that the rest of the system uses
 
 UIState *uiState();
 Device *device();

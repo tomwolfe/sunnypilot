@@ -2,22 +2,7 @@
 
 #include "selfdrive/ui/raylib/raylib_ui_window.h"
 
-// Driver view window UI element
-class DriverViewWindowElement : public UIElement {
-public:
-  DriverViewWindowElement(float x = 0, float y = 0, float width = 0, float height = 0);
-  void update(const UIState &s) override;
-  void render() const override;
-  
-  // Signal for when view is done/closed
-  std::function<void()> doneCallback;
-
-private:
-  void renderCameraView() const;
-  void renderOverlays() const;
-};
-
-// Body window UI element (for not-car mode)
+// Body UI element (for body control view)
 class BodyWindowElement : public UIElement {
 public:
   BodyWindowElement(float x = 0, float y = 0, float width = 0, float height = 0);
@@ -25,8 +10,28 @@ public:
   void render() const override;
 
 private:
-  bool isEnabled = false;
-  
-  void renderBodyView() const;
-  void renderControls() const;
+  float last_update_time = 0.0f;
+  bool needs_update = true;
+
+  void renderBodyControls() const;
+  void renderVehicleStatus() const;
+};
+
+// Driver monitoring view UI element
+class DriverViewWindowElement : public UIElement {
+public:
+  DriverViewWindowElement(float x = 0, float y = 0, float width = 0, float height = 0);
+  void update(const UIState &s) override;
+  void render() const override;
+
+  // Callback for when driver view is done
+  std::function<void()> doneCallback;
+
+private:
+  float last_update_time = 0.0f;
+  bool needs_update = true;
+  bool showDriverMonitoring = true;
+
+  void renderDriverCamera() const;
+  void renderDriverMonitoringData() const;
 };
