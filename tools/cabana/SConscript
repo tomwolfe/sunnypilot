@@ -78,7 +78,9 @@ cabana_raylib = cabana_raylib_env.Program('cabana', raylib_cabana_src,
 # cabana_raylib_env.Depends(assets, Glob('/assets/*', exclude=[assets, assets_src, "assets/assets.o"]))
 
 if GetOption('extras'):
-  cabana_raylib_env.Program('tests/test_cabana', ['tests/test_runner.cc', 'tests/test_cabana.cc', cabana_raylib], LIBS=base_libs + cabana_raylib_env['LIBS'])
+  # Build test with the same sources as the main cabana binary, excluding the main entry point
+  test_src = [src for src in raylib_cabana_src if src != 'cabana.cc']  # Exclude main entry point
+  cabana_raylib_env.Program('tests/test_cabana', ['tests/test_runner.cc', 'tests/test_cabana.cc'] + test_src, LIBS=replay_libs + base_libs + cabana_raylib_env['LIBS'])
 
 output_json_file = 'tools/cabana/dbc/car_fingerprint_to_dbc.json'
 generate_dbc = cabana_raylib_env.Command('#' + output_json_file,
