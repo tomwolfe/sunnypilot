@@ -1,11 +1,18 @@
 #include "tools/cabana/dbc/dbc.h"
 
 #include <algorithm>
+#include <functional>
+#include <cctype>
 
-#include "tools/cabana/utils/util.h"
+// Simple hash function for MessageId since we removed Qt's qHash
+size_t hash_combine(size_t seed, size_t h) {
+  return seed ^ (h + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+}
 
-uint qHash(const MessageId &item) {
-  return qHash(item.source) ^ qHash(item.address);
+size_t qHash(const MessageId &item) {
+  size_t h1 = std::hash<uint8_t>{}(item.source);
+  size_t h2 = std::hash<uint32_t>{}(item.address);
+  return hash_combine(h1, h2);
 }
 
 // cabana::Msg
@@ -22,7 +29,7 @@ cabana::Signal *cabana::Msg::addSignal(const cabana::Signal &sig) {
   return s;
 }
 
-cabana::Signal *cabana::Msg::updateSignal(const QString &sig_name, const cabana::Signal &new_sig) {
+cabana::Signal *cabana::Msg::updateSignal(const std::string &sig_name, const cabana::Signal &new_sig) {
   auto s = sig(sig_name);
   if (s) {
     *s = new_sig;
@@ -31,7 +38,7 @@ cabana::Signal *cabana::Msg::updateSignal(const QString &sig_name, const cabana:
   return s;
 }
 
-void cabana::Msg::removeSignal(const QString &sig_name) {
+void cabana::Msg::removeSignal(const std::string &sig_name) {
   auto it = std::find_if(sigs.begin(), sigs.end(), [&](auto &s) { return s->name == sig_name; });
   if (it != sigs.end()) {
     delete *it;
@@ -57,7 +64,7 @@ cabana::Msg &cabana::Msg::operator=(const cabana::Msg &other) {
   return *this;
 }
 
-cabana::Signal *cabana::Msg::sig(const QString &sig_name) const {
+cabana::Signal *cabana::Msg::sig(const std::string &sig_name) const {
   auto it = std::find_if(sigs.begin(), sigs.end(), [&](auto &s) { return s->name == sig_name; });
   return it != sigs.end() ? *it : nullptr;
 }
@@ -69,17 +76,17 @@ int cabana::Msg::indexOf(const cabana::Signal *sig) const {
   return -1;
 }
 
-QString cabana::Msg::newSignalName() {
-  QString new_name;
+std::string cabana::Msg::newSignalName() {
+  std::string new_name;
   for (int i = 1; /**/; ++i) {
-    new_name = QString("NEW_SIGNAL_%1").arg(i);
+    new_name = "NEW_SIGNAL_" + std::to_string(i);
     if (sig(new_name) == nullptr) break;
   }
   return new_name;
 }
 
 void cabana::Msg::update() {
-  if (transmitter.isEmpty()) {
+  if (transmitter.empty()) {
     transmitter = DEFAULT_NODE_NAME;
   }
   mask.assign(size, 0x00);
@@ -129,7 +136,7 @@ void cabana::Msg::update() {
 
 void cabana::Signal::update() {
   updateMsbLsb(*this);
-  if (receiver_name.isEmpty()) {
+  if (receiver_name.empty()) {
     receiver_name = DEFAULT_NODE_NAME;
   }
 
@@ -139,21 +146,38 @@ void cabana::Signal::update() {
   float s = 0.25 + 0.25 * (float)(hash & 0xff) / 255.0;
   float v = 0.75 + 0.25 * (float)((hash >> 8) & 0xff) / 255.0;
 
-  color = QColor::fromHsvF(h, s, v);
+  // Convert HSV to RGB color (replacing QColor::fromHsvF)
+  float c = v * s;
+  float x = c * (1 - fabs(fmod(h * 6, 2) - 1));
+  float m = v - c;
+  float r, g, b;
+
+  if (0 <= h && h < 1.0/6) { r = c; g = x; b = 0; }
+  else if (1.0/6 <= h && h < 2.0/6) { r = x; g = c; b = 0; }
+  else if (2.0/6 <= h && h < 3.0/6) { r = 0; g = c; b = x; }
+  else if (3.0/6 <= h && h < 4.0/6) { r = 0; g = x; b = c; }
+  else if (4.0/6 <= h && h < 5.0/6) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+
+  color = Color((int)((r + m) * 255), (int)((g + m) * 255), (int)((b + m) * 255));
   precision = std::max(num_decimals(factor), num_decimals(offset));
 }
 
-QString cabana::Signal::formatValue(double value, bool with_unit) const {
+std::string cabana::Signal::formatValue(double value, bool with_unit) const {
   // Show enum string
   int64_t raw_value = round((value - offset) / factor);
   for (const auto &[val, desc] : val_desc) {
     if (std::abs(raw_value - val) < 1e-6) {
-      return desc;
+      return std::string(desc);
     }
   }
 
-  QString val_str = QString::number(value, 'f', precision);
-  if (with_unit && !unit.isEmpty()) {
+  // Format number using standard C++ (replace QString::number)
+  char buffer[64];
+  snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
+  std::string val_str(buffer);
+
+  if (with_unit && !unit.empty()) {
     val_str += " " + unit;
   }
   return val_str;
@@ -220,4 +244,13 @@ void updateMsbLsb(cabana::Signal &s) {
     s.lsb = flipBitPos(flipBitPos(s.start_bit) + s.size - 1);
     s.msb = s.start_bit;
   }
+}
+
+// Hash function for strings to replace Qt's qHash
+size_t qHash(const std::string &str) {
+  size_t hash = 0;
+  for (char c : str) {
+    hash = hash * 31 + static_cast<unsigned char>(c);
+  }
+  return hash;
 }
