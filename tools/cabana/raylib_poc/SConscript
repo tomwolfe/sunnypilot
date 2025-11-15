@@ -11,7 +11,7 @@ cabana_raylib_env = env.Clone()
 
 # Add Raylib libraries
 if arch == "Darwin":
-    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c'])
+    cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'c'])
     # On macOS, we might need to link additional frameworks for Raylib
     cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
 else:
