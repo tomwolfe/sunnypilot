@@ -6,7 +6,9 @@ base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avforma
 # Create environment for Raylib Cabana
 cabana_raylib_env = env.Clone()
 
-# Add Raylib libraries
+# Add Raylib include path and libraries
+cabana_raylib_env.Append(CPPPATH=['#third_party/raylib/include'])
+
 if arch == "Darwin":
     cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c'])
     # On macOS, we might need to link additional frameworks for Raylib
