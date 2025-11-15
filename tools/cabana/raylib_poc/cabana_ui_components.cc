@@ -2,25 +2,6 @@
 #include "cabana_panels.h"
 #include <raylib.h>
 
-// Base UI element implementation
-CabanaUIElement::CabanaUIElement(float x, float y, float width, float height)
-  : bounds({x, y, width, height}), isVisible(true) {
-}
-
-void CabanaUIElement::setPosition(float x, float y) {
-  bounds.x = x;
-  bounds.y = y;
-}
-
-void CabanaUIElement::setSize(float width, float height) {
-  bounds.width = width;
-  bounds.height = height;
-}
-
-void CabanaUIElement::handleInput() {
-  // Default implementation - can be overridden by subclasses
-}
-
 // Implementation of the main UI window
 CabanaMainWindow::CabanaMainWindow() {
   // Initialize UI elements with screen dimensions
@@ -78,12 +59,8 @@ void CabanaMainWindow::render() {
     chartsPanel->render();
   }
   if (statusBar && statusBar->getVisible()) {
-    // Render status bar background
-    DrawRectangleRec(statusBar->getBounds(), Color{240, 240, 240, 255});
-    DrawRectangleLines(statusBar->getBounds().x, statusBar->getBounds().y,
-                      statusBar->getBounds().width, statusBar->getBounds().height, LIGHTGRAY);
-    DrawText("Status: Ready | FPS: 60", statusBar->getBounds().x + 5,
-             statusBar->getBounds().y + 5, 12, DARKGRAY);
+    // Status bar is now handled by its own render method
+    statusBar->render();
   }
 
   EndDrawing();
