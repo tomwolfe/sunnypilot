@@ -5,6 +5,10 @@
 #include <functional>
 #include <memory>
 
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"
+
 // Simplified Stream interface using Raylib
 class StreamInterface {
 public:

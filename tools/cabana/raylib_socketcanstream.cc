@@ -2,6 +2,11 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <stdexcept>  // for std::runtime_error
+
+// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
+#define OPENPILOT_RAYLIB
+#include "third_party/raylib/include/raylib.h"   // for raylib functions and colors
 
 // SocketCanStream implementation
 SocketCanStream::SocketCanStream(const SocketCanStreamConfig& config) : config(config) {
@@ -108,31 +113,31 @@ void OpenSocketCanWidget::render(float x, float y, float width, float height) {
     
     // Draw widget background
     DrawRectangle(windowX, windowY, windowWidth, windowHeight, Color{240, 240, 240, 255});
-    DrawRectangleLines(windowX, windowY, windowWidth, windowHeight, BLACK);
-    
+    DrawRectangleLines(windowX, windowY, windowWidth, windowHeight, RAYLIB_DARKGRAY);
+
     // Draw title
-    DrawText("SocketCAN Configuration", windowX + 10, windowY + 10, 14, BLACK);
-    
+    DrawText("SocketCAN Configuration", windowX + 10, windowY + 10, 14, RAYLIB_DARKGRAY);
+
     // Draw device label
-    DrawText("Device:", windowX + 20, windowY + 45, 12, BLACK);
-    
+    DrawText("Device:", windowX + 20, windowY + 45, 12, RAYLIB_DARKGRAY);
+
     // Draw device selection
-    DrawRectangle(deviceListX, deviceListY, deviceListWidth, deviceListHeight, WHITE);
-    DrawRectangleLines(deviceListX, deviceListY, deviceListWidth, deviceListHeight, BLACK);
-    
+    DrawRectangle(deviceListX, deviceListY, deviceListWidth, deviceListHeight, RAYLIB_RAYWHITE);
+    DrawRectangleLines(deviceListX, deviceListY, deviceListWidth, deviceListHeight, RAYLIB_DARKGRAY);
+
     if (!ui_config.availableDevices.empty() && selectedDeviceIndex < ui_config.availableDevices.size()) {
-        DrawText(ui_config.availableDevices[selectedDeviceIndex].c_str(), deviceListX + 5, deviceListY + 5, 10, BLACK);
+        DrawText(ui_config.availableDevices[selectedDeviceIndex].c_str(), deviceListX + 5, deviceListY + 5, 10, RAYLIB_DARKGRAY);
     } else {
-        DrawText("No devices available", deviceListX + 5, deviceListY + 5, 10, GRAY);
+        DrawText("No devices available", deviceListX + 5, deviceListY + 5, 10, RAYLIB_GRAY);
     }
-    
+
     // Draw refresh button
-    DrawRectangle(refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, GRAY);
-    DrawRectangleLines(refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, BLACK);
-    DrawText("Refresh", refreshButtonX + 15, refreshButtonY + 5, 12, WHITE);
-    
+    DrawRectangle(refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, RAYLIB_GRAY);
+    DrawRectangleLines(refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, RAYLIB_DARKGRAY);
+    DrawText("Refresh", refreshButtonX + 15, refreshButtonY + 5, 12, RAYLIB_RAYWHITE);
+
     // Draw dropdown indicator for device selection
-    DrawText("v", deviceListX + deviceListWidth - 15, deviceListY + 5, 10, BLACK);
+    DrawText("v", deviceListX + deviceListWidth - 15, deviceListY + 5, 10, RAYLIB_DARKGRAY);
 }
 
 void OpenSocketCanWidget::update() {
