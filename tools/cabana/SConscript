@@ -10,10 +10,14 @@ cabana_raylib_env = env.Clone()
 cabana_raylib_env.Append(CPPPATH=['#third_party/raylib/include'])
 
 if arch == "Darwin":
+    # On macOS, link the local raylib library
+    cabana_raylib_env.Append(LIBPATH=['#third_party/raylib/Darwin'])
     cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c'])
     # On macOS, we might need to link additional frameworks for Raylib
     cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
 else:
+    # For other architectures, use the system path approach
+    cabana_raylib_env.Append(LIBPATH=['#third_party/raylib/' + arch.lower()])
     cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL', 'X11', 'Xrandr', 'Xi', 'Xcursor', 'Xinerama', 'Xss'])
 
 # All Qt dependencies have been removed and replaced with Raylib implementations
