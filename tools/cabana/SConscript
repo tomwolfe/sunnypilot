@@ -47,7 +47,6 @@ raylib_cabana_src = [
     'streams/abstract_stream_base.cc',  # Core base implementations
     'raylib_replaystream.cc',  # Use Raylib implementation instead of streams/replaystream.cc
     'streams/routes.cc',
-    '../replay/util.cc',
     'dbc/dbc.cc',
     'dbc/dbcfile.cc',
     'dbc/dbcmanager.cc',
@@ -68,7 +67,7 @@ raylib_cabana_src = [
 
 # Build the Raylib Cabana executable
 cabana_raylib = cabana_raylib_env.Program('cabana', raylib_cabana_src,
-                                         LIBS=base_libs + cabana_raylib_env['LIBS'])
+                                         LIBS=base_libs + [replay_lib] + cabana_raylib_env['LIBS'])
 
 # Build assets (convert from QT resources to Raylib-compatible format if needed)
 # For now, we'll skip the assets build since it's QT-specific
