@@ -343,6 +343,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitPending @22;
     e2eChime @23;
     madsPaused @24; # Added for clearer MADS paused state feedback
+    experimentalModeConfirmationRequired @25;
   }
 }
 
