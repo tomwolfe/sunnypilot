@@ -1,7 +1,7 @@
 Import('env', 'arch', 'common', 'messaging', 'visionipc', 'replay_lib', 'cereal')
 
 # Base libraries needed (removing QT dependencies)
-base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0', 'ssl', 'crypto']
+base_libs = [common, messaging, cereal, visionipc, 'usb-1.0', 'ssl', 'crypto', 'z']
 
 # Create environment for Raylib Cabana
 cabana_raylib_env = env.Clone()
@@ -66,8 +66,9 @@ raylib_cabana_src = [
 ]
 
 # Build the Raylib Cabana executable
+replay_libs = [replay_lib] + ['avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'ncurses']
 cabana_raylib = cabana_raylib_env.Program('cabana', raylib_cabana_src,
-                                         LIBS=base_libs + [replay_lib] + cabana_raylib_env['LIBS'])
+                                         LIBS=replay_libs + base_libs + cabana_raylib_env['LIBS'])
 
 # Build assets (convert from QT resources to Raylib-compatible format if needed)
 # For now, we'll skip the assets build since it's QT-specific
