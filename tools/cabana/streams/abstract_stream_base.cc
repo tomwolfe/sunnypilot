@@ -98,7 +98,7 @@ void AbstractStreamBase::updateMasks() {
   // Implementation would go here
 }
 
-void CanData::compute(const MessageId &msg_id, const uint8_t *dat, const int size, double current_sec,
+void CanData::compute(const MessageId &msg_id, const uint8_t *data, const int size, double current_sec,
                       double playback_speed, const std::vector<uint8_t> &mask, double in_freq) {
   // Implementation would go here
 }

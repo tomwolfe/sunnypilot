@@ -45,7 +45,7 @@ struct SimpleDateTime {
 };
 
 struct CanData {
-  void compute(const MessageId &msg_id, const uint8_t *dat, const int size, double current_sec,
+  void compute(const MessageId &msg_id, const uint8_t *data, const int size, double current_sec,
                double playback_speed, const std::vector<uint8_t> &mask, double in_freq = 0);
 
   double ts = 0.;
