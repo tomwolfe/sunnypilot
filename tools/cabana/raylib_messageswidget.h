@@ -5,9 +5,9 @@
 #include <memory>
 #include <set>
 
-#include "raylib.h"
-#include "tools/cabana/dbc/dbcmanager.h"
+#include "tools/cabana/dbc/dbcmanager.h" // This includes cereal/messaging/messaging.h
 #include "tools/cabana/streams/abstractstream.h"
+#include "raylib.h"
 
 // Message list model for Raylib-based UI
 class MessageListModel {

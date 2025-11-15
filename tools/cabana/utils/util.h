@@ -8,7 +8,7 @@
 
 #include "raylib.h"
 #include "tools/cabana/dbc/dbc.h"
-#include "tools/cabana/settings.h"
+#include "tools/cabana/raylib_settings.h"
 
 // Data structure for segment tree (since we can't use QPointF)
 struct Point {

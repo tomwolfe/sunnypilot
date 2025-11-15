@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "tools/cabana/raylib_mainwin.h"
-#include "tools/cabana/streams/devicestream.h"
+#include "tools/cabana/raylib_devicestream.h"
 #include "tools/cabana/streams/pandastream.h"
 #include "tools/cabana/streams/replaystream.h"
 #include "tools/cabana/streams/socketcanstream.h"

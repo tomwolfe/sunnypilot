@@ -6,7 +6,8 @@
 // Forward declarations for UI components
 class VideoWidget;
 class MessagesWidget;
-#include "raylib.h"  // Include Raylib for basic types like Rectangle
+// Include Raylib for basic types like Rectangle
+#include "raylib.h"
 
 class CabanaUIElement {
 public:

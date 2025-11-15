@@ -69,6 +69,7 @@ struct LeadData {
 struct SelfdriveStateSP @0x81c2f05a394cf4af {
   mads @0 :ModularAssistiveDrivingSystem;
   intelligentCruiseButtonManagement @1 :IntelligentCruiseButtonManagement;
+  decMode @2 :Text;
 
   enum AudibleAlert {
     none @0;

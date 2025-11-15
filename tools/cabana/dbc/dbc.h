@@ -6,9 +6,9 @@
 #include <string>
 #include <functional>
 
-struct Color {  // Simple RGB color structure to replace QColor
+struct DbcColor {  // Simple RGB color structure to replace QColor
     int r, g, b, a;
-    Color(int r = 0, int g = 0, int b = 0, int a = 255) : r(r), g(g), b(b), a(a) {}
+    DbcColor(int r = 0, int g = 0, int b = 0, int a = 255) : r(r), g(g), b(b), a(a) {}
 };
 
 const std::string UNNAMED = "untitled";
@@ -21,7 +21,7 @@ struct MessageId {
 
   std::string toString() const {
     char buffer[32];
-    sprintf(buffer, "%d:%X", source, address);
+    snprintf(buffer, sizeof(buffer), "%d:%X", source, address);
     return std::string(buffer);
   }
 
@@ -82,7 +82,7 @@ public:
   std::string receiver_name;
   ValueDescription val_desc;
   int precision = 0;
-  Color color;
+  DbcColor color;
 
   // Multiplexed
   int multiplex_value = 0;

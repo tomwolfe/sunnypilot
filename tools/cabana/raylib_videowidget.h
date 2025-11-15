@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "raylib.h"
 #include "tools/cabana/utils/util.h"
 #include "tools/replay/logreader.h"
 #include "tools/cabana/streams/replaystream.h"
+#include "raylib.h"
 
 // Enum for different camera view types
 enum class VisionStreamType {
