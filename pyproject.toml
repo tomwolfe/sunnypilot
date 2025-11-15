@@ -30,6 +30,7 @@ dependencies = [
 
   # body / webrtcd
   "aiohttp",
+  "aiortc",
 
   "pyaudio",
 
