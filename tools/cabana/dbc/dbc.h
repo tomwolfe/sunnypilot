@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <cstdint>
 
 struct DbcColor {  // Simple RGB color structure to replace QColor
     int r, g, b, a;

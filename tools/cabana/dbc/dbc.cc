@@ -3,6 +3,12 @@
 #include <algorithm>
 #include <functional>
 #include <cctype>
+#include <cmath>
+#include "tools/cabana/utils/util.h"
+
+// Forward declarations for qHash functions
+size_t qHash(const MessageId &item);
+size_t qHash(const std::string &str);
 
 // Simple hash function for MessageId
 size_t hash_combine(size_t seed, size_t h) {
@@ -159,7 +165,7 @@ void cabana::Signal::update() {
   else if (4.0/6 <= h && h < 5.0/6) { r = x; g = 0; b = c; }
   else { r = c; g = 0; b = x; }
 
-  color = Color((int)((r + m) * 255), (int)((g + m) * 255), (int)((b + m) * 255));
+  color = DbcColor((int)((r + m) * 255), (int)((g + m) * 255), (int)((b + m) * 255));
   precision = std::max(num_decimals(factor), num_decimals(offset));
 }
 
