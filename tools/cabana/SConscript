@@ -13,8 +13,8 @@ if arch == "Darwin":
     # On macOS, link the local raylib library
     cabana_raylib_env.Append(LIBPATH=['#third_party/raylib/Darwin'])
     cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'c'])
-    # On macOS, we might need to link additional frameworks for Raylib
-    cabana_raylib_env.Append(FRAMEWORKS=['CoreVideo', 'OpenGL', 'IOSurface'])
+    # On macOS, we need to link additional frameworks for Raylib's Cocoa/IOKit functionality
+    cabana_raylib_env.Append(FRAMEWORKS=['CoreFoundation', 'CoreGraphics', 'CoreVideo', 'Foundation', 'IOKit', 'AppKit', 'OpenGL', 'IOSurface'])
 else:
     # For Linux/other architectures, link the local raylib library
     cabana_raylib_env.Append(LIBPATH=['#third_party/raylib/' + arch.lower()])
