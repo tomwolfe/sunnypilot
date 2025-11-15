@@ -1,24 +1,26 @@
 #include "tools/cabana/streams/routes.h"
-#include "tools/lib/api.hpp"
 
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
 
 // HTTP request implementation for Raylib-based UI
 // Implementation using standard HTTP libraries
-class OneShotHttpRequest {
+namespace api {
+
+class OneShotHttpRequest : public HttpRequest {
 public:
-  OneShotHttpRequest() {}
-  void send(const std::string &url) {
+  OneShotHttpRequest() = default;
+
+  void send(const std::string &url) override {
     // Implementation would go here
   }
-
-  // Callback for when request is done
-  std::function<void(const std::string&, bool)> done_callback;
 };
 
-RoutesDialog::RoutesDialog() : route_requester_(std::make_unique<OneShotHttpRequest>()) {
+} // namespace api
+
+RoutesDialog::RoutesDialog() : route_requester_(std::make_unique<api::OneShotHttpRequest>()) {
   // Initialize Raylib-based route selection dialog
   // Placeholder for actual implementation
 }

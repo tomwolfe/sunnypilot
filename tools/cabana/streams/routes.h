@@ -2,10 +2,9 @@
 
 #include <string>
 #include <memory>
+#include <functional>
 
 #include "tools/lib/api.hpp"
-
-class OneShotHttpRequest;
 
 class RoutesDialog {
 public:
@@ -18,5 +17,5 @@ protected:
   void fetchRoutes();
 
   std::string selected_route_;
-  std::unique_ptr<OneShotHttpRequest> route_requester_;
+  std::unique_ptr<api::HttpRequest> route_requester_;
 };

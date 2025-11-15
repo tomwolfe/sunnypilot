@@ -16,8 +16,8 @@ struct LiveStream::Logger {
     int n = (seconds_since_epoch() - start_ts) / 60.0;
     if (std::exchange(segment_num, n) != segment_num) {
       // Format using standard C++
-      auto time_t = start_ts;
-      std::tm* tm_info = std::gmtime(&time_t);
+      time_t time_t_val = start_ts;
+      std::tm* tm_info = std::gmtime(&time_t_val);
       char buffer[100];
       std::strftime(buffer, sizeof(buffer), "%Y-%m-%d--%H-%M-%S", tm_info);
       std::string time_str(buffer);
@@ -105,13 +105,13 @@ void LiveStream::updateEvents() {
 
   for (auto it = first; it != last; ++it) {
     const CanEvent *e = *it;
-    MessageId id = {.source = e->src, .address = e->address};
+    MessageId id = MessageId(e->src, e->address);
     updateEvent(id, (e->mono_time - begin_event_ts) / 1e9, e->dat, e->size);
     current_event_ts = e->mono_time;
   }
 
   // Call our custom event handlers
-  privateUpdateLastMsgsSignal.emit();
+  // The updateEvent calls in the loop handle the updates
 }
 
 void LiveStream::seekTo(double sec) {

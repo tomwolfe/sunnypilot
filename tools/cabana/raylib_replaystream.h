@@ -96,6 +96,5 @@ private:
     
     // Text input handling
     std::string inputBuffer;
-    int cursorPosition = 0;
     bool inputActive = false;
 };
