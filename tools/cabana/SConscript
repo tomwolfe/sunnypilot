@@ -1,7 +1,7 @@
 Import('env', 'arch', 'common', 'messaging', 'visionipc', 'replay_lib', 'cereal')
 
 # Base libraries needed (removing QT dependencies)
-base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0']
+base_libs = [common, messaging, cereal, visionipc, 'avutil', 'avcodec', 'avformat', 'bz2', 'zstd', 'curl', 'yuv', 'usb-1.0', 'ssl', 'crypto']
 
 # Create environment for Raylib Cabana
 cabana_raylib_env = env.Clone()
