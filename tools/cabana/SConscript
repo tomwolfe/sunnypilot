@@ -56,9 +56,6 @@ raylib_cabana_src = [
     'raylib_cameraview.cc',
     'raylib_centerwidget.cc',
 
-    # Raylib POC components that may have useful code
-    'raylib_poc/cabana_ui_components.cc',
-    'raylib_poc/cabana_panels.cc'
 ]
 
 # Build the Raylib Cabana executable
