@@ -51,3 +51,15 @@ public:
 private:
   // Menu items and state management
 };
+
+// Status bar implementation
+class StatusBar : public CabanaUIElement {
+public:
+  StatusBar(float x, float y, float width, float height);
+  void update() override;
+  void render() override;
+
+private:
+  std::string statusText = "Ready";
+  int fps = 60;
+};
