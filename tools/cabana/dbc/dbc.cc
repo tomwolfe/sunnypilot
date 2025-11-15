@@ -4,7 +4,7 @@
 #include <functional>
 #include <cctype>
 
-// Simple hash function for MessageId since we removed Qt's qHash
+// Simple hash function for MessageId
 size_t hash_combine(size_t seed, size_t h) {
   return seed ^ (h + 0x9e3779b9 + (seed << 6) + (seed >> 2));
 }
@@ -172,7 +172,7 @@ std::string cabana::Signal::formatValue(double value, bool with_unit) const {
     }
   }
 
-  // Format number using standard C++ (replace QString::number)
+  // Format number using standard C++
   char buffer[64];
   snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
   std::string val_str(buffer);
@@ -246,7 +246,7 @@ void updateMsbLsb(cabana::Signal &s) {
   }
 }
 
-// Hash function for strings to replace Qt's qHash
+// Hash function for strings
 size_t qHash(const std::string &str) {
   size_t hash = 0;
   for (char c : str) {

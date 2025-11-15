@@ -16,7 +16,7 @@ enum class VisionStreamType {
   WIDE_ROAD = 2
 };
 
-// Replacement for QT's Slider
+// Slider implementation for Raylib-based UI
 class TimeSlider {
 public:
   TimeSlider(float x, float y, float width, float height);
@@ -42,7 +42,7 @@ private:
   bool is_pressed_ = false;
 };
 
-// Replacement for QT's StreamCameraView
+// Stream camera view for Raylib-based UI
 class StreamCameraView {
 public:
   StreamCameraView(std::string stream_name, VisionStreamType stream_type, void* parent = nullptr);

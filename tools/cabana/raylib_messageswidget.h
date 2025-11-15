@@ -9,7 +9,7 @@
 #include "tools/cabana/dbc/dbcmanager.h"
 #include "tools/cabana/streams/abstractstream.h"
 
-// Replacement for QT's MessageListModel
+// Message list model for Raylib-based UI
 class MessageListModel {
 public:
   struct Item {

@@ -13,7 +13,7 @@ const SourceSet SOURCE_ALL = {-1};
 const int INVALID_SOURCE = 0xff;
 inline bool operator<(const std::shared_ptr<DBCFile> &l, const std::shared_ptr<DBCFile> &r) { return l.get() < r.get(); }
 
-// Signals and slots replacement for Qt-free version
+// Event system for the cabana application
 struct SignalConnection {
   std::function<void()> handler;
 };
@@ -51,7 +51,7 @@ public:
   inline DBCFile *findDBCFile(const MessageId &id) { return findDBCFile(id.source); }
   std::set<DBCFile *> allDBCFiles();
 
-  // Qt-free signal/slot replacements using callbacks
+  // Signal/slot replacements using callbacks
   typedef std::function<void(MessageId, const cabana::Signal*)> SignalAddedCallback;
   typedef std::function<void(const cabana::Signal*)> SignalRemovedCallback;
   typedef std::function<void(const cabana::Signal*)> SignalUpdatedCallback;

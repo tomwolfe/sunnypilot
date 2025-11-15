@@ -5,7 +5,7 @@
 
 #include "cabana_ui_components.h"
 
-// Main entry point for cabana using Raylib instead of QT
+// Main entry point for cabana using Raylib
 int main(int argc, char *argv[]) {
   std::cout << "Starting Cabana with Raylib UI..." << std::endl;
 

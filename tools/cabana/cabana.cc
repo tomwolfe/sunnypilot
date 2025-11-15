@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "tools/cabana/mainwin.h"
+#include "tools/cabana/raylib_mainwin.h"
 #include "tools/cabana/streams/devicestream.h"
 #include "tools/cabana/streams/pandastream.h"
 #include "tools/cabana/streams/replaystream.h"

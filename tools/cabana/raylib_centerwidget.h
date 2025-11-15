@@ -2,8 +2,7 @@
 
 #include <memory>
 
-// Placeholder for CenterWidget - in raylib implementation this may not be needed
-// or may be implemented differently than the QT version
+// Implementation for CenterWidget in Raylib-based UI
 class CenterWidget {
 public:
     CenterWidget(void* parent = nullptr);

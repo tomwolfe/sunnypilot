@@ -36,7 +36,7 @@ private:
   std::unique_ptr<std::thread> stream_thread;
   std::vector<const CanEvent *> received_events_;
 
-  // Instead of Qt timer, using standard timers
+  // Using standard timers for Raylib implementation
   std::chrono::steady_clock::time_point last_update_time;
 
   SimpleDateTime begin_date_time;

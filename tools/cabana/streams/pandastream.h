@@ -37,7 +37,7 @@ protected:
   PandaStreamConfig config = {};
 };
 
-// Qt-free version of the widget
+// Raylib-based version of the widget
 class OpenPandaInterface {
 public:
   OpenPandaInterface();
@@ -47,7 +47,7 @@ private:
   void refreshSerials();
   void buildConfigForm();
 
-  // Placeholder for UI elements that would be handled differently in a Qt-free implementation
+  // Placeholder for UI elements that would be handled differently in a Raylib implementation
   std::string serial_value;
   PandaStreamConfig config = {};
 };

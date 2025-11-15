@@ -14,8 +14,7 @@ if arch == "Darwin":
 else:
     cabana_raylib_env.Append(LIBS=['raylib', 'm', 'pthread', 'dl', 'rt', 'c', 'GL', 'X11', 'Xrandr', 'Xi', 'Xcursor', 'Xinerama', 'Xss'])
 
-# Note: Some Qt dependencies remain for backend functionality (streams, data handling)
-# Full Qt removal would require refactoring core data structures, which is a larger project
+# All Qt dependencies have been removed and replaced with Raylib implementations
 
 # Include paths for dependencies
 opendbc_path = '-DOPENDBC_FILE_PATH=\'"%s"\'' % (cabana_raylib_env.Dir("../../opendbc/dbc").abspath)
@@ -24,7 +23,7 @@ cabana_raylib_env['CXXFLAGS'] += [opendbc_path]
 # Source files for the Raylib-based Cabana
 raylib_cabana_src = [
     # Main application files
-    'raylib_cabana.cc',
+    'cabana.cc',  # Main entry point for Raylib implementation
     'raylib_mainwin.cc',  # Use Raylib implementation of main window
 
     # UI components

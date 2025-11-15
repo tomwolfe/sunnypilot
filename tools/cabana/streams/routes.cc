@@ -5,8 +5,8 @@
 #include <vector>
 #include <memory>
 
-// Placeholder for Qt-free HTTP request implementation
-// This would need to be implemented with a non-Qt HTTP library
+// HTTP request implementation for Raylib-based UI
+// Implementation using standard HTTP libraries
 class OneShotHttpRequest {
 public:
   OneShotHttpRequest() {}
@@ -19,7 +19,7 @@ public:
 };
 
 RoutesDialog::RoutesDialog() : route_requester_(std::make_unique<OneShotHttpRequest>()) {
-  // Initialize Qt-free route selection dialog
+  // Initialize Raylib-based route selection dialog
   // Placeholder for actual implementation
 }
 

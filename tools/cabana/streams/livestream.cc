@@ -15,7 +15,7 @@ struct LiveStream::Logger {
   void write(kj::ArrayPtr<capnp::word> data) {
     int n = (seconds_since_epoch() - start_ts) / 60.0;
     if (std::exchange(segment_num, n) != segment_num) {
-      // Format using standard C++ (replacing Qt formatting)
+      // Format using standard C++
       auto time_t = start_ts;
       std::tm* tm_info = std::gmtime(&time_t);
       char buffer[100];
@@ -40,7 +40,7 @@ LiveStream::LiveStream() : AbstractStream() {
     logger = std::make_unique<Logger>();
   }
 
-  // Note: We don't connect signals here since we're Qt-free
+  // Note: We use callback functions in the Raylib implementation
 }
 
 LiveStream::~LiveStream() {
@@ -48,7 +48,7 @@ LiveStream::~LiveStream() {
 }
 
 void LiveStream::startUpdateTimer() {
-  // Instead of Qt timer, we'll update the time tracking
+  // Update time tracking for Raylib implementation
   last_update_time = std::chrono::steady_clock::now();
 }
 
@@ -110,7 +110,7 @@ void LiveStream::updateEvents() {
     current_event_ts = e->mono_time;
   }
 
-  // Instead of Qt signals, call our custom signal emitters
+  // Call our custom event handlers
   privateUpdateLastMsgsSignal.emit();
 }
 

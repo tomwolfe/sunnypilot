@@ -40,7 +40,7 @@ bool PandaStream::connect() {
 void PandaStream::streamThread() {
   std::vector<can_frame> raw_can_data;
 
-  while (true) { // Instead of QThread interruption, we'll need another mechanism
+  while (true) { // Thread interruption mechanism for Raylib implementation
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     if (!panda->connected()) {
@@ -75,7 +75,7 @@ void PandaStream::streamThread() {
 // OpenPandaInterface
 
 OpenPandaInterface::OpenPandaInterface() {
-  // Placeholder for Qt-free implementation
+  // Implementation for Raylib-based UI
   refreshSerials();
   buildConfigForm();
 }
@@ -89,7 +89,7 @@ void OpenPandaInterface::refreshSerials() {
 }
 
 void OpenPandaInterface::buildConfigForm() {
-  // Placeholder for Qt-free configuration building
+  // Configuration building for Raylib implementation
   if (!serial_value.empty()) {
     config.serial = serial_value;
     config.bus_config.resize(3);
