@@ -6,7 +6,7 @@
 #define LIGHT_THEME 1
 #define DARK_THEME 2
 
-// Simple signal/slot mechanism without Qt
+// Settings interface using Raylib
 class Settings {
 public:
   enum DragDirection {

@@ -2,13 +2,13 @@
 
 #include <string>
 
-// Forward declaration to avoid Qt dependencies
-class QWidgetOrEquivalent;
+// Forward declaration for Raylib UI element
+class RaylibWidget;
 
-// Simplified BinaryView implementation without Qt dependencies
+// Simplified BinaryView implementation using Raylib
 class BinaryView {
 public:
-  BinaryView(QWidgetOrEquivalent* parent = nullptr);
+  BinaryView(RaylibWidget* parent = nullptr);
   void showEvent(const std::string& route, int start_time, int end_time);
   void selectItem(int item_id);
   

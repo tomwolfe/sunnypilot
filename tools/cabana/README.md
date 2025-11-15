@@ -10,7 +10,7 @@ Usage: ./cabana [options] route
 
 Options:
   -h, --help                     Displays help on commandline options.
-  --help-all                     Displays help including Qt specific options.
+  --help-all                     Displays help for all options.
   --demo                         use a demo route instead of providing your own
   --auto                         Auto load the route from the best available source (no video):
                                  internal, openpilotci, comma_api, car_segments, testing_closet
@@ -77,7 +77,7 @@ Replace &lt;ipaddress&gt; with your comma device's IP address.
 
 While streaming from the device, Cabana will log the CAN messages to a local directory. By default, this directory is ~/cabana_live_stream/. You can change the log directory in Cabana by navigating to menu -> tools -> settings.
 
-After disconnecting from the device, you can replay the logged CAN messages from the stream selector dialog -> browse local route.
+After disconnecting from the device, you can replay the logged CAN messages from the stream selector UI -> browse local route.
 
 ### Streaming CAN Messages from Panda
 
@@ -87,9 +87,9 @@ To read CAN messages from a connected Panda, use the following command:
 cabana --panda
 ```
 
-### Using the Stream Selector Dialog
+### Using the Stream Selector UI
 
-If you run Cabana without any arguments, a stream selector dialog will pop up, allowing you to choose the stream.
+If you run Cabana without any arguments, a stream selector UI will appear, allowing you to choose the stream.
 
 ```shell
 cabana

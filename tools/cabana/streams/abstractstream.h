@@ -16,7 +16,7 @@
 #include "tools/cabana/dbc/dbcmanager.h"
 #include "tools/cabana/utils/util.h"
 #include "tools/replay/util.h"
-#include "tools/cabana/streams/abstract_stream_base.h"  // Include our Qt-free base
+#include "tools/cabana/streams/abstract_stream_base.h"  // Include our Raylib-compatible base
 
 struct CanData {
   void compute(const MessageId &msg_id, const uint8_t *dat, const int size, double current_sec,
@@ -55,7 +55,7 @@ struct CompareCanEvent {
 typedef std::unordered_map<MessageId, std::vector<const CanEvent *>> MessageEventsMap;
 using CanEventIter = std::vector<const CanEvent *>::const_iterator;
 
-// AbstractStream now inherits from our Qt-free base
+// AbstractStream now inherits from our Raylib-compatible base
 class AbstractStream : public AbstractStreamBase {
 public:
   AbstractStream();
@@ -63,7 +63,7 @@ public:
   virtual void start() = 0;
   virtual std::string routeName() const = 0;
 
-  // Override Qt-dependent methods with std::string versions
+  // Methods for Raylib implementation
   virtual std::string carFingerprint() const { return ""; }
   virtual SimpleDateTime beginDateTime() const { return {}; }
 
@@ -71,7 +71,7 @@ public:
   SourceSet sources;
 };
 
-// Qt-free version of the stream widget concept
+// Raylib-compatible version of the stream widget concept
 class AbstractOpenStreamInterface {
 public:
   virtual ~AbstractOpenStreamInterface() = default;

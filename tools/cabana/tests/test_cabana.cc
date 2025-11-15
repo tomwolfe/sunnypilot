@@ -1,6 +1,8 @@
 
 #undef INFO
-#include <QDir>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 #include "catch2/catch.hpp"
 #include "tools/cabana/dbc/dbcmanager.h"
@@ -8,7 +10,7 @@
 const std::string TEST_RLOG_URL = "https://commadataci.blob.core.windows.net/openpilotci/0c94aa1e1296d7c6/2021-05-05--19-48-37/0/rlog.bz2";
 
 TEST_CASE("DBCFile::generateDBC") {
-  QString fn = QString("%1/%2.dbc").arg(OPENDBC_FILE_PATH, "tesla_can");
+  std::string fn = std::string(OPENDBC_FILE_PATH) + "/tesla_can.dbc";
   DBCFile dbc_origin(fn);
   DBCFile dbc_from_generated("", dbc_origin.generateDBC());
 
@@ -46,7 +48,7 @@ CM_ SG_ 162 signal_2 "signal comment";
 }
 
 TEST_CASE("DBCFile::generateDBC -- preserve original header") {
-  QString content = R"(VERSION "1.0"
+  auto content = R"(VERSION "1.0"
 
 NS_ :
  CM_
@@ -66,7 +68,7 @@ CM_ SG_ 160 signal_1 "signal comment";
 }
 
 TEST_CASE("DBCFile::generateDBC - escaped quotes") {
-  QString content = R"(BO_ 160 message_1: 8 EON
+  auto content = R"(BO_ 160 message_1: 8 EON
  SG_ signal_1 : 0|12@1+ (1,0) [0|4095] "unit" XXX
 
 CM_ BO_ 160 "message comment with \"escaped quotes\"";
@@ -77,7 +79,7 @@ CM_ SG_ 160 signal_1 "signal comment with \"escaped quotes\"";
 }
 
 TEST_CASE("parse_dbc") {
-  QString content = R"(
+  auto content = R"(
 BO_ 160 message_1: 8 EON
   SG_ signal_1 : 0|12@1+ (1,0) [0|4095] "unit"  XXX
   SG_ signal_2 : 12|1@1+ (1.0,0.0) [0.0|1] ""  XXX
@@ -90,7 +92,7 @@ VAL_ 160 signal_1 0 "disabled" 1.2 "initializing" 2 "fault";
 
 CM_ BO_ 160 "message comment" ;
 CM_ SG_ 160 signal_1 "signal comment";
-CM_ SG_ 160 signal_2 "multiple line comment 
+CM_ SG_ 160 signal_2 "multiple line comment
 1
 2
 ";
@@ -119,9 +121,9 @@ CM_ SG_ 162 signal_1 "signal comment with \"escaped quotes\"";
   REQUIRE(sig_1->comment == "signal comment");
   REQUIRE(sig_1->receiver_name == "XXX");
   REQUIRE(sig_1->val_desc.size() == 3);
-  REQUIRE(sig_1->val_desc[0] == std::pair<double, QString>{0, "disabled"});
-  REQUIRE(sig_1->val_desc[1] == std::pair<double, QString>{1.2, "initializing"});
-  REQUIRE(sig_1->val_desc[2] == std::pair<double, QString>{2, "fault"});
+  REQUIRE(sig_1->val_desc[0] == std::pair<double, std::string>{0, "disabled"});
+  REQUIRE(sig_1->val_desc[1] == std::pair<double, std::string>{1.2, "initializing"});
+  REQUIRE(sig_1->val_desc[2] == std::pair<double, std::string>{2, "fault"});
 
   auto &sig_2 = msg->sigs[1];
   REQUIRE(sig_2->comment == "multiple line comment \n1\n2");
@@ -143,15 +145,21 @@ CM_ SG_ 162 signal_1 "signal comment with \"escaped quotes\"";
 }
 
 TEST_CASE("parse_opendbc") {
-  QDir dir(OPENDBC_FILE_PATH);
-  QStringList errors;
-  for (auto fn : dir.entryList({"*.dbc"}, QDir::Files, QDir::Name)) {
-    try {
-      auto dbc = DBCFile(dir.filePath(fn));
-    } catch (std::exception &e) {
-      errors.push_back(e.what());
+  std::string open_dbc_path(OPENDBC_FILE_PATH);
+  std::vector<std::string> errors;
+  for (const auto& entry : std::filesystem::directory_iterator(open_dbc_path)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".dbc") {
+      try {
+        auto dbc = DBCFile(entry.path().string());
+      } catch (std::exception &e) {
+        errors.push_back(e.what());
+      }
     }
   }
-  INFO(errors.join("\n").toStdString());
+  std::string error_str;
+  for (const auto& error : errors) {
+    error_str += error + "\n";
+  }
+  INFO(error_str);
   REQUIRE(errors.empty());
 }

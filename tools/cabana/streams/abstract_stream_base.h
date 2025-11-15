@@ -81,7 +81,7 @@ struct CompareCanEvent {
 typedef std::unordered_map<MessageId, std::vector<const CanEvent *>> MessageEventsMap;
 using CanEventIter = std::vector<const CanEvent *>::const_iterator;
 
-// Simple event system to replace Qt's signals/slots
+// Simple event system for Raylib implementation
 class EventListener {
 public:
     virtual ~EventListener() = default;
@@ -107,7 +107,7 @@ private:
     std::vector<Callback> callbacks;
 };
 
-// Base class for stream functionality without Qt dependencies
+// Base class for Raylib-compatible stream functionality
 class AbstractStreamBase {
 public:
     AbstractStreamBase();

@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-// Simplified Stream interface without Qt dependencies
+// Simplified Stream interface using Raylib
 class StreamInterface {
 public:
     virtual ~StreamInterface() = default;
@@ -30,7 +30,7 @@ struct SocketCanStreamConfig {
     bool canFdEnabled = true;
 };
 
-// Simplified SocketCAN Stream without Qt dependencies
+// Simplified SocketCAN Stream using Raylib
 class SocketCanStream : public StreamInterface {
 public:
     SocketCanStream(const SocketCanStreamConfig& config = {});
@@ -64,7 +64,7 @@ struct SocketCanConfigUI {
     std::vector<std::string> availableDevices;
 };
 
-// Simplified UI widget for SocketCAN (non-Qt implementation)
+// Simplified UI widget for SocketCAN using Raylib
 class OpenSocketCanWidget {
 public:
     OpenSocketCanWidget();

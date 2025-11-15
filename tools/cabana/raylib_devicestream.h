@@ -5,7 +5,7 @@
 
 #include "raylib.h"  // For UI elements if needed
 
-// Simplified Device Stream interface without Qt dependencies
+// Simplified Device Stream interface using Raylib
 class DeviceStream {
 public:
     DeviceStream(const std::string& address = "");
@@ -36,7 +36,7 @@ struct DeviceConfigUI {
     bool validIpAddress = true;
 };
 
-// Simplified UI widget for Device stream selection (non-Qt implementation)
+// Simplified UI widget for Device stream selection using Raylib
 class OpenDeviceWidget {
 public:
     OpenDeviceWidget();

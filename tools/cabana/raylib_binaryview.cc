@@ -2,7 +2,7 @@
 #include <string>
 
 // Simplified binary view for Raylib implementation
-BinaryView::BinaryView(QWidgetOrEquivalent* parent) {
+BinaryView::BinaryView(RaylibWidget* parent) {
   // Initialize with parent if needed
 }
 

@@ -2,7 +2,7 @@
 
 #include <string>
 
-// Simplified DetailWidget implementation without Qt dependencies
+// Simplified DetailWidget implementation using Raylib
 class DetailWidget {
 public:
   DetailWidget(void* parent = nullptr);

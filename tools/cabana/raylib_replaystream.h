@@ -11,7 +11,7 @@
 // In a real implementation, these would come from the replay system
 struct LogReader;
 
-// Simplified Replay Stream interface without Qt dependencies
+// Simplified Replay Stream interface using Raylib
 class ReplayStream {
 public:
     ReplayStream();
@@ -61,7 +61,7 @@ struct ReplayConfigUI {
     std::vector<std::string> recentRoutes;
 };
 
-// Simplified UI widget for Replay stream selection (non-Qt implementation)
+// Simplified UI widget for Replay stream selection using Raylib
 class OpenReplayWidget {
 public:
     OpenReplayWidget();

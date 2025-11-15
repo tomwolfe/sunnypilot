@@ -5,7 +5,7 @@
 #include <map>
 #include <string>
 
-// Settings implementation without QT dependencies
+// Settings implementation using Raylib
 Settings settings;
 
 // Convert settings to/from string representation for persistence

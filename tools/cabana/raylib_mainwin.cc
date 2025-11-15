@@ -1,7 +1,7 @@
-#include "tools/cabana/mainwin.h"
-#include "tools/cabana/videowidget.h"
-#include "tools/cabana/messageswidget.h"
-#include "tools/cabana/chart/chartswidget.h"
+#include "tools/cabana/raylib_mainwin.h"
+#include "tools/cabana/raylib_videowidget.h"
+#include "tools/cabana/raylib_messageswidget.h"
+#include "tools/cabana/raylib_chartswidget.h"
 #include "tools/cabana/raylib_centerwidget.h"
 
 #include <iostream>
