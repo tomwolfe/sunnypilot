@@ -3,9 +3,27 @@
 #include <memory>
 #include <string>
 
+// Include raylib first
 #include "raylib.h"
+
+// Now include the capnp-dependent headers but undefine conflicting macros first
+// Save color values then undefine
+#define SAVED_RED_ RED
+#define SAVED_GREEN_ GREEN
+#define SAVED_YELLOW_ YELLOW
+#define SAVED_WHITE_ WHITE
+#define SAVED_GRAY_ GRAY
+
+#undef RED
+#undef GREEN
+#undef YELLOW
+#undef WHITE
+#undef GRAY
+
 #include "tools/cabana/utils/util.h"
 #include "tools/replay/logreader.h"
+
+// These macros remain undefined for cereal headers, preventing conflicts
 
 // Raylib-based CameraView
 class CameraView {

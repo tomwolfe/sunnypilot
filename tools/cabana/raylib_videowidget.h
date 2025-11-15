@@ -6,13 +6,28 @@
 
 #include "tools/cabana/utils/util.h"
 
-// Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
-#define OPENPILOT_RAYLIB
+// Include raylib first
 #include "third_party/raylib/include/raylib.h"
+
+// Now include the capnp-dependent headers but undefine conflicting macros first
+// Save color values then undefine
+#define SAVED_RED_ RED
+#define SAVED_GREEN_ GREEN
+#define SAVED_YELLOW_ YELLOW
+#define SAVED_WHITE_ WHITE
+#define SAVED_GRAY_ GRAY
+
+#undef RED
+#undef GREEN
+#undef YELLOW
+#undef WHITE
+#undef GRAY
 
 // Now include the capnp-dependent headers
 #include "tools/replay/logreader.h"
 #include "tools/cabana/streams/replaystream.h"
+
+// These macros remain undefined for cereal headers, preventing conflicts
 
 // Enum for different camera view types - avoid conflict with other VisionStreamType
 enum class CabanaVisionStreamType {

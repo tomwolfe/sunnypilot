@@ -5,6 +5,7 @@
 #include <set>
 #include <functional>
 #include <vector>
+#include <cassert>
 
 #include "tools/cabana/dbc/dbcfile.h"
 

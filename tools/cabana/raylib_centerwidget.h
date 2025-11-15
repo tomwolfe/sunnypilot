@@ -13,6 +13,8 @@ public:
     void render(const Rectangle& bounds);
     void clear();
     void setMessage(const void* message);  // MessageId would need to be passed differently
+    void setVisible(bool visible) { is_visible_ = visible; }
+    bool isVisible() const { return is_visible_; }
 
 private:
     void* parent_;

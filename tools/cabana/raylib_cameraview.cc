@@ -64,12 +64,12 @@ void CameraView::drawVideoFrame(const Rectangle& bounds) {
         int text_width = MeasureText(video_label, 20);
         int text_x = bounds.x + (bounds.width - text_width) / 2;
         int text_y = bounds.y + bounds.height / 2 - 10;
-        DrawText(video_label, text_x, text_y, 20, GRAY);
+        DrawText(video_label, text_x, text_y, 20, (Color){110, 110, 110, 255});  // GRAY
     } else {
         // Draw actual texture
         Rectangle dest_rect = {bounds.x, bounds.y, bounds.width, bounds.height};
         Rectangle source_rect = {0, 0, (float)current_frame_texture_.width, (float)current_frame_texture_.height};
-        DrawTextureRec(current_frame_texture_, source_rect, (Vector2){dest_rect.x, dest_rect.y}, WHITE);
+        DrawTextureRec(current_frame_texture_, source_rect, (Vector2){dest_rect.x, dest_rect.y}, (Color){255, 255, 255, 255});  // WHITE
     }
 }
 
@@ -79,7 +79,7 @@ void CameraView::drawOverlay(const Rectangle& bounds) {
     snprintf(time_str, sizeof(time_str), "%.2f / %.2f", current_time_, total_duration_);
     int text_width = MeasureText(time_str, 14);
     DrawRectangle(bounds.x + 10, bounds.y + 10, text_width + 10, 24, Color{0, 0, 0, 128});
-    DrawText(time_str, bounds.x + 15, bounds.y + 15, 14, WHITE);
+    DrawText(time_str, bounds.x + 15, bounds.y + 15, 14, (Color){255, 255, 255, 255});  // WHITE
     
     // Draw playback controls at the bottom
     Rectangle controls_rect = {bounds.x, bounds.y + bounds.height - 40, bounds.width, 40};
@@ -87,18 +87,18 @@ void CameraView::drawOverlay(const Rectangle& bounds) {
     
     // Play/Pause button
     Rectangle play_button = {bounds.x + 20, bounds.y + bounds.height - 30, 30, 20};
-    DrawRectangleRec(play_button, is_paused_ ? GREEN : RED);
-    DrawText(is_paused_ ? "▶" : "⏸", play_button.x + 8, play_button.y + 2, 14, WHITE);
+    DrawRectangleRec(play_button, is_paused_ ? (Color){0, 228, 48, 255} : (Color){230, 41, 55, 255});  // GREEN : RED
+    DrawText(is_paused_ ? "▶" : "⏸", play_button.x + 8, play_button.y + 2, 14, (Color){255, 255, 255, 255});  // WHITE
     
     // Speed indicator
     char speed_str[16];
     snprintf(speed_str, sizeof(speed_str), "%.1fx", playback_speed_);
-    DrawText(speed_str, bounds.x + 60, bounds.y + bounds.height - 25, 12, WHITE);
+    DrawText(speed_str, bounds.x + 60, bounds.y + bounds.height - 25, 12, (Color){255, 255, 255, 255});  // WHITE
     
     // Fullscreen button
     Rectangle fs_button = {bounds.x + bounds.width - 40, bounds.y + bounds.height - 30, 30, 20};
     DrawRectangleRec(fs_button, Color{70, 70, 70, 255});
-    DrawText("⛶", fs_button.x + 8, fs_button.y + 2, 14, WHITE);
+    DrawText("⛶", fs_button.x + 8, fs_button.y + 2, 14, (Color){255, 255, 255, 255});  // WHITE
 }
 
 void CameraView::drawPlayhead(const Rectangle& bounds) {
@@ -111,7 +111,7 @@ void CameraView::drawPlayhead(const Rectangle& bounds) {
         float position = (current_time_ / total_duration_) * timeline.width;
         Vector2 line_start = {timeline.x + position, timeline.y};
         Vector2 line_end = {timeline.x + position, timeline.y + timeline.height + 10};
-        DrawLineV(line_start, line_end, YELLOW);
+        DrawLineV(line_start, line_end, (Color){253, 249, 0, 255});  // YELLOW
     }
 }
 

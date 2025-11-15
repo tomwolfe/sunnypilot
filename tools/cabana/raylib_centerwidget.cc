@@ -7,10 +7,16 @@ CenterWidget::CenterWidget(void* parent) : parent_(parent) {
 CenterWidget::~CenterWidget() = default;
 
 void CenterWidget::update() {
-    // Update the center widget state
+    // Update the center widget state and potentially notify parent
+    if (parent_ != nullptr) {
+        // In a real implementation, this might send a message to the parent
+    }
 }
 
 void CenterWidget::render(const Rectangle& bounds) {
+    // Only render if visible
+    if (!isVisible()) return;
+
     // Render the center widget
     // Draw background
     DrawRectangleRec(bounds, Color{245, 245, 245, 255}); // Light gray background
@@ -31,4 +37,7 @@ void CenterWidget::clear() {
 void CenterWidget::setMessage(const void* message) {
     // Handle setting the current message to display
     // In a real implementation, this would update the UI to show message details
+    if (parent_ != nullptr) {
+        // In a real implementation, notify parent of message change
+    }
 }

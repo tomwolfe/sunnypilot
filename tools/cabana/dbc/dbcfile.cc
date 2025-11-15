@@ -3,6 +3,8 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <regex>
+#include <cassert>
 
 DBCFile::DBCFile(const std::string &dbc_file_name) {
   std::ifstream file(dbc_file_name, std::ios::binary);

@@ -41,26 +41,26 @@ void DBCManager::close(const SourceSet &sources) {
   for (auto s : sources) {
     dbc_files[s] = nullptr;
   }
-  emit DBCFileChanged();
+  emitDBCFileChanged();
 }
 
 void DBCManager::close(DBCFile *dbc_file) {
   for (auto &[_, f] : dbc_files) {
     if (f.get() == dbc_file) f = nullptr;
   }
-  emit DBCFileChanged();
+  emitDBCFileChanged();
 }
 
 void DBCManager::closeAll() {
   dbc_files.clear();
-  emit DBCFileChanged();
+  emitDBCFileChanged();
 }
 
 void DBCManager::addSignal(const MessageId &id, const cabana::Signal &sig) {
   if (auto m = msg(id)) {
     if (auto s = m->addSignal(sig)) {
-      emit signalAdded(id, s);
-      emit maskUpdated();
+      emitSignalAdded(id, s);
+      emitMaskUpdated();
     }
   }
 }
@@ -95,8 +95,8 @@ void DBCManager::removeMsg(const MessageId &id) {
   auto dbc_file = findDBCFile(id);
   assert(dbc_file);  // This should be impossible
   dbc_file->removeMsg(id);
-  emit msgRemoved(id);
-  emit maskUpdated();
+  emitMsgRemoved(id);
+  emitMaskUpdated();
 }
 
 std::string DBCManager::newMsgName(const MessageId &id) {
