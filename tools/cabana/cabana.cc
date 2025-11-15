@@ -7,6 +7,7 @@
 #include "tools/cabana/raylib_devicestream.h"
 #include "tools/cabana/streams/pandastream.h"
 #include "tools/cabana/streams/replaystream.h"
+// The socketcanstream.h file is now properly implemented with SocketCanLiveStream
 #include "tools/cabana/streams/socketcanstream.h"
 
 int main(int argc, char *argv[]) {
@@ -29,7 +30,7 @@ int main(int argc, char *argv[]) {
             dbc_file = argv[++i];
         } else if (arg == "--panda" || arg == "-panda") {
             try {
-                stream = new PandaStream(nullptr);  // Simplified
+                stream = new PandaStream();  // Use default constructor
             } catch (const std::exception& e) {
                 std::cerr << "Error creating Panda stream: " << e.what() << std::endl;
                 return 1;
@@ -45,11 +46,11 @@ int main(int argc, char *argv[]) {
     if (!stream) {
         if (route.empty()) {
             // No route specified, use dummy stream
-            stream = new DummyStream(nullptr);
+            stream = new DummyStream();  // Use default constructor
         } else {
             // Create replay stream for the route
             // This would be a more complex implementation in reality
-            stream = new DummyStream(nullptr);  // Placeholder
+            stream = new DummyStream();  // Placeholder
         }
     }
 
