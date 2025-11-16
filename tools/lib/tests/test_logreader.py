@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from parameterized import parameterized
+from pytest_mock import MockerFixture
 
 from cereal import log as capnp_log
 from openpilot.tools.lib.logreader import LogsUnavailable, LogIterable, LogReader, parse_indirect, ReadMode
