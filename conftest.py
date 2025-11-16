@@ -58,13 +58,25 @@ def openpilot_function_fixture(request):
     # Check if this is a messaging test that would conflict with ZMQ
     # On macOS, ZMQ is forced but doesn't work with OPENPILOT_PREFIX
     # This targets specifically the tests that call managed_processes.start() which causes ZMQ crashes
-    problematic_tests = any(keyword in request.node.nodeid for keyword in [
-        'system/loggerd/tests/', 'system/encoderd/tests/', 'system/camerad/tests/',
-        'test_longitudinal_maneuvers', 'longitudinal_maneuvers'
-    ])
+    # More specific: only system tests that actually start processes and use messaging
+    uses_managed_processes = (
+        'loggerd' in request.node.nodeid and
+        any(test_name in request.node.nodeid for test_name in [
+            'test_rotation', 'test_qlog', 'test_rlog', 'test_preserving_bookmarked_segments',
+            'test_not_preserving_nonbookmarked_segments', 'test_record_front', 'test_record_audio'
+        ])
+    ) or (
+        'test_encoder' in request.node.nodeid  # test_encoder.py starts processes that use messaging
+    ) or (
+        'camerad' in request.node.nodeid
+    ) or (
+        'longitudinal_maneuvers' in request.node.nodeid
+    ) or (
+        'uploader' in request.node.nodeid  # uploader tests also start processes that use messaging
+    )
 
     # For tests that use messaging system on macOS, don't use OpenpilotPrefix to avoid ZMQ conflict
-    if is_macos and problematic_tests:
+    if is_macos and uses_managed_processes:
       # Even with fake messaging, avoid OpenpilotPrefix in problematic tests
       os.environ["CEREAL_FAKE"] = "1"
       yield

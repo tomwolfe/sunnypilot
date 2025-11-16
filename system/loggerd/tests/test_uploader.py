@@ -1,4 +1,5 @@
 import os
+import platform
 import time
 import threading
 import logging
@@ -6,10 +7,15 @@ import json
 from pathlib import Path
 from openpilot.system.hardware.hw import Paths
 
+import pytest
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.loggerd.uploader import main, UPLOAD_ATTR_NAME, UPLOAD_ATTR_VALUE
 
 from openpilot.system.loggerd.tests.loggerd_tests_common import UploaderTestCase
+
+# Skip uploader tests on macOS due to ZMQ/messaging system limitations
+if platform.system() == "Darwin":
+  pytest.skip("Skipping uploader tests on macOS due to ZMQ/messaging limitations", allow_module_level=True)
 
 
 class FakeLogHandler(logging.Handler):

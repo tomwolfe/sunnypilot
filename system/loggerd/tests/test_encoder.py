@@ -1,5 +1,6 @@
 import math
 import os
+import platform
 import pytest
 import random
 import shutil
@@ -16,6 +17,10 @@ from openpilot.system.hardware import TICI
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.tools.lib.logreader import LogReader
 from openpilot.system.hardware.hw import Paths
+
+# Skip encoder tests on macOS due to ZMQ/messaging system limitations with managed processes
+if platform.system() == "Darwin":
+  pytest.skip("Skipping encoder tests on macOS due to ZMQ/messaging limitations", allow_module_level=True)
 
 SEGMENT_LENGTH = 2
 FULL_SIZE = 2507572
