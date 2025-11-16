@@ -50,13 +50,25 @@ def clean_env():
 def openpilot_function_fixture(request):
   with clean_env():
     # setup a clean environment for each test
-    with OpenpilotPrefix(shared_download_cache=request.node.get_closest_marker("shared_download_cache") is not None) as prefix:
-      prefix = os.environ["OPENPILOT_PREFIX"]
+    # Skip OpenpilotPrefix for messaging tests on platforms where ZMQ is forced (like macOS)
+    # since ZMQ doesn't work with OPENPILOT_PREFIX
+    import platform
+    is_macos = platform.system() == "Darwin"
 
+    # Check if this is a messaging test that would conflict with ZMQ
+    is_messaging_test = "messaging" in request.node.nodeid
+
+    if is_macos and is_messaging_test:
+      # For messaging tests on macOS, don't use OpenpilotPrefix to avoid ZMQ conflict
       yield
+    else:
+      with OpenpilotPrefix(shared_download_cache=request.node.get_closest_marker("shared_download_cache") is not None) as prefix:
+        prefix = os.environ["OPENPILOT_PREFIX"]
 
-      # ensure the test doesn't change the prefix
-      assert "OPENPILOT_PREFIX" in os.environ and prefix == os.environ["OPENPILOT_PREFIX"]
+        yield
+
+        # ensure the test doesn't change the prefix
+        assert "OPENPILOT_PREFIX" in os.environ and prefix == os.environ["OPENPILOT_PREFIX"]
 
     # cleanup any started processes
     manager.manager_cleanup()

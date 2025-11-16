@@ -53,14 +53,19 @@ def delayed_send(delay, sock, dat):
 
 class TestMessaging:
   def setUp(self):
-    # TODO: ZMQ tests are too slow; all sleeps will need to be
-    # replaced with logic to block on the necessary condition
-    if "ZMQ" in os.environ:
-      pytest.skip()
-
+    # Enable fake events for test isolation to avoid multiple publisher errors
+    # This is especially important for systems where fake events are supported
+    if hasattr(messaging, 'toggle_fake_events'):
+      messaging.toggle_fake_events(True)
     # ZMQ pub socket takes too long to die
     # sleep to prevent multiple publishers error between tests
     zmq_sleep()
+
+  def tearDown(self):
+    # Disable fake events after test
+    if hasattr(messaging, 'toggle_fake_events'):
+      messaging.toggle_fake_events(False)
+
 
   @parameterized.expand(events)
   def test_new_message(self, evt):
@@ -85,9 +90,11 @@ class TestMessaging:
     (messaging.drain_sock_raw, bytes),
   ])
   def test_drain_sock(self, func, expected_type):
-    sock = "carState"
-    pub_sock = messaging.pub_sock(sock)
-    sub_sock = messaging.sub_sock(sock, timeout=1000)
+    # Generate a unique socket name to avoid conflicts in parallel execution
+    import uuid
+    test_id = f"test_carState_{uuid.uuid4().hex[:8]}"
+    pub_sock = messaging.pub_sock(test_id)
+    sub_sock = messaging.sub_sock(test_id, timeout=1000)
     zmq_sleep()
 
     # no wait and no msgs in queue
@@ -98,7 +105,10 @@ class TestMessaging:
     # no wait but msgs are queued up
     num_msgs = random.randrange(3, 10)
     for _ in range(num_msgs):
-      pub_sock.send(messaging.new_message(sock).to_bytes())
+      # Use 'carState' as the service type but send to unique socket
+      msg = messaging.new_message("carState")
+      msg.carState.vEgo = random.random() * 10  # populate with some data
+      pub_sock.send(msg.to_bytes())
     time.sleep(0.1)
     msgs = func(sub_sock)
     assert isinstance(msgs, list)
@@ -106,9 +116,11 @@ class TestMessaging:
     assert len(msgs) == num_msgs
 
   def test_recv_sock(self):
-    sock = "carState"
-    pub_sock = messaging.pub_sock(sock)
-    sub_sock = messaging.sub_sock(sock, timeout=100)
+    # Generate a unique socket name to avoid conflicts in parallel execution
+    import uuid
+    test_id = f"test_carState_{uuid.uuid4().hex[:8]}"
+    pub_sock = messaging.pub_sock(test_id)
+    sub_sock = messaging.sub_sock(test_id, timeout=100)
     zmq_sleep()
 
     # no wait and no msg in queue, socket should timeout
@@ -125,9 +137,11 @@ class TestMessaging:
     assert_carstate(msg.carState, recvd.carState)
 
   def test_recv_one(self):
-    sock = "carState"
-    pub_sock = messaging.pub_sock(sock)
-    sub_sock = messaging.sub_sock(sock, timeout=1000)
+    # Generate a unique socket name to avoid conflicts in parallel execution
+    import uuid
+    test_id = f"test_carState_{uuid.uuid4().hex[:8]}"
+    pub_sock = messaging.pub_sock(test_id)
+    sub_sock = messaging.sub_sock(test_id, timeout=1000)
     zmq_sleep()
 
     # no msg in queue, socket should timeout
@@ -143,9 +157,11 @@ class TestMessaging:
 
   @pytest.mark.xfail(condition="ZMQ" in os.environ, reason='ZMQ detected')
   def test_recv_one_or_none(self):
-    sock = "carState"
-    pub_sock = messaging.pub_sock(sock)
-    sub_sock = messaging.sub_sock(sock)
+    # Generate a unique socket name to avoid conflicts in parallel execution
+    import uuid
+    test_id = f"test_carState_{uuid.uuid4().hex[:8]}"
+    pub_sock = messaging.pub_sock(test_id)
+    sub_sock = messaging.sub_sock(test_id)
     zmq_sleep()
 
     # no msg in queue, socket shouldn't block
@@ -160,10 +176,12 @@ class TestMessaging:
     assert_carstate(msg.carState, recvd.carState)
 
   def test_recv_one_retry(self):
-    sock = "carState"
+    # Generate a unique socket name to avoid conflicts in parallel execution
+    import uuid
+    test_id = f"test_carState_{uuid.uuid4().hex[:8]}"
     sock_timeout = 0.1
-    pub_sock = messaging.pub_sock(sock)
-    sub_sock = messaging.sub_sock(sock, timeout=round(sock_timeout*1000))
+    pub_sock = messaging.pub_sock(test_id)
+    sub_sock = messaging.sub_sock(test_id, timeout=round(sock_timeout*1000))
     zmq_sleep()
 
     # this test doesn't work with ZMQ since multiprocessing interrupts it
