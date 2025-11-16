@@ -68,7 +68,8 @@ function install_ubuntu_lts_latest_requirements() {
   $SUDO apt-get install -y --no-install-recommends \
     g++-12 \
     python3-dev \
-    python3-venv
+    python3-venv \
+    scons
 }
 
 # Detect OS using /etc/os-release file
