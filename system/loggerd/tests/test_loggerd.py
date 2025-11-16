@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import platform
 import re
 import random
 import string
@@ -180,6 +181,7 @@ class TestLoggerd:
       assert getattr(initData, initData_key) == v
       assert logged_params[param_key].decode() == v
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   @pytest.mark.xdist_group("camera_encoder_tests")  # setting xdist group ensures tests are run in same worker, prevents encoderd from crashing
   def test_rotation(self):
     Params().put("RecordFront", True)
@@ -235,6 +237,7 @@ class TestLoggerd:
     assert bl1.group('uid') != bl2.group('uid')
     assert int(bl1.group('count')) == 0 and int(bl2.group('count')) == 1
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   def test_qlog(self):
     qlog_services = [s for s in CEREAL_SERVICES if SERVICE_LIST[s].decimation is not None]
     no_qlog_services = [s for s in CEREAL_SERVICES if SERVICE_LIST[s].decimation is None]
@@ -265,6 +268,7 @@ class TestLoggerd:
         expected_cnt = (len(msgs) - 1) // SERVICE_LIST[s].decimation + 1
         assert recv_cnt == expected_cnt, f"expected {expected_cnt} msgs for {s}, got {recv_cnt}"
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   def test_rlog(self):
     services = random.sample(CEREAL_SERVICES, random.randint(5, 10))
     sent_msgs = self._publish_random_messages(services)
@@ -282,6 +286,7 @@ class TestLoggerd:
       sent.clear_write_flag()
       assert sent.to_bytes() == m.as_builder().to_bytes()
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   def test_preserving_bookmarked_segments(self):
     services = set(random.sample(CEREAL_SERVICES, random.randint(5, 10))) | {"userBookmark"}
     self._publish_random_messages(services)
@@ -289,6 +294,7 @@ class TestLoggerd:
     segment_dir = self._get_latest_log_dir()
     assert getxattr(segment_dir, PRESERVE_ATTR_NAME) == PRESERVE_ATTR_VALUE
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   def test_not_preserving_nonbookmarked_segments(self):
     services = set(random.sample(CEREAL_SERVICES, random.randint(5, 10))) - {"userBookmark", "audioFeedback"}
     self._publish_random_messages(services)
@@ -296,6 +302,7 @@ class TestLoggerd:
     segment_dir = self._get_latest_log_dir()
     assert getxattr(segment_dir, PRESERVE_ATTR_NAME) is None
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   @pytest.mark.xdist_group("camera_encoder_tests")  # setting xdist group ensures tests are run in same worker, prevents encoderd from crashing
   @pytest.mark.parametrize("record_front", [True, False])
   def test_record_front(self, record_front):
@@ -307,6 +314,7 @@ class TestLoggerd:
     dcamera_hevc_exists = os.path.exists(os.path.join(self._get_latest_log_dir(), 'dcamera.hevc'))
     assert dcamera_hevc_exists == record_front
 
+  @pytest.mark.skipif(platform.system() == "Darwin", reason="Managed processes not supported on macOS")
   @pytest.mark.xdist_group("camera_encoder_tests")  # setting xdist group ensures tests are run in same worker, prevents encoderd from crashing
   @pytest.mark.parametrize("record_audio", [True, False])
   def test_record_audio(self, record_audio):

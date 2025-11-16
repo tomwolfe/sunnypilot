@@ -56,12 +56,20 @@ def openpilot_function_fixture(request):
     is_macos = platform.system() == "Darwin"
 
     # Check if this is a messaging test that would conflict with ZMQ
-    is_messaging_test = "messaging" in request.node.nodeid
+    # On macOS, ZMQ is forced but doesn't work with OPENPILOT_PREFIX
+    # This targets specifically the tests that call managed_processes.start() which causes ZMQ crashes
+    problematic_tests = any(keyword in request.node.nodeid for keyword in [
+        'system/loggerd/tests/', 'system/encoderd/tests/', 'system/camerad/tests/',
+        'test_longitudinal_maneuvers', 'longitudinal_maneuvers'
+    ])
 
-    if is_macos and is_messaging_test:
-      # For messaging tests on macOS, don't use OpenpilotPrefix to avoid ZMQ conflict
+    # For tests that use messaging system on macOS, don't use OpenpilotPrefix to avoid ZMQ conflict
+    if is_macos and problematic_tests:
+      # Even with fake messaging, avoid OpenpilotPrefix in problematic tests
+      os.environ["CEREAL_FAKE"] = "1"
       yield
     else:
+      # For other tests, use OpenpilotPrefix as normal (this provides test isolation)
       with OpenpilotPrefix(shared_download_cache=request.node.get_closest_marker("shared_download_cache") is not None) as prefix:
         prefix = os.environ["OPENPILOT_PREFIX"]
 
