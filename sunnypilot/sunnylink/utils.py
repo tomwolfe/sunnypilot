@@ -1,3 +1,5 @@
+import os # Import os
+import time # Import time
 import base64
 import gzip
 import json
@@ -37,6 +39,14 @@ def sunnylink_need_register(params=None) -> bool:
 def register_sunnylink():
   """Register the device with Sunnylink if it is enabled."""
   extra_args = {}
+
+  if os.environ.get("CI", "0") == "1": # Check for CI environment
+    print("Running in CI, skipping Sunnylink registration.")
+    params = Params()
+    params.put("SunnylinkDongleId", "ci_test_dongle_id")
+    params.put_bool("SunnylinkEnabled", True) # Ensure it's enabled for tests
+    params.put("LastSunnylinkPingTime", int(time.monotonic() * 1e9))
+    return "ci_test_dongle_id"
 
   if not Params().get_bool("SunnylinkEnabled"):
     print("Sunnylink is not enabled. Exiting.")

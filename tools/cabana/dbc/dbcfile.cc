@@ -176,13 +176,7 @@ void DBCFile::parseCM_BO(const std::string &line, const std::string &content, co
   std::regex msg_comment_regexp(R"(^CM_\s+BO_\s+(\w+)\s+\"((?:[^"\\]|\\.)*)\"\s*;)");
   std::smatch match;
 
-  std::string parse_line = line;
-  if (parse_line.length() < 2 || parse_line.substr(parse_line.length() - 2) != "\";") {
-    size_t found = content.find("\";", stream_pos);
-    if (found != std::string::npos) {
-      parse_line = content.substr(stream_pos - raw_line.length() - 1, found - (stream_pos - raw_line.length() - 1) + 2);
-    }
-  }
+  std::string parse_line = line; // Use the current line directly
 
   if (std::regex_search(parse_line, match, msg_comment_regexp)) {
     uint32_t address = std::stoul(match[1].str(), nullptr, 16);
@@ -273,13 +267,7 @@ void DBCFile::parseCM_SG(const std::string &line, const std::string &content, co
   std::regex sg_comment_regexp(R"(^CM_\s+SG_\s+(\w+)\s+(\w+)\s+\"((?:[^"\\]|\\.)*)\"\s*;)");
   std::smatch match;
 
-  std::string parse_line = line;
-  if (parse_line.length() < 2 || parse_line.substr(parse_line.length() - 2) != "\";") {
-    size_t found = content.find("\";", stream_pos);
-    if (found != std::string::npos) {
-      parse_line = content.substr(stream_pos - raw_line.length() - 1, found - (stream_pos - raw_line.length() - 1) + 2);
-    }
-  }
+  std::string parse_line = line; // Use the current line directly
 
   if (std::regex_search(parse_line, match, sg_comment_regexp)) {
     uint32_t address = std::stoul(match[1].str(), nullptr, 16);
@@ -373,10 +361,10 @@ void DBCFile::parseVAL(const std::string &line) {
 }
 
 std::string DBCFile::generateDBC() {
-  std::string dbc_string, comment, val_desc;
+  std::string messages_and_signals_str, comment, val_desc; // Renamed local variable
   for (const auto &[address, m] : msgs) {
     std::string transmitter = m.transmitter.empty() ? std::string(DEFAULT_NODE_NAME) : m.transmitter;
-    dbc_string += "BO_ " + std::to_string(address) + " " + m.name + ": " + std::to_string(m.size) + " " + transmitter + "\n";
+    messages_and_signals_str += "BO_ " + std::to_string(address) + " " + m.name + ": " + std::to_string(m.size) + " " + transmitter + "\n";
     if (!m.comment.empty()) {
       std::string escaped_comment = m.comment;
       size_t pos = 0;
@@ -393,7 +381,7 @@ std::string DBCFile::generateDBC() {
       } else if (sig->type == cabana::Signal::Type::Multiplexed) {
         multiplexer_indicator = "m" + std::to_string(sig->multiplex_value) + " ";
       }
-      dbc_string += " SG_ " + sig->name + " " + multiplexer_indicator + ": " +
+      messages_and_signals_str += " SG_ " + sig->name + " " + multiplexer_indicator + ": " +
                         std::to_string(sig->start_bit) + "|" + std::to_string(sig->size) + "@" +
                         std::to_string(sig->is_little_endian ? 1 : 0) + (sig->is_signed ? "-" : "+") + " (" +
                         doubleToString(sig->factor) + "," + doubleToString(sig->offset) + ") [" +
@@ -419,7 +407,7 @@ std::string DBCFile::generateDBC() {
         val_desc += "VAL_ " + std::to_string(address) + " " + sig->name + " " + text + ";\n";
       }
     }
-    dbc_string += "\n";
+    messages_and_signals_str += "\n";
   }
-  return header + dbc_string + comment + val_desc;
+  return header + messages_and_signals_str + comment + val_desc; // Corrected return
 }

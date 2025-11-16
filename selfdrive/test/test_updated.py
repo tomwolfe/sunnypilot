@@ -43,7 +43,9 @@ class TestUpdated:
                                          shell=True, cwd=BASEDIR, encoding='utf8').split()
     for s in submodules:
       sub_path = os.path.join(org_dir, s.split("_repo")[0])
-      self._run(f"git clone {s} {sub_path}.git", cwd=BASEDIR)
+      # Instead of cloning by name 's', clone the local submodule path
+      local_submodule_path = os.path.join(BASEDIR, s) # e.g., BASEDIR/msgq_repo
+      self._run(f"git clone {local_submodule_path} {sub_path}.git", cwd=BASEDIR)
 
     # setup two git repos, a remote and one we'll run updated in
     self._run([

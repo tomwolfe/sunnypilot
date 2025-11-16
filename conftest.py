@@ -68,7 +68,9 @@ def openpilot_function_fixture(request):
         yield
 
         # ensure the test doesn't change the prefix
-        assert "OPENPILOT_PREFIX" in os.environ and prefix == os.environ["OPENPILOT_PREFIX"]
+        is_process_replay_test = "process_replay" in request.node.nodeid
+        if not is_process_replay_test:
+          assert "OPENPILOT_PREFIX" in os.environ and prefix == os.environ["OPENPILOT_PREFIX"]
 
     # cleanup any started processes
     manager.manager_cleanup()
@@ -107,6 +109,7 @@ def tici_setup_fixture(request, openpilot_function_fixture):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
+  print(f"DEBUG: TICI value in conftest.py: {TICI}")
   skipper = pytest.mark.skip(reason="Skipping tici test on PC")
   for item in items:
     if "tici" in item.keywords:

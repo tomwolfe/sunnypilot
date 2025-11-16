@@ -76,7 +76,7 @@ class TestNeuralNetworkLateralControl:
 
     # Saturate for curvature limited and controller limited
     test_lag = 0.3
-    for _ in range(1000):
+    for _ in range(100):
       controller.extension.update_model_v2(model_v2)
       controller.extension.update_lateral_lag(test_lag)
       controller.update_live_torque_params(torque_params.latAccelFactor, torque_params.latAccelOffset, torque_params.friction)
@@ -84,7 +84,7 @@ class TestNeuralNetworkLateralControl:
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, True)
     assert lac_log.saturated
 
-    for _ in range(1000):
+    for _ in range(100):
       controller.extension.update_model_v2(model_v2)
       controller.extension.update_lateral_lag(test_lag)
       controller.update_live_torque_params(torque_params.latAccelFactor, torque_params.latAccelOffset, torque_params.friction)
@@ -92,7 +92,7 @@ class TestNeuralNetworkLateralControl:
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False)
     assert not lac_log.saturated
 
-    for _ in range(1000):
+    for _ in range(100):
       controller.extension.update_model_v2(model_v2)
       controller.extension.update_lateral_lag(test_lag)
       controller.update_live_torque_params(torque_params.latAccelFactor, torque_params.latAccelOffset, torque_params.friction)

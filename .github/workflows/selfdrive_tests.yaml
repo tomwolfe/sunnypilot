@@ -188,6 +188,10 @@ jobs:
       id: setup-step
     - name: Build openpilot
       run: ${{ env.RUN }} "scons -j$(nproc)"
+    - name: Verify camerad executable
+      run: |
+        ls -l /tmp/openpilot/system/camerad/camerad || true
+        test -f /tmp/openpilot/system/camerad/camerad
     - name: Run unit tests
       timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 999 }}
       run: |

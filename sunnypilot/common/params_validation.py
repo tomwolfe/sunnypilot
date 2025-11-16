@@ -81,7 +81,7 @@ class ParamsValidator:
               # try to convert the string to int first
               try:
                 int_val = int(str(default_value))
-                self.params.put(param_name, str(int_val))
+                self.params.put(param_name, int_val)
               except ValueError:
                 # If conversion fails, re-raise the original error
                 raise e
@@ -149,7 +149,14 @@ class ParamsValidator:
       value = self.params.get(param_name)
       if value is not None:
         decoded_value = value.decode('utf-8') if isinstance(value, bytes) else value
-        return decoded_value.lower() in ['1', 'true', 'on', 'yes', 'enable']
+        # Check if the decoded value is a valid boolean representation
+        if decoded_value.lower() in ['1', 'true', 'on', 'yes', 'enable']:
+          return True
+        elif decoded_value.lower() in ['0', 'false', 'off', 'no', 'disable']:
+          return False
+        else:
+          # If not a valid boolean representation, return the default
+          return default
       else:
         return default
     except Exception:

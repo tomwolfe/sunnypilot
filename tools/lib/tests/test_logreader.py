@@ -48,6 +48,11 @@ def setup_source_scenario(mocker, is_internal=False):
 
 
 class TestLogReader:
+  @pytest.fixture(autouse=True)
+  def setup_method(self, mocker: MockerFixture):
+    # Mock get_max_seg_number_cached to prevent API calls
+    mocker.patch('openpilot.tools.lib.route.get_max_seg_number_cached', return_value=NUM_SEGS - 1)
+
   @parameterized.expand([
     (f"{TEST_ROUTE}", ALL_SEGS),
     (f"{TEST_ROUTE.replace('/', '|')}", ALL_SEGS),
