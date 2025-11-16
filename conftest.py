@@ -73,6 +73,15 @@ def openpilot_function_fixture(request):
     # cleanup any started processes
     manager.manager_cleanup()
 
+    # Additional cleanup of managed processes that might be left running
+    from openpilot.system.manager.process_config import managed_processes
+    for proc_name, proc in managed_processes.items():
+      if proc.proc is not None and proc.proc.is_alive():
+        try:
+          proc.stop()
+        except:
+          pass  # Ignore errors during cleanup
+
     # some processes disable gc for performance, re-enable here
     if not gc.isenabled():
       gc.enable()
@@ -122,3 +131,25 @@ def pytest_configure(config):
 
   config_line = "shared_download_cache: share download cache between tests"
   config.addinivalue_line("markers", config_line)
+
+  # Add markers for tests that need special handling to prevent hanging
+  config_line = "managed_processes_test: marks tests that use managed_processes and need isolation"
+  config.addinivalue_line("markers", config_line)
+
+  config_line = "system_process_test: marks tests that start/stop system processes"
+  config.addinivalue_line("markers", config_line)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config, items):
+  """Identify and mark tests that use managed_processes for special handling."""
+  for item in items:
+    # Check if the test file or test method uses managed_processes
+    if any(keyword in item.nodeid for keyword in [
+        'test_sensord', 'test_locationd', 'test_modeld', 'test_pandad',
+        'test_feedbackd', 'test_pigeond', 'test_boardd', 'test_pandad_loopback',
+        'test_pandad_spi', 'test_pandad_usbprotocol', 'test_manager', 'test_deleter',
+        'test_uploader', 'test_encoder', 'test_loggerd', 'test_athenad'
+    ]):
+      # Mark these tests for special handling to prevent parallel execution conflicts
+      item.add_marker(pytest.mark.xdist_group("system_processes"))
