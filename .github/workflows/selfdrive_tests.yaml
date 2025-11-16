@@ -186,8 +186,8 @@ jobs:
         submodules: true
     - uses: ./.github/workflows/setup-with-retry
       id: setup-step
-    - name: Build openpilot
-      run: ${{ env.RUN }} "scons -j$(nproc)"
+    - name: Build openpilot (verbose camerad)
+      run: ${{ env.RUN }} "scons -j$(nproc) -Q system/camerad/camerad"
     - name: Verify camerad executable
       run: |
         ls -l /tmp/openpilot/system/camerad/camerad || true
