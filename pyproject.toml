@@ -31,6 +31,7 @@ dependencies = [
   # body / webrtcd
   "aiohttp",
   "aiortc",
+  "pyopenssl",
 
   "pyaudio",
 
@@ -43,6 +44,9 @@ dependencies = [
 
   # modeld
   "onnx >= 1.14.0",
+
+  # media processing
+  "av",
 
   # logging
   "pyzmq",
@@ -60,6 +64,9 @@ dependencies = [
 
   # joystickd
   "inputs",
+
+  # python compatibility
+  "future-fstrings",
 
   # these should be removed
   "psutil",
