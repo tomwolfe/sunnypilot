@@ -463,9 +463,11 @@ class DynamicExperimentalController:
       return True
 
     # If longitudinal plan indicates should stop and vEgo is very low, enforce standstill
-    long_plan = sm['longitudinalPlan']
-    if long_plan.shouldStop and car_state.vEgo < 0.5:  # Less than 0.5 m/s should be considered stopped
-      return True
+    # Check if the longitudinalPlan service exists in the SubMaster before accessing it
+    if 'longitudinalPlan' in sm and sm.updated['longitudinalPlan']:
+      long_plan = sm['longitudinalPlan']
+      if long_plan.shouldStop and car_state.vEgo < 0.5:  # Less than 0.5 m/s should be considered stopped
+        return True
 
     # Check if in a stop scenario (traffic light, stop sign, etc.) from model
     if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'stopState'):

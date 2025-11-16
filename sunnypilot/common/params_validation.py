@@ -59,9 +59,9 @@ class ParamsValidator:
         Validated parameter value or default
     """
     try:
-      value = self.params.get(param_name, encoding='utf-8')
-      if value is not None and validator_func(value):
-        return value
+      value = self.params.get(param_name)
+      if value is not None and validator_func(value.decode('utf-8') if isinstance(value, bytes) else value):
+        return value.decode('utf-8') if isinstance(value, bytes) else value
       else:
         # Parameter is invalid, store the default value
         if isinstance(default_value, bool):
@@ -71,7 +71,22 @@ class ParamsValidator:
           self.params.put(param_name, str(default_value))
           return str(default_value)
         else:
-          self.params.put(param_name, str(default_value))
+          # For string default values (like "1", "0", etc.), we need to check if the parameter
+          # is expected to be of a specific type and handle accordingly
+          try:
+            self.params.put(param_name, str(default_value))
+          except TypeError as e:
+            if "expected_type=<ParamKeyType.INT" in str(e):
+              # For parameters defined as INT type that are receiving string values
+              # try to convert the string to int first
+              try:
+                int_val = int(str(default_value))
+                self.params.put(param_name, str(int_val))
+              except ValueError:
+                # If conversion fails, re-raise the original error
+                raise e
+            else:
+              raise
           return str(default_value)
     except Exception:
       # Error retrieving parameter, store and return default
@@ -82,7 +97,18 @@ class ParamsValidator:
         self.params.put(param_name, str(default_value))
         return str(default_value)
       else:
-        self.params.put(param_name, str(default_value))
+        # Handle default values for potentially INT-typed params in error case too
+        try:
+          self.params.put(param_name, str(default_value))
+        except TypeError as e:
+          if "expected_type=<ParamKeyType.INT" in str(e):
+            try:
+              int_val = int(str(default_value))
+              self.params.put(param_name, str(int_val))
+            except ValueError:
+              raise e
+          else:
+            raise
         return str(default_value)
 
   def validate_all_mads_params(self, CP: structs.CarParams) -> None:
@@ -111,18 +137,19 @@ class ParamsValidator:
   def get_bool_param(self, param_name: str, default: bool = False) -> bool:
     """
     Safely retrieve a boolean parameter with validation and fallback.
-    
+
     Args:
         param_name: Name of the parameter to retrieve
         default: Default value if parameter is invalid
-        
+
     Returns:
         Boolean value of the parameter
     """
     try:
-      value = self.params.get(param_name, encoding='utf-8')
+      value = self.params.get(param_name)
       if value is not None:
-        return value.lower() in ['1', 'true', 'on', 'yes', 'enable']
+        decoded_value = value.decode('utf-8') if isinstance(value, bytes) else value
+        return decoded_value.lower() in ['1', 'true', 'on', 'yes', 'enable']
       else:
         return default
     except Exception:

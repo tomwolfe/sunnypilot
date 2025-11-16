@@ -38,7 +38,10 @@ class ModelManagerSP:
     self._download_speed_history: Dict[str, list] = {}
     # Bandwidth management
     self._max_concurrent_downloads = 2  # Limit concurrent downloads to prevent resource exhaustion
-    self._throttle_downloads = self.params.get_bool("ModelManager_ThrottleDownloads")
+    try:
+      self._throttle_downloads = self.params.get_bool("ModelManager_ThrottleDownloads")
+    except Exception:
+      self._throttle_downloads = False  # Default to False if parameter doesn't exist
 
   def _calculate_eta(self, filename: str, progress: float, bytes_downloaded: int, elapsed_time: float) -> int:
     """Calculate ETA based on download speed with historical data"""
@@ -345,7 +348,10 @@ class ModelManagerSP:
         # Update params periodically instead of every loop
         current_time = time.monotonic()
         if current_time - last_params_update >= param_update_interval:
-          self._throttle_downloads = self.params.get_bool("ModelManager_ThrottleDownloads")
+          try:
+            self._throttle_downloads = self.params.get_bool("ModelManager_ThrottleDownloads")
+          except Exception:
+            self._throttle_downloads = False  # Default to False if parameter doesn't exist
           last_params_update = current_time
 
         self.available_models = self.model_fetcher.get_available_bundles()
