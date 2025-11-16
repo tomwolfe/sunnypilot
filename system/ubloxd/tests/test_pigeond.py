@@ -11,6 +11,7 @@ from openpilot.system.hardware.tici.pins import GPIO
 
 # TODO: test TTFF when we have good A-GNSS
 @pytest.mark.tici
+@pytest.mark.timeout(300)  # 5 minute timeout for pigeond tests
 class TestPigeond:
 
   def teardown_method(self):

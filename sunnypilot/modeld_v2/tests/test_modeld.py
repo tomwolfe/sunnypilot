@@ -15,6 +15,7 @@ IMG = np.zeros(int(CAM.width*CAM.height*(3/2)), dtype=np.uint8)
 IMG_BYTES = IMG.flatten().tobytes()
 
 
+@pytest.mark.timeout(300)  # 5 minute timeout for modeld tests
 class TestModeld:
 
   def setup_method(self):

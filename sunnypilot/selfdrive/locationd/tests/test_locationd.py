@@ -17,6 +17,7 @@ if platform.system() == 'Darwin':
   pytest.skip("Skipping locationd test on macOS due to unsupported msgq.", allow_module_level=True)
 
 
+@pytest.mark.timeout(300)  # 5 minute timeout for locationd tests
 class TestLocationdProc:
   LLD_MSGS = ['gpsLocationExternal', 'cameraOdometry', 'carState', 'liveCalibration',
               'accelerometer', 'gyroscope', 'magnetometer']

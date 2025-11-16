@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 
 
 @pytest.mark.tici
+@pytest.mark.timeout(300)  # 5 minute timeout for pandad tests
 class TestPandad:
 
   def setup_method(self):
