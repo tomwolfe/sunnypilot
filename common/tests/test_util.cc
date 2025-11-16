@@ -138,7 +138,7 @@ TEST_CASE("util::safe_fwrite") {
 }
 
 TEST_CASE("util::create_directories") {
-  system("rm /tmp/test_create_directories -rf");
+  system("rm -rf /tmp/test_create_directories");
   std::string dir = "/tmp/test_create_directories/a/b/c/d/e/f";
 
   auto check_dir_permissions = [](const std::string &dir, mode_t mode) -> bool {
@@ -156,7 +156,7 @@ TEST_CASE("util::create_directories") {
   }
   SECTION("a file exists with the same name") {
     REQUIRE(util::create_directories(dir, 0755));
-    int f = open((dir + "/file").c_str(), O_RDWR | O_CREAT);
+    int f = open((dir + "/file").c_str(), O_RDWR | O_CREAT, 0644);
     REQUIRE(f != -1);
     close(f);
     REQUIRE(util::create_directories(dir + "/file", 0755) == false);
