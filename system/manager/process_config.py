@@ -55,6 +55,10 @@ def qcomgps(started: bool, params: Params, CP: car.CarParams) -> bool:
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
 
+def not_ci(started: bool, params: Params, CP: car.CarParams) -> bool:
+  import os
+  return not os.environ.get("CI", False)
+
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
 
@@ -126,7 +130,7 @@ procs = [
   PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
   PythonProcess("sensord", "system.sensord.sensord", only_onroad, enabled=not PC),
-  NativeProcess("ui", "selfdrive/ui", ["./ui"], always_run, watchdog_max_dt=(5 if not PC else None)),
+  NativeProcess("ui", "selfdrive/ui", ["./ui"], not_ci, watchdog_max_dt=(5 if not PC else None)),
   PythonProcess("raylib_ui", "selfdrive.ui.ui", always_run, enabled=not PC, watchdog_max_dt=(5 if not PC else None)),
   PythonProcess("soundd", "selfdrive.ui.soundd", only_onroad),
   PythonProcess("locationd", "selfdrive.locationd.locationd", only_onroad),

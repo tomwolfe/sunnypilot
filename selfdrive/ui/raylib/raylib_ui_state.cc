@@ -249,15 +249,7 @@ void Device::updateWakefulness(const UIState &s) {
   setAwake(s.scene.ignition || interactive_timeout > 0);
 }
 
-#ifdef SUNNYPILOT
-UIState *uiState_raylib() {
-  return uiStateSP();
-}
-
-Device *device_raylib() {
-  return deviceSP();
-}
-#else
+#ifndef SUNNYPILOT
 UIState *uiState_raylib() {
   static UIState ui_state;
   return &ui_state;
@@ -265,6 +257,18 @@ UIState *uiState_raylib() {
 
 Device *device_raylib() {
   static Device _device;
+  return &_device;
+}
+#endif
+
+#ifdef SUNNYPILOT
+UIState *uiState_raylib() {
+  static UIStateSP ui_state;
+  return &ui_state;
+}
+
+Device *device_raylib() {
+  static DeviceSP _device;
   return &_device;
 }
 #endif
