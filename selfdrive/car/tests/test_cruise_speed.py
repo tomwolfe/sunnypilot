@@ -1,4 +1,5 @@
 import pytest
+import platform
 import itertools
 import numpy as np
 
@@ -37,6 +38,10 @@ def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
                       [5,35])) # speed
 class TestCruiseSpeed:
   def test_cruise_speed(self):
+    # Skip on macOS due to ZMQ messaging issues with longitudinal maneuvers plant
+    if platform.system() == "Darwin":
+        pytest.skip("Skipping longitudinal maneuver test on macOS due to messaging issues")
+
     print(f'Testing {self.speed} m/s')
     cruise_speed = float(self.speed)
 

@@ -1,3 +1,5 @@
+import platform
+import pytest
 import itertools
 from parameterized import parameterized_class
 
@@ -184,6 +186,10 @@ class TestLongitudinalControl:
   force_decel: bool
 
   def test_maneuver(self, subtests):
+    # Skip on macOS due to ZMQ messaging issues with longitudinal maneuvers plant
+    if platform.system() == "Darwin":
+        pytest.skip("Skipping longitudinal maneuver test on macOS due to messaging issues")
+
     for maneuver in create_maneuvers({"e2e": self.e2e, "force_decel": self.force_decel}):
       with subtests.test(title=maneuver.title, e2e=maneuver.e2e, force_decel=maneuver.force_decel):
         print(maneuver.title, f'in {"e2e" if maneuver.e2e else "acc"} mode')

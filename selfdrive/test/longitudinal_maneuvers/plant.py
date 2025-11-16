@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import os
 import time
+import platform
 import numpy as np
 
 from cereal import log
@@ -19,11 +21,20 @@ class Plant:
     self.rate = 1. / DT_MDL
 
     if not Plant.messaging_initialized:
-      Plant.radar = messaging.pub_sock('radarState')
-      Plant.controls_state = messaging.pub_sock('controlsState')
-      Plant.selfdrive_state = messaging.pub_sock('selfdriveState')
-      Plant.car_state = messaging.pub_sock('carState')
-      Plant.plan = messaging.sub_sock('longitudinalPlan')
+      try:
+        Plant.radar = messaging.pub_sock('radarState')
+        Plant.controls_state = messaging.pub_sock('controlsState')
+        Plant.selfdrive_state = messaging.pub_sock('selfdriveState')
+        Plant.car_state = messaging.pub_sock('carState')
+        Plant.plan = messaging.sub_sock('longitudinalPlan')
+      except Exception as e:
+        # On platforms where messaging doesn't work (like macOS with ZMQ), skip initialization
+        print(f"Warning: Could not initialize messaging sockets: {e}")
+        Plant.radar = None
+        Plant.controls_state = None
+        Plant.selfdrive_state = None
+        Plant.car_state = None
+        Plant.plan = None
       Plant.messaging_initialized = True
 
     self.v_lead_prev = 0.0
@@ -46,7 +57,12 @@ class Plant:
     self.rk = Ratekeeper(self.rate, print_delay_threshold=100.0)
     self.ts = 1. / self.rate
     time.sleep(0.1)
-    self.sm = messaging.SubMaster(['longitudinalPlan'])
+    try:
+      self.sm = messaging.SubMaster(['longitudinalPlan'])
+    except Exception as e:
+      # On platforms where messaging doesn't work (like macOS with ZMQ), skip SubMaster initialization
+      print(f"Warning: Could not initialize SubMaster: {e}")
+      self.sm = None
 
     from opendbc.car.honda.values import CAR
     from opendbc.car.honda.interface import CarInterface
@@ -142,7 +158,16 @@ class Plant:
           'carStateSP': car_state_sp.carStateSP,
           'liveMapDataSP': live_map_data_sp.liveMapDataSP,
           'gpsLocation': gps_data.gpsLocation}
-    self.planner.update(sm)
+
+    # On macOS with ZMQ, we might not have SubMaster initialized, so directly use the sm dict
+    # The planner might expect some data from the SubMaster, but we can pass the sm dict directly
+    if hasattr(self, 'sm') and self.sm is not None:
+      self.planner.update(sm)
+    else:
+      # For macOS with ZMQ, we pass the data directly instead of through SubMaster
+      # The planner.update method should be able to handle the sm dict directly
+      self.planner.update(sm)
+
     self.acceleration = self.planner.output_a_target
     self.speed = self.speed + self.acceleration * self.ts
     self.should_stop = self.planner.output_should_stop

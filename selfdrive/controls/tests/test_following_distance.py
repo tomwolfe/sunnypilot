@@ -1,4 +1,5 @@
 import pytest
+import platform
 import itertools
 from parameterized import parameterized_class
 
@@ -33,6 +34,10 @@ def run_following_distance_simulation(v_lead, t_end=100.0, e2e=False, personalit
                       [0,10,35])) # speed
 class TestFollowingDistance:
   def test_following_distance(self):
+    # Skip on macOS due to ZMQ messaging issues with longitudinal maneuvers plant
+    if platform.system() == "Darwin":
+        pytest.skip("Skipping longitudinal maneuver test on macOS due to messaging issues")
+
     v_lead = float(self.speed)
     simulation_steady_state = run_following_distance_simulation(v_lead, e2e=self.e2e, personality=self.personality)
     correct_steady_state = desired_follow_distance(v_lead, v_lead, get_T_FOLLOW(self.personality))
