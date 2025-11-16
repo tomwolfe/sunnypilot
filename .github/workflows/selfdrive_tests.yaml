@@ -189,9 +189,7 @@ jobs:
     - name: Build openpilot (verbose camerad)
       run: ${{ env.RUN }} /bin/bash -c "set -x && git config --global --add safe.directory /tmp/openpilot/panda && scons -j$(nproc) system/camerad"
     - name: Verify camerad executable
-      run: |
-        ls -l /tmp/openpilot/system/camerad/camerad || true
-        test -f /tmp/openpilot/system/camerad/camerad
+      run: ${{ env.RUN }} /bin/bash -c "ls -l /tmp/openpilot/system/camerad/camerad && test -f /tmp/openpilot/system/camerad/camerad"
     - name: Run unit tests
       timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 999 }}
       run: |
