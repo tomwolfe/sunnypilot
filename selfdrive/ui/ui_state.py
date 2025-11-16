@@ -1,3 +1,4 @@
+import os
 import pyray as rl
 import numpy as np
 import time
@@ -83,7 +84,7 @@ class UIState:
     return not self.started
 
   def update(self) -> None:
-    self.sm.update(0)
+    self.sm.update(100 if os.environ.get("CI") else 0)
     self._update_state()
     self._update_status()
     device.update()
