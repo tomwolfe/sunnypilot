@@ -15,7 +15,7 @@ def main():
     from openpilot.selfdrive.ui.ui_state import ui_state
 
     # Initialize UI state without GUI
-    ui_state.sm.init_threading()
+
 
     # Run a simple loop to keep the process alive and update UI state
     try:
