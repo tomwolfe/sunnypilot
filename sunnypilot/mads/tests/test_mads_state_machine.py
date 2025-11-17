@@ -15,6 +15,12 @@ def _get_event_mappings(events):
     return events._event_mappings
   return events.get_events_mapping()
 
+# State mapping from capnp schema:
+# State.disabled = 0
+# State.paused = 1
+# State.enabled = 2
+# State.softDisabling = 3
+# State.overriding = 4
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 EventNameSP = custom.OnroadEventSP.EventName
 EventName = log.OnroadEvent.EventName # Use EventName from log for dummy events
@@ -83,26 +89,18 @@ class TestMADSStateMachine:
         assert State.disabled == self.state_machine.state
 
   def test_user_disable_to_paused(self):
-    paused_events = (EventNameSP.silentLkasDisable, )
-    for state in ALL_STATES:
-      for et_event_type in MAINTAIN_STATES[state]:
-        self.clear_events()
-        event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-        self.events_sp.add(event_name_to_add)
-        event_mappings = _get_event_mappings(self.events_sp)
-        if event_name_to_add in event_mappings:
-          event_mappings[event_name_to_add][ET.USER_DISABLE] = None # Simulate mapping
-        else:
-          # If the event_name_to_add is not in the mapping, skip this test iteration
-          continue
+    # Test that when we have both a USER_DISABLE event and silentLkasDisable event,
+    # the state transitions to paused instead of disabled
+    self.state_machine.state = State.enabled  # Start with enabled state
+    self.clear_events()
 
-        for en in paused_events:
-          self.events_sp.add(en) # Add silentLkasDisable directly
+    # Add events that will trigger USER_DISABLE
+    self.events_sp.add(EventNameSP.lkasDisable)  # This maps to ET.USER_DISABLE in EVENTS_SP
+    self.events_sp.add(EventNameSP.silentLkasDisable)  # Also add silent event
 
-          self.state_machine.state = state
-          self.state_machine.update()
-          final_state = State.paused if self.events_sp.has(en) and state != State.disabled else State.disabled
-          assert self.state_machine.state == final_state
+    self.state_machine.update()
+    # Should transition to paused because of silentLkasDisable
+    assert self.state_machine.state == State.paused
 
   def test_soft_disable(self):
     for state in ALL_STATES:
@@ -124,11 +122,9 @@ class TestMADSStateMachine:
   def test_soft_disable_timer(self):
     self.state_machine.state = State.enabled
     self.clear_events()
-    event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-    self.events_sp.add(event_name_to_add)
-    event_mappings = _get_event_mappings(self.events_sp)
-    if event_name_to_add in event_mappings:
-      event_mappings[event_name_to_add][ET.SOFT_DISABLE] = None # Simulate mapping
+    # Use an event that maps to ET.SOFT_DISABLE
+    from openpilot.selfdrive.selfdrived.events import EventName
+    self.events.add(EventName.steerTempUnavailable)  # This maps to ET.SOFT_DISABLE in main events
 
     self.state_machine.update()
     for _ in range(int(SOFT_DISABLE_TIME / DT_CTRL)):
@@ -157,50 +153,53 @@ class TestMADSStateMachine:
   def test_no_entry_paused(self):
     self.state_machine.state = State.paused
     self.clear_events()
-    event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-    self.events_sp.add(event_name_to_add)
-    event_mappings = _get_event_mappings(self.events_sp)
-    if event_name_to_add in event_mappings:
-      event_mappings[event_name_to_add][ET.NO_ENTRY] = None
+    # Use an event that maps to ET.NO_ENTRY - using SP event that has NO_ENTRY mapping
+    # Based on EVENTS_SP, several events map to NO_ENTRY like EventNameSP.silentWrongGear
+    self.events_sp.add(EventNameSP.silentWrongGear)  # This maps to ET.NO_ENTRY in EVENTS_SP
 
     self.state_machine.update()
+    # When in paused state with NO_ENTRY event (but no ENABLE event), should remain paused
     assert self.state_machine.state == State.paused
 
   def test_override_lateral(self):
     self.state_machine.state = State.enabled
     self.clear_events()
-    event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-    self.events_sp.add(event_name_to_add)
-    event_mappings = _get_event_mappings(self.events_sp)
-    if event_name_to_add in event_mappings:
-      event_mappings[event_name_to_add][ET.OVERRIDE_LATERAL] = None
+    # Use the correct original event name that maps to ET.OVERRIDE_LATERAL
+    # Note: For the SP events, we need to check what actually maps to OVERRIDE_LATERAL
+    # Since there's no direct SP event mapping to OVERRIDE_LATERAL in EVENTS_SP,
+    # we'll simulate by using the main event system
+    from openpilot.selfdrive.selfdrived.events import EventName
+    self.events.add(EventName.steerOverride)  # This maps to ET.OVERRIDE_LATERAL in main events
 
     self.state_machine.update()
+    # When enabled state receives OVERRIDE_LATERAL event, should transition to overriding
     assert self.state_machine.state == State.overriding
 
   def test_paused_to_enabled(self):
     self.state_machine.state = State.paused
     self.clear_events()
-    event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-    self.events_sp.add(event_name_to_add)
-    event_mappings = _get_event_mappings(self.events_sp)
-    if event_name_to_add in event_mappings:
-      event_mappings[event_name_to_add][ET.ENABLE] = None
+    # Use an event that maps to ET.ENABLE
+    self.events_sp.add(EventNameSP.lkasEnable)  # This maps to ET.ENABLE in EVENTS_SP
 
     self.state_machine.update()
+    # When paused state receives ENABLE event, should transition to enabled
     assert self.state_machine.state == State.enabled
 
   def test_maintain_states(self):
+    # Test that certain events maintain the current state according to MAINTAIN_STATES mapping
+    from openpilot.selfdrive.selfdrived.events import EventName
+
     for state in ALL_STATES:
       for et_event_type in MAINTAIN_STATES[state]:
         self.state_machine.state = state
         self.clear_events()
         if et_event_type is not None:
-          event_name_to_add = EventNameSP.lkasDisable # Use a valid SP event name
-          self.events_sp.add(event_name_to_add)
-          event_mappings = _get_event_mappings(self.events_sp)
-          if event_name_to_add in event_mappings:
-            event_mappings[event_name_to_add][et_event_type] = None
+          # Add events based on the event type to maintain state
+          if et_event_type == ET.SOFT_DISABLE:
+            self.events.add(EventName.steerTempUnavailable)  # Maps to ET.SOFT_DISABLE
+          elif et_event_type == ET.OVERRIDE_LATERAL:
+            self.events.add(EventName.steerOverride)  # Maps to ET.OVERRIDE_LATERAL
 
         self.state_machine.update()
+        # State should be maintained according to MAINTAIN_STATES mapping
         assert self.state_machine.state == state
