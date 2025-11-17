@@ -62,6 +62,7 @@ def join_process(process: Process, timeout: float) -> None:
 class ManagerProcess(ABC):
   daemon = False
   sigkill = False
+  watchdog_max_dt: int | None = None
   should_run: Callable[[bool, Params, car.CarParams], bool]
   proc: Process | None = None
   enabled = True
@@ -139,13 +140,14 @@ class ManagerProcess(ABC):
 
 
 class NativeProcess(ManagerProcess):
-  def __init__(self, name, cwd, cmdline, should_run, enabled=True, sigkill=False):
+  def __init__(self, name, cwd, cmdline, should_run, enabled=True, sigkill=False, watchdog_max_dt=None):
     self.name = name
     self.cwd = cwd
     self.cmdline = cmdline
     self.should_run = should_run
     self.enabled = enabled
     self.sigkill = sigkill
+    self.watchdog_max_dt = watchdog_max_dt
     self.launcher = nativelauncher
 
   def prepare(self) -> None:
@@ -167,12 +169,13 @@ class NativeProcess(ManagerProcess):
 
 
 class PythonProcess(ManagerProcess):
-  def __init__(self, name, module, should_run, enabled=True, sigkill=False):
+  def __init__(self, name, module, should_run, enabled=True, sigkill=False, watchdog_max_dt=None):
     self.name = name
     self.module = module
     self.should_run = should_run
     self.enabled = enabled
     self.sigkill = sigkill
+    self.watchdog_max_dt = watchdog_max_dt
     self.launcher = launcher
 
   def prepare(self) -> None:
@@ -201,11 +204,12 @@ class PythonProcess(ManagerProcess):
 class DaemonProcess(ManagerProcess):
   """Python process that has to stay running across manager restart.
   This is used for athena so you don't lose SSH access when restarting manager."""
-  def __init__(self, name, module, param_name, enabled=True):
+  def __init__(self, name, module, param_name, enabled=True, watchdog_max_dt=None):
     self.name = name
     self.module = module
     self.param_name = param_name
     self.enabled = enabled
+    self.watchdog_max_dt = watchdog_max_dt
     self.params = None
 
   @staticmethod
