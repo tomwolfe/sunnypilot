@@ -2,9 +2,14 @@ import os
 import copy
 import random
 import time
+import platform
 import pytest
 from collections import defaultdict
 from pprint import pprint
+
+# Skip on macOS due to messaging system incompatibility
+if platform.system() == "Darwin":  # macOS
+  pytest.skip("Panda loopback tests not supported on macOS", allow_module_level=True)
 
 import cereal.messaging as messaging
 from cereal import car, log

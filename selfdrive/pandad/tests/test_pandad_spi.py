@@ -1,8 +1,13 @@
 import os
 import time
+import platform
 import numpy as np
 import pytest
 import random
+
+# Skip on macOS due to messaging system incompatibility
+if platform.system() == "Darwin":  # macOS
+  pytest.skip("Panda SPI tests not supported on macOS", allow_module_level=True)
 
 import cereal.messaging as messaging
 from cereal.services import SERVICE_LIST

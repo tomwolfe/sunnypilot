@@ -1,6 +1,7 @@
 import math
 import json
 import os
+import platform
 import pytest
 import shutil
 import subprocess
@@ -9,6 +10,10 @@ import numpy as np
 from collections import Counter, defaultdict
 from pathlib import Path
 from tabulate import tabulate
+
+# Skip on macOS due to messaging system and process management incompatibility
+if platform.system() == "Darwin":  # macOS
+  pytest.skip("Onroad tests not supported on macOS", allow_module_level=True)
 
 from cereal import log
 import cereal.messaging as messaging

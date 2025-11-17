@@ -1,4 +1,5 @@
 import cereal.messaging as messaging
+import platform
 
 from opendbc.car.toyota.values import CAR as TOYOTA
 from openpilot.selfdrive.test.process_replay import replay_process_with_name
@@ -8,6 +9,11 @@ class TestLeads:
   def test_radar_fault(self):
     # if there's no radar-related can traffic, radard should either not respond or respond with an error
     # this is tightly coupled with underlying car radar_interface implementation, but it's a good sanity check
+    # NOTE: This test is skipped on macOS due to ZMQ compatibility issues with process replay
+    if platform.system() == "Darwin":  # macOS
+      import pytest
+      pytest.skip("Process replay test not supported on macOS")
+
     def single_iter_pkg():
       # single iter package, with meaningless cans and empty carState/modelV2
       msgs = []

@@ -1,3 +1,10 @@
+import platform
+
+# Skip on macOS due to process replay incompatibility
+if platform.system() == "Darwin":  # macOS
+  import pytest
+  pytest.skip("Process replay tests not supported on macOS", allow_module_level=True)
+
 import copy
 import os
 from hypothesis import given, HealthCheck, Phase, settings
