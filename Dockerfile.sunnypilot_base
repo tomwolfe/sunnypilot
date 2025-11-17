@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     llvm \
     clang \
     llvm-dev \
-    clang-dev \
+    libclang-dev \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /tmp/opencl-driver-intel && \
