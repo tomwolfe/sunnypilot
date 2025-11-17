@@ -11,6 +11,8 @@
 
 selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
 system/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
+system/hardware/tici/updater_magic !filter !diff !merge
+system/hardware/tici/updater_weston !filter !diff !merge
 third_party/**/*.a filter=lfs diff=lfs merge=lfs -text
 third_party/**/*.so filter=lfs diff=lfs merge=lfs -text
 third_party/**/*.so.* filter=lfs diff=lfs merge=lfs -text
