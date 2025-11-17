@@ -1,3 +1,4 @@
+import os
 import pytest
 import time
 
@@ -7,6 +8,11 @@ from openpilot.common.gpio import gpio_read
 from openpilot.selfdrive.test.helpers import with_processes
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.hardware.tici.pins import GPIO
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI", "0") == "1" or os.getenv("GITHUB_ACTIONS", "false") == "true",
+    reason="Skipping hardware-dependent tests on CI (no ublox / device present)"
+)
 
 
 # TODO: test TTFF when we have good A-GNSS

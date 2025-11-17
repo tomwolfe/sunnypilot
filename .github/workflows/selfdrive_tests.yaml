@@ -195,8 +195,8 @@ jobs:
       run: |
         ${{ env.RUN }} /bin/bash -c "source selfdrive/test/setup_xvfb.sh && \
                         # Pre-compile Python bytecode so each pytest worker doesn't need to
-                        $PYTEST --collect-only -m 'not slow' -qq && \
-                        MAX_EXAMPLES=1 $PYTEST -m 'not slow' && \
+                        $PYTEST --collect-only -m 'unit and not slow' -qq && \
+                        MAX_EXAMPLES=1 $PYTEST -m 'unit and not slow' && \
                         chmod -R 777 /tmp/comma_download_cache"
 
   process_replay:

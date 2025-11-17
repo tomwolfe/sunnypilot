@@ -1,9 +1,15 @@
+import os
 import time
 import numpy as np
 import pytest
 
 from openpilot.selfdrive.test.helpers import with_processes
 from openpilot.system.camerad.snapshot import get_snapshots
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI", "0") == "1" or os.getenv("GITHUB_ACTIONS", "false") == "true",
+    reason="Skipping hardware-dependent tests on CI (no camera devices present)"
+)
 
 TEST_TIME = 45
 REPEAT = 5

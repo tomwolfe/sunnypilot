@@ -64,7 +64,7 @@ class EventsSP(EventsBase):
     return EVENTS_SP
 
   def get_event_name(self, event: int):
-    return EVENT_NAME_SP[event]
+    return EVENT_NAME_SP.get(event, f"unknown_event_{event}")
 
   def get_event_msg_type(self):
     return custom.OnroadEventSP.Event

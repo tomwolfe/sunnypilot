@@ -13,6 +13,11 @@ from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.hardware.tici.pins import GPIO
 
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI", "0") == "1" or os.getenv("GITHUB_ACTIONS", "false") == "true",
+    reason="Skipping hardware-dependent tests on CI (no panda / device present)"
+)
+
 HERE = os.path.dirname(os.path.realpath(__file__))
 
 

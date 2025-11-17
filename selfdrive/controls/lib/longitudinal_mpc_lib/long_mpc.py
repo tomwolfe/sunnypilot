@@ -90,9 +90,13 @@ def desired_follow_distance(v_ego, v_lead, t_follow=None):
     t_follow = get_T_FOLLOW(log.LongitudinalPersonality.standard)  # Default to standard personality
   distance = get_safe_obstacle_distance(v_ego, t_follow) - get_stopped_equivalence_factor(v_lead)
   # Guard against invalid/excessive outputs
-  if np.isnan(distance) or distance > 100.0 or distance < 0.0:
-    # choose an appropriate safe default; e.g. 50m is a reasonable max following distance
-    distance = min(max(distance, 0.0), 50.0)  # Clamp between 0 and 50
+  if np.isnan(distance) or np.isinf(distance):
+    # Return a safe default if calculation resulted in NaN or infinity
+    distance = 50.0  # reasonable default following distance
+  elif distance > 200.0:  # clamp to reasonable maximum
+    distance = 200.0
+  elif distance < 0.0:  # clamp to minimum
+    distance = 0.0
   return distance
 
 
