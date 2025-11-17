@@ -23,11 +23,18 @@ echo "installing python packages..."
 uv sync --frozen --all-extras
 source .venv/bin/activate
 
-# Install tinygrad submodule in development mode
+# Install tinygrad submodule
 if [ -d "tinygrad_repo" ]; then
-  echo "Installing tinygrad in development mode..."
+  echo "Installing tinygrad..."
   cd tinygrad_repo
-  pip install -e .
+  # Use normal installation in CI to avoid segfaults during model compilation
+  if [ "$CI" = "true" ] || [ ! -z "$GITHUB_ACTIONS" ]; then
+    echo "CI environment detected - installing tinygrad normally to avoid segfaults..."
+    pip install .
+  else
+    echo "Installing tinygrad in development mode..."
+    pip install -e .
+  fi
   cd ..
 fi
 
