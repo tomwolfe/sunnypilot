@@ -51,7 +51,8 @@ def tg_compile(flags, model_name):
 for model_name in ['driving_vision', 'driving_policy', 'dmonitoring_model']:
   # Use CPU backend in CI to avoid LLVM issues
   if os.environ.get('CI'):
-    flags = 'DEV=CPU IMAGE=0'
+    # Use a safer backend with additional memory limits to avoid segfaults
+    flags = 'DEV=CPU IMAGE=0 JIT_BATCH_SIZE=0'
   else:
     flags = {
       'larch64': 'DEV=QCOM',

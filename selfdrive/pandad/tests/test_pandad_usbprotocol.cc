@@ -41,7 +41,7 @@ PandaTest::PandaTest(uint32_t bus_offset_, int can_list_size, cereal::PandaState
     const std::string &dat = test_data[dlc_to_len[id]];
     can.setAddress(i);
     can.setSrc(util::random_int(0, 2) + bus_offset);
-    can.setDat(kj::ArrayPtr((uint8_t *)dat.data(), dat.size()));
+    can.setDat(kj::arrayPtr((const kj::byte*)dat.data(), dat.size()));
     total_pakets_size += sizeof(can_header) + dat.size();
   }
 
