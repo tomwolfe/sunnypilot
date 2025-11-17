@@ -1,20 +1,17 @@
-import os
 import pyray as rl
 import numpy as np
 import time
 import threading
 from collections.abc import Callable
 from enum import Enum
-from cereal import messaging, log
+from cereal import messaging, car, log
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.ui.lib.prime_state import PrimeState
-from openpilot.system.ui.lib.application import DEFAULT_FPS
-from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.hardware import HARDWARE
 
-UI_BORDER_SIZE = 30
 BACKLIGHT_OFFROAD = 50
 
 
@@ -52,6 +49,7 @@ class UIState:
         "managerState",
         "selfdriveState",
         "longitudinalPlan",
+        "rawAudioData",
       ]
     )
 
@@ -60,6 +58,7 @@ class UIState:
     # UI Status tracking
     self.status: UIStatus = UIStatus.DISENGAGED
     self.started_frame: int = 0
+    self.started_time: float = 0.0
     self._engaged_prev: bool = False
     self._started_prev: bool = False
 
@@ -67,11 +66,25 @@ class UIState:
     self.is_metric: bool = self.params.get_bool("IsMetric")
     self.started: bool = False
     self.ignition: bool = False
+    self.recording_audio: bool = False
     self.panda_type: log.PandaState.PandaType = log.PandaState.PandaType.unknown
     self.personality: log.LongitudinalPersonality = log.LongitudinalPersonality.standard
+    self.has_longitudinal_control: bool = False
+    self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
+    self._param_update_time: float = 0.0
 
-    self._update_params()
+    # Callbacks
+    self._offroad_transition_callbacks: list[Callable[[], None]] = []
+    self._engaged_transition_callbacks: list[Callable[[], None]] = []
+
+    self.update_params()
+
+  def add_offroad_transition_callback(self, callback: Callable[[], None]):
+    self._offroad_transition_callbacks.append(callback)
+
+  def add_engaged_transition_callback(self, callback: Callable[[], None]):
+    self._engaged_transition_callbacks.append(callback)
 
   @property
   def engaged(self) -> bool:
@@ -84,9 +97,12 @@ class UIState:
     return not self.started
 
   def update(self) -> None:
-    self.sm.update(100 if os.environ.get("CI") else 0)
+    self.prime_state.start()  # start thread after manager forks ui
+    self.sm.update(0)
     self._update_state()
     self._update_status()
+    if time.monotonic() - self._param_update_time > 5.0:
+      self.update_params()
     device.update()
 
   def _update_state(self) -> None:
@@ -113,6 +129,11 @@ class UIState:
     # Update started state
     self.started = self.sm["deviceState"].started and self.ignition
 
+    # Update recording audio state
+    self.recording_audio = self.params.get_bool("RecordAudio") and self.started
+
+    self.is_metric = self.params.get_bool("IsMetric")
+
   def _update_status(self) -> None:
     if self.started and self.sm.updated["selfdriveState"]:
       ss = self.sm["selfdriveState"]
@@ -125,6 +146,8 @@ class UIState:
 
     # Check for engagement state changes
     if self.engaged != self._engaged_prev:
+      for callback in self._engaged_transition_callbacks:
+        callback()
       self._engaged_prev = self.engaged
 
     # Handle onroad/offroad transition
@@ -132,14 +155,24 @@ class UIState:
       if self.started:
         self.status = UIStatus.DISENGAGED
         self.started_frame = self.sm.frame
+        self.started_time = time.monotonic()
+
+      for callback in self._offroad_transition_callbacks:
+        callback()
 
       self._started_prev = self.started
 
-  def _update_params(self) -> None:
-    try:
-      self.is_metric = self.params.get_bool("IsMetric")
-    except UnknownKeyName:
-      self.is_metric = False
+  def update_params(self) -> None:
+    # For slower operations
+    # Update longitudinal control state
+    CP_bytes = self.params.get("CarParamsPersistent")
+    if CP_bytes is not None:
+      self.CP = messaging.log_from_bytes(CP_bytes, car.CarParams)
+      if self.CP.alphaLongitudinalAvailable:
+        self.has_longitudinal_control = self.params.get_bool("AlphaLongitudinalEnabled")
+      else:
+        self.has_longitudinal_control = self.CP.openpilotLongitudinalControl
+    self._param_update_time = time.monotonic()
 
 
 class Device:
@@ -152,7 +185,7 @@ class Device:
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
-    self._brightness_filter = FirstOrderFilter(BACKLIGHT_OFFROAD, 10.00, 1 / DEFAULT_FPS)
+    self._brightness_filter = FirstOrderFilter(BACKLIGHT_OFFROAD, 10.00, 1 / gui_app.target_fps)
     self._brightness_thread: threading.Thread | None = None
 
   def reset_interactive_timeout(self, timeout: int = -1) -> None:
@@ -195,11 +228,8 @@ class Device:
 
     if brightness != self._last_brightness:
       if self._brightness_thread is None or not self._brightness_thread.is_alive():
-        cloudlog.debug(f"setting display brightness {brightness}")
-        # Only set brightness if not in CI
-        if not os.environ.get("CI"):
-          self._brightness_thread = threading.Thread(target=HARDWARE.set_screen_brightness, args=(brightness,))
-          self._brightness_thread.start()
+        self._brightness_thread = threading.Thread(target=HARDWARE.set_screen_brightness, args=(brightness,))
+        self._brightness_thread.start()
         self._last_brightness = brightness
 
   def _update_wakefulness(self):
@@ -207,18 +237,7 @@ class Device:
     ignition_just_turned_off = not ui_state.ignition and self._ignition
     self._ignition = ui_state.ignition
 
-    # Only check mouse events if not in CI environment
-    mouse_events = []
-    if not os.environ.get("CI"):
-      try:
-        from openpilot.system.ui.lib.application import gui_app
-        mouse_events = gui_app.mouse_events
-      except:
-        # If there's an issue with importing or accessing gui_app, use empty list
-        mouse_events = []
-    # In CI mode, we just use an empty list for mouse events
-
-    if ignition_just_turned_off or any(ev.left_down for ev in mouse_events):
+    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
       self.reset_interactive_timeout()
 
     interaction_timeout = time.monotonic() > self._interaction_time
@@ -233,9 +252,8 @@ class Device:
     if on != self._awake:
       self._awake = on
       cloudlog.debug(f"setting display power {int(on)}")
-      # Only set display power if not in CI
-      if not os.environ.get("CI"):
-        HARDWARE.set_display_power(on)
+      HARDWARE.set_display_power(on)
+      gui_app.set_should_render(on)
 
 
 # Global instance

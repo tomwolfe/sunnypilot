@@ -3,62 +3,26 @@ import subprocess
 import sys
 import sysconfig
 import platform
+import shlex
 import numpy as np
 
 import SCons.Errors
 
 SCons.Warnings.warningAsException(True)
 
-# pending upstream fix - https://github.com/SCons/scons/issues/4461
-#SetOption('warn', 'all')
-
-TICI = os.path.isfile('/TICI')
-AGNOS = TICI
-
 Decider('MD5-timestamp')
 
 SetOption('num_jobs', max(1, int(os.cpu_count()/2)))
 
-AddOption('--kaitai',
-          action='store_true',
-          help='Regenerate kaitai struct parsers')
-
-AddOption('--asan',
-          action='store_true',
-          help='turn on ASAN')
-
-AddOption('--ubsan',
-          action='store_true',
-          help='turn on UBSan')
-
-AddOption('--coverage',
-          action='store_true',
-          help='build with test coverage options')
-
-AddOption('--clazy',
-          action='store_true',
-          help='build with clazy')
-
-AddOption('--ccflags',
-          action='store',
-          type='string',
-          default='',
-          help='pass arbitrary flags over the command line')
-
-AddOption('--external-sconscript',
-          action='store',
-          metavar='FILE',
-          dest='external_sconscript',
-          help='add an external SConscript to the build')
-
-AddOption('--mutation',
-          action='store_true',
-          help='generate mutation-ready code')
-
+AddOption('--kaitai', action='store_true', help='Regenerate kaitai struct parsers')
+AddOption('--asan', action='store_true', help='turn on ASAN')
+AddOption('--ubsan', action='store_true', help='turn on UBSan')
+AddOption('--mutation', action='store_true', help='generate mutation-ready code')
+AddOption('--ccflags', action='store', type='string', default='', help='pass arbitrary flags over the command line')
 AddOption('--minimal',
           action='store_false',
           dest='extras',
-          default=os.path.exists(File('#.lfsconfig').abspath), # minimal by default on release branch (where there's no LFS)
+          default=os.path.exists(File('#.gitattributes').abspath), # minimal by default on release branch (where there's no LFS)
           help='the minimum build to run openpilot. no tests, tools, etc.')
 
 AddOption('--stock-ui',
@@ -67,112 +31,31 @@ AddOption('--stock-ui',
           default=False,
           help='Deprecated option - Raylib UI is now standard. This flag is maintained for compatibility.')
 
-## Architecture name breakdown (arch)
-## - larch64: linux tici aarch64
-## - aarch64: linux pc aarch64
-## - x86_64:  linux pc x64
-## - Darwin:  mac x64 or arm64
-real_arch = arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
+# Detect platform
+arch = real_arch = subprocess.check_output(["uname", "-m"], encoding='utf8').rstrip()
 if platform.system() == "Darwin":
   arch = "Darwin"
   brew_prefix = subprocess.check_output(['brew', '--prefix'], encoding='utf8').strip()
-elif arch == "aarch64" and AGNOS:
+elif arch == "aarch64" and os.path.isfile('/TICI'):
   arch = "larch64"
-assert arch in ["larch64", "aarch64", "x86_64", "Darwin"]
 
-lenv = {
-  "PATH": os.environ['PATH'],
-  "PYTHONPATH": Dir("#").abspath + ':' + Dir(f"#third_party/acados").abspath,
-
-  "ACADOS_SOURCE_DIR": Dir("#third_party/acados").abspath,
-  "ACADOS_PYTHON_INTERFACE_PATH": Dir("#third_party/acados/acados_template").abspath,
-  "TERA_PATH": Dir("#").abspath + f"/third_party/acados/{arch}/t_renderer"
-}
-
-rpath = []
-
-if arch == "larch64":
-  cpppath = [
-    "#third_party/opencl/include",
-  ]
-
-  libpath = [
-    "/usr/local/lib",
-    "/system/vendor/lib64",
-    f"#third_party/acados/{arch}/lib",
-  ]
-
-  libpath += [
-    "#third_party/snpe/larch64",
-    "#third_party/libyuv/larch64/lib",
-    "/usr/lib/aarch64-linux-gnu"
-  ]
-  cflags = ["-DQCOM2", "-mcpu=cortex-a57"]
-  cxxflags = ["-DQCOM2", "-mcpu=cortex-a57"]
-  rpath += ["/usr/local/lib"]
-else:
-  cflags = []
-  cxxflags = []
-  cpppath = []
-  rpath += []
-
-  # MacOS
-  if arch == "Darwin":
-    libpath = [
-      f"#third_party/libyuv/{arch}/lib",
-      f"#third_party/acados/{arch}/lib",
-      f"{brew_prefix}/lib",
-      f"{brew_prefix}/opt/openssl@3.0/lib",
-      "/System/Library/Frameworks/OpenGL.framework/Libraries",
-    ]
-
-    cflags += ["-DGL_SILENCE_DEPRECATION"]
-    cxxflags += ["-DGL_SILENCE_DEPRECATION"]
-    cpppath += [
-      f"{brew_prefix}/include",
-      f"{brew_prefix}/opt/openssl@3.0/include",
-    ]
-  # Linux
-  else:
-    libpath = [
-      f"#third_party/acados/{arch}/lib",
-      f"#third_party/libyuv/{arch}/lib",
-      "/usr/lib",
-      "/usr/local/lib",
-    ]
-
-    if arch == "x86_64":
-      libpath += [
-        f"#third_party/snpe/{arch}"
-      ]
-      rpath += [
-        Dir(f"#third_party/snpe/{arch}").abspath,
-      ]
-
-if GetOption('asan'):
-  ccflags = ["-fsanitize=address", "-fno-omit-frame-pointer"]
-  ldflags = ["-fsanitize=address"]
-elif GetOption('ubsan'):
-  ccflags = ["-fsanitize=undefined"]
-  ldflags = ["-fsanitize=undefined"]
-else:
-  ccflags = []
-  ldflags = []
-
-# no --as-needed on mac linker
-if arch != "Darwin":
-  ldflags += ["-Wl,--as-needed", "-Wl,--no-undefined"]
-
-# Always include SUNNYPILOT flag since Raylib UI is now standard
-cflags += ["-DSUNNYPILOT"]
-cxxflags += ["-DSUNNYPILOT"]
-
-ccflags_option = GetOption('ccflags')
-if ccflags_option:
-  ccflags += ccflags_option.split(' ')
+assert arch in [
+  "larch64",  # linux tici arm64
+  "aarch64",  # linux pc arm64
+  "x86_64",   # linux pc x64
+  "Darwin",   # macOS arm64 (x86 not supported)
+]
 
 env = Environment(
-  ENV=lenv,
+  ENV={
+    "PATH": os.environ['PATH'],
+    "PYTHONPATH": Dir("#").abspath + ':' + Dir(f"#third_party/acados").abspath,
+    "ACADOS_SOURCE_DIR": Dir("#third_party/acados").abspath,
+    "ACADOS_PYTHON_INTERFACE_PATH": Dir("#third_party/acados/acados_template").abspath,
+    "TERA_PATH": Dir("#").abspath + f"/third_party/acados/{arch}/t_renderer"
+  },
+  CC='clang',
+  CXX='clang++',
   CCFLAGS=[
     "-g",
     "-fPIC",
@@ -185,37 +68,32 @@ env = Environment(
     "-Wno-c99-designator",
     "-Wno-reorder-init-list",
     "-Wno-vla-cxx-extension",
-  ] + cflags + ccflags,
-
-  CPPPATH=cpppath + [
+  ],
+  CFLAGS=["-std=gnu11"],
+  CXXFLAGS=["-std=c++1z"],
+  CPPPATH=[
     "#",
+    "#msgq",
+    "#third_party",
+    "#third_party/json11",
+    "#third_party/linux/include",
     "#third_party/acados/include",
     "#third_party/acados/include/blasfeo/include",
     "#third_party/acados/include/hpipm/include",
     "#third_party/catch2/include",
     "#third_party/libyuv/include",
-    "#third_party/json11",
-    "#third_party/linux/include",
     "#third_party/snpe/include",
-    "#third_party",
-    "#msgq",
   ],
-
-  CC='clang',
-  CXX='clang++',
-  LINKFLAGS=ldflags,
-
-  RPATH=rpath,
-
-  CFLAGS=["-std=gnu11"] + cflags,
-  CXXFLAGS=["-std=c++1z"] + cxxflags,
-  LIBPATH=libpath + [
+  LIBPATH=[
+    "#common",
     "#msgq_repo",
     "#third_party",
     "#selfdrive/pandad",
-    "#common",
     "#rednose/helpers",
+    f"#third_party/libyuv/{arch}/lib",
+    f"#third_party/acados/{arch}/lib",
   ],
+  RPATH=[],
   CYTHONCFILESUFFIX=".cpp",
   COMPILATIONDB_USE_ABSPATH=True,
   REDNOSE_ROOT="#",
@@ -223,30 +101,75 @@ env = Environment(
   toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
 )
 
-if arch == "Darwin":
-  # RPATH is not supported on macOS, instead use the linker flags
-  darwin_rpath_link_flags = [f"-Wl,-rpath,{path}" for path in env["RPATH"]]
-  env["LINKFLAGS"] += darwin_rpath_link_flags
+# Arch-specific flags and paths
+if arch == "larch64":
+  env.Append(CPPPATH=["#third_party/opencl/include"])
+  env.Append(LIBPATH=[
+    "/usr/local/lib",
+    "/system/vendor/lib64",
+    "/usr/lib/aarch64-linux-gnu",
+    "#third_party/snpe/larch64",
+  ])
+  arch_flags = ["-D__TICI__", "-mcpu=cortex-a57", "-DQCOM2", "-DSUNNYPILOT"]
+  env.Append(CCFLAGS=arch_flags)
+  env.Append(CXXFLAGS=arch_flags)
+elif arch == "Darwin":
+  env.Append(LIBPATH=[
+    f"{brew_prefix}/lib",
+    f"{brew_prefix}/opt/openssl@3.0/lib",
+    f"{brew_prefix}/opt/llvm/lib/c++",
+    "/System/Library/Frameworks/OpenGL.framework/Libraries",
+  ])
+  env.Append(CCFLAGS=["-DGL_SILENCE_DEPRECATION", "-DSUNNYPILOT"])
+  env.Append(CXXFLAGS=["-DGL_SILENCE_DEPRECATION", "-DSUNNYPILOT"])
+  env.Append(CPPPATH=[
+    f"{brew_prefix}/include",
+    f"{brew_prefix}/opt/openssl@3.0/include",
+  ])
+else:
+  env.Append(LIBPATH=[
+    "/usr/lib",
+    "/usr/local/lib",
+  ])
 
-env.CompilationDatabase('compile_commands.json')
+  if arch == "x86_64":
+    env.Append(LIBPATH=[
+      f"#third_party/snpe/{arch}"
+    ])
+    env.Append(RPATH=[
+      Dir(f"#third_party/snpe/{arch}").abspath,
+    ])
+  # Always include SUNNYPILOT flag for regular builds too
+  env.Append(CCFLAGS=["-DSUNNYPILOT"])
+  env.Append(CXXFLAGS=["-DSUNNYPILOT"])
 
-# Setup cache dir
-default_cache_dir = '/data/scons_cache' if AGNOS else '/tmp/scons_cache'
-cache_dir = ARGUMENTS.get('cache_dir', default_cache_dir)
-CacheDir(cache_dir)
-Clean(["."], cache_dir)
+# Sanitizers and extra CCFLAGS from CLI
+if GetOption('asan'):
+  env.Append(CCFLAGS=["-fsanitize=address", "-fno-omit-frame-pointer"])
+  env.Append(LINKFLAGS=["-fsanitize=address"])
+elif GetOption('ubsan'):
+  env.Append(CCFLAGS=["-fsanitize=undefined"])
+  env.Append(LINKFLAGS=["-fsanitize=undefined"])
 
+_extra_cc = shlex.split(GetOption('ccflags') or '')
+if _extra_cc:
+  env.Append(CCFLAGS=_extra_cc)
+
+# no --as-needed on mac linker
+if arch != "Darwin":
+  env.Append(LINKFLAGS=["-Wl,--as-needed", "-Wl,--no-undefined"])
+
+# progress output
 node_interval = 5
 node_count = 0
 def progress_function(node):
   global node_count
   node_count += node_interval
   sys.stderr.write("progress: %d\n" % node_count)
-
 if os.environ.get('SCONS_PROGRESS'):
   Progress(progress_function, interval=node_interval)
 
-# Cython build environment
+# ********** Cython build environment **********
 py_include = sysconfig.get_paths()['include']
 envCython = env.Clone()
 envCython["CPPPATH"] += [py_include, np.get_include()]
@@ -256,12 +179,9 @@ envCython["CYTHONFLAGS"] = ["--cplus"]
 
 envCython["LIBS"] = []
 if arch == "Darwin":
-  envCython["LINKFLAGS"] = ["-bundle", "-undefined", "dynamic_lookup"] + darwin_rpath_link_flags
+  envCython["LINKFLAGS"] = env["LINKFLAGS"] + ["-bundle", "-undefined", "dynamic_lookup"]
 else:
   envCython["LINKFLAGS"] = ["-pthread", "-shared"]
-
-np_version = SCons.Script.Value(np.__version__)
-Export('envCython', 'np_version')
 
 # Cython build environment for C-only files
 envCythonC = env.Clone()
@@ -271,11 +191,12 @@ envCythonC["CCFLAGS"].remove("-Werror")
 
 envCythonC["LIBS"] = []
 if arch == "Darwin":
-  envCythonC["LINKFLAGS"] = ["-bundle", "-undefined", "dynamic_lookup"] + darwin_rpath_link_flags
+  envCythonC["LINKFLAGS"] = ["-bundle", "-undefined", "dynamic_lookup"] + env["RPATH"]
 else:
   envCythonC["LINKFLAGS"] = ["-pthread", "-shared"]
 
-Export('envCythonC')
+np_version = SCons.Script.Value(np.__version__)
+Export('envCython', 'envCythonC', 'np_version')
 
 Export('env', 'arch', 'real_arch')
 
@@ -283,14 +204,18 @@ Export('env', 'arch', 'real_arch')
 SP_OVERRIDES = {}
 Export('SP_OVERRIDES') # Make it available to SConscripts
 
+# Setup cache dir
+cache_dir = '/data/scons_cache' if arch == "larch64" else '/tmp/scons_cache'
+CacheDir(cache_dir)
+Clean(["."], cache_dir)
+
+# ********** start building stuff **********
+
 # Build common module
 SConscript(['common/SConscript'])
-Import('_common', '_gpucommon')
-
+Import('_common')
 common = [_common, 'json11', 'zmq']
-gpucommon = [_gpucommon]
-
-Export('common', 'gpucommon')
+Export('common')
 
 # Build messaging (cereal + msgq + socketmaster + their dependencies)
 # Enable swaglog include in submodules
@@ -342,6 +267,5 @@ if Dir('#tools/cabana/').exists() and GetOption('extras'):
   if arch != "larch64":
     SConscript(['tools/cabana/SConscript'])
 
-external_sconscript = GetOption('external_sconscript')
-if external_sconscript:
-  SConscript([external_sconscript])
+
+env.CompilationDatabase('compile_commands.json')

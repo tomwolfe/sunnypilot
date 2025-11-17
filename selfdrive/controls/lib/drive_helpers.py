@@ -22,57 +22,29 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
   alpha = 1 - np.exp(-dt/tau) if tau > 0 else 1
   return alpha * val + (1 - alpha) * prev_val
 
-# Optimized smooth value with pre-computed alpha values
-class SmoothValueCache:
-  def __init__(self):
-    self.alpha_cache = {}
-
-  def get_alpha(self, tau, dt=DT_MDL):
-    key = (tau, dt)
-    if key not in self.alpha_cache:
-      self.alpha_cache[key] = 1 - np.exp(-dt/tau) if tau > 0 else 1
-    return self.alpha_cache[key]
-
-_smooth_value_cache = SmoothValueCache()
-
-def smooth_value_optimized(val, prev_val, tau, dt=DT_MDL):
-  alpha = _smooth_value_cache.get_alpha(tau, dt)
-  return alpha * val + (1 - alpha) * prev_val
-
-# Pre-computed constants for optimization
-MAX_LATERAL_JERK_DT_CTRL = MAX_LATERAL_JERK * DT_CTRL
-NEG_MAX_CURVATURE = -MAX_CURVATURE
-
-def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
+def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, bool]:
   # This function respects ISO lateral jerk and acceleration limits + a max curvature
   v_ego = max(v_ego, MIN_SPEED)
-  v_ego_sq = v_ego ** 2  # Compute once
-  max_curvature_rate = MAX_LATERAL_JERK / v_ego_sq  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-  max_delta = max_curvature_rate * DT_CTRL  # Pre-computed: MAX_LATERAL_JERK_DT_CTRL / v_ego_sq
+  max_curvature_rate = MAX_LATERAL_JERK / (v_ego ** 2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
   new_curvature = np.clip(new_curvature,
-                          prev_curvature - max_delta,
-                          prev_curvature + max_delta)
+                          prev_curvature - max_curvature_rate * DT_CTRL,
+                          prev_curvature + max_curvature_rate * DT_CTRL)
 
   roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY
   max_lat_accel = MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
   min_lat_accel = -MAX_LATERAL_ACCEL_NO_ROLL + roll_compensation
-  new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego_sq, max_lat_accel / v_ego_sq)
+  new_curvature, limited_accel = clamp(new_curvature, min_lat_accel / v_ego ** 2, max_lat_accel / v_ego ** 2)
 
-  new_curvature, limited_max_curv = clamp(new_curvature, NEG_MAX_CURVATURE, MAX_CURVATURE)  # Use pre-computed constant
-  return new_curvature, limited_accel or limited_max_curv  # Return as-is, conversion happens at usage
+  new_curvature, limited_max_curv = clamp(new_curvature, -MAX_CURVATURE, MAX_CURVATURE)
+  return float(new_curvature), limited_accel or limited_max_curv
 
-
-# Pre-computed value for optimization
-TWO_DT_MDL = 2 * DT_MDL
 
 def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05):
   if len(speeds) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
     v_target = np.interp(action_t, t_idxs, speeds)
-    # Optimize division by multiplication with pre-computed value
-    inv_action_t = 1.0 / action_t if action_t != 0 else 0
-    a_target = (TWO_DT_MDL * (v_target - v_now) * inv_action_t) - a_now
+    a_target = 2 * (v_target - v_now) / (action_t) - a_now
     v_target_1sec = np.interp(action_t + 1.0, t_idxs, speeds)
   else:
     v_target = 0.0
@@ -84,10 +56,8 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
 
 def curv_from_psis(psi_target, psi_rate, vego, action_t):
   vego = np.clip(vego, MIN_SPEED, np.inf)
-  # Precompute the divisor to use multiplication instead of division
-  denom = vego * action_t
-  curv_from_psi = psi_target / denom if denom != 0 else 0
-  return (2 * curv_from_psi) - (psi_rate / vego if vego != 0 else 0)
+  curv_from_psi = psi_target / (vego * action_t)
+  return 2*curv_from_psi - psi_rate / vego
 
 def get_curvature_from_plan(yaws, yaw_rates, t_idxs, vego, action_t):
   psi_target = np.interp(action_t, t_idxs, yaws)
