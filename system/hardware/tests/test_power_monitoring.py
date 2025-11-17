@@ -4,6 +4,8 @@ from openpilot.common.params import Params
 from openpilot.system.hardware.power_monitoring import PowerMonitoring, CAR_BATTERY_CAPACITY_uWh, \
   CAR_CHARGING_RATE_W, VBATT_PAUSE_CHARGING, DELAY_SHUTDOWN_TIME_S, MAX_TIME_OFFROAD_S
 
+pytestmark = pytest.mark.unit
+
 # Create fake time
 ssb = 0.
 def mock_time_monotonic():

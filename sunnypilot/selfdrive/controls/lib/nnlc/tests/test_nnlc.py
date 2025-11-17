@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from parameterized import parameterized
 
@@ -15,6 +16,8 @@ from openpilot.selfdrive.locationd.helpers import Pose
 from openpilot.common.mock.generators import generate_livePose
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
 from openpilot.selfdrive.modeld.constants import ModelConstants
+
+pytestmark = pytest.mark.unit
 
 
 def generate_modelV2():

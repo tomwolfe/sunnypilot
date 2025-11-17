@@ -154,6 +154,7 @@ python_files = "test_*.py"
 asyncio_default_fixture_loop_scope = "function"
 timeout = "120"  # 2 minutes max per test to prevent hanging
 markers = [
+  "unit: unit tests that test individual components in isolation",
   "slow: tests that take awhile to run and can be skipped with -m 'not slow'",
   "tici: tests that are only meant to run on the C3/C3X",
   "skip_tici_setup: mark test to skip tici setup fixture"
@@ -175,6 +176,7 @@ testpaths = [
   "tools/cabana",
   "cereal/messaging/tests",
   "sunnypilot",
+  "opendbc_repo",
 ]
 
 [tool.codespell]

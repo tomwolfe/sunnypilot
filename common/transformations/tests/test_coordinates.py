@@ -1,6 +1,9 @@
+import pytest
 import numpy as np
 
 import openpilot.common.transformations.coordinates as coord
+
+pytestmark = pytest.mark.unit
 
 geodetic_positions = np.array([[37.7610403, -122.4778699, 115],
                                  [27.4840915, -68.5867592, 2380],

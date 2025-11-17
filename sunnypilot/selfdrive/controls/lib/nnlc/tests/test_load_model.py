@@ -1,3 +1,4 @@
+import pytest
 from parameterized import parameterized
 
 from opendbc.car.car_helpers import interfaces
@@ -8,6 +9,8 @@ from openpilot.common.params import Params
 from openpilot.selfdrive.car.helpers import convert_to_capnp
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
+
+pytestmark = pytest.mark.unit
 
 
 class TestNNTorqueModel:

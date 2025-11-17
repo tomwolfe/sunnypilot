@@ -1,7 +1,10 @@
+import pytest
 import os
 
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.markdown import parse_markdown
+
+pytestmark = pytest.mark.unit
 
 
 class TestMarkdown:

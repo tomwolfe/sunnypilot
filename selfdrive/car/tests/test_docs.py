@@ -1,3 +1,4 @@
+import pytest
 import os
 
 from openpilot.common.basedir import BASEDIR
@@ -5,6 +6,8 @@ from opendbc.car.docs import generate_cars_md, get_all_car_docs
 from openpilot.selfdrive.debug.dump_car_docs import dump_car_docs
 from openpilot.selfdrive.debug.print_docs_diff import print_car_docs_diff
 from openpilot.selfdrive.car.docs import CARS_MD_TEMPLATE
+
+pytestmark = pytest.mark.unit
 
 
 class TestCarDocs:

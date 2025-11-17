@@ -16,6 +16,8 @@ from openpilot.tools.lib.file_sources import comma_api_source, InternalUnavailab
 from openpilot.tools.lib.route import SegmentRange
 from openpilot.tools.lib.url_file import URLFileException
 
+pytestmark = pytest.mark.unit
+
 NUM_SEGS = 17  # number of segments in the test route
 ALL_SEGS = list(range(NUM_SEGS))
 TEST_ROUTE = "344c5c15b34f2d8a/2024-01-03--09-37-12"

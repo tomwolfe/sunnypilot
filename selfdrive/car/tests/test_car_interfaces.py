@@ -1,3 +1,4 @@
+import pytest
 import os
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
@@ -17,6 +18,8 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.test.fuzzy_generation import FuzzyGenerator
 
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
+
+pytestmark = pytest.mark.unit
 
 MAX_EXAMPLES = int(os.environ.get('MAX_EXAMPLES', '60'))
 

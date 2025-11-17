@@ -1,3 +1,4 @@
+import pytest
 import os
 import tempfile
 from typing import Dict
@@ -5,6 +6,8 @@ from parameterized import parameterized
 
 import cereal.services as services
 from cereal.services import SERVICE_LIST
+
+pytestmark = pytest.mark.unit
 
 
 class TestServices:

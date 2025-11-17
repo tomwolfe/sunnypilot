@@ -1,3 +1,4 @@
+import pytest
 import random
 import time
 from typing import Sized, cast
@@ -7,6 +8,8 @@ from cereal.messaging.tests.test_messaging import events, random_sock, random_so
                                                   random_bytes, random_carstate, assert_carstate, \
                                                   zmq_sleep
 from cereal.services import SERVICE_LIST
+
+pytestmark = pytest.mark.unit
 
 
 class TestSubMaster:

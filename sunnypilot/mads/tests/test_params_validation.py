@@ -5,9 +5,12 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import pytest
 import unittest
 from unittest.mock import Mock
 from sunnypilot.common.params_validation import ParamsValidator
+
+pytestmark = pytest.mark.unit
 
 
 class TestParamsValidator(unittest.TestCase):

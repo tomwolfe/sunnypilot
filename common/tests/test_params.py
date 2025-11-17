@@ -7,6 +7,8 @@ import uuid
 
 from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
 
+pytestmark = pytest.mark.unit
+
 class TestParams:
   def setup_method(self):
     self.params = Params()

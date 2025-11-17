@@ -1,4 +1,7 @@
+import pytest
 from openpilot.common.simple_kalman import KF1D
+
+pytestmark = pytest.mark.unit
 
 
 class TestSimpleKalman:

@@ -7,6 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from cereal import custom
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.rivian.values import CAR as RIVIAN

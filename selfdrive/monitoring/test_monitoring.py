@@ -1,8 +1,11 @@
+import pytest
 import numpy as np
 
 from cereal import log
 from openpilot.common.realtime import DT_DMON
 from openpilot.selfdrive.monitoring.helpers import DriverMonitoring, DRIVER_MONITOR_SETTINGS
+
+pytestmark = pytest.mark.unit
 
 EventName = log.OnroadEvent.EventName
 dm_settings = DRIVER_MONITOR_SETTINGS()

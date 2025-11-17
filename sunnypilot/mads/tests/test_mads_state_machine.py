@@ -7,6 +7,8 @@ from openpilot.sunnypilot.mads.state import StateMachine, SOFT_DISABLE_TIME
 from openpilot.selfdrive.selfdrived.events import ET, Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
+pytestmark = pytest.mark.unit
+
 
 def _get_event_mappings(events):
   if hasattr(events, "_event_mappings"):

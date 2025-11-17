@@ -1,9 +1,12 @@
+import pytest
 from cereal import car
 from cereal import messaging
 from cereal.messaging import SubMaster, PubMaster
 from openpilot.selfdrive.ui.soundd import SELFDRIVE_STATE_TIMEOUT, check_selfdrive_timeout_alert
 
 import time
+
+pytestmark = pytest.mark.unit
 
 AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 

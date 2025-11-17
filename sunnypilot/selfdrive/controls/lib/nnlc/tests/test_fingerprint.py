@@ -1,3 +1,4 @@
+import pytest
 from parameterized import parameterized
 
 from opendbc.car.car_helpers import interfaces
@@ -8,6 +9,8 @@ from opendbc.car.toyota.values import CAR as TOYOTA
 from opendbc.car.tesla.values import CAR as TESLA
 from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
+
+pytestmark = pytest.mark.unit
 
 
 FINGERPRINT_EXACT_MATCH = [HONDA.HONDA_CIVIC_BOSCH, TOYOTA.TOYOTA_RAV4_TSS2_2022, HYUNDAI.HYUNDAI_IONIQ_5]
