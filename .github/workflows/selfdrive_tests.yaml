@@ -195,10 +195,8 @@ jobs:
       run: |
         ${{ env.RUN }} /bin/bash -c "source selfdrive/test/setup_xvfb.sh && \
                         # Pre-compile Python bytecode so each pytest worker doesn't need to
-<<<<<<< HEAD:.github/workflows/selfdrive_tests.yaml
                         $PYTEST --collect-only -m 'not slow' -qq && \
                         MAX_EXAMPLES=1 $PYTEST -m 'not slow' && \
->>>>>>> upstream/master:.github/workflows/tests.yaml
                         chmod -R 777 /tmp/comma_download_cache"
 
   process_replay:
@@ -290,14 +288,16 @@ jobs:
           submodules: true
       - uses: ./.github/workflows/setup-with-retry
       - name: Build openpilot
-        run: ${{ env.RUN }} "scons -j$(nproc)"
-      - name: Create raylib UI Report
+        run: ${{ env.RUN }} /bin/bash -c "scons -j$(nproc)"
+      - name: Create Test Report
+        timeout-minutes: ${{ ((steps.frames-cache.outputs.cache-hit == 'true') && 2 || 4) }}
         run: >
-          ${{ env.RUN }} "PYTHONWARNINGS=ignore &&
-                          source selfdrive/test/setup_xvfb.sh &&
-                          python3 selfdrive/ui/tests/test_ui/raylib_screenshots.py"
-      - name: Upload Raylib UI Report
+            ${{ env.RUN }} /bin/bash -c "PYTHONWARNINGS=ignore &&
+                            source selfdrive/test/setup_xvfb.sh &&
+                            CACHE_ROOT=/tmp/comma_download_cache python3 selfdrive/ui/tests/test_ui/run.py &&
+                            chmod -R 777 /tmp/comma_download_cache"
+      - name: Upload Test Report
         uses: actions/upload-artifact@v4
         with:
-          name: raylib-report-${{ inputs.run_number || '1' }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'master' || github.event.number }}
-          path: selfdrive/ui/tests/test_ui/raylib_report/screenshots
+          name: ui-report-${{ inputs.run_number || '1' }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'master' || github.event.number }}
+          path: selfdrive/ui/tests/test_ui/report
