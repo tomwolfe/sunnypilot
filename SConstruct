@@ -340,7 +340,14 @@ for original_sconscript, override_sconscript in SP_OVERRIDES.items():
 if Dir('#tools/cabana/').exists() and GetOption('extras'):
   SConscript(['tools/replay/SConscript'])
   if arch != "larch64":
-    SConscript(['tools/cabana/SConscript'])
+    # Skip cabana if Qt is not available (since we're using Raylib now)
+    # Only build cabana if qmake is available
+    import subprocess
+    import shutil
+    if shutil.which('qmake'):
+      SConscript(['tools/cabana/SConscript'])
+    else:
+      print("Skipping cabana build (Qt/qmake not found - using Raylib)")
 
 external_sconscript = GetOption('external_sconscript')
 if external_sconscript:
