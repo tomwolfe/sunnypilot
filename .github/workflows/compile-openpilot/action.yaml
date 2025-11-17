@@ -4,6 +4,10 @@ runs:
   using: "composite"
   steps:
     - shell: bash
+      name: Configure Git for safe directories
+      run: |
+        ${{ env.RUN }} /bin/bash -c "git config --global --add safe.directory '*'"
+    - shell: bash
       name: Build openpilot with all flags
       run: |
         ${{ env.RUN }} /bin/bash -c "scons -j$(nproc)"
