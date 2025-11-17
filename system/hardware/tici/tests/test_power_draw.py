@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+import os
 import pytest
 import time
 import numpy as np
@@ -13,6 +14,10 @@ from openpilot.common.params import Params
 from openpilot.system.hardware.tici.power_monitor import get_power
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.manager.manager import manager_cleanup
+
+_power_path = "/sys/bus/i2c/devices/0-0040/hwmon/hwmon1/power1_input"
+pytestmark = pytest.mark.skipif(not os.path.exists(_power_path),
+                                reason=f"{_power_path} missing (not running on tici hardware)")
 
 SAMPLE_TIME = 8       # seconds to sample power
 MAX_WARMUP_TIME = 30  # seconds to wait for SAMPLE_TIME consecutive valid samples

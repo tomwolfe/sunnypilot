@@ -87,8 +87,13 @@ def get_safe_obstacle_distance(v_ego, t_follow):
 
 def desired_follow_distance(v_ego, v_lead, t_follow=None):
   if t_follow is None:
-    t_follow = get_T_FOLLOW()
-  return get_safe_obstacle_distance(v_ego, t_follow) - get_stopped_equivalence_factor(v_lead)
+    t_follow = get_T_FOLLOW(log.LongitudinalPersonality.standard)  # Default to standard personality
+  distance = get_safe_obstacle_distance(v_ego, t_follow) - get_stopped_equivalence_factor(v_lead)
+  # Guard against invalid/excessive outputs
+  if np.isnan(distance) or distance > 100.0 or distance < 0.0:
+    # choose an appropriate safe default; e.g. 50m is a reasonable max following distance
+    distance = min(max(distance, 0.0), 50.0)  # Clamp between 0 and 50
+  return distance
 
 
 def gen_long_model():
@@ -184,7 +189,7 @@ def gen_long_ocp():
 
   x0 = np.zeros(X_DIM)
   ocp.constraints.x0 = x0
-  ocp.parameter_values = np.array([-1.2, 1.2, 0.0, 0.0, get_T_FOLLOW(), LEAD_DANGER_FACTOR])
+  ocp.parameter_values = np.array([-1.2, 1.2, 0.0, 0.0, get_T_FOLLOW(log.LongitudinalPersonality.standard), LEAD_DANGER_FACTOR])
 
 
   # We put all constraint cost weights to 0 and only set them at runtime

@@ -7,6 +7,12 @@ from openpilot.sunnypilot.mads.state import StateMachine, SOFT_DISABLE_TIME
 from openpilot.selfdrive.selfdrived.events import ET, Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 
+
+def _get_event_mappings(events):
+  if hasattr(events, "_event_mappings"):
+    return events._event_mappings
+  return events.get_events_mapping()
+
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 EventNameSP = custom.OnroadEventSP.EventName
 EventName = log.OnroadEvent.EventName # Use EventName from log for dummy events
@@ -46,7 +52,7 @@ class TestMADSStateMachine:
         self.clear_events()
         event_name_to_add = EventName.startup # Use a dummy event name
         self.events_sp.add(event_name_to_add)
-        self.events_sp._event_mappings[event_name_to_add][ET.IMMEDIATE_DISABLE] = None # Simulate mapping
+        _get_event_mappings(self.events_sp)[event_name_to_add][ET.IMMEDIATE_DISABLE] = None # Simulate mapping
 
         self.state_machine.state = state
         self.state_machine.update()
@@ -58,7 +64,7 @@ class TestMADSStateMachine:
         self.clear_events()
         event_name_to_add = EventName.startup # Use a dummy event name
         self.events_sp.add(event_name_to_add)
-        self.events_sp._event_mappings[event_name_to_add][ET.USER_DISABLE] = None # Simulate mapping
+        _get_event_mappings(self.events_sp)[event_name_to_add][ET.USER_DISABLE] = None # Simulate mapping
 
         self.state_machine.state = state
         self.state_machine.update()
@@ -71,7 +77,7 @@ class TestMADSStateMachine:
         self.clear_events()
         event_name_to_add = EventName.startup # Use a dummy event name
         self.events_sp.add(event_name_to_add)
-        self.events_sp._event_mappings[event_name_to_add][ET.USER_DISABLE] = None # Simulate mapping
+        _get_event_mappings(self.events_sp)[event_name_to_add][ET.USER_DISABLE] = None # Simulate mapping
 
         for en in paused_events:
           self.events_sp.add(en) # Add silentLkasDisable directly
@@ -87,7 +93,7 @@ class TestMADSStateMachine:
         self.clear_events()
         event_name_to_add = EventName.startup # Use a dummy event name
         self.events_sp.add(event_name_to_add)
-        self.events_sp._event_mappings[event_name_to_add][ET.SOFT_DISABLE] = None # Simulate mapping
+        _get_event_mappings(self.events_sp)[event_name_to_add][ET.SOFT_DISABLE] = None # Simulate mapping
 
         self.state_machine.state = state
         self.state_machine.update()
@@ -98,7 +104,7 @@ class TestMADSStateMachine:
     self.clear_events()
     event_name_to_add = EventName.startup # Use a dummy event name
     self.events_sp.add(event_name_to_add)
-    self.events_sp._event_mappings[event_name_to_add][ET.SOFT_DISABLE] = None # Simulate mapping
+    _get_event_mappings(self.events_sp)[event_name_to_add][ET.SOFT_DISABLE] = None # Simulate mapping
 
     self.state_machine.update()
     for _ in range(int(SOFT_DISABLE_TIME / DT_CTRL)):
@@ -113,8 +119,8 @@ class TestMADSStateMachine:
       self.clear_events()
       event_name_to_add = EventName.startup # Use a dummy event name
       self.events_sp.add(event_name_to_add)
-      self.events_sp._event_mappings[event_name_to_add][ET.NO_ENTRY] = None
-      self.events_sp._event_mappings[event_name_to_add][et_event_type] = None
+      _get_event_mappings(self.events_sp)[event_name_to_add][ET.NO_ENTRY] = None
+      _get_event_mappings(self.events_sp)[event_name_to_add][et_event_type] = None
 
       self.state_machine.update()
       assert self.state_machine.state == State.disabled
@@ -124,7 +130,7 @@ class TestMADSStateMachine:
     self.clear_events()
     event_name_to_add = EventName.startup # Use a dummy event name
     self.events_sp.add(event_name_to_add)
-    self.events_sp._event_mappings[event_name_to_add][ET.NO_ENTRY] = None
+    _get_event_mappings(self.events_sp)[event_name_to_add][ET.NO_ENTRY] = None
 
     self.state_machine.update()
     assert self.state_machine.state == State.paused
@@ -134,7 +140,7 @@ class TestMADSStateMachine:
     self.clear_events()
     event_name_to_add = EventName.startup # Use a dummy event name
     self.events_sp.add(event_name_to_add)
-    self.events_sp._event_mappings[event_name_to_add][ET.OVERRIDE_LATERAL] = None
+    _get_event_mappings(self.events_sp)[event_name_to_add][ET.OVERRIDE_LATERAL] = None
 
     self.state_machine.update()
     assert self.state_machine.state == State.overriding
@@ -144,7 +150,7 @@ class TestMADSStateMachine:
     self.clear_events()
     event_name_to_add = EventName.startup # Use a dummy event name
     self.events_sp.add(event_name_to_add)
-    self.events_sp._event_mappings[event_name_to_add][ET.ENABLE] = None
+    _get_event_mappings(self.events_sp)[event_name_to_add][ET.ENABLE] = None
 
     self.state_machine.update()
     assert self.state_machine.state == State.enabled
@@ -157,7 +163,7 @@ class TestMADSStateMachine:
         if et_event_type is not None:
           event_name_to_add = EventName.startup # Use a dummy event name
           self.events_sp.add(event_name_to_add)
-          self.events_sp._event_mappings[event_name_to_add][et_event_type] = None
+          _get_event_mappings(self.events_sp)[event_name_to_add][et_event_type] = None
 
         self.state_machine.update()
         assert self.state_machine.state == state

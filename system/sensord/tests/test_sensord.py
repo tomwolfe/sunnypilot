@@ -12,6 +12,10 @@ from openpilot.common.timeout import Timeout
 from openpilot.system.hardware import HARDWARE
 from openpilot.system.manager.process_config import managed_processes
 
+# Skip sensord tests in CI since they require hardware
+_has_sensors = HARDWARE.get_device_type() in ["tici", "tizi", "mici"]  # Only run on supported hardware
+pytestmark = pytest.mark.skipif(not _has_sensors, reason="Sensor hardware not available in CI")
+
 LSM = {
   ('lsm6ds3', 'acceleration'),
   ('lsm6ds3', 'gyroUncalibrated'),

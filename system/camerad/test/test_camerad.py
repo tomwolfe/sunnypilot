@@ -8,6 +8,10 @@ from cereal.services import SERVICE_LIST
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.tools.lib.log_time_series import msgs_to_time_series
 
+# detect if virtual camera devices exist, otherwise skip
+_has_cam = any(os.path.exists(f"/dev/video{i}") for i in range(0,8))
+pytestmark = pytest.mark.skipif(not _has_cam, reason="No camera devices available in CI")
+
 TEST_TIMESPAN = 10
 CAMERAS = ('roadCameraState', 'driverCameraState', 'wideRoadCameraState')
 
