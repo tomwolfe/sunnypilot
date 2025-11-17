@@ -79,13 +79,13 @@ assets_src = "assets/assets.qrc"
 cabana_env.Command(assets, assets_src, f"rcc $SOURCES -o $TARGET")
 cabana_env.Depends(assets, Glob('/assets/*', exclude=[assets, assets_src, "assets/assets.o"]))
 
-cabana_lib = cabana_env.Library("cabana_lib", ['mainwin.cc', 'streams/socketcanstream.cc', 'streams/pandastream.cc', 'streams/devicestream.cc', 'streams/livestream.cc', 'streams/abstractstream.cc', 'streams/replaystream.cc', 'raylib_binaryview.cc', 'historylog.cc', 'videowidget.cc', 'signalview.cc',
+cabana_lib = cabana_env.Library("cabana_lib", ['raylib_mainwin.cc', 'streams/socketcanstream.cc', 'streams/pandastream.cc', 'streams/devicestream.cc', 'streams/livestream.cc', 'streams/abstractstream.cc', 'streams/replaystream.cc', 'raylib_binaryview.cc', 'historylog.cc', 'raylib_videowidget.cc', 'raylib_signalview.cc',
                                                'streams/routes.cc', 'dbc/dbc.cc', 'dbc/dbcfile.cc', 'dbc/dbcmanager.cc',
                                                'utils/export.cc', 'utils/util.cc', 'utils/elidedlabel.cc', 'utils/api.cc',
                                                'raylib_chartswidget.cc', 'chart/chart.cc', 'chart/signalselector.cc', 'chart/tiplabel.cc', 'chart/sparkline.cc',
-                                               'commands.cc', 'messageswidget.cc', 'streamselector.cc', 'settings.cc', 'panda.cc',
-                                               'raylib_cameraview.cc', 'detailwidget.cc', 'raylib_findsimilarbits.cc', 'raylib_findsignal.cc', 'raylib_routeinfo.cc'], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
-cabana_env.Program('cabana', ['cabana.cc', cabana_lib, assets], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
+                                               'commands.cc', 'raylib_messageswidget.cc', 'streamselector.cc', 'raylib_settings.cc', 'panda.cc',
+                                               'raylib_cameraview.cc', 'raylib_detailwidget.cc', 'raylib_findsimilarbits.cc', 'raylib_findsignal.cc', 'raylib_routeinfo.cc'], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
+cabana_env.Program('cabana', ['raylib_poc/cabana_raylib_main.cc', cabana_lib, assets], LIBS=cabana_libs, FRAMEWORKS=base_frameworks)
 
 if GetOption('extras'):
   cabana_env.Program('tests/test_cabana', ['tests/test_runner.cc', 'tests/test_cabana.cc', cabana_lib], LIBS=[cabana_libs])
