@@ -199,6 +199,7 @@ env = Environment(
     "#third_party/snpe/include",
     "#third_party",
     "#msgq_repo",
+    "#rednose",
   ],
 
   CC='clang',
