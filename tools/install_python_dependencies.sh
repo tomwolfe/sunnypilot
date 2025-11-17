@@ -23,6 +23,14 @@ echo "installing python packages..."
 uv sync --frozen --all-extras
 source .venv/bin/activate
 
+# Install tinygrad submodule in development mode
+if [ -d "tinygrad_repo" ]; then
+  echo "Installing tinygrad in development mode..."
+  cd tinygrad_repo
+  pip install -e .
+  cd ..
+fi
+
 if [[ "$(uname)" == 'Darwin' ]]; then
   touch "$ROOT"/.env
   echo "# msgq doesn't work on mac" >> "$ROOT"/.env

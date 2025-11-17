@@ -18,7 +18,7 @@ RUN /tmp/tools/install_ubuntu_dependencies.sh && \
     cd /usr/lib/gcc/arm-none-eabi/* && \
     rm -rf arm/ thumb/nofp thumb/v6* thumb/v8* thumb/v7+fp thumb/v7-r+fp.sp
 
-# Add OpenCL
+# Add OpenCL and LLVM
 RUN apt-get update && apt-get install -y --no-install-recommends \
     apt-utils \
     alien \
@@ -33,6 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-6 \
     wget \
     rsync \
+    llvm \
+    clang \
+    libllvm-dev \
+    libclang-dev \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /tmp/opencl-driver-intel && \
@@ -80,4 +84,4 @@ RUN cd /home/$USER && \
     rm -rf tools/ pyproject.toml uv.lock .cache
 
 USER root
-RUN sudo git config --global --add safe.directory /tmp/openpilot
+RUN git config --global --add safe.directory /tmp/openpilot

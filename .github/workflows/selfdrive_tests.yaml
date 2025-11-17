@@ -58,7 +58,7 @@ jobs:
       timeout-minutes: ${{ ((steps.restore-scons-cache.outputs.cache-hit == 'true') && 10 || 30) }} # allow more time when we missed the scons cache
       run: |
         cd $STRIPPED_DIR
-        ${{ env.RUN }} /bin/bash -c "python3 system/manager/build.py"
+        ${{ env.RUN }} /bin/bash -c "git config --global --add safe.directory /tmp/openpilot/panda && git config --global --add safe.directory /tmp/openpilot/tinygrad_repo && python3 system/manager/build.py"
     - name: Run tests
       timeout-minutes: 1
       run: |
@@ -187,7 +187,7 @@ jobs:
     - uses: ./.github/workflows/setup-with-retry
       id: setup-step
     - name: Build openpilot (verbose camerad)
-      run: ${{ env.RUN }} /bin/bash -c "set -x && git config --global --add safe.directory /tmp/openpilot/panda && scons -j$(nproc)"
+      run: ${{ env.RUN }} /bin/bash -c "set -x && git config --global --add safe.directory /tmp/openpilot/panda && git config --global --add safe.directory /tmp/openpilot/tinygrad_repo && scons -j$(nproc)"
     - name: Verify camerad executable
       run: ${{ env.RUN }} /bin/bash -c "ls -l /tmp/openpilot/system/camerad/camerad && test -f /tmp/openpilot/system/camerad/camerad"
     - name: Run unit tests
@@ -222,7 +222,7 @@ jobs:
         key: proc-replay-${{ hashFiles('selfdrive/test/process_replay/ref_commit', 'selfdrive/test/process_replay/test_processes.py') }}
     - name: Build openpilot
       run: |
-        ${{ env.RUN }} /bin/bash -c "scons -j$(nproc)"
+        ${{ env.RUN }} /bin/bash -c "git config --global --add safe.directory /tmp/openpilot/panda && git config --global --add safe.directory /tmp/openpilot/tinygrad_repo && scons -j$(nproc)"
     - name: Run replay
       timeout-minutes: ${{ contains(runner.name, 'nsc') && (steps.dependency-cache.outputs.cache-hit == 'true') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 20 }}
       run: |
@@ -266,7 +266,7 @@ jobs:
       id: setup-step
     - name: Build openpilot
       run: |
-        ${{ env.RUN }} /bin/bash -c "scons -j$(nproc)"
+        ${{ env.RUN }} /bin/bash -c "git config --global --add safe.directory /tmp/openpilot/panda && git config --global --add safe.directory /tmp/openpilot/tinygrad_repo && scons -j$(nproc)"
     - name: Driving test
       timeout-minutes: ${{ (steps.setup-step.outputs.duration < 18) && 1 || 2 }}
       run: |
@@ -296,7 +296,7 @@ jobs:
           path: .ci_cache/comma_download_cache
           key: ui_screenshots_test_${{ hashFiles('selfdrive/ui/tests/test_ui/run.py') }}
       - name: Build openpilot
-        run: ${{ env.RUN }} /bin/bash -c "scons -j$(nproc)"
+        run: ${{ env.RUN }} /bin/bash -c "git config --global --add safe.directory /tmp/openpilot/panda && git config --global --add safe.directory /tmp/openpilot/tinygrad_repo && scons -j$(nproc)"
       - name: Create Test Report
         timeout-minutes: ${{ ((steps.frames-cache.outputs.cache-hit == 'true') && 2 || 4) }}
         run: >
