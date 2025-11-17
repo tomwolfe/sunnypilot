@@ -198,7 +198,7 @@ env = Environment(
     "#third_party/linux/include",
     "#third_party/snpe/include",
     "#third_party",
-    "#msgq",
+    "#msgq_repo",
   ],
 
   CC='clang',
