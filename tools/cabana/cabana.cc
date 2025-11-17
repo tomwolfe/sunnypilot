@@ -1,74 +1,82 @@
-#include <iostream>
-#include <string>
-#include <memory>
-#include <vector>
+#include <QApplication>
+#include <QCommandLineParser>
 
-#include "tools/cabana/raylib_mainwin.h"
-#include "tools/cabana/raylib_devicestream.h"
+#include "tools/cabana/mainwin.h"
+#include "tools/cabana/streams/devicestream.h"
 #include "tools/cabana/streams/pandastream.h"
 #include "tools/cabana/streams/replaystream.h"
-// The socketcanstream.h file is now properly implemented with SocketCanLiveStream
 #include "tools/cabana/streams/socketcanstream.h"
 
 int main(int argc, char *argv[]) {
-    std::cout << "Starting Cabana with Raylib UI..." << std::endl;
+  QCoreApplication::setApplicationName("Cabana");
+  QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+  initApp(argc, argv, false);
+  QApplication app(argc, argv);
+  app.setApplicationDisplayName("Cabana");
+  app.setWindowIcon(QIcon(":cabana-icon.png"));
 
-    // Initialize AbstractStream pointer (this would normally come from command line parsing)
-    AbstractStream *stream = nullptr;
+  UnixSignalHandler signalHandler;
+  utils::setTheme(settings.theme);
 
-    // Parse command line arguments similar to the original implementation
-    std::string route;
-    std::string dbc_file;
-    std::vector<std::string> args;
+  QCommandLineParser cmd_parser;
+  cmd_parser.addHelpOption();
+  cmd_parser.addPositionalArgument("route", "the drive to replay. find your drives at connect.comma.ai");
+  cmd_parser.addOption({"demo", "use a demo route instead of providing your own"});
+  cmd_parser.addOption({"auto", "Auto load the route from the best available source (no video): internal, openpilotci, comma_api, car_segments, testing_closet"});
+  cmd_parser.addOption({"qcam", "load qcamera"});
+  cmd_parser.addOption({"ecam", "load wide road camera"});
+  cmd_parser.addOption({"dcam", "load driver camera"});
+  cmd_parser.addOption({"msgq", "read can messages from the msgq"});
+  cmd_parser.addOption({"panda", "read can messages from panda"});
+  cmd_parser.addOption({"panda-serial", "read can messages from panda with given serial", "panda-serial"});
+  if (SocketCanStream::available()) {
+    cmd_parser.addOption({"socketcan", "read can messages from given SocketCAN device", "socketcan"});
+  }
+  cmd_parser.addOption({"zmq", "read can messages from zmq at the specified ip-address", "ip-address"});
+  cmd_parser.addOption({"data_dir", "local directory with routes", "data_dir"});
+  cmd_parser.addOption({"no-vipc", "do not output video"});
+  cmd_parser.addOption({"dbc", "dbc file to open", "dbc"});
+  cmd_parser.process(app);
 
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--demo" || arg == "-demo") {
-            // Use demo route
-            route = "demo_route";  // This would be replaced with actual demo route
-        } else if (arg == "--dbc" && i + 1 < argc) {
-            dbc_file = argv[++i];
-        } else if (arg == "--panda" || arg == "-panda") {
-            try {
-                stream = new PandaStream();  // Use default constructor
-            } catch (const std::exception& e) {
-                std::cerr << "Error creating Panda stream: " << e.what() << std::endl;
-                return 1;
-            }
-        } else if (arg[0] != '-') {
-            // Positional argument - route
-            route = arg;
-        }
-        // Add other argument parsing as needed
-    }
+  AbstractStream *stream = nullptr;
 
-    // Create stream if not already created
-    if (!stream) {
-        if (route.empty()) {
-            // No route specified, use dummy stream
-            stream = new DummyStream();  // Use default constructor
-        } else {
-            // Create replay stream for the route
-            // This would be a more complex implementation in reality
-            stream = new DummyStream();  // Placeholder
-        }
-    }
-
+  if (cmd_parser.isSet("msgq")) {
+    stream = new DeviceStream(&app);
+  } else if (cmd_parser.isSet("zmq")) {
+    stream = new DeviceStream(&app, cmd_parser.value("zmq"));
+  } else if (cmd_parser.isSet("panda") || cmd_parser.isSet("panda-serial")) {
     try {
-        // Create and run the Raylib-based main window
-        // Note: The constructor may need to be adapted for the new implementation
-        // For now, we'll call a simplified initialization
-        CabanaMainWindow *main_window = new CabanaMainWindow();
-
-        // Run the application
-        main_window->run();
-
-        delete main_window;
-    } catch (const std::exception& e) {
-        std::cerr << "Error running Cabana: " << e.what() << std::endl;
-        return 1;
+      stream = new PandaStream(&app, {.serial = cmd_parser.value("panda-serial")});
+    } catch (std::exception &e) {
+      qWarning() << e.what();
+      return 0;
     }
+  } else if (SocketCanStream::available() && cmd_parser.isSet("socketcan")) {
+    stream = new SocketCanStream(&app, {.device = cmd_parser.value("socketcan")});
+  } else {
+    uint32_t replay_flags = REPLAY_FLAG_NONE;
+    if (cmd_parser.isSet("ecam")) replay_flags |= REPLAY_FLAG_ECAM;
+    if (cmd_parser.isSet("qcam")) replay_flags |= REPLAY_FLAG_QCAMERA;
+    if (cmd_parser.isSet("dcam")) replay_flags |= REPLAY_FLAG_DCAM;
+    if (cmd_parser.isSet("no-vipc")) replay_flags |= REPLAY_FLAG_NO_VIPC;
 
-    std::cout << "Cabana closed." << std::endl;
-    return 0;
+    const QStringList args = cmd_parser.positionalArguments();
+    QString route;
+    if (args.size() > 0) {
+      route = args.first();
+    } else if (cmd_parser.isSet("demo")) {
+      route = DEMO_ROUTE;
+    }
+    if (!route.isEmpty()) {
+      auto replay_stream = std::make_unique<ReplayStream>(&app);
+      bool auto_source = cmd_parser.isSet("auto");
+      if (!replay_stream->loadRoute(route, cmd_parser.value("data_dir"), replay_flags, auto_source)) {
+        return 0;
+      }
+      stream = replay_stream.release();
+    }
+  }
+
+  MainWindow w(stream, cmd_parser.value("dbc"));
+  return app.exec();
 }

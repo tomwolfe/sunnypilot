@@ -1,150 +1,360 @@
 #include "tools/cabana/utils/util.h"
-#include <sstream>
-#include <iomanip>
+
 #include <algorithm>
-#include <cctype>
+#include <csignal>
+#include <limits>
+#include <memory>
+#include <string>
+#include <sys/socket.h>
+#include <unistd.h>
 
-std::string ElidedText::getElidedText(int max_width, Font font, float font_size) const {
-    // Simple implementation: just truncate text if it's too long
-    // In a more sophisticated implementation, we would measure text width
-    if (max_width > 100) { // If we have enough space, return full text
-        return original_text_;
-    } else {
-        // Truncate and add ellipsis
-        if (original_text_.length() > 10) {
-            return original_text_.substr(0, 10) + "...";
-        }
-        return original_text_;
-    }
+#include <QColor>
+#include <QDateTime>
+#include <QDir>
+#include <QFontDatabase>
+#include <QLocale>
+#include <QPixmapCache>
+#include <QSurfaceFormat>
+#include <QFileInfo>
+#include <QPainterPath>
+#include <QTextStream>
+#include <QtXml/QDomDocument>
+#include "common/util.h"
+
+// SegmentTree
+
+void SegmentTree::build(const std::vector<QPointF> &arr) {
+  size = arr.size();
+  tree.resize(4 * size);  // size of the tree is 4 times the size of the array
+  if (size > 0) {
+    build_tree(arr, 1, 0, size - 1);
+  }
 }
 
-void SegmentTree::build(const std::vector<Point> &arr) {
-    if (arr.empty()) return;
-    
-    size_ = arr.size();
-    tree.resize(4 * size_);
-    build_tree(arr, 1, 0, size_ - 1);
-}
-
-void SegmentTree::build_tree(const std::vector<Point> &arr, int n, int left, int right) {
-    if (left == right) {
-        tree[n] = {arr[left].y, arr[left].y};  // {min, max}
-    } else {
-        int mid = (left + right) / 2;
-        build_tree(arr, 2 * n, left, mid);
-        build_tree(arr, 2 * n + 1, mid + 1, right);
-        tree[n] = {std::min(tree[2 * n].first, tree[2 * n + 1].first),
-                   std::max(tree[2 * n].second, tree[2 * n + 1].second)};
-    }
-}
-
-std::pair<double, double> SegmentTree::minmax(int left, int right) const {
-    if (size_ == 0) return {0.0, 0.0};
-    return get_minmax(1, 0, size_ - 1, left, right);
+void SegmentTree::build_tree(const std::vector<QPointF> &arr, int n, int left, int right) {
+  if (left == right) {
+    const double y = arr[left].y();
+    tree[n] = {y, y};
+  } else {
+    const int mid = (left + right) >> 1;
+    build_tree(arr, 2 * n, left, mid);
+    build_tree(arr, 2 * n + 1, mid + 1, right);
+    tree[n] = {std::min(tree[2 * n].first, tree[2 * n + 1].first), std::max(tree[2 * n].second, tree[2 * n + 1].second)};
+  }
 }
 
 std::pair<double, double> SegmentTree::get_minmax(int n, int left, int right, int range_left, int range_right) const {
-    if (right < range_left || left > range_right) {
-        return {std::numeric_limits<double>::max(), std::numeric_limits<double>::min()};
-    }
-    if (range_left <= left && right <= range_right) {
-        return tree[n];
-    }
-    int mid = (left + right) / 2;
-    auto left_minmax = get_minmax(2 * n, left, mid, range_left, range_right);
-    auto right_minmax = get_minmax(2 * n + 1, mid + 1, right, range_left, range_right);
-    return {std::min(left_minmax.first, right_minmax.first),
-            std::max(left_minmax.second, right_minmax.second)};
+  if (range_left > right || range_right < left)
+    return {std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()};
+  if (range_left <= left && range_right >= right)
+    return tree[n];
+  int mid = (left + right) >> 1;
+  auto l = get_minmax(2 * n, left, mid, range_left, range_right);
+  auto r = get_minmax(2 * n + 1, mid + 1, right, range_left, range_right);
+  return {std::min(l.first, r.first), std::max(l.second, r.second)};
 }
 
-UnixSignalHandler::UnixSignalHandler() {
-    // Initialize signal handling (platform specific code)
-    // This would typically involve using signal() function for Unix signals
+// MessageBytesDelegate
+
+MessageBytesDelegate::MessageBytesDelegate(QObject *parent, bool multiple_lines)
+    : font_metrics(QApplication::font()), multiple_lines(multiple_lines), QStyledItemDelegate(parent) {
+  fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+  byte_size = QFontMetrics(fixed_font).size(Qt::TextSingleLine, "00 ") + QSize(0, 2);
+  for (int i = 0; i < 256; ++i) {
+    hex_text_table[i].setText(QStringLiteral("%1").arg(i, 2, 16, QLatin1Char('0')).toUpper());
+    hex_text_table[i].prepare({}, fixed_font);
+  }
+  h_margin = QApplication::style()->pixelMetric(QStyle::PM_FocusFrameHMargin) + 1;
+  v_margin = QApplication::style()->pixelMetric(QStyle::PM_FocusFrameVMargin) + 1;
+}
+
+QSize MessageBytesDelegate::sizeForBytes(int n) const {
+  int rows = multiple_lines ? std::max(1, n / 8) : 1;
+  return {(n / rows) * byte_size.width() + h_margin * 2, rows * byte_size.height() + v_margin * 2};
+}
+
+QSize MessageBytesDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const {
+  auto data = index.data(BytesRole);
+  return sizeForBytes(data.isValid() ? static_cast<std::vector<uint8_t> *>(data.value<void *>())->size() : 0);
+}
+
+void MessageBytesDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const {
+  if (option.state & QStyle::State_Selected) {
+    painter->fillRect(option.rect, option.palette.brush(QPalette::Normal, QPalette::Highlight));
+  }
+
+  QRect item_rect = option.rect.adjusted(h_margin, v_margin, -h_margin, -v_margin);
+  QColor highlighted_color = option.palette.color(QPalette::HighlightedText);
+  auto text_color = index.data(Qt::ForegroundRole).value<QColor>();
+  bool inactive = text_color.isValid();
+  if (!inactive) {
+    text_color = option.palette.color(QPalette::Text);
+  }
+  auto data = index.data(BytesRole);
+  if (!data.isValid()) {
+    painter->setFont(option.font);
+    painter->setPen(option.state & QStyle::State_Selected ? highlighted_color : text_color);
+    QString text = font_metrics.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, item_rect.width());
+    painter->drawText(item_rect, Qt::AlignLeft | Qt::AlignVCenter, text);
+    return;
+  }
+
+  // Paint hex column
+  const auto &bytes = *static_cast<std::vector<uint8_t> *>(data.value<void *>());
+  const auto &colors = *static_cast<std::vector<QColor> *>(index.data(ColorsRole).value<void *>());
+
+  painter->setFont(fixed_font);
+  const QPen text_pen(option.state & QStyle::State_Selected ? highlighted_color : text_color);
+  const QPoint pt = item_rect.topLeft();
+  for (int i = 0; i < bytes.size(); ++i) {
+    int row = !multiple_lines ? 0 : i / 8;
+    int column = !multiple_lines ? i : i % 8;
+    QRect r({pt.x() + column * byte_size.width(), pt.y() + row * byte_size.height()}, byte_size);
+
+    if (!inactive && i < colors.size() && colors[i].alpha() > 0) {
+      if (option.state & QStyle::State_Selected) {
+        painter->setPen(option.palette.color(QPalette::Text));
+        painter->fillRect(r, option.palette.color(QPalette::Window));
+      }
+      painter->fillRect(r, colors[i]);
+    } else {
+      painter->setPen(text_pen);
+    }
+    utils::drawStaticText(painter, r, hex_text_table[bytes[i]]);
+  }
+}
+
+// TabBar
+
+int TabBar::addTab(const QString &text) {
+  int index = QTabBar::addTab(text);
+  QToolButton *btn = new ToolButton("x", tr("Close Tab"));
+  int width = style()->pixelMetric(QStyle::PM_TabCloseIndicatorWidth, nullptr, btn);
+  int height = style()->pixelMetric(QStyle::PM_TabCloseIndicatorHeight, nullptr, btn);
+  btn->setFixedSize({width, height});
+  setTabButton(index, QTabBar::RightSide, btn);
+  QObject::connect(btn, &QToolButton::clicked, this, &TabBar::closeTabClicked);
+  return index;
+}
+
+void TabBar::closeTabClicked() {
+  QObject *object = sender();
+  for (int i = 0; i < count(); ++i) {
+    if (tabButton(i, QTabBar::RightSide) == object) {
+      emit tabCloseRequested(i);
+      break;
+    }
+  }
+}
+
+// UnixSignalHandler
+
+UnixSignalHandler::UnixSignalHandler(QObject *parent) : QObject(nullptr) {
+  if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sig_fd)) {
+    qFatal("Couldn't create TERM socketpair");
+  }
+
+  sn = new QSocketNotifier(sig_fd[1], QSocketNotifier::Read, this);
+  connect(sn, &QSocketNotifier::activated, this, &UnixSignalHandler::handleSigTerm);
+  std::signal(SIGINT, signalHandler);
+  std::signal(SIGTERM, UnixSignalHandler::signalHandler);
 }
 
 UnixSignalHandler::~UnixSignalHandler() {
-    // Cleanup signal handling
+  ::close(sig_fd[0]);
+  ::close(sig_fd[1]);
 }
 
-// Utility functions implementation
+void UnixSignalHandler::signalHandler(int s) {
+  ::write(sig_fd[0], &s, sizeof(s));
+}
+
+void UnixSignalHandler::handleSigTerm() {
+  sn->setEnabled(false);
+  int tmp;
+  ::read(sig_fd[1], &tmp, sizeof(tmp));
+
+  printf("\nexiting...\n");
+  qApp->closeAllWindows();
+  qApp->exit();
+}
+
+// NameValidator
+
+NameValidator::NameValidator(QObject *parent) : QRegExpValidator(QRegExp("^(\\w+)"), parent) {}
+
+QValidator::State NameValidator::validate(QString &input, int &pos) const {
+  input.replace(' ', '_');
+  return QRegExpValidator::validate(input, pos);
+}
+
+DoubleValidator::DoubleValidator(QObject *parent) : QDoubleValidator(parent) {
+  // Match locale of QString::toDouble() instead of system
+  QLocale locale(QLocale::C);
+  locale.setNumberOptions(QLocale::RejectGroupSeparator);
+  setLocale(locale);
+}
+
 namespace utils {
 
-std::string icon(const std::string &id) {
-    // Return path to icon file based on id
-    return "assets/" + id + ".png";  // This is a simplified approach
+bool isDarkTheme() {
+  QColor windowColor = QApplication::palette().color(QPalette::Window);
+  return windowColor.lightness() < 128;
 }
 
-bool isDarkTheme() {
-    // Return if the current theme is dark
-    return settings.theme == 1; // Assuming 1 means dark theme
+QPixmap icon(const QString &id) {
+  bool dark_theme = isDarkTheme();
+
+  QPixmap pm;
+  QString key = "bootstrap_" % id % (dark_theme ? "1" : "0");
+  if (!QPixmapCache::find(key, &pm)) {
+    pm = bootstrapPixmap(id);
+    if (dark_theme) {
+      QPainter p(&pm);
+      p.setCompositionMode(QPainter::CompositionMode_SourceIn);
+      p.fillRect(pm.rect(), QColor("#bbbbbb"));
+    }
+    QPixmapCache::insert(key, pm);
+  }
+  return pm;
 }
 
 void setTheme(int theme) {
-    settings.theme = theme;
+  auto style = QApplication::style();
+  if (!style) return;
+
+  static int prev_theme = 0;
+  if (theme != prev_theme) {
+    prev_theme = theme;
+    QPalette new_palette;
+    if (theme == DARK_THEME) {
+      // "Darcula" like dark theme
+      new_palette.setColor(QPalette::Window, QColor("#353535"));
+      new_palette.setColor(QPalette::WindowText, QColor("#bbbbbb"));
+      new_palette.setColor(QPalette::Base, QColor("#3c3f41"));
+      new_palette.setColor(QPalette::AlternateBase, QColor("#3c3f41"));
+      new_palette.setColor(QPalette::ToolTipBase, QColor("#3c3f41"));
+      new_palette.setColor(QPalette::ToolTipText, QColor("#bbb"));
+      new_palette.setColor(QPalette::Text, QColor("#bbbbbb"));
+      new_palette.setColor(QPalette::Button, QColor("#3c3f41"));
+      new_palette.setColor(QPalette::ButtonText, QColor("#bbbbbb"));
+      new_palette.setColor(QPalette::Highlight, QColor("#2f65ca"));
+      new_palette.setColor(QPalette::HighlightedText, QColor("#bbbbbb"));
+      new_palette.setColor(QPalette::BrightText, QColor("#f0f0f0"));
+      new_palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#777777"));
+      new_palette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#777777"));
+      new_palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#777777"));
+      new_palette.setColor(QPalette::Light, QColor("#777777"));
+      new_palette.setColor(QPalette::Dark, QColor("#353535"));
+    } else {
+      new_palette = style->standardPalette();
+    }
+    qApp->setPalette(new_palette);
+    style->polish(qApp);
+    for (auto w : QApplication::allWidgets()) {
+      w->setPalette(new_palette);
+    }
+  }
 }
 
-std::string formatSeconds(double sec, bool include_milliseconds, bool absolute_time) {
-    int hours = (int)(sec / 3600);
-    int minutes = ((int)(sec / 60)) % 60;
-    int seconds_int = ((int)sec) % 60;
-    double milliseconds = (sec - (int)sec) * 1000;
-    
-    std::ostringstream ss;
-    if (hours > 0) {
-        ss << std::setfill('0') << std::setw(2) << hours << ":";
-    }
-    
-    ss << std::setfill('0') << std::setw(2) << minutes << ":"
-       << std::setfill('0') << std::setw(2) << seconds_int;
-    
-    if (include_milliseconds) {
-        ss << "." << std::setfill('0') << std::setw(3) << (int)milliseconds;
-    }
-    
-    return ss.str();
+QString formatSeconds(double sec, bool include_milliseconds, bool absolute_time) {
+  QString format = absolute_time ? "yyyy-MM-dd hh:mm:ss"
+                                 : (sec > 60 * 60 ? "hh:mm:ss" : "mm:ss");
+  if (include_milliseconds) format += ".zzz";
+  return QDateTime::fromMSecsSinceEpoch(sec * 1000).toString(format);
 }
 
-std::string toHex(const std::vector<uint8_t> &dat, char separator) {
-    std::string result;
-    for (size_t i = 0; i < dat.size(); i++) {
-        if (i > 0 && separator != '\0') {
-            result += separator;
-        }
-        char buffer[4];
-        snprintf(buffer, sizeof(buffer), "%02X", dat[i]);
-        result += buffer;
-    }
-    return result;
-}
-
-} // namespace utils
+}  // namespace utils
 
 int num_decimals(double num) {
-    // Convert to string and count digits after decimal point
-    std::string str = std::to_string(num);
-    size_t pos = str.find('.');
-    if (pos != std::string::npos) {
-        return str.length() - pos - 1;
+  const QString string = QString::number(num);
+  auto dot_pos = string.indexOf('.');
+  return dot_pos == -1 ? 0 : string.size() - dot_pos - 1;
+}
+
+QString signalToolTip(const cabana::Signal *sig) {
+  return QObject::tr(R"(
+    %1<br /><span font-size:small">
+    Start Bit: %2 Size: %3<br />
+    MSB: %4 LSB: %5<br />
+    Little Endian: %6 Signed: %7</span>
+  )").arg(sig->name).arg(sig->start_bit).arg(sig->size).arg(sig->msb).arg(sig->lsb)
+     .arg(sig->is_little_endian ? "Y" : "N").arg(sig->is_signed ? "Y" : "N");
+}
+
+void setSurfaceFormat() {
+  QSurfaceFormat fmt;
+#ifdef __APPLE__
+  fmt.setVersion(3, 2);
+  fmt.setProfile(QSurfaceFormat::OpenGLContextProfile::CoreProfile);
+  fmt.setRenderableType(QSurfaceFormat::OpenGL);
+#else
+  fmt.setRenderableType(QSurfaceFormat::OpenGLES);
+#endif
+  fmt.setSamples(16);
+  fmt.setStencilBufferSize(1);
+  QSurfaceFormat::setDefaultFormat(fmt);
+}
+
+void sigTermHandler(int s) {
+  std::signal(s, SIG_DFL);
+  qApp->quit();
+}
+
+void initApp(int argc, char *argv[], bool disable_hidpi) {
+  // setup signal handlers to exit gracefully
+  std::signal(SIGINT, sigTermHandler);
+  std::signal(SIGTERM, sigTermHandler);
+
+  QString app_dir;
+#ifdef __APPLE__
+  // Get the devicePixelRatio, and scale accordingly to maintain 1:1 rendering
+  QApplication tmp(argc, argv);
+  app_dir = QCoreApplication::applicationDirPath();
+  if (disable_hidpi) {
+    qputenv("QT_SCALE_FACTOR", QString::number(1.0 / tmp.devicePixelRatio()).toLocal8Bit());
+  }
+#else
+  app_dir = QFileInfo(util::readlink("/proc/self/exe").c_str()).path();
+#endif
+
+  qputenv("QT_DBL_CLICK_DIST", QByteArray::number(150));
+  // ensure the current dir matches the exectuable's directory
+  QDir::setCurrent(app_dir);
+
+  setSurfaceFormat();
+}
+
+static QHash<QString, QByteArray> load_bootstrap_icons() {
+  QHash<QString, QByteArray> icons;
+
+  QFile f(":/bootstrap-icons.svg");
+  if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QDomDocument xml;
+    xml.setContent(&f);
+    QDomNode n = xml.documentElement().firstChild();
+    while (!n.isNull()) {
+      QDomElement e = n.toElement();
+      if (!e.isNull() && e.hasAttribute("id")) {
+        QString svg_str;
+        QTextStream stream(&svg_str);
+        n.save(stream, 0);
+        svg_str.replace("<symbol", "<svg");
+        svg_str.replace("</symbol>", "</svg>");
+        icons[e.attribute("id")] = svg_str.toUtf8();
+      }
+      n = n.nextSibling();
     }
-    return 0;
+  }
+  return icons;
 }
 
-std::string signalToolTip(const cabana::Signal *sig) {
-    if (!sig) return "";
-    
-    std::ostringstream ss;
-    ss << "Signal: " << sig->name << "\n"
-       << "Start Bit: " << sig->start_bit << "\n"
-       << "Size: " << sig->size << " bits\n"
-       << "Factor: " << sig->factor << "\n"
-       << "Offset: " << sig->offset << "\n"
-       << "Type: " << (sig->is_signed ? "Signed" : "Unsigned");
-    
-    return ss.str();
-}
+QPixmap bootstrapPixmap(const QString &id) {
+  static QHash<QString, QByteArray> icons = load_bootstrap_icons();
 
-std::string toHexString(int value) {
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "0x%02X", value);
-    return buffer;
+  QPixmap pixmap;
+  if (auto it = icons.find(id); it != icons.end()) {
+    pixmap.loadFromData(it.value(), "svg");
+  }
+  return pixmap;
 }
