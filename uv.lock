@@ -1293,10 +1293,6 @@ dependencies = [
     { name = "cffi" },
     { name = "crcmod" },
     { name = "cython" },
-<<<<<<< HEAD
-=======
-    { name = "future-fstrings" },
->>>>>>> upstream/master
     { name = "inputs" },
     { name = "json-rpc" },
     { name = "kaitaistruct" },
