@@ -1,0 +1,11 @@
+diff --git a/tinygrad/runtime/support/elf.py b/tinygrad/runtime/support/elf.py
+index 803227a..a30285d 100644
+--- a/tinygrad/runtime/support/elf.py
++++ b/tinygrad/runtime/support/elf.py
+@@ -45,6 +45,8 @@ def jit_loader(obj: bytes, base:int=0, link_libs:list[str]|None=None) -> bytes:
+   if link_libs is None: link_libs = ["m"]  # Add math library by default
+   image_, _, relocs = elf_loader(obj, link_libs=link_libs)
+   image = bytearray(image_)
+
+   def relocate(instr: int, base: int, ploc: int, tgt: int, r_type: int):
+     match r_type:
