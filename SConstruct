@@ -285,10 +285,10 @@ Export('SP_OVERRIDES') # Make it available to SConscripts
 
 # Build common module
 SConscript(['common/SConscript'])
-Import('_common', '_gpucommon')
+Import('_common')
 
 common = [_common, 'json11', 'zmq']
-gpucommon = [_gpucommon]
+gpucommon = [_common]  # Using _common instead of _gpucommon since gpucommon was merged into common
 
 Export('common', 'gpucommon')
 
