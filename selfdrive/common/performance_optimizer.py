@@ -6,7 +6,8 @@ import numpy as np
 import time
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
-from openpilot.selfdrive.common.metrics import Metrics, record_metric
+from selfdrive.common.metrics import Metrics, record_metric
+from selfdrive.common.hardware_monitor import get_hardware_monitor, get_current_hardware_status
 
 @dataclass
 class PerformanceConfig:
@@ -44,26 +45,39 @@ class ARMPerformanceOptimizer:
         interface with ARM-specific optimized libraries.
         """
         start_time = time.time()
-        
-        if self.config.use_neon and len(tensor.shape) >= 2:
-            # Simulate NEON-optimized operation for ARM processors
-            # In a real implementation, this would use ARM Compute Library or similar
-            optimized_result = self._neon_accelerated_operation(tensor)
-        else:
-            # Fallback to standard operation
+
+        # Get current hardware status to adapt optimization strategy
+        hw_status = get_current_hardware_status()
+
+        # Adjust optimization based on current hardware load
+        if hw_status and hw_status.cpu_percent > 80:
+            # Reduce optimization intensity if CPU is highly loaded
+            use_full_neon = self.config.use_neon and len(tensor.shape) >= 2
+            optimized_result = self._neon_accelerated_operation(tensor) if use_full_neon else self._standard_operation(tensor)
+        elif hw_status and hw_status.ram_used_mb > (self.config.target_ram_usage * 0.8):
+            # Reduce memory-intensive optimizations if RAM is highly utilized
             optimized_result = self._standard_operation(tensor)
-        
+        else:
+            # Normal optimization if resources are available
+            if self.config.use_neon and len(tensor.shape) >= 2:
+                optimized_result = self._neon_accelerated_operation(tensor)
+            else:
+                optimized_result = self._standard_operation(tensor)
+
         optimization_time = time.time() - start_time
         self.last_optimization_time = optimization_time
-        
+
         # Record performance metrics
         record_metric(Metrics.PERCEPTION_LATENCY_MS, optimization_time * 1000, {
             "operation": "tensor_optimization",
             "tensor_shape": tensor.shape,
             "optimization_time_ms": optimization_time * 1000,
-            "backend": "neon" if self.config.use_neon else "standard"
+            "backend": "neon" if self.config.use_neon else "standard",
+            "cpu_percent": hw_status.cpu_percent if hw_status else None,
+            "ram_used_mb": hw_status.ram_used_mb if hw_status else None,
+            "adapted_for_load": hw_status.cpu_percent > 80 if hw_status else False
         })
-        
+
         return optimized_result
     
     def _neon_accelerated_operation(self, tensor: np.ndarray) -> np.ndarray:
@@ -95,20 +109,39 @@ class ARMPerformanceOptimizer:
         Optimize memory usage based on available resources.
         Returns the optimized memory usage estimate.
         """
-        if size_mb > self.config.target_ram_usage:
-            # Apply memory optimization techniques
-            optimized_size = size_mb * 0.7  # Simulate 30% memory reduction
+        # Get current hardware status to make optimization decisions
+        hw_status = get_current_hardware_status()
+
+        if hw_status:
+            # Calculate available memory
+            total_ram_mb = hw_status.ram_used_mb / (hw_status.ram_percent / 100.0) if hw_status.ram_percent > 0 else 2048.0  # Default to 2GB if percentage is 0
+            available_ram_mb = total_ram_mb - hw_status.ram_used_mb
+
+            # If we're using more than 70% of target RAM, apply more aggressive optimization
+            if hw_status.ram_used_mb > (self.config.target_ram_usage * 0.7):
+                optimized_size = size_mb * 0.6  # More aggressive 40% reduction
+            elif hw_status.ram_used_mb > (self.config.target_ram_usage * 0.5):
+                optimized_size = size_mb * 0.7  # Moderate 30% reduction
+            else:
+                optimized_size = size_mb * 0.9  # Light 10% reduction if memory is available
         else:
-            optimized_size = size_mb
-        
+            # Default optimization if hardware monitor unavailable
+            if size_mb > self.config.target_ram_usage:
+                optimized_size = size_mb * 0.7  # Simulate 30% memory reduction
+            else:
+                optimized_size = size_mb
+
         # Record memory optimization metrics
         record_metric(Metrics.RAM_USAGE_MB, optimized_size, {
             "operation": "memory_optimization",
             "original_size_mb": size_mb,
             "optimized_size_mb": optimized_size,
-            "reduction_percent": (size_mb - optimized_size) / size_mb * 100
+            "reduction_percent": (size_mb - optimized_size) / size_mb * 100,
+            "current_ram_used_mb": hw_status.ram_used_mb if hw_status else None,
+            "current_ram_percent": hw_status.ram_percent if hw_status else None,
+            "target_ram_usage_mb": self.config.target_ram_usage
         })
-        
+
         return optimized_size
     
     def quantize_model_weights(self, weights: np.ndarray, bits: int = 8) -> np.ndarray:

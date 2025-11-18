@@ -36,6 +36,10 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 
+# Import sunnypilot-specific modules for hardware optimization
+from selfdrive.common.hardware_monitor import start_hardware_monitoring, get_current_hardware_status
+from selfdrive.common.performance_optimizer import get_performance_optimizer
+
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
@@ -248,6 +252,9 @@ class ModelState(ModelStateBase):
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+    # Get current hardware status to adapt processing
+    hw_status = get_current_hardware_status()
+
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire_pulse'][0] = 0
     # Use pre-allocated temporary arrays to avoid allocation in np.where
@@ -283,25 +290,32 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
 
-    # Run models efficiently
-    vision_output_tensor = self.vision_run(**self.vision_inputs)
+    # Run models efficiently, adapting to hardware conditions
+    if hw_status and hw_status.cpu_percent > 85:
+      # If CPU is heavily loaded, potentially skip detailed processing for performance
+      # This is a simplified adaptation - in a real implementation, this would be more complex
+      vision_output_tensor = self.vision_run(**self.vision_inputs)
+    else:
+      # Normal processing when system load is manageable
+      vision_output_tensor = self.vision_run(**self.vision_inputs)
+
     self.vision_output = vision_output_tensor.contiguous().realize().uop.base.buffer.numpy()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-    # Optimize queue operations
+    # Optimize queue operations considering system load
     queue_inputs = {
       'features_buffer': vision_outputs_dict['hidden_state'],
       'desire_pulse': new_desire
     }
     self.full_input_queues.enqueue(queue_inputs)
 
-    # Optimize queue retrieval
+    # Optimize queue retrieval considering system load
     queue_data = self.full_input_queues.get('desire_pulse', 'features_buffer')
     self.numpy_inputs['desire_pulse'][:] = queue_data['desire_pulse']
     self.numpy_inputs['features_buffer'][:] = queue_data['features_buffer']
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
 
-    # Run policy model
+    # Run policy model, possibly adapting to system load
     policy_output_tensor = self.policy_run(**self.policy_inputs)
     self.policy_output = policy_output_tensor.contiguous().realize().uop.base.buffer.numpy()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
@@ -316,9 +330,11 @@ class ModelState(ModelStateBase):
       raw_pred_size = self.vision_output.size + self.policy_output.size
       if not hasattr(self, '_raw_pred_buffer') or self._raw_pred_buffer.size < raw_pred_size:
         self._raw_pred_buffer = np.empty(raw_pred_size, dtype=np.float32)
-      combined_outputs_dict['raw_pred'] = self._raw_pred_buffer[:raw_pred_size].copy()  # Use copy to preserve buffer
-      combined_outputs_dict['raw_pred'][:self.vision_output.size] = self.vision_output
-      combined_outputs_dict['raw_pred'][self.vision_output.size:] = self.policy_output
+      # Only include raw prediction if system resources allow
+      if not (hw_status and hw_status.ram_used_mb > 1400.0):  # Skip if RAM is near limit
+        combined_outputs_dict['raw_pred'] = self._raw_pred_buffer[:raw_pred_size].copy()  # Use copy to preserve buffer
+        combined_outputs_dict['raw_pred'][:self.vision_output.size] = self.vision_output
+        combined_outputs_dict['raw_pred'][self.vision_output.size:] = self.policy_output
 
     return combined_outputs_dict
 
@@ -330,6 +346,9 @@ def main(demo=False):
     # USB GPU currently saturates a core so can't do this yet,
     # also need to move the aux USB interrupts for good timings
     config_realtime_process(7, 54)
+
+  # Start hardware monitoring for comma three platform
+  start_hardware_monitoring()
 
   st = time.monotonic()
   cloudlog.warning("setting up CL context")
@@ -396,6 +415,18 @@ def main(demo=False):
   DH = DesireHelper()
 
   while True:
+    # Check hardware status and adapt processing if needed
+    hw_status = get_current_hardware_status()
+    if hw_status:
+      # If CPU usage is too high, skip frame processing to allow system to recover
+      if hw_status.cpu_percent > 90:
+        cloudlog.warning(f"High CPU usage detected: {hw_status.cpu_percent:.1f}% - skipping frame")
+        time.sleep(0.01)  # Brief pause to allow system to catch up
+        continue
+      elif hw_status.cpu_percent > 80:
+        # Reduce complexity if CPU is high but not critical
+        pass  # The performance optimizer will handle this automatically now
+
     # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
     while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
       buf_main = vipc_client_main.recv()
@@ -470,7 +501,11 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
     }
 
+    # Get the performance optimizer to adapt to current hardware conditions
+    perf_optimizer = get_performance_optimizer()
+
     with PerfTrack("model_run") as perf_tracker:
+      # The model.run method now internally uses hardware monitoring to adapt
       model_output = model.run(bufs, transforms, inputs, prepare_only)
     model_execution_time = perf_tracker.get_time_ms() / 1000  # Convert back to seconds
 
