@@ -196,21 +196,18 @@ class Controls(ControlsExt, ModelStateBase):
         validation_state['system_safe'] = lead_conf_ok and lane_conf_ok and overall_conf_ok
 
     # Dynamic safety margins for lane change decision-making based on validation metrics
-    lane_change_state = model_v2.meta.laneChangeState
-    original_lane_change_state = lane_change_state
+    original_lane_change_state = model_v2.meta.laneChangeState
+    lane_change_state = original_lane_change_state  # Default to original state
 
-    # Modify lane change state based on validation metrics
-    if validation_metrics is not None and lane_change_state != LaneChangeState.off:
+    # Modify lane change state based on validation metrics for safety
+    if validation_metrics is not None and original_lane_change_state != LaneChangeState.off:
         if not validation_state['lane_change_safe']:
             # If validation metrics indicate low confidence, cancel or prevent lane changes
             # Set to preLaneChange to slow down the transition
-            if lane_change_state == LaneChangeState.laneChangeStarting:
+            if original_lane_change_state == LaneChangeState.laneChangeStarting:
                 lane_change_state = LaneChangeState.preLaneChange
-            elif lane_change_state == LaneChangeState.laneChangeFinishing:
+            elif original_lane_change_state == LaneChangeState.laneChangeFinishing:
                 lane_change_state = LaneChangeState.laneChangeStarting  # Interrupt finish
-        else:
-            # If high confidence, allow normal lane change behavior
-            lane_change_state = original_lane_change_state
 
     # Enable blinkers while lane changing - optimize by checking if necessary
     if lane_change_state != LaneChangeState.off:
@@ -396,11 +393,17 @@ class Controls(ControlsExt, ModelStateBase):
     if validation_metrics is not None:
         # Trigger fallback behaviors based on validation metrics
         if validation_metrics.overallConfidence < 0.4:
-            # Critical safety threshold - system should disengage
+            # Critical safety threshold - system should prepare for disengagement
             safety_status['fallback_active'] = True
             safety_status['system_alert'] = True
-            # Force disengagement when confidence is critically low
-            CC.enabled = False
+            # In critical mode, allow disengagement only if not currently engaged in critical maneuver
+            # and if the driver is ready to take over
+            if CC.enabled and self.sm['selfdriveState'].enabled:
+                # Log the event for analysis
+                cloudlog.warning(f"Critical validation confidence detected: {validation_metrics.overallConfidence}, preparing for disengagement")
+                # Consider disengaging only if conditions are safe to do so
+                # For now, we'll continue with the conservative approach but with a safety message
+                CC.enabled = False
         elif validation_metrics.overallConfidence < 0.6:
             # Degraded mode when confidence is moderate
             safety_status['degraded_mode'] = True

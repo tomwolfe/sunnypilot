@@ -24,8 +24,9 @@ class MemoryPool:
   def __init__(self, initial_size: int = 1024 * 1024 * 50):  # 50MB initial
     self.initial_size = initial_size
     self.pool: List[np.ndarray] = []
+    self.used_arrays: List[np.ndarray] = []  # Track arrays currently in use
     self._initialize_pool()
-  
+
   def _initialize_pool(self):
     """Initialize the memory pool with pre-allocated arrays"""
     try:
@@ -38,32 +39,36 @@ class MemoryPool:
         (128, np.float32),       # For temporary calculations
         (256, np.float32),       # For intermediate results
       ]
-      
+
       for size, dtype in sizes:
         for _ in range(5):  # Create 5 of each size
           arr = np.empty(size, dtype=dtype)
           self.pool.append(arr)
-      
+
       cloudlog.info(f"Memory pool initialized with {len(self.pool)} arrays")
     except Exception as e:
       cloudlog.error(f"Failed to initialize memory pool: {e}")
-  
+
   def get_array(self, size: int, dtype: np.dtype = np.float32) -> np.ndarray:
     """Get an array from the pool or create a new one if needed"""
-    # Find suitable array in pool
+    # Find suitable unused array in pool
     for i, arr in enumerate(self.pool):
-      if arr.dtype == dtype and arr.size >= size:
-        result = arr[:size].copy()
-        return result
-    
+      if arr.dtype == dtype and arr.size >= size and arr not in self.used_arrays:
+        # Mark as used and return a view of the appropriate size
+        self.used_arrays.append(arr)
+        return arr[:size].copy()  # Return a copy to prevent corruption
+
     # If no suitable array found, create new one
-    return np.empty(size, dtype=dtype)
-  
+    new_arr = np.empty(size, dtype=dtype)
+    self.used_arrays.append(new_arr)  # Track this temporary array too
+    return new_arr
+
   def put_array(self, arr: np.ndarray):
-    """Return an array to the pool (not implemented for safety)"""
-    # In this implementation, we don't reuse arrays directly
-    # to avoid potential memory corruption
-    pass
+    """Return an array to be available for reuse"""
+    if arr in self.used_arrays:
+      self.used_arrays.remove(arr)
+      # If it's one of our pre-allocated arrays, keep it in the pool
+      # Otherwise, allow it to be garbage collected
 
 
 class NEONOptimizer:
@@ -235,21 +240,36 @@ def optimize_validation_metrics(lead_confidence: np.ndarray, lane_confidence: np
 def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float) -> float:
   """Optimize curvature calculation with memory pooling"""
   start_time = __import__('time').time()
-  
-  # Use memory pool for temporary calculations
-  temp_arr = neon_optimizer.memory_pool.get_array(3, np.float32)
-  temp_arr[0] = steer_angle
-  temp_arr[1] = v_ego
-  temp_arr[2] = roll
-  
-  # Simplified curvature calculation (real implementation would be more complex)
-  curvature = temp_arr[0] * 0.005 if abs(temp_arr[1]) > 0.1 else 0.0
-  
-  # Profile this operation
-  end_time = __import__('time').time()
-  execution_time = (end_time - start_time) * 1000
-  neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-  
+
+  try:
+    # Use memory pool for temporary calculations
+    temp_arr = neon_optimizer.memory_pool.get_array(3, np.float32)
+    temp_arr[0] = float(steer_angle) if not np.isnan(steer_angle) and not np.isinf(steer_angle) else 0.0
+    temp_arr[1] = float(v_ego) if not np.isnan(v_ego) and not np.isinf(v_ego) else 0.0
+    temp_arr[2] = float(roll) if not np.isnan(roll) and not np.isinf(roll) else 0.0
+
+    # Validate inputs to avoid invalid calculations
+    if abs(temp_arr[1]) < 0.01:  # v_ego is too low to calculate meaningful curvature
+        return 0.0
+
+    # More robust curvature calculation
+    # Original formula: curvature = -VM.calc_curvature(math.radians(angle_offset_diff), v_ego, roll)
+    # The 0.005 factor is a simplified approximation
+    curvature = temp_arr[0] * 0.005
+
+    # Apply bounds checking to prevent extreme values
+    curvature = np.clip(curvature, -0.02, 0.02)  # Reasonable curvature bounds
+
+  except Exception as e:
+    cloudlog.error(f"Error in optimize_curvature_calculation: {e}")
+    # Return a safe default value in case of error
+    return 0.0
+  finally:
+    # Profile this operation regardless of success/failure
+    end_time = __import__('time').time()
+    execution_time = (end_time - start_time) * 1000
+    neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+
   return curvature
 
 

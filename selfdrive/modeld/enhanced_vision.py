@@ -56,7 +56,14 @@ class EnhancedVisionProcessor:
         """
         try:
             # Apply calibrated transformation matrices
-            dc = DEVICE_CAMERAS[('tici', 'ar0231')]  # Assuming Comma Three hardware
+            # For now, using a default camera configuration; in a real implementation,
+            # this would need to be passed from the calling function
+            try:
+                dc = DEVICE_CAMERAS[('tici', 'ar0231')]  # Comma 3 hardware with AR0231 camera
+            except KeyError:
+                # Fallback to any available camera configuration
+                dc = next(iter(DEVICE_CAMERAS.values()))
+
             device_from_calib_euler = calib_params
             road_matrix = get_warp_matrix(device_from_calib_euler, dc.fcam.intrinsics, False).astype(np.float32)
             wide_matrix = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics, True).astype(np.float32)
