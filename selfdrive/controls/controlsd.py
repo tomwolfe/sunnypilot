@@ -19,6 +19,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.enhanced_longitudinal_planner import EnhancedLongitudinalPlanner
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
@@ -50,7 +51,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
-                                   'navInstruction', 'navStatus'] + self.sm_services_ext,
+                                   'navInstruction', 'navStatus', 'validationMetrics', 'radarState'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -63,6 +64,7 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.LoC = LongControl(self.CP, self.CP_SP)
     self.VM = VehicleModel(self.CP)
+    self.enhanced_long_planner = EnhancedLongitudinalPlanner(self.CP)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       self.LaC = LatControlAngle(self.CP, self.CP_SP, self.CI)
@@ -112,6 +114,7 @@ class Controls(ControlsExt, ModelStateBase):
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
+    validation_metrics = self.sm['validationMetrics'] if 'validationMetrics' in self.sm else None
 
     CC = car.CarControl.new_message()
     CC.enabled = self.sm['selfdriveState'].enabled
@@ -133,8 +136,46 @@ class Controls(ControlsExt, ModelStateBase):
     actuators = CC.actuators
     actuators.longControlState = self.LoC.long_control_state
 
-    # Enable blinkers while lane changing - optimize by checking if necessary
+    # Initialize safety validation based on validation metrics
+    validation_state = {
+        'lead_confidence_ok': True,
+        'lane_confidence_ok': True,
+        'overall_confidence_ok': True,
+        'system_safe': True,
+        'lane_change_safe': True
+    }
+
+    if validation_metrics is not None:
+        # Check safety thresholds based on validation metrics
+        lead_conf_ok = validation_metrics.leadConfidenceAvg >= 0.6
+        lane_conf_ok = validation_metrics.laneConfidenceAvg >= 0.65
+        overall_conf_ok = validation_metrics.overallConfidence >= 0.6
+        lane_change_conf_ok = validation_metrics.overallConfidence >= 0.7 and validation_metrics.laneConfidenceAvg >= 0.7  # Higher threshold for lane changes
+
+        validation_state['lead_confidence_ok'] = lead_conf_ok
+        validation_state['lane_confidence_ok'] = lane_conf_ok
+        validation_state['overall_confidence_ok'] = overall_conf_ok
+        validation_state['lane_change_safe'] = lane_change_conf_ok
+        validation_state['system_safe'] = lead_conf_ok and lane_conf_ok and overall_conf_ok
+
+    # Dynamic safety margins for lane change decision-making based on validation metrics
     lane_change_state = model_v2.meta.laneChangeState
+    original_lane_change_state = lane_change_state
+
+    # Modify lane change state based on validation metrics
+    if validation_metrics is not None and lane_change_state != LaneChangeState.off:
+        if not validation_state['lane_change_safe']:
+            # If validation metrics indicate low confidence, cancel or prevent lane changes
+            # Set to preLaneChange to slow down the transition
+            if lane_change_state == LaneChangeState.laneChangeStarting:
+                lane_change_state = LaneChangeState.preLaneChange
+            elif lane_change_state == LaneChangeState.laneChangeFinishing:
+                lane_change_state = LaneChangeState.laneChangeStarting  # Interrupt finish
+        else:
+            # If high confidence, allow normal lane change behavior
+            lane_change_state = original_lane_change_state
+
+    # Enable blinkers while lane changing - optimize by checking if necessary
     if lane_change_state != LaneChangeState.off:
       lane_change_direction = model_v2.meta.laneChangeDirection
       CC.leftBlinker = lane_change_direction == LaneChangeDirection.left
@@ -145,17 +186,81 @@ class Controls(ControlsExt, ModelStateBase):
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop - optimize calculations
+    # Enhanced longitudinal control using validation metrics for safety
     v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, v_cruise_ms)
-    actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)
+
+    # Apply enhanced longitudinal planning if validation metrics are available
+    radar_state = self.sm['radarState'] if self.sm.updated['radarState'] else None
+    if validation_metrics is not None:
+        # Update lead vehicle prediction with confidence-based adjustments
+        enhanced_long_plan = self.enhanced_long_planner.update_lead_vehicle_prediction(
+            long_plan,
+            radar_state,
+            CS,  # Pass car state for vEgo information
+            {
+                'leadConfidenceAvg': validation_metrics.leadConfidenceAvg,
+                'leadConfidenceMax': validation_metrics.leadConfidenceMax,
+                'laneConfidenceAvg': validation_metrics.laneConfidenceAvg,
+                'overallConfidence': validation_metrics.overallConfidence,
+                'isValid': validation_metrics.isValid,
+                'confidenceThreshold': validation_metrics.confidenceThreshold
+            }
+        )
+
+        # Use enhanced longitudinal plan
+        enhanced_a_target = enhanced_long_plan.aTarget
+        enhanced_should_stop = enhanced_long_plan.shouldStop
+    else:
+        # Use original plan when validation metrics not available
+        enhanced_a_target = long_plan.aTarget
+        enhanced_should_stop = long_plan.shouldStop
+
+    # Adjust control aggressiveness based on validation metrics
+    if validation_metrics is not None and not validation_state['lead_confidence_ok']:
+        # Reduce PID aggressiveness when lead detection confidence is low
+        # This makes the system more conservative with longitudinal control
+        pid_accel_limits = (
+            max(pid_accel_limits[0] * 0.8, -4.0),  # More conservative deceleration
+            min(pid_accel_limits[1] * 0.8, 2.0)   # More conservative acceleration
+        )
+
+    actuators.accel = self.LoC.update(CC.longActive, CS, enhanced_a_target, enhanced_should_stop, pid_accel_limits)
 
     # Steering PID loop and lateral MPC - optimize curvature calculations
     active_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+
+    # Apply dynamic safety margins based on validation metrics
+    if validation_metrics is not None:
+        if not validation_state['lane_confidence_ok']:
+            # Reduce desired curvature when lane detection confidence is low
+            # This makes lateral control more conservative
+            if abs(active_curvature) > 0.005:  # Only modify if there's significant curvature request
+                active_curvature = active_curvature * 0.7  # Reduce by 30% when confidence is low
+        elif validation_metrics.overallConfidence >= 0.85:
+            # More aggressive control when high confidence
+            active_curvature = active_curvature * 1.1  # Slightly more responsive when confidence is high
+
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, active_curvature, lp.roll)
 
     actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+
+    # Apply additional safety checks based on validation state
+    lat_active_with_safety = CC.latActive and validation_state['system_safe']
+
+    # Modify lateral control if validation metrics indicate low confidence
+    if not validation_state['system_safe']:
+        # Add additional stability checks when system confidence is low
+        if abs(self.desired_curvature) < 0.001:  # Only for very small curvature requests
+            lat_active_with_safety = CC.latActive  # Allow minimal lateral control
+        else:
+            # Be more conservative with lateral control when confidence is low
+            lat_active_with_safety = CC.latActive and (
+                validation_state['lane_confidence_ok'] or
+                abs(self.desired_curvature) < 0.005  # Allow only very small corrections
+            )
+
+    steer, steeringAngleDeg, lac_log = self.LaC.update(lat_active_with_safety, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited)
     actuators.torque = steer
@@ -230,6 +335,29 @@ class Controls(ControlsExt, ModelStateBase):
     # TODO: both controlsState and carControl valids should be set by
     #       sm.all_checks(), but this creates a circular dependency
 
+    # Safety validation layers - trigger fallback behaviors when confidence metrics are low
+    safety_status = {
+        'fallback_active': False,
+        'degraded_mode': False,
+        'system_alert': False
+    }
+
+    if validation_metrics is not None:
+        # Trigger fallback behaviors based on validation metrics
+        if validation_metrics.overallConfidence < 0.4:
+            # Critical safety threshold - system should disengage
+            safety_status['fallback_active'] = True
+            safety_status['system_alert'] = True
+            # Force disengagement when confidence is critically low
+            CC.enabled = False
+        elif validation_metrics.overallConfidence < 0.6:
+            # Degraded mode when confidence is moderate
+            safety_status['degraded_mode'] = True
+            # Reduce lateral control authority gradually
+        elif validation_metrics.overallConfidence < 0.75:
+            # Warning level when confidence is somewhat low
+            safety_status['system_alert'] = True
+
     # controlsState
     dat = messaging.new_message('controlsState')
     dat.valid = CS.canValid
@@ -245,6 +373,29 @@ class Controls(ControlsExt, ModelStateBase):
     cs.ufAccelCmd = self.LoC.pid.f  # Removed float() wrapper
     cs.forceDecel = (self.sm['driverMonitoringState'].awarenessStatus < 0.) or \
                      (self.sm['selfdriveState'].state == State.softDisabling)  # Removed bool() wrapper
+
+    # Add safety validation metrics to controlsState for monitoring
+    if validation_metrics is not None:
+        # Set validation metrics - need to create and populate the metrics struct
+        cs.validation.metrics.leadConfidenceAvg = validation_metrics.leadConfidenceAvg
+        cs.validation.metrics.leadConfidenceMax = validation_metrics.leadConfidenceMax
+        cs.validation.metrics.laneConfidenceAvg = validation_metrics.laneConfidenceAvg
+        cs.validation.metrics.overallConfidence = validation_metrics.overallConfidence
+        cs.validation.metrics.isValid = validation_metrics.isValid
+        cs.validation.metrics.confidenceThreshold = validation_metrics.confidenceThreshold
+    else:
+        # Default values when validation metrics are not available
+        cs.validation.metrics.leadConfidenceAvg = 0.0
+        cs.validation.metrics.leadConfidenceMax = 0.0
+        cs.validation.metrics.laneConfidenceAvg = 0.0
+        cs.validation.metrics.overallConfidence = 0.0
+        cs.validation.metrics.isValid = False
+        cs.validation.metrics.confidenceThreshold = 0.5
+
+    # Update state based on safety status
+    cs.fallbackActive = safety_status['fallback_active']
+    cs.degradedMode = safety_status['degraded_mode']
+    cs.systemAlert = safety_status['system_alert']
 
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:

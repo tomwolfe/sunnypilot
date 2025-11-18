@@ -989,6 +989,17 @@ struct ControlsState @0x97ff69c53601abf1 {
   steerOverrideDEPRECATED @20 :Bool;
   steeringAngleDesiredDegDEPRECATED @29 :Float32;
   canMonoTimesDEPRECATED @21 :List(UInt64);
+  # Validation metrics from enhanced vision system
+  validation :union {
+    none @67 :Void;
+    metrics @68 :ValidationMetrics;
+  } = none;
+
+  # Safety status flags
+  fallbackActive @69 :Bool;
+  degradedMode @70 :Bool;
+  systemAlert @71 :Bool;
+
   desiredCurvatureRateDEPRECATED @62 :Float32;
   canErrorCounterDEPRECATED @57 :UInt32;
   vPidDEPRECATED @2 :Float32;
@@ -1043,6 +1054,23 @@ struct DrivingModelData {
     laneChangeState @0 :LaneChangeState;
     laneChangeDirection @1 :LaneChangeDirection;
   }
+}
+
+# Validation metrics for enhanced vision processing
+struct ValidationMetrics {
+  # Lead detection confidence metrics
+  leadConfidenceAvg @0 :Float32;
+  leadConfidenceMax @1 :Float32;
+
+  # Lane detection confidence metrics
+  laneConfidenceAvg @2 :Float32;
+
+  # Overall system confidence
+  overallConfidence @3 :Float32;
+
+  # Validity check
+  isValid @4 :Bool;
+  confidenceThreshold @5 :Float32;
 }
 
 # All SI units and in device frame

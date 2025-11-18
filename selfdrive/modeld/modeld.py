@@ -441,7 +441,7 @@ def main(demo=False):
     cloudlog.warning(f"connected extra cam with buffer size: {vipc_client_extra.buffer_len} ({vipc_client_extra.width} x {vipc_client_extra.height})")
 
   # messaging
-  pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP"])
+  pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP", "validationMetrics"])
   sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay", "navInstruction"])
 
   publish_state = PublishState()
@@ -598,6 +598,21 @@ def main(demo=False):
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
 
       fill_pose_msg(posenet_send, model_output, meta_main.frame_id, vipc_dropped_frames, meta_main.timestamp_eof, live_calib_seen)
+
+      # Publish validation metrics if available
+      if 'validation_metrics' in model_output:
+        validation_metrics = model_output['validation_metrics']
+        validation_send = messaging.new_message('validationMetrics')
+        vm = validation_send.validationMetrics
+        vm.leadConfidenceAvg = validation_metrics.get('lead_confidence_avg', 0.0)
+        vm.leadConfidenceMax = validation_metrics.get('lead_confidence_max', 0.0)
+        vm.laneConfidenceAvg = validation_metrics.get('lane_confidence_avg', 0.0)
+        vm.overallConfidence = validation_metrics.get('overall_confidence', 0.0)
+        vm.timestampMonoTime = meta_main.timestamp_eof
+        vm.isValid = validation_metrics.get('overall_confidence', 0.0) > 0.5  # Simple validity check
+        vm.confidenceThreshold = 0.5  # Define a threshold for acceptable confidence
+        pm.send('validationMetrics', validation_send)
+
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
