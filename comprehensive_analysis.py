@@ -12,6 +12,9 @@ from validation_integration import (
     RealSafetyValidator
 )
 
+# Import safety test suite
+from safety_test_suite import SunnypilotSafetyValidator
+
 # Enum for metrics to ensure consistency
 class Metrics(enum.Enum):
     # Perception
@@ -627,6 +630,11 @@ class ComprehensiveValidator:
         results["hardware_optimization"]["ram_usage"] = self.hardware_validator.validate_ram_usage()
         results["hardware_optimization"]["power_draw"] = self.hardware_validator.validate_power_draw()
 
+        # Run comprehensive safety validation
+        print("\n7. Running Comprehensive Safety Validation...")
+        safety_validator = SunnypilotSafetyValidator()
+        results["safety_validation"] = safety_validator.validate_safety_system()
+
         print("\n" + "="*80)
         print("VALIDATION COMPLETE")
         print("="*80)
@@ -1040,6 +1048,16 @@ class ComprehensiveValidator:
             total_weighted_score -= deduction
             print(f"  - DEDUCTION: 15% applied for resource violations. Deducted {deduction:.1f} points.")
 
+        # Apply safety validation deduction if safety validation is included and failed
+        if "safety_validation" in results:
+            safety_results = results["safety_validation"]
+            all_targets_met = safety_results.get("all_targets_met", True)
+            if not all_targets_met:
+                # Apply penalty for safety validation failures
+                safety_deduction = 15.0  # Deduct 15 points for safety validation failure
+                total_weighted_score -= safety_deduction
+                print(f"  - DEDUCTION: Safety validation failed. Deducted {safety_deduction:.1f} points.")
+
         # Display detailed results
         print(f"{ 'Category':<25} {'Score':<8} {'Tests':<8} {'Details'}")
         print("-" * 80)
@@ -1235,6 +1253,17 @@ class ComprehensiveValidator:
             print(f"  - CRITICAL: Hardware Optimization - RAM usage ({ram_usage:.1f}MB) exceeds target (1433.6MB). May lead to system instability or crashes.")
         if power_draw >= 8.0:
             print(f"  - CRITICAL: Hardware Optimization - Power draw ({power_draw:.1f}W) exceeds target (8.0W). May lead to overheating and reduced hardware lifespan.")
+
+        # Check safety validation results
+        if "safety_validation" in results:
+            safety_results = results["safety_validation"]
+            all_targets_met = safety_results.get("all_targets_met", True)
+            if not all_targets_met:
+                print(f"  - CRITICAL: Safety validation failed - System does not meet required safety metrics.")
+                validation_results = safety_results.get("validation_results", {})
+                for check, passed in validation_results.items():
+                    if not passed and isinstance(passed, bool):
+                        print(f"    - Safety check '{check}' failed")
 
 def main():
     """Main function to run comprehensive validation."""
