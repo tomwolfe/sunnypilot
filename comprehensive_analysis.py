@@ -1,8 +1,16 @@
 import random
 import time
 import json
+import psutil
 from typing import Dict, Any, Tuple
 import enum
+
+# Import real system validators
+from validation_integration import (
+    RealHardwareMonitor, RealPerceptionValidator, RealLocalizationValidator,
+    RealPathPlanningValidator, RealControlSystemValidator, RealTrafficSignalValidator,
+    RealSafetyValidator
+)
 
 # Enum for metrics to ensure consistency
 class Metrics(enum.Enum):
@@ -50,108 +58,70 @@ def record_metric(metric_name: Metrics, value: Any, details: Dict = None):
 class PerceptionValidator:
     """Validates perception metrics: object detection accuracy, frame processing latency, false positive rate."""
 
+    def __init__(self):
+        self.real_validator = RealPerceptionValidator()
+        self.real_validator.connect_to_systems()
+
     def validate_object_detection_accuracy(self) -> Tuple[float, Dict]:
         """Validate object detection accuracy on 100+ real-world test cases."""
-        print("Validating object detection accuracy with 100+ real-world test cases...")
-        # Simulate accuracy based on different scenarios
-        # For a real system, this would involve running a model against a test dataset
-        # and calculating metrics.
-        total_cases = 120
-        correct_detections = 0
+        print("Validating object detection accuracy with real system...")
 
-        for i in range(total_cases):
-            # Simulate varying difficulty:
-            # 0-30: Easy (clear day, large objects)
-            # 30-70: Medium (some occlusion, varied lighting)
-            # 70-120: Hard (night, rain, small objects, distant objects)
-            if i < 30:
-                if random.random() < 0.999:  # High accuracy for easy cases
-                    correct_detections += 1
-            elif i < 70:
-                if random.random() < 0.985:  # Medium accuracy for medium cases
-                    correct_detections += 1
-            else:
-                if random.random() < 0.96:  # Lower accuracy for hard cases
-                    correct_detections += 1
+        # Get accuracy from real system
+        real_accuracy = self.real_validator.validate_object_detection_accuracy()
 
-        accuracy = correct_detections / total_cases
-        
         # Record metric
-        record_metric(Metrics.OBJECT_DETECTION_ACCURACY, accuracy, {
+        record_metric(Metrics.OBJECT_DETECTION_ACCURACY, real_accuracy, {
             "test_type": "object_detection",
-            "correct_detections": correct_detections,
-            "total_cases": total_cases,
-            "accuracy_rate": accuracy
+            "accuracy_rate": real_accuracy,
+            "source": "real_system"
         })
 
-        return accuracy, {
-            "accuracy": accuracy,
-            "correct_detections": correct_detections,
-            "total_cases": total_cases,
-            "target_accuracy": 0.95
+        return real_accuracy, {
+            "accuracy": real_accuracy,
+            "target_accuracy": 0.95,
+            "source": "real_system"
         }
 
     def validate_frame_processing_latency(self) -> Tuple[float, Dict]:
         """Validate frame processing latency (<50ms) at 20fps."""
-        print("Validating frame processing latency at 20fps...")
-        # Simulate latency measurements. In a real scenario, this would involve
-        # profiling the perception pipeline.
-        latencies = []
-        num_frames = 200  # Simulate processing 200 frames
+        print("Validating frame processing latency with real system...")
 
-        for _ in range(num_frames):
-            # Simulate latency distribution: most frames are fast, some are slower
-            if random.random() < 0.8:
-                latencies.append(random.uniform(30, 45))  # Within target
-            else:
-                latencies.append(random.uniform(45, 65))  # Some frames exceed target
+        # Get latency from real system
+        real_latency = self.real_validator.validate_frame_processing_latency()
 
-        avg_latency = sum(latencies) / num_frames
-        max_latency = max(latencies)
-        
         # Record metric
-        record_metric(Metrics.FRAME_PROCESSING_LATENCY_MS, avg_latency, {
+        record_metric(Metrics.FRAME_PROCESSING_LATENCY_MS, real_latency, {
             "test_type": "frame_latency",
-            "avg_latency_ms": avg_latency,
-            "max_latency_ms": max_latency,
-            "num_frames": num_frames,
-            "target_latency_ms": 50
+            "avg_latency_ms": real_latency,
+            "target_latency_ms": 50,
+            "source": "real_system"
         })
 
-        return avg_latency, {
-            "avg_latency_ms": avg_latency,
-            "max_latency_ms": max_latency,
-            "num_frames": num_frames,
-            "target_latency_ms": 50
+        return real_latency, {
+            "avg_latency_ms": real_latency,
+            "target_latency_ms": 50,
+            "source": "real_system"
         }
 
     def validate_false_positive_rate(self) -> Tuple[float, Dict]:
         """Validate false positive rate (<0.1% for critical objects)."""
-        print("Validating false positive rate for critical objects...")
-        # Simulate false positives. This would typically come from a large dataset
-        # where ground truth is known.
-        total_opportunities = 10000  # Opportunities for false positives
-        false_positives = 0
+        print("Validating false positive rate with real system...")
 
-        for _ in range(total_opportunities):
-            if random.random() < 0.0005:  # 0.05% false positive rate
-                false_positives += 1
+        # Get false positive rate from real system
+        real_fp_rate = self.real_validator.validate_false_positive_rate()
 
-        fp_rate = false_positives / total_opportunities
-        
         # Record metric
-        record_metric(Metrics.FALSE_POSITIVE_RATE, fp_rate, {
+        record_metric(Metrics.FALSE_POSITIVE_RATE, real_fp_rate, {
             "test_type": "false_positive",
-            "false_positives": false_positives,
-            "total_opportunities": total_opportunities,
-            "target_rate": 0.001
+            "false_positive_rate": real_fp_rate,
+            "target_rate": 0.001,
+            "source": "real_system"
         })
 
-        return fp_rate, {
-            "false_positive_rate": fp_rate,
-            "false_positives": false_positives,
-            "total_opportunities": total_opportunities,
-            "target_rate": 0.001
+        return real_fp_rate, {
+            "false_positive_rate": real_fp_rate,
+            "target_rate": 0.001,
+            "source": "real_system"
         }
 
     def validate_testing_coverage(self) -> Tuple[float, Dict]:
@@ -176,118 +146,49 @@ class PerceptionValidator:
 class LocalizationValidator:
     """Validates localization metrics: positional accuracy, sensor fusion robustness."""
 
+    def __init__(self):
+        self.real_validator = RealLocalizationValidator()
+        self.real_validator.connect_to_systems()
+
     def validate_positional_accuracy(self) -> Tuple[float, Dict]:
         """Validate positional accuracy (meters error) vs. GPS + map data."""
-        print("Validating positional accuracy against GPS and map data...")
-        # Simulate positional error. Real validation would use high-precision GPS
-        # or surveyed ground truth.
-        errors = []
-        num_measurements = 100
+        print("Validating positional accuracy with real system...")
 
-        for _ in range(num_measurements):
-            # Simulate different scenarios with improved accuracy
-            scenario_type = random.choice(['urban', 'highway', 'tunnel'])
-            if scenario_type == 'urban':
-                errors.append(random.uniform(0.3, 0.8))  # Improved accuracy in urban
-            elif scenario_type == 'highway':
-                errors.append(random.uniform(0.05, 0.3))  # Improved accuracy on highway
-            else:  # tunnel - GPS signal loss, still higher but improved
-                errors.append(random.uniform(0.5, 1.5)) # Improved, relies on IMU/odometry
+        # Get positional accuracy from real system
+        real_accuracy = self.real_validator.validate_positional_accuracy()
 
-        avg_error = sum(errors) / num_measurements
-        max_error = max(errors)
-        
         # Record metric
-        record_metric(Metrics.POSITIONAL_ACCURACY_METERS, avg_error, {
+        record_metric(Metrics.POSITIONAL_ACCURACY_METERS, real_accuracy, {
             "test_type": "positional_accuracy",
-            "avg_error_meters": avg_error,
-            "max_error_meters": max_error,
-            "num_measurements": num_measurements,
-            "target_error_meters": 1.0
+            "avg_error_meters": real_accuracy,
+            "target_error_meters": 1.0,
+            "source": "real_system"
         })
 
-        return avg_error, {
-            "avg_error_meters": avg_error,
-            "max_error_meters": max_error,
-            "num_measurements": num_measurements,
-            "target_error_meters": 1.0
+        return real_accuracy, {
+            "avg_error_meters": real_accuracy,
+            "target_error_meters": 1.0,
+            "source": "real_system"
         }
 
     def validate_sensor_fusion_robustness(self) -> Tuple[float, Dict]:
         """Validate sensor fusion robustness (e.g., failsafe to IMU when camera fails)."""
-        print("Validating sensor fusion robustness under various failure conditions...")
-        # Simulate sensor fusion system's ability to maintain localization
-        # despite sensor failures.
-        total_scenarios = 50
-        success_count = 0
+        print("Validating sensor fusion robustness with real system...")
 
-        class MockSensorFusion:
-            def __init__(self):
-                self.sensors = {
-                    'gps': True,
-                    'imu': True,
-                    'camera': True,
-                    'lidar': False,  # Most vehicles won't have lidar
-                    'radar': True
-                }
-
-            def process(self, failure_scenario):
-                # Simulate different failure scenarios with improved robustness
-                if failure_scenario == 'gps_outage':
-                    self.sensors['gps'] = False
-                    return random.random() < 0.99 # Improved success
-                elif failure_scenario == 'camera_rain':
-                    self.sensors['camera'] = random.random() > 0.1 # Less degraded
-                    return random.random() < 0.98 # Improved success
-                elif failure_scenario == 'imu_drift':
-                    return random.random() < 0.97 # Improved success
-                elif failure_scenario == 'multi_sensor':
-                    self.sensors['gps'] = random.random() > 0.5 # Less likely to fail
-                    self.sensors['camera'] = random.random() > 0.5 # Less likely to fail
-                    return random.random() < 0.96 # Improved success
-                else:
-                    return random.random() < 0.998 # Even higher success rate normally
-
-        fusion_system = MockSensorFusion()
-
-        for i in range(total_scenarios):
-            # Distribute different failure scenarios
-            if i < 10:  # Normal operation
-                scenario = 'normal'
-            elif i < 20:  # GPS outage
-                scenario = 'gps_outage'
-            elif i < 30:  # Camera issues
-                scenario = 'camera_rain'
-            elif i < 40:  # IMU issues
-                scenario = 'imu_drift'
-            else:  # Multiple failures
-                scenario = 'multi_sensor'
-
-            fusion_success = fusion_system.process(scenario)
-            if fusion_success:
-                success_count += 1
-
-        robustness_rate = success_count / total_scenarios if total_scenarios > 0 else 0
+        # Get sensor fusion robustness from real system
+        real_robustness = self.real_validator.validate_sensor_fusion_robustness()
 
         # Record metric
-        record_metric(Metrics.SENSOR_FUSION_ROBUSTNESS, robustness_rate, {
+        record_metric(Metrics.SENSOR_FUSION_ROBUSTNESS, real_robustness, {
             "test_type": "sensor_fusion",
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "failure_scenarios": {
-                "normal": sum(1 for j in range(10) if fusion_system.process('normal')),
-                "gps_outage": sum(1 for j in range(10) if fusion_system.process('gps_outage')),
-                "camera_rain": sum(1 for j in range(10) if fusion_system.process('camera_rain')),
-                "imu_drift": sum(1 for j in range(10) if fusion_system.process('imu_drift')),
-                "multi_sensor": sum(1 for j in range(10) if fusion_system.process('multi_sensor'))
-            }
+            "robustness_rate": real_robustness,
+            "source": "real_system"
         })
 
-        return robustness_rate, {
-            "robustness_rate": robustness_rate,
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "target_rate": 0.95
+        return real_robustness, {
+            "robustness_rate": real_robustness,
+            "target_rate": 0.95,
+            "source": "real_system"
         }
 
     def validate_testing_coverage(self) -> Tuple[float, Dict]:
@@ -311,154 +212,69 @@ class LocalizationValidator:
 class PathPlanningValidator:
     """Validates path planning metrics: route completion, trajectory smoothness, obstacle avoidance."""
 
+    def __init__(self):
+        self.real_validator = RealPathPlanningValidator()
+        self.real_validator.connect_to_systems()
+
     def validate_route_completion_rate(self) -> Tuple[float, Dict]:
         """Validate route completion rate in 50+ test routes."""
-        print("Validating route completion rate with realistic scenarios...")
+        print("Validating route completion rate with real system...")
 
-        # Realistic route completion tests
-        completed_routes = 0
-        total_routes = 50
-
-        # Create mock route planner with realistic success rates
-        class MockRoutePlanner:
-            def plan_route(self, route_id):
-                # Different route complexities affect success rate
-                if route_id < 10:  # Simple routes
-                    return random.random() < 0.999
-                elif route_id < 30:  # Moderate routes
-                    return random.random() < 0.995
-                else:  # Complex routes (highways, urban)
-                    base_success = 0.99
-                    if route_id > 40:  # Very complex routes
-                        base_success = 0.98
-                    return random.random() < base_success
-
-        planner = MockRoutePlanner()
-
-        for i in range(total_routes):
-            route_success = planner.plan_route(i)
-            if route_success:
-                completed_routes += 1
-
-        completion_rate = completed_routes / total_routes if total_routes > 0 else 0
+        # Get route completion rate from real system
+        real_completion_rate = self.real_validator.validate_route_completion_rate()
 
         # Record metric
-        record_metric(Metrics.ROUTE_COMPLETION_RATE, completion_rate, {
+        record_metric(Metrics.ROUTE_COMPLETION_RATE, real_completion_rate, {
             "test_type": "route_completion",
-            "completed_routes": completed_routes,
-            "total_routes": total_routes,
-            "success_rate": completion_rate
+            "success_rate": real_completion_rate,
+            "source": "real_system"
         })
 
-        return completion_rate, {
-            "completion_rate": completion_rate,
-            "completed_routes": completed_routes,
-            "total_routes": total_routes,
-            "target_rate": 0.98
+        return real_completion_rate, {
+            "completion_rate": real_completion_rate,
+            "target_rate": 0.98,
+            "source": "real_system"
         }
 
     def validate_trajectory_smoothness(self) -> Tuple[float, Dict]:
         """Validate trajectory smoothness (jerk <3 m/s³)."""
-        print("Validating trajectory smoothness with physics-based simulation...")
+        print("Validating trajectory smoothness with real system...")
 
-        # More realistic trajectory smoothness simulation with actual physics
-        jerk_values = []
-
-        # Simulate trajectory planning with actual kinematic constraints
-        for i in range(20):
-            # Different scenarios affect trajectory smoothness
-            if i < 5:  # Highway driving - typically smoother
-                base_jerk = random.uniform(0.5, 1.5)
-            elif i < 12:  # Urban driving - more stops/starts
-                base_jerk = random.uniform(1.0, 2.5)
-            else:  # City driving with turns
-                base_jerk = random.uniform(1.2, 3.5)
-
-            # Add random variation
-            jerk_with_variation = base_jerk + random.uniform(-0.5, 1.0)
-            jerk_values.append(max(0.1, jerk_with_variation))  # Ensure positive values
-
-        avg_jerk = sum(jerk_values) / len(jerk_values) if jerk_values else 0
-        max_jerk = max(jerk_values) if jerk_values else 0
+        # Get trajectory smoothness from real system
+        real_smoothness = self.real_validator.validate_trajectory_smoothness()
 
         # Record metric
-        record_metric(Metrics.TRAJECTORY_SMOOTHNESS_JERK, avg_jerk, {
+        record_metric(Metrics.TRAJECTORY_SMOOTHNESS_JERK, real_smoothness, {
             "test_type": "trajectory_smoothness",
-            "avg_jerk": avg_jerk,
-            "max_jerk": max_jerk,
+            "avg_jerk": real_smoothness,
             "target_jerk": 3.0,
-            "measurements_count": len(jerk_values)
+            "source": "real_system"
         })
 
-        return avg_jerk, {
-            "avg_jerk": avg_jerk,
-            "max_jerk": max_jerk,
+        return real_smoothness, {
+            "avg_jerk": real_smoothness,
             "target_jerk": 3.0,
-            "measurements": jerk_values,
-            "measurements_count": len(jerk_values)
+            "source": "real_system"
         }
 
     def validate_obstacle_avoidance_success(self) -> Tuple[float, Dict]:
         """Validate obstacle avoidance success in edge cases."""
-        print("Validating obstacle avoidance success with realistic edge cases...")
+        print("Validating obstacle avoidance success with real system...")
 
-        # More realistic obstacle avoidance testing
-        success_count = 0
-        total_scenarios = 50  # Increase for more comprehensive testing
-
-        # Create mock obstacle avoidance system
-        class MockObstacleAvoider:
-            def __init__(self):
-                pass
-
-            def avoid_obstacle(self, scenario_type):
-                # Different scenarios have different difficulty levels
-                if scenario_type == 'stationary_car':
-                    return random.random() < 0.9999  # Easy to detect stationary car
-                elif scenario_type == 'pedestrian_crossing':
-                    return random.random() < 0.999   # Harder, especially at night
-                elif scenario_type == 'sudden_stop':
-                    success_rate = 0.998  # More challenging emergency stop
-                    return random.random() < success_rate
-                elif scenario_type == 'multiple_obstacles':
-                    success_rate = 0.995  # Very challenging
-                    return random.random() < success_rate
-                elif scenario_type == 'night_rain':
-                    success_rate = 0.99  # Visibility reduced
-                    return random.random() < success_rate
-                else:  # General scenario
-                    return random.random() < 0.998
-
-        avoider = MockObstacleAvoider()
-
-        # Test different scenario types
-        scenario_types = [
-            'stationary_car', 'pedestrian_crossing', 'sudden_stop',
-            'multiple_obstacles', 'night_rain'
-        ]
-
-        for i in range(total_scenarios):
-            scenario = scenario_types[i % len(scenario_types)]
-            avoidance_success = avoider.avoid_obstacle(scenario)
-            if avoidance_success:
-                success_count += 1
-
-        success_rate = success_count / total_scenarios if total_scenarios > 0 else 0
+        # Get obstacle avoidance success from real system
+        real_success_rate = self.real_validator.validate_obstacle_avoidance_success()
 
         # Record metric
-        record_metric(Metrics.OBSTACLE_AVOIDANCE_SUCCESS_RATE, success_rate, {
+        record_metric(Metrics.OBSTACLE_AVOIDANCE_SUCCESS_RATE, real_success_rate, {
             "test_type": "obstacle_avoidance",
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "success_rate": success_rate,
-            "scenario_types": scenario_types
+            "success_rate": real_success_rate,
+            "source": "real_system"
         })
 
-        return success_rate, {
-            "success_rate": success_rate,
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "target_rate": 0.99
+        return real_success_rate, {
+            "success_rate": real_success_rate,
+            "target_rate": 0.99,
+            "source": "real_system"
         }
 
     def validate_testing_coverage(self) -> Tuple[float, Dict]:
@@ -482,162 +298,69 @@ class PathPlanningValidator:
 class ControlSystemValidator:
     """Validates control system metrics: steering/braking latency, safety margins, fail-safe behavior."""
 
+    def __init__(self):
+        self.real_validator = RealControlSystemValidator()
+        self.real_validator.connect_to_systems()
+
     def validate_steering_braking_latency(self) -> Tuple[float, Dict]:
         """Validate steering/braking latency (<30ms)."""
-        print("Validating steering/braking latency with realistic control system measurements...")
+        print("Validating steering/braking latency with real system...")
 
-        # Realistic control latency measurements with actual control pipeline simulation
-        latency_measurements = []
-
-        # Create a mock control system that simulates the actual pipeline
-        class MockControlSystem:
-            def command_latency(self, command_type):
-                # Realistic latencies for different control commands
-                if command_type == 'steering':
-                    # Steering typically has lower latency
-                    base_latency = random.uniform(8, 20)  # 8-20ms for steering
-                elif command_type == 'braking':
-                    # Braking can have higher latency due to actuator response
-                    base_latency = random.uniform(15, 35)  # 15-35ms for braking
-                elif command_type == 'throttle':
-                    # Throttle response also has some delay
-                    base_latency = random.uniform(12, 28)  # 12-28ms for throttle
-                else:
-                    # General control command
-                    base_latency = random.uniform(10, 30)
-
-                # Add network and processing overhead
-                network_overhead = random.uniform(0, 3)
-                total_latency = base_latency + network_overhead
-                return total_latency
-
-        control_system = MockControlSystem()
-
-        for i in range(50):  # 50 measurements
-            # Alternate between different control types
-            command_type = ['steering', 'braking', 'throttle', 'general'][i % 4]
-            latency = control_system.command_latency(command_type)
-            latency_measurements.append(latency)
-
-        avg_latency = sum(latency_measurements) / len(latency_measurements) if latency_measurements else 0
-        max_latency = max(latency_measurements) if latency_measurements else 0
+        # Get latency from real system
+        real_latency = self.real_validator.validate_steering_braking_latency()
 
         # Record metric
-        record_metric(Metrics.STEERING_LATENCY_MS, avg_latency, {
+        record_metric(Metrics.STEERING_LATENCY_MS, real_latency, {
             "test_type": "steering_latency",
-            "avg_latency": avg_latency,
-            "max_latency": max_latency,
+            "avg_latency": real_latency,
             "target_latency": 30.0,
-            "measurements_count": len(latency_measurements)
+            "source": "real_system"
         })
 
-        return avg_latency, {
-            "avg_latency_ms": avg_latency,
-            "max_latency_ms": max_latency,
+        return real_latency, {
+            "avg_latency_ms": real_latency,
             "target_latency": 30.0,
-            "measurements": latency_measurements,
-            "measurements_count": len(latency_measurements)
+            "source": "real_system"
         }
 
     def validate_safety_margin_compliance(self) -> Tuple[float, Dict]:
         """Validate safety margin compliance."""
-        print("Validating safety margin compliance with realistic driving scenarios...")
+        print("Validating safety margin compliance with real system...")
 
-        # More comprehensive safety margin compliance testing
-        compliant_count = 0
-        total_checks = 150  # Increase sample for more statistical significance
-
-        # Create mock safety system with different scenarios
-        class MockSafetySystem:
-            def __init__(self):
-                self.following_distance = 50  # meters
-                self.speed = 25  # m/s (about 90 km/h)
-
-            def check_safety_margin(self, scenario_id):
-                # Simulate consistently high safety compliance
-                return random.random() < 0.999 # Consistently above 0.99 target
-
-        safety_system = MockSafetySystem()
-
-        for i in range(total_checks):
-            is_compliant = safety_system.check_safety_margin(i)
-            if is_compliant:
-                compliant_count += 1
-
-        compliance_rate = compliant_count / total_checks if total_checks > 0 else 0
+        # Get safety compliance rate from real system
+        real_compliance_rate = self.real_validator.validate_safety_margin_compliance()
 
         # Record metric
-        record_metric(Metrics.SAFETY_MARGIN_COMPLIANCE, compliance_rate, {
+        record_metric(Metrics.SAFETY_MARGIN_COMPLIANCE, real_compliance_rate, {
             "test_type": "safety_margin",
-            "compliant_count": compliant_count,
-            "total_checks": total_checks,
-            "compliance_rate": compliance_rate
+            "compliance_rate": real_compliance_rate,
+            "source": "real_system"
         })
 
-        return compliance_rate, {
-            "compliance_rate": compliance_rate,
-            "compliant_count": compliant_count,
-            "total_checks": total_checks,
-            "target_rate": 0.99
+        return real_compliance_rate, {
+            "compliance_rate": real_compliance_rate,
+            "target_rate": 0.99,
+            "source": "real_system"
         }
 
     def validate_fail_safe_behavior(self) -> Tuple[float, Dict]:
         """Validate fail-safe behavior during sensor failures."""
-        print("Validating fail-safe behavior with comprehensive failure scenarios...")
+        print("Validating fail-safe behavior with real system...")
 
-        # More comprehensive fail-safe testing with multiple failure modes
-        success_count = 0
-        total_scenarios = 50  # Increase for comprehensive testing
-
-        # Create mock fail-safe system
-        class MockFailSafeSystem:
-            def handle_failure(self, failure_type):
-                # Different failure types with realistic recovery rates
-                if failure_type == 'camera_failure':
-                    return random.random() < 0.99  # Good recovery from camera failure
-                elif failure_type == 'gps_interruption':
-                    return random.random() < 0.99  # Good gps recovery with IMU backup
-                elif failure_type == 'lidar_unavailable':  # Though we don't have lidar on most vehicles
-                    return random.random() < 0.995  # Not really a failure if not used
-                elif failure_type == 'radar_interference':
-                    return random.random() < 0.98  # More challenging with radar issues
-                elif failure_type == 'multiple_sensors':
-                    return random.random() < 0.97  # Very challenging with multiple failures
-                elif failure_type == 'control_actuator':
-                    return random.random() < 0.98  # Critical failure to handle
-                else:
-                    return random.random() < 0.985  # General failure mode
-
-        fail_safe_system = MockFailSafeSystem()
-
-        # Different failure scenario types
-        failure_types = [
-            'camera_failure', 'gps_interruption', 'radar_interference',
-            'multiple_sensors', 'control_actuator'
-        ]
-
-        for i in range(total_scenarios):
-            failure_type = failure_types[i % len(failure_types)]
-            failsafe_success = fail_safe_system.handle_failure(failure_type)
-            if failsafe_success:
-                success_count += 1
-
-        success_rate = success_count / total_scenarios if total_scenarios > 0 else 0
+        # Get fail-safe behavior rate from real system
+        real_fail_safe_rate = self.real_validator.validate_fail_safe_behavior()
 
         # Record metric
-        record_metric(Metrics.FAIL_SAFE_BEHAVIOR_RATE, success_rate, {
+        record_metric(Metrics.FAIL_SAFE_BEHAVIOR_RATE, real_fail_safe_rate, {
             "test_type": "fail_safe",
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "success_rate": success_rate,
-            "failure_types": failure_types
+            "success_rate": real_fail_safe_rate,
+            "source": "real_system"
         })
 
-        return success_rate, {
-            "success_rate": success_rate,
-            "success_count": success_count,
-            "total_scenarios": total_scenarios,
-            "target_rate": 0.95
+        return real_fail_safe_rate, {
+            "success_rate": real_fail_safe_rate,
+            "target_rate": 0.95,
+            "source": "real_system"
         }
 
     def validate_testing_coverage(self) -> Tuple[float, Dict]:
@@ -661,105 +384,48 @@ class ControlSystemValidator:
 class TrafficSignalValidator:
     """Validates traffic signal handling: DEC module accuracy, false stop rate."""
 
+    def __init__(self):
+        self.real_validator = RealTrafficSignalValidator()
+        self.real_validator.connect_to_systems()
+
     def validate_dec_module_accuracy(self) -> Tuple[float, Dict]:
         """Validate DEC module accuracy on 200+ traffic light scenarios."""
-        print("Validating DEC module accuracy with comprehensive traffic scenarios...")
+        print("Validating DEC module accuracy with real system...")
 
-        # More realistic DEC module testing with varied traffic scenarios
-        correct_decisions = 0
-        total_scenarios = 250  # Exceed the 200+ requirement
-
-        # Create mock DEC module with realistic decision making
-        class MockDECModule:
-            def __init__(self):
-                pass
-
-            def make_decision(self, scenario_id):
-                # Different scenarios with realistic accuracy
-                if scenario_id < 50:  # Clear daylight scenarios
-                    return random.random() < 0.9995  # Very high accuracy in good conditions
-                elif scenario_id < 100:  # Dusk/dawn scenarios
-                    return random.random() < 0.999  # Slightly lower in challenging light
-                elif scenario_id < 150:  # Night scenarios
-                    return random.random() < 0.998  # Lower in night conditions
-                elif scenario_id < 200:  # Adverse weather
-                    return random.random() < 0.997  # Lower in rain/snow
-                else:  # Complex intersections
-                    return random.random() < 0.995  # Challenging scenarios
-
-        dec_module = MockDECModule()
-
-        for i in range(total_scenarios):
-            decision_correct = dec_module.make_decision(i)
-            if decision_correct:
-                correct_decisions += 1
-
-        accuracy = correct_decisions / total_scenarios if total_scenarios > 0 else 0
+        # Get DEC module accuracy from real system
+        real_accuracy = self.real_validator.validate_dec_module_accuracy()
 
         # Record metric
-        record_metric(Metrics.DEC_MODULE_ACCURACY, accuracy, {
+        record_metric(Metrics.DEC_MODULE_ACCURACY, real_accuracy, {
             "test_type": "dec_accuracy",
-            "correct_decisions": correct_decisions,
-            "total_scenarios": total_scenarios,
-            "accuracy_rate": accuracy
+            "accuracy_rate": real_accuracy,
+            "source": "real_system"
         })
 
-        return accuracy, {
-            "accuracy": accuracy,
-            "correct_decisions": correct_decisions,
-            "total_scenarios": total_scenarios,
-            "target_accuracy": 0.995
+        return real_accuracy, {
+            "accuracy": real_accuracy,
+            "target_accuracy": 0.995,
+            "source": "real_system"
         }
 
     def validate_false_stop_rate(self) -> Tuple[float, Dict]:
         """Validate false stop rate (<0.01%)."""
-        print("Validating false stop rate with realistic traffic conditions...")
+        print("Validating false stop rate with real system...")
 
-        # More realistic testing for false stop rate with larger sample
-        total_scenarios = 5000  # Larger sample for rare event statistics
-        false_stops = 0
-
-        # Create mock traffic system with realistic false stop conditions
-        class MockTrafficSystem:
-            def __init__(self):
-                pass
-
-            def evaluate_traffic_situation(self, scenario_id):
-                # Different conditions that could lead to false stops
-                if scenario_id % 1000 == 0:  # Very rare challenging situations
-                    return random.random() < 0.00005  # Extremely rare false positive
-                elif scenario_id % 100 == 42:  # Specific edge cases
-                    return random.random() < 0.0001  # Still rare but possible
-                elif scenario_id % 50 == 7:  # More frequent edge cases
-                    return random.random() < 0.00008  # Very low rate
-                else:
-                    return False  # Normal situations don't cause false stops
-
-        traffic_system = MockTrafficSystem()
-
-        for i in range(total_scenarios):
-            might_false_stop = traffic_system.evaluate_traffic_situation(i)
-            if might_false_stop:
-                # Additional checks to determine if it's actually a false stop
-                if random.random() < 0.8:  # 80% of potentially false conditions are actual false stops
-                    false_stops += 1
-
-        false_stop_rate = false_stops / total_scenarios
+        # Get false stop rate from real system
+        real_stop_rate = self.real_validator.validate_false_stop_rate()
 
         # Record metric
-        record_metric(Metrics.FALSE_STOP_RATE, false_stop_rate, {
+        record_metric(Metrics.FALSE_STOP_RATE, real_stop_rate, {
             "test_type": "false_stop",
-            "false_stops": false_stops,
-            "total_scenarios": total_scenarios,
-            "false_stop_rate": false_stop_rate
+            "false_stop_rate": real_stop_rate,
+            "source": "real_system"
         })
 
-        return false_stop_rate, {
-            "false_stop_rate": false_stop_rate,
-            "false_stops": false_stops,
-            "total_scenarios": total_scenarios,
+        return real_stop_rate, {
+            "false_stop_rate": real_stop_rate,
             "target_rate": 0.0001,
-            "sample_size": total_scenarios
+            "source": "real_system"
         }
 
     def validate_testing_coverage(self) -> Tuple[float, Dict]:
@@ -783,29 +449,20 @@ class TrafficSignalValidator:
 class HardwareValidator:
     """Validates hardware optimization: CPU, RAM, power usage."""
 
+    def __init__(self):
+        self.real_monitor = RealHardwareMonitor()
+
     def validate_cpu_usage(self) -> Tuple[float, Dict]:
         """Validate CPU usage (<35% on all cores) for comma three hardware."""
-        print("Validating CPU usage on comma three hardware specifications...")
+        print("Validating CPU usage with real hardware monitoring...")
 
-        # Import psutil with fallback to simulation if not available
-        try:
-            import psutil
-            # Measure actual CPU usage but simulate for comma three constraints
-            # Get current usage
-            cpu_percent = psutil.cpu_percent(interval=1)  # Measure actual CPU usage
+        # Get real CPU usage from system
+        cpu_percent = psutil.cpu_percent(interval=1)  # Measure actual CPU usage
+        cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
 
-            # For more accurate comma three simulation, also check per-core usage
-            cpu_per_core = psutil.cpu_percent(interval=1, percpu=True)
-
-            # Calculate average but also check for any core exceeding limits
-            avg_cpu = sum(cpu_per_core) / len(cpu_per_core) if cpu_per_core else cpu_percent
-            max_core_usage = max(cpu_per_core) if cpu_per_core else cpu_percent
-        except ImportError:
-            # Fallback to simulation if psutil is not available
-            print("psutil not available, using simulation for CPU usage...")
-            avg_cpu = random.uniform(15.0, 25.0)  # Simulate reasonable CPU usage
-            max_core_usage = random.uniform(20.0, 35.0)  # Simulate reasonable max core usage
-            cpu_per_core = [random.uniform(10.0, 30.0) for _ in range(4)]  # Simulate 4 cores
+        # Calculate average but also check for any core exceeding limits
+        avg_cpu = sum(cpu_per_core) / len(cpu_per_core) if cpu_per_core else cpu_percent
+        max_core_usage = max(cpu_per_core) if cpu_per_core else cpu_percent
 
         # Record metric
         record_metric(Metrics.CPU_USAGE_PERCENT, avg_cpu, {
@@ -814,7 +471,8 @@ class HardwareValidator:
             "max_core_percent": max_core_usage,
             "cpu_per_core": cpu_per_core,
             "target_percent": 35.0,
-            "hardware_target": "comma three (4-core ARM)"
+            "hardware_target": "comma three (4-core ARM)",
+            "source": "real_system"
         })
 
         return avg_cpu, {
@@ -823,32 +481,19 @@ class HardwareValidator:
             "cpu_per_core": cpu_per_core,
             "target_percent": 35.0,
             "status": "PASS" if avg_cpu < 35.0 and max_core_usage < 45.0 else "FAIL",
-            "hardware_platform": "comma three"
+            "hardware_platform": "comma three",
+            "source": "real_system"
         }
 
     def validate_ram_usage(self) -> Tuple[float, Dict]:
         """Validate RAM usage (<1.4GB) for comma three hardware."""
-        print("Validating RAM usage for comma three 2GB RAM constraint...")
+        print("Validating RAM usage with real hardware monitoring...")
 
-        # Import psutil with fallback to simulation if not available
-        try:
-            import psutil
-            # Get actual system memory information
-            memory = psutil.virtual_memory()
-            # Simulate improved RAM usage for comma three that's still realistic
-            ram_mb = random.uniform(1000.0, 1200.0) # Simulate RAM usage well below 1.4GB target
-            ram_percent = (ram_mb / (memory.total / (1024 * 1024))) * 100 if memory.total > 0 else 0
-            total_available_mb = memory.total / (1024 * 1024)
-        except ImportError:
-            # Fallback to simulation if psutil is not available
-            print("psutil not available, using simulation for RAM usage...")
-            total_available_mb = 2048.0  # Assume 2GB total RAM for comma three
-            ram_mb = random.uniform(1000.0, 1200.0)  # Simulate reasonable RAM usage
-            ram_percent = (ram_mb / total_available_mb) * 100
-
-        # For comma three, we need to stay under 1.4GB to leave headroom
-        # The target is specifically 1.4GB (1433.6 MB) as specified in the original prompt
-        # But for comma three with 2GB RAM, we should be more conservative
+        # Get real RAM usage from system
+        memory = psutil.virtual_memory()
+        ram_mb = memory.used / (1024 * 1024)  # Convert to MB
+        ram_percent = memory.percent
+        total_available_mb = memory.total / (1024 * 1024)
 
         # Record metric
         record_metric(Metrics.RAM_USAGE_MB, ram_mb, {
@@ -857,7 +502,8 @@ class HardwareValidator:
             "ram_percent": ram_percent,
             "total_available_mb": total_available_mb,
             "target_mb": 1433.6,
-            "hardware_target": "comma three (2GB RAM)"
+            "hardware_target": "comma three (2GB RAM)",
+            "source": "real_system"
         })
 
         return ram_mb, {
@@ -866,74 +512,55 @@ class HardwareValidator:
             "total_available_mb": total_available_mb,
             "target_mb": 1433.6,
             "status": "PASS" if ram_mb < 1433.6 else "FAIL",
-            "hardware_platform": "comma three"
+            "hardware_platform": "comma three",
+            "source": "real_system"
         }
 
     def validate_power_draw(self) -> Tuple[float, Dict]:
         """Validate power draw (<8W during operation) for comma three hardware."""
-        print("Validating power draw for comma three 10W budget (target <8W)...")
+        print("Validating power draw with real hardware monitoring...")
 
-        # Import psutil with fallback to simulation if not available
-        try:
-            import psutil
-            # Get actual system measurements
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            memory = psutil.virtual_memory()
-            ram_usage_percent = memory.percent
-            ram_mb = memory.used / (1024 * 1024)
-        except ImportError:
-            # Fallback to simulation if psutil is not available
-            print("psutil not available, using simulation for power draw...")
-            cpu_percent = random.uniform(20.0, 30.0)  # Simulate reasonable CPU usage
-            ram_usage_percent = random.uniform(50.0, 60.0)  # Simulate reasonable RAM usage %
-            ram_mb = random.uniform(1000.0, 1200.0)  # Simulate reasonable RAM usage in MB
+        # Get actual system measurements
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        ram_usage_percent = memory.percent
+        ram_mb = memory.used / (1024 * 1024)
 
-        # More accurate power estimation for comma three hardware
-        # Based on ARM big.LITTLE architecture power characteristics
-        base_power = 1.5  # Base power consumption for ARM SoC in idle
-
-        # CPU power component - follows quadratic relationship for ARM processors
-        cpu_power = (cpu_percent / 100.0) ** 1.3 * 4.5  # Up to ~4.5W under load
-
-        # RAM power component - roughly linear with usage
-        ram_power = (ram_usage_percent / 100.0) * 1.5  # Up to ~1.5W for RAM
-
-        # Total estimated power
-        estimated_power = base_power + cpu_power + ram_power
-
-        # For comma three, we want to stay well under the 10W budget, targeting <8W
-        target_power = 8.0
+        # Use the more realistic power estimation from RealHardwareMonitor
+        estimated_power = self.real_monitor._estimate_real_power(cpu_percent, ram_mb)
 
         # Record metric
         record_metric(Metrics.POWER_DRAW_WATTS, estimated_power, {
             "test_type": "power_draw",
             "estimated_watts": estimated_power,
-            "target_watts": target_power,
+            "target_watts": 8.0,
             "cpu_percent": cpu_percent,
             "ram_usage_percent": ram_usage_percent,
             "ram_mb": ram_mb,
             "breakdown": {
-                "base_power": base_power,
-                "cpu_power": cpu_power,
-                "ram_power": ram_power
+                "cpu_power": (cpu_percent / 100.0) ** 1.3 * 6.0,
+                "ram_power": (ram_mb / 2048.0) * 1.8,
+                "base_power": 1.2
             },
-            "hardware_target": "comma three (10W power budget)"
+            "hardware_target": "comma three (10W power budget)",
+            "source": "real_system"
         })
 
         return estimated_power, {
             "estimated_power_w": estimated_power,
-            "target_w": target_power,
+            "target_w": 8.0,
             "cpu_percent": cpu_percent,
             "ram_usage_percent": ram_usage_percent,
             "ram_mb": ram_mb,
             "power_breakdown": {
-                "base_power": base_power,
-                "cpu_power": cpu_power,
-                "ram_power": ram_power
+                "base_power": 1.2,
+                "cpu_power": (cpu_percent / 100.0) ** 1.3 * 6.0,
+                "ram_power": (ram_mb / 2048.0) * 1.8
             },
-            "status": "PASS" if estimated_power < target_power else "FAIL",
+            "status": "PASS" if estimated_power < 8.0 else "FAIL",
             "hardware_platform": "comma three",
-            "power_budget_w": 10.0
+            "power_budget_w": 10.0,
+            "source": "real_system"
         }
 
 class ComprehensiveValidator:
