@@ -78,40 +78,87 @@ class SunnypilotUI:
     Main UI controller implementing the layered architecture for sunnypilot.
     Optimized for Comma Three hardware with efficient rendering and resource usage.
     """
-    
+
     def __init__(self):
-        # Initialize messaging
-        self.sm = messaging.SubMaster([
-            "modelV2", "controlsState", "selfdriveState", "deviceState", 
-            "carState", "perceptionModel", "uiDebug", "navInstruction"
-        ])
-        self.pm = messaging.PubMaster(["userFlag", "userEvent"])
-        
+        # Initialize messaging with error handling
+        try:
+            self.sm = messaging.SubMaster([
+                "modelV2", "controlsState", "selfdriveState", "deviceState",
+                "carState", "perceptionModel", "uiDebug", "navInstruction"
+            ])
+            self.pm = messaging.PubMaster(["userFlag", "userEvent"])
+        except Exception as e:
+            print(f"Error initializing messaging system: {e}")
+            raise
+
         # State management
         self.driving_state = DrivingState.DISENGAGED
         self.theme = Theme.DAY  # Will be updated based on light sensor
         self.colors = UIColors()
-        
-        # Layer management
-        self.hud_layer = HudRenderer()
-        self.system_layer = SystemStatusLayer()
-        self.perception_layer = PerceptionVisualizationLayer()
-        self.navigation_layer = NavigationDisplayLayer()
-        self.hardware_layer = HardwareStatusLayer()
-        
+
+        # Import and initialize state management
+        from openpilot.selfdrive.ui.state_management import UIState
+        self.ui_state = UIState.IDLE  # Default state
+        self.state_manager = None  # Will be set by parent system
+
+        # Layer management with error handling
+        try:
+            self.hud_layer = HudRenderer()
+        except Exception as e:
+            print(f"Error initializing HUD renderer: {e}")
+            self.hud_layer = None
+
+        try:
+            self.system_layer = SystemStatusLayer()
+        except Exception as e:
+            print(f"Error initializing system status layer: {e}")
+            self.system_layer = None
+
+        try:
+            self.perception_layer = PerceptionVisualizationLayer()
+        except Exception as e:
+            print(f"Error initializing perception visualization layer: {e}")
+            self.perception_layer = None
+
+        try:
+            self.navigation_layer = NavigationDisplayLayer()
+        except Exception as e:
+            print(f"Error initializing navigation display layer: {e}")
+            self.navigation_layer = None
+
+        try:
+            self.hardware_layer = HardwareStatusLayer()
+        except Exception as e:
+            print(f"Error initializing hardware status layer: {e}")
+            self.hardware_layer = None
+
         # Performance tracking
         self.frame_start_time = 0.0
         self.last_update_time = 0.0
         self.avg_render_time = 0.0
         self.frame_count = 0
-        
+        self.error_count = 0
+        self.last_error_time = 0.0
+
         # Resource limits
         self.max_cpu_usage = 5.0  # Percentage
         self.target_fps = 30.0
         self.frame_interval = 1.0 / self.target_fps
-        
+
         # Initialize UI components
         self._setup_ui_components()
+
+    def _safe_layer_update(self, layer, sm):
+        """Safely update a layer with error handling"""
+        if layer is None:
+            return
+        try:
+            layer.update(sm)
+        except Exception as e:
+            self.error_count += 1
+            self.last_error_time = time.time()
+            print(f"Error updating layer {layer.__class__.__name__}: {e}")
+            # Could implement fallback behavior here if needed
     
     def _setup_ui_components(self):
         """Initialize all UI components with proper configuration"""
@@ -122,40 +169,59 @@ class SunnypilotUI:
         """Update UI state and components"""
         current_time = time.time()
         self.last_update_time = current_time
-        
-        # Update messaging state
-        self.sm.update(0)
-        
+
+        # Update messaging state with error handling
+        try:
+            self.sm.update(0)
+        except Exception as e:
+            self.error_count += 1
+            print(f"Error updating messaging system: {e}")
+            # Don't return here, continue with cached data
+
         # Update driving state
         self._update_driving_state()
-        
+
         # Update theme based on light sensor
         self._update_theme()
-        
-        # Update all UI layers
-        self.system_layer.update(self.sm)
-        self.perception_layer.update(self.sm)
-        self.navigation_layer.update(self.sm)
-        self.hardware_layer.update(self.sm)
-        
+
+        # Update all UI layers with error handling
+        self._safe_layer_update(self.system_layer, self.sm)
+        self._safe_layer_update(self.perception_layer, self.sm)
+        self._safe_layer_update(self.navigation_layer, self.sm)
+        self._safe_layer_update(self.hardware_layer, self.sm)
+
         # Performance tracking
         self.frame_count += 1
     
     def render(self, rect: rl.Rectangle):
         """Render all UI layers with resource efficiency"""
+        from openpilot.selfdrive.ui.state_management import UIState
+
+        # Check if rendering should proceed based on current UI state
+        if hasattr(self, 'state_manager') and self.state_manager:
+            if self.state_manager.current_state in [UIState.SHUTTING_DOWN, UIState.ERROR]:
+                return  # Don't render in shutdown or error states
+
         self.frame_start_time = time.time()
-        
+
         # Calculate which layers to render based on driving state
         render_layers = self._get_active_layers()
-        
-        # Render layers in z-order (background to foreground)
+
+        # Render layers in z-order (background to foreground) with error handling
         for layer in render_layers:
-            layer.render(rect)
-        
+            if layer is None:
+                continue
+            try:
+                layer.render(rect)
+            except Exception as e:
+                self.error_count += 1
+                print(f"Error rendering layer {layer.__class__.__name__}: {e}")
+                # Continue to next layer instead of failing completely
+
         # Update performance metrics
         render_time = time.time() - self.frame_start_time
         self.avg_render_time = (self.avg_render_time * 0.9) + (render_time * 0.1)
-        
+
         # Resource usage validation
         self._validate_resource_usage()
     
@@ -221,40 +287,51 @@ class SunnypilotUI:
 
 class UIComponent:
     """Base class for all UI components with resource efficiency features"""
-    
+
     def __init__(self, name: str):
         self.name = name
         self.enabled = True
         self.visible = True
         self.last_update_time = 0.0
         self.render_count = 0
-        
+
         # Resource tracking
         self.avg_render_time = 0.0
-    
+        self.error_count = 0
+
     def update(self, sm: messaging.SubMaster):
         """Update component with new data"""
         if not self.enabled:
             return
-        self._update_internal(sm)
-    
+        try:
+            self._update_internal(sm)
+        except Exception as e:
+            self.error_count += 1
+            print(f"Error in update for component {self.name}: {e}")
+
     def render(self, rect: rl.Rectangle):
         """Render the component"""
         if not self.enabled or not self.visible:
             return
-        
+
         start_time = time.time()
-        self._render_internal(rect)
+        try:
+            self._render_internal(rect)
+        except Exception as e:
+            self.error_count += 1
+            print(f"Error in render for component {self.name}: {e}")
+            return  # Don't update performance metrics if render failed
+
         render_time = time.time() - start_time
-        
+
         # Update performance metrics
         self.avg_render_time = (self.avg_render_time * 0.9) + (render_time * 0.1)
         self.render_count += 1
-    
+
     def _update_internal(self, sm: messaging.SubMaster):
         """Internal update implementation - override in subclasses"""
         pass
-    
+
     def _render_internal(self, rect: rl.Rectangle):
         """Internal render implementation - override in subclasses"""
         pass
@@ -308,12 +385,13 @@ class SystemStatusLayer(UIComponent):
 
 class PerceptionVisualizationLayer(UIComponent):
     """Visualization of detected objects and lane boundaries"""
-    
+
     def __init__(self):
         super().__init__("PerceptionVisualization")
         self.objects = []
         self.lanes = {"left": None, "right": None, "ego": None}
-    
+        self.lead_cars = []
+
     def _update_internal(self, sm: messaging.SubMaster):
         # Update perception data
         if sm.updated["modelV2"]:
@@ -326,53 +404,186 @@ class PerceptionVisualizationLayer(UIComponent):
                     "ego2": model_data.laneLines[2],
                     "right": model_data.laneLines[3]
                 }
-        
-        # Update detected objects
-        if sm.updated["modelV2"]:
-            model_data = sm["modelV2"]
-            self.objects = []  # Simplified for now
-            # In a real system, this would extract from modelV2.leadsV3, etc.
-    
+
+            # Update lead cars from model data
+            if len(model_data.leadsV3) > 0:
+                self.lead_cars = []
+                for lead in model_data.leadsV3:
+                    if lead.prob > 0.5:  # Only high confidence leads
+                        self.lead_cars.append({
+                            'x': lead.x[0] if lead.x else 0,
+                            'y': lead.y[0] if lead.y else 0,
+                            'v_ego': lead.v[0] if lead.v else 0,
+                            'prob': lead.prob
+                        })
+
     def _render_internal(self, rect: rl.Rectangle):
         # This layer would typically render on top of the camera view
-        # For now, we'll draw a placeholder
-        pass
+        # Render lane lines
+        self._render_lane_lines(rect)
+
+        # Render lead cars
+        self._render_lead_cars(rect)
+
+    def _render_lane_lines(self, rect: rl.Rectangle):
+        """Render lane boundary lines"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+
+        # Get screen dimensions to scale properly
+        screen_width = rect.width
+        screen_height = rect.height
+
+        # Draw each lane line if available
+        for side, lane_data in self.lanes.items():
+            if lane_data is None or len(lane_data.points) < 2:
+                continue
+
+            # Calculate screen coordinates for each point
+            screen_points = []
+            for point in lane_data.points:
+                # Skip if point is invalid
+                if point.x == 0 and point.y == 0:
+                    continue
+
+                # Simple scaling from world to screen coordinates
+                # This is a simplified transform - in a real system, proper camera calibration would be used
+                screen_x = rect.x + (screen_width / 2) + (point.x * 10)  # Scale factor for lateral position
+                screen_y = rect.y + screen_height - (point.y * 3)  # Scale factor for longitudinal position
+
+                # Only include points that are within screen bounds
+                if rect.x <= screen_x <= rect.x + screen_width and rect.y <= screen_y <= rect.y + screen_height:
+                    screen_points.append((screen_x, screen_y))
+
+            # Use optimized drawing routine for lane lines
+            if len(screen_points) >= 2:
+                confidence = lane_data.prob if hasattr(lane_data, 'prob') else 1.0
+                is_dashed = side in ['ego', 'ego2']  # Ego lanes are typically dashed
+                EfficientDrawingRoutines.draw_lane_lines_batch(screen_points, confidence, is_dashed)
+
+    def _render_lead_cars(self, rect: rl.Rectangle):
+        """Render lead cars detected by perception system"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+
+        # Simple scaling function for world to screen coordinates
+        def world_to_screen(x, y):
+            # This is a simplified transformation - in a real system, proper camera calibration would be used
+            screen_x = rect.x + (rect.width / 2) + (x * 10)  # Scale lateral position
+            screen_y = rect.y + rect.height - (y * 3)  # Scale longitudinal position
+            return screen_x, screen_y
+
+        # Convert lead cars to the format expected by the drawing routine
+        vehicle_data = []
+        for lead_car in self.lead_cars:
+            vehicle_data.append({
+                'x': lead_car['x'],
+                'y': lead_car['y'],
+                'width': 2.0,  # Standard car width in meters
+                'length': 4.5,  # Standard car length in meters
+                'type': 'car',
+                'prob': lead_car['prob']
+            })
+
+        # Use optimized batch drawing routine
+        screen_transform_func = world_to_screen
+        EfficientDrawingRoutines.draw_vehicle_batch(vehicle_data, screen_transform_func)
 
 
 class NavigationDisplayLayer(UIComponent):
     """Navigation system with route visualization and turn-by-turn guidance"""
-    
+
     def __init__(self):
         super().__init__("NavigationDisplay")
         self.current_instruction = "None"
         self.distance_to_next = 0
+        self.time_to_next = 0
         self.route_progress = 0.0
-    
+        self.destination = ""
+        self.maneuver_type = ""
+        self.nav_points = []  # Navigation route points
+
     def _update_internal(self, sm: messaging.SubMaster):
         # Update navigation data
         if sm.updated["navInstruction"]:
             nav_instr = sm["navInstruction"]
             self.current_instruction = nav_instr.maneuver
             self.distance_to_next = nav_instr.distance
+            self.time_to_next = nav_instr.time
             self.route_progress = nav_instr.routeProgress if nav_instr.routeProgress > 0 else 0.0
-    
+            self.destination = nav_instr.roadName or "Unknown"
+            self.maneuver_type = getattr(nav_instr, 'maneuverType', "straight")
+
+        # Update navigation route if available
+        if sm.updated["navRoute"] and hasattr(sm, 'navRoute'):
+            # In a real system, this would process the navigation route
+            # For now, we'll keep it as a placeholder
+            pass
+
     def _render_internal(self, rect: rl.Rectangle):
-        # Render navigation information
-        if self.current_instruction != "None":
-            nav_width = 300
-            nav_height = 80
-            nav_x = rect.x + (rect.width - nav_width) // 2
-            nav_y = rect.y + 100
-            
-            # Draw navigation background
-            bg_color = rl.Color(30, 50, 70, 200) if ui_state.theme == Theme.NIGHT else rl.Color(220, 240, 255, 200)
-            rl.draw_rectangle(nav_x, nav_y, nav_width, nav_height, bg_color)
-            rl.draw_rectangle_lines(nav_x, nav_y, nav_width, nav_height, rl.Color(100, 150, 200, 200))
-            
-            # Draw navigation text
-            text_color = rl.Color(255, 255, 255, 255)
-            rl.draw_text(self.current_instruction, nav_x + 10, nav_y + 10, 24, text_color)
-            rl.draw_text(f"{self.distance_to_next}m", nav_x + 10, nav_y + 40, 20, text_color)
+        # Render turn-by-turn navigation panel
+        self._render_turn_by_turn_panel(rect)
+
+        # Render route visualization (simplified)
+        self._render_route_visualization(rect)
+
+    def _render_turn_by_turn_panel(self, rect: rl.Rectangle):
+        """Render the turn-by-turn navigation panel"""
+        if self.current_instruction == "None":
+            return
+
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
+        # Panel dimensions and position
+        nav_width = 300
+        nav_height = 100
+        nav_x = rect.x + (rect.width - nav_width) // 2
+        nav_y = rect.y + 50
+
+        # Use the reusable panel component
+        bg_color = rl.Color(30, 50, 70, 200) if ui_state.theme == Theme.NIGHT else rl.Color(220, 240, 255, 200)
+        border_color = rl.Color(100, 150, 200, 200)
+        ReusableUIComponents.create_panel(nav_x, nav_y, nav_width, nav_height,
+                                        "NAVIGATION", bg_color, border_color)
+
+        # Draw maneuver icon/symbol based on maneuver type
+        maneuver_symbol = self._get_maneuver_symbol(self.maneuver_type)
+        rl.draw_text(maneuver_symbol, int(nav_x + 15), int(nav_y + 25), 32, rl.Color(255, 255, 200, 255))
+
+        # Draw navigation text
+        text_color = rl.Color(255, 255, 255, 255)
+        rl.draw_text(self.current_instruction, int(nav_x + 60), int(nav_y + 20), 20, text_color)
+        rl.draw_text(f"{self.distance_to_next:.0f}m", int(nav_x + 60), int(nav_y + 45), 18, text_color)
+        rl.draw_text(f"→ {self.destination}", int(nav_x + 15), int(nav_y + 70), 16, rl.Color(200, 220, 255, 255))
+
+    def _get_maneuver_symbol(self, maneuver_type: str) -> str:
+        """Get visual symbol for maneuver type"""
+        symbols = {
+            "turn_left": "←",
+            "turn_right": "→",
+            "straight": "↑",
+            "slight_left": "⇠",
+            "slight_right": "⇢",
+            "sharp_left": "⇇",
+            "sharp_right": "⇉",
+            "u_turn": "↺",
+            "arrive": "⦿",
+        }
+        return symbols.get(maneuver_type.lower(), "→")
+
+    def _render_route_visualization(self, rect: rl.Rectangle):
+        """Render the navigation route on screen (simplified)"""
+        if not self.nav_points:
+            return
+
+        # Draw route as a line connecting points
+        for i in range(len(self.nav_points) - 1):
+            x1, y1 = self.nav_points[i]
+            x2, y2 = self.nav_points[i + 1]
+
+            # Draw route line
+            rl.draw_line(int(x1), int(y1), int(x2), int(y2), rl.Color(100, 180, 255, 180))
+
+            # Draw route points
+            rl.draw_circle(int(x1), int(y1), 3, rl.Color(100, 180, 255, 200))
 
 
 class HardwareStatusLayer(UIComponent):

@@ -49,56 +49,86 @@ class CompleteSunnypilotUISystem:
             screen_width=1280,
             screen_height=720
         )
-        
+
+        # Initialize state management
+        from openpilot.selfdrive.ui.state_management import create_default_state_manager, ComponentLifecycleManager
+        self.state_manager = create_default_state_manager()
+        self.lifecycle_manager = ComponentLifecycleManager(self.state_manager)
+
         # Initialize data integration
         self.data_integration = DataIntegrationManager()
         self.metrics_collector = RealtimeMetricsCollector(self.data_integration)
         self.safety_processor = SafetyDataProcessor(self.data_integration)
         self.perception_processor = PerceptionDataProcessor(self.data_integration)
         self.navigation_processor = NavigationDataProcessor(self.data_integration)
-        
+
         # Initialize UI system
         self.raylib_ui = RaylibUI(self.config)
-        
+
         # Performance tracking
         self.performance = SystemPerformance()
         self.last_update_time = 0.0
         self.frame_count = 0
         self.last_fps_update = time.time()
-        
+
         # Resource management
         self.cpu_usage_history = []
         self.max_cpu_history = 50  # Keep last 50 readings
-        
+
+        # Register components with lifecycle manager
+        self._register_components()
+
         print("Complete Sunnypilot UI System initialized")
+
+    def _register_components(self):
+        """Register all components with the lifecycle manager"""
+        from openpilot.selfdrive.ui.state_management import StateAwareComponent
+
+        # Register major components with lifecycle management
+        self.lifecycle_manager.register_component("data_integration", self.data_integration)
+        self.lifecycle_manager.register_component("metrics_collector", self.metrics_collector)
+        self.lifecycle_manager.register_component("safety_processor", self.safety_processor)
+        self.lifecycle_manager.register_component("perception_processor", self.perception_processor)
+        self.lifecycle_manager.register_component("navigation_processor", self.navigation_processor)
+        self.lifecycle_manager.register_component("raylib_ui", self.raylib_ui)
+
+        # Initialize all registered components
+        for name in list(self.lifecycle_manager.components.keys()):
+            self.lifecycle_manager.initialize_component(name)
+
+        # Start the UI components
+        self.lifecycle_manager.start_component("raylib_ui")
     
     def update(self):
         """Update the entire UI system with real-time data"""
         current_time = time.time()
         start_time = time.time()
-        
+
+        # Update lifecycle-managed components
+        self.lifecycle_manager.update_all_components()
+
         # Update data integration
         self.data_integration.update()
-        
+
         # Update all data processors
         self.metrics_collector.update_metrics()
         safety_data = self.safety_processor.update_safety_data()
         perception_data = self.perception_processor.update_perception_data()
         navigation_data = self.navigation_processor.update_navigation_data()
-        
+
         # Update performance metrics
         self._update_performance_metrics()
-        
+
         # Update UI system with processed data
         self.raylib_ui.update()
-        
+
         # Update frame time
         frame_time = time.time() - start_time
         self.metrics_collector.update_fps(frame_time)
-        
+
         # Check resource usage and adjust if needed
         self._check_resource_usage()
-        
+
         # Update FPS counter
         self.frame_count += 1
         if current_time - self.last_fps_update > 1.0:
@@ -134,14 +164,19 @@ class CompleteSunnypilotUISystem:
     def render(self, rect: rl.Rectangle):
         """Render the complete UI system"""
         start_time = time.time()
-        
+
+        # Check if we should render based on current state (e.g., don't render in shutdown state)
+        from openpilot.selfdrive.ui.state_management import UIState
+        if self.state_manager.current_state == UIState.SHUTTING_DOWN:
+            return  # Don't render when shutting down
+
         # Render UI system
         self.raylib_ui.render(rect)
-        
+
         # Calculate render time
         render_time = time.time() - start_time
         self.performance.render_time_ms = render_time * 1000  # Convert to milliseconds
-        
+
         # Add performance overlay if needed
         self._render_performance_overlay(rect)
     
@@ -222,43 +257,56 @@ def run_ui_system():
     print(f"Hardware: Comma Three (2GB RAM, 4-core ARM)")
     print("Press ESC to exit, D for debug mode, C for compact mode")
     print("="*50)
-    
+
     # Initialize the complete system
     ui_system = CompleteSunnypilotUISystem()
-    
+
     # Initialize raylib window
     rl.init_window(1280, 720, "Sunnypilot UI System")
     rl.set_target_fps(30)
-    
+
+    # Transition to IDLE state after initialization
+    ui_system.state_manager.transition_to(UIState.IDLE, "System initialized and ready")
+
     try:
         while not rl.window_should_close():
-            # Update the UI system
-            ui_system.update()
-            
-            # Begin drawing
-            rl.begin_drawing()
-            rl.clear_background(rl.BLACK)
-            
-            # Render the UI
-            screen_rect = rl.Rectangle(0, 0, 1280, 720)
-            ui_system.render(screen_rect)
-            
-            # Handle user input
+            # Check for state changes based on user input or system status
+            from openpilot.selfdrive.ui.state_management import UIState
+
+            # Handle user input for state transitions
             if rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
-                break
+                if ui_system.state_manager.can_transition_to(UIState.SHUTTING_DOWN):
+                    ui_system.state_manager.transition_to(UIState.SHUTTING_DOWN, "User requested shutdown")
+                    break
             elif rl.is_key_pressed(rl.KeyboardKey.KEY_D):
                 ui_system.raylib_ui.enable_debug_mode(
                     not ui_system.raylib_ui.state_manager.debug_mode
                 )
             elif rl.is_key_pressed(rl.KeyboardKey.KEY_C):
                 ui_system.raylib_ui.toggle_compact_mode()
-            
+
+            # Update the UI system (this will update lifecycle components)
+            ui_system.update()
+
+            # Begin drawing
+            rl.begin_drawing()
+            rl.clear_background(rl.BLACK)
+
+            # Render the UI based on current state
+            screen_rect = rl.Rectangle(0, 0, 1280, 720)
+            ui_system.render(screen_rect)
+
             # End drawing
             rl.end_drawing()
-    
+
     except KeyboardInterrupt:
         print("\nUI System shutdown requested")
+        ui_system.state_manager.transition_to(UIState.SHUTTING_DOWN, "Keyboard interrupt")
     finally:
+        # Perform proper cleanup based on lifecycle management
+        for name in list(ui_system.lifecycle_manager.components.keys()):
+            ui_system.lifecycle_manager.stop_component(name)
+
         # Cleanup
         rl.close_window()
         print("Complete Sunnypilot UI System shutdown")

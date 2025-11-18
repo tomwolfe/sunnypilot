@@ -147,33 +147,30 @@ class NavigationDisplay(UIComponent):
         """Render turn-by-turn navigation instructions"""
         if not self.current_instruction:
             return
-        
+
         # Position for navigation panel
         panel_x = self.nav_panel_x(rect)
         panel_y = self.nav_panel_y
         panel_width = self.nav_panel_width
         panel_height = self.nav_panel_height
-        
-        # Draw panel background
-        bg_color = rl.Color(30, 40, 50, 220)
-        border_color = rl.Color(120, 140, 180, 255)
-        
-        rl.draw_rectangle(int(panel_x), int(panel_y), int(panel_width), int(panel_height), bg_color)
-        rl.draw_rectangle_lines(int(panel_x), int(panel_y), int(panel_width), int(panel_height), border_color)
-        
-        # Draw title
-        rl.draw_text("NAVIGATION", int(panel_x + 10), int(panel_y + 10), 18, rl.LIGHTGRAY)
-        
+
+        # Use reusable panel component
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+        ReusableUIComponents.create_panel(int(panel_x), int(panel_y), int(panel_width), int(panel_height),
+                                        "NAVIGATION",
+                                        rl.Color(30, 40, 50, 220),  # Dark blue background
+                                        rl.Color(120, 140, 180, 255))  # Blue border
+
         # Draw current maneuver
         if self.current_instruction:
             # Maneuver symbol
             symbol = self._get_maneuver_symbol(self.current_instruction.maneuver_type)
             rl.draw_text(symbol, int(panel_x + 20), int(panel_y + 45), 48, self.maneuver_arrow_color)
-            
+
             # Maneuver text
             maneuver_text = f"{self.current_instruction.road_name}"
             rl.draw_text(maneuver_text, int(panel_x + 80), int(panel_y + 50), 20, rl.WHITE)
-            
+
             # Distance
             distance_text = f"{self.current_instruction.distance:.0f}m"
             rl.draw_text(distance_text, int(panel_x + 80), int(panel_y + 75), 18, rl.LIGHTGRAY)

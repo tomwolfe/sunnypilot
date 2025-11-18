@@ -159,41 +159,38 @@ class HardwareStatusDashboard(UIComponent):
         """Render the hardware status dashboard"""
         if not self.visible:
             return
-        
-        # Draw dashboard panel background
-        bg_color = rl.Color(30, 30, 40, 220)  # Semi-transparent dark background
-        border_color = rl.Color(100, 100, 120, 255)
-        
-        rl.draw_rectangle(self.panel_x, self.panel_y, self.panel_width, self.panel_height, bg_color)
-        rl.draw_rectangle_lines(self.panel_x, self.panel_y, self.panel_width, self.panel_height, border_color)
-        
-        # Draw title
-        rl.draw_text("HARDWARE STATUS", self.panel_x + 10, self.panel_y + 5, 18, rl.LIGHTGRAY)
-        
+
+        # Use the reusable panel component to draw the dashboard
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+        ReusableUIComponents.create_panel(self.panel_x, self.panel_y, self.panel_width, self.panel_height,
+                                        "HARDWARE STATUS")
+
         # Calculate positions for gauges
         row1_y = self.panel_y + 40
         row2_y = self.panel_y + 150
         gauge_x1 = self.panel_x + 60
         gauge_x2 = self.panel_x + 170
-        
-        # Render CPU gauge
-        self._render_gauge(gauge_x1, row1_y, self.gauge_radius, 
-                          self.metrics.cpu_usage, 100.0, "CPU %")
-        
-        # Render RAM gauge
-        self._render_gauge(gauge_x2, row1_y, self.gauge_radius, 
-                          self.metrics.ram_usage, 100.0, "RAM %")
-        
-        # Render temperature gauge
-        self._render_gauge(gauge_x1, row2_y, self.gauge_radius, 
-                          self.metrics.temperature, 100.0, "TEMP C")
-        
-        # Render power progress bar
+
+        # Render CPU gauge using reusable component
+        ReusableUIComponents.create_gauge(gauge_x1, row1_y, self.gauge_radius,
+                                         self.metrics.cpu_usage, 100.0, "CPU %")
+
+        # Render RAM gauge using reusable component
+        ReusableUIComponents.create_gauge(gauge_x2, row1_y, self.gauge_radius,
+                                         self.metrics.ram_usage, 100.0, "RAM %")
+
+        # Render temperature gauge using reusable component
+        ReusableUIComponents.create_gauge(gauge_x1, row2_y, self.gauge_radius,
+                                         self.metrics.temperature, 100.0, "TEMP C")
+
+        # Render power progress bar using reusable component
         power_bar_x = self.panel_x + 20
         power_bar_y = row2_y + 60
-        self._render_progress_bar(power_bar_x, power_bar_y, 200, 15, 
-                                 self.metrics.power_draw, 10.0, "POWER")
-        
+        ReusableUIComponents.create_progress_bar(power_bar_x, power_bar_y, 200, 15,
+                                               self.metrics.power_draw, 10.0,
+                                               rl.Color(100, 200, 100, 200),  # Green for power
+                                               rl.Color(50, 50, 60, 200), show_text=True)
+
         # Draw additional metrics text
         metrics_text_y = self.panel_y + 250
         rl.draw_text(f"Uptime: {self.metrics.uptime:.1f}s", self.panel_x + 10, metrics_text_y, 14, rl.LIGHTGRAY)

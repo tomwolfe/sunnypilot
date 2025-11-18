@@ -298,23 +298,20 @@ class SystemStatusPanel(UIComponent):
         """Render the complete system status panel"""
         panel_x = self.panel_x(rect)
         panel_y = self.panel_y(rect)
-        
-        # Draw panel background
-        bg_color = rl.Color(25, 35, 45, 220)
-        border_color = rl.Color(100, 130, 170, 255)
-        
-        rl.draw_rectangle(int(panel_x), int(panel_y), int(self.panel_width), int(self.panel_height), bg_color)
-        rl.draw_rectangle_lines(int(panel_x), int(panel_y), int(self.panel_width), int(self.panel_height), border_color)
-        
-        # Draw panel title
-        rl.draw_text("SYSTEM STATUS", int(panel_x + 10), int(panel_y + 10), 18, rl.LIGHTGRAY)
-        
+
+        # Use reusable panel component
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+        ReusableUIComponents.create_panel(int(panel_x), int(panel_y), int(self.panel_width), int(self.panel_height),
+                                        "SYSTEM STATUS",
+                                        rl.Color(25, 35, 45, 220),  # Dark blue-gray background
+                                        rl.Color(100, 130, 170, 255))  # Medium blue border
+
         # Draw overall status
         status_y = panel_y + 35
         status_color = self._get_status_color(self.system_health.overall_status)
-        rl.draw_text(f"STATUS: {self.system_health.overall_status}", 
+        rl.draw_text(f"STATUS: {self.system_health.overall_status}",
                     int(panel_x + 10), int(status_y), 14, status_color)
-        
+
         # Render individual sections
         current_y = status_y + 20
         current_y = self._render_sensor_status(rl.Rectangle(panel_x, current_y, self.panel_width, 0), current_y)

@@ -296,60 +296,134 @@ class RaylibUI:
 
 class ReusableUIComponents:
     """Collection of reusable UI components for efficient development"""
-    
+
     @staticmethod
     def create_status_indicator(x: float, y: float, width: float, height: float,
-                              text: str, status: bool, 
+                              text: str, status: bool,
                               on_color: rl.Color = rl.Color(50, 205, 50, 255),
                               off_color: rl.Color = rl.Color(220, 20, 60, 255)) -> None:
         """Create a generic status indicator"""
         # Draw background
         color = on_color if status else off_color
-        rl.draw_rectangle(int(x), int(y), int(width), int(height), 
+        rl.draw_rectangle(int(x), int(y), int(width), int(height),
                          rl.Color(color.r, color.g, color.b, 180))
-        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), 
+        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height),
                                rl.Color(200, 200, 220, 220))
-        
+
         # Draw text
         rl.draw_text(text, int(x + 10), int(y + (height - 20) / 2), 16, rl.WHITE)
-    
+
     @staticmethod
     def create_progress_bar(x: float, y: float, width: float, height: float,
                            value: float, max_value: float,
                            color: rl.Color = rl.Color(70, 130, 180, 255),
-                           bg_color: rl.Color = rl.Color(50, 50, 60, 200)) -> None:
-        """Create a progress bar component"""
+                           bg_color: rl.Color = rl.Color(50, 50, 60, 200),
+                           show_text: bool = True) -> None:
+        """Create a progress bar component with optional text"""
         # Draw background
         rl.draw_rectangle(int(x), int(y), int(width), int(height), bg_color)
-        
+
         # Draw progress
         if max_value > 0:
-            progress_width = (value / max_value) * width
+            progress_width = min(width, (value / max_value) * width)
             rl.draw_rectangle(int(x), int(y), int(progress_width), int(height), color)
-        
+
         # Draw border
-        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), 
+        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height),
                                rl.Color(150, 150, 160, 220))
-    
+
+        # Optionally show text
+        if show_text and max_value > 0:
+            percent = int((value / max_value) * 100)
+            text = f"{percent}%"
+            text_width = rl.measure_text(text, 14)
+            text_x = int(x + (width - text_width) / 2)
+            text_y = int(y + (height - 14) / 2)
+            rl.draw_text(text, text_x, text_y, 14, rl.WHITE)
+
     @staticmethod
     def create_gauge(x: float, y: float, radius: float, value: float, max_value: float,
                      label: str, color: rl.Color = rl.Color(70, 130, 180, 255)) -> None:
         """Create a circular gauge component"""
         # Draw background circle
         rl.draw_circle_lines(int(x), int(y), int(radius), rl.Color(100, 100, 120, 200))
-        
+
         # Draw filled arc based on value
         fill_percent = min(1.0, value / max_value) if max_value > 0 else 0
-        angle = fill_percent * 270  # 270 degrees (quarter circle)
-        
+        # Calculate angle for filled portion (0 to 360 degrees)
+        angle = fill_percent * 360.0
+
+        # Draw the filled arc by drawing many small lines
+        for i in range(int(angle)):
+            # Convert polar to Cartesian coordinates
+            radian = (i * 3.14159 / 180) - (3.14159 / 2)  # Start from top (negative Y is up)
+            inner_radius = radius * 0.8
+            outer_radius = radius
+
+            start_x = x + inner_radius * rl.cos(radian)
+            start_y = y + inner_radius * rl.sin(radian)
+            end_x = x + outer_radius * rl.cos(radian)
+            end_y = y + outer_radius * rl.sin(radian)
+
+            rl.draw_line(int(start_x), int(start_y), int(end_x), int(end_y), color)
+
         # Draw text in center
-        rl.draw_text(f"{int(value)}/{int(max_value)}", int(x - 30), int(y - 10), 16, rl.WHITE)
-        rl.draw_text(label, int(x - 20), int(y + 10), 12, rl.LIGHTGRAY)
+        value_text = f"{int(value)}/{int(max_value)}"
+        text_width = rl.measure_text(value_text, 16)
+        rl.draw_text(value_text, int(x - text_width/2), int(y - 8), 16, rl.WHITE)
+        label_width = rl.measure_text(label, 12)
+        rl.draw_text(label, int(x - label_width/2), int(y + 8), 12, rl.LIGHTGRAY)
+
+    @staticmethod
+    def create_panel(x: float, y: float, width: float, height: float,
+                    title: str = "", bg_color: rl.Color = None,
+                    border_color: rl.Color = None) -> None:
+        """Create a reusable panel component"""
+        if bg_color is None:
+            bg_color = rl.Color(30, 30, 40, 220)  # Default dark panel
+        if border_color is None:
+            border_color = rl.Color(100, 100, 120, 255)  # Default border
+
+        # Draw panel background
+        rl.draw_rectangle(int(x), int(y), int(width), int(height), bg_color)
+        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), border_color)
+
+        # Draw title if provided
+        if title:
+            rl.draw_text(title, int(x + 10), int(y + 5), 16, rl.LIGHTGRAY)
+
+    @staticmethod
+    def create_button(x: float, y: float, width: float, height: float,
+                     text: str, enabled: bool = True) -> bool:
+        """Create a button component and return if clicked"""
+        # Determine colors based on enabled state
+        bg_color = rl.Color(70, 130, 180, 255) if enabled else rl.Color(80, 80, 90, 200)
+        border_color = rl.Color(200, 200, 220, 255) if enabled else rl.Color(100, 100, 120, 200)
+        text_color = rl.WHITE if enabled else rl.Color(150, 150, 160, 255)
+
+        # Draw button background
+        rl.draw_rectangle(int(x), int(y), int(width), int(height), bg_color)
+        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), border_color)
+
+        # Draw centered text
+        text_width = rl.measure_text(text, 16)
+        text_x = int(x + (width - text_width) / 2)
+        text_y = int(y + (height - 16) / 2)
+        rl.draw_text(text, text_x, text_y, 16, text_color)
+
+        # Check for click
+        mouse_x, mouse_y = rl.get_mouse_x(), rl.get_mouse_y()
+        button_rect = rl.Rectangle(x, y, width, height)
+
+        clicked = (rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_LEFT_BUTTON) and
+                   rl.check_collision_point_rec(rl.Vector2(mouse_x, mouse_y), button_rect))
+
+        return clicked if enabled else False
 
 
 class EfficientDrawingRoutines:
     """Optimized drawing routines for ARM processors"""
-    
+
     @staticmethod
     def draw_text_cached(text: str, x: float, y: float, font_size: int, color: rl.Color,
                         font: rl.Font = None) -> None:
@@ -358,27 +432,90 @@ class EfficientDrawingRoutines:
             rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, color)
         else:
             rl.draw_text(text, int(x), int(y), font_size, color)
-    
+
     @staticmethod
     def draw_multiple_rectangles(rectangles: List[tuple], color: rl.Color) -> None:
         """Efficiently draw multiple rectangles in one call"""
+        # In raylib, we can't batch draw multiple rectangles in one call
+        # but we can optimize by reducing function call overhead
         for rect in rectangles:
             x, y, width, height = rect
             rl.draw_rectangle(int(x), int(y), int(width), int(height), color)
-    
+
     @staticmethod
     def draw_lines_batch(lines: List[tuple], color: rl.Color) -> None:
         """Efficiently draw multiple lines in one call"""
+        # In raylib, we can't batch draw multiple lines in one call
+        # but we can optimize by reducing function call overhead
         for line in lines:
             x1, y1, x2, y2 = line
             rl.draw_line(int(x1), int(y1), int(x2), int(y2), color)
-    
+
     @staticmethod
     def draw_circle_batch(circles: List[tuple], color: rl.Color) -> None:
         """Efficiently draw multiple circles in one call"""
+        # In raylib, we can't batch draw multiple circles in one call
+        # but we can optimize by reducing function call overhead
         for circle in circles:
             x, y, radius = circle
             rl.draw_circle(int(x), int(y), int(radius), color)
+
+    @staticmethod
+    def draw_lane_lines_batch(lane_points: List[List[tuple]], confidence: float, is_dashed: bool = False) -> None:
+        """Optimized drawing for lane lines with proper confidence-based coloring"""
+        if not lane_points:
+            return
+
+        # Determine color based on confidence
+        if confidence > 0.9:
+            color = rl.Color(255, 255, 255, int(200 * confidence))  # Bright white for high confidence
+        elif confidence > 0.7:
+            color = rl.Color(200, 200, 230, int(180 * confidence))  # Slightly dim for medium confidence
+        else:
+            color = rl.Color(150, 150, 180, int(150 * confidence))  # Dim for low confidence
+
+        for i in range(len(lane_points) - 1):
+            point1 = lane_points[i]
+            point2 = lane_points[i + 1]
+
+            if is_dashed and i % 4 < 2:  # Draw every other segment for dashed effect
+                continue
+
+            rl.draw_line(int(point1[0]), int(point1[1]),
+                        int(point2[0]), int(point2[1]), color)
+
+    @staticmethod
+    def draw_vehicle_batch(vehicles: List[Dict], screen_transform_func) -> None:
+        """Optimized drawing for multiple vehicles with proper size/position transformation"""
+        for vehicle in vehicles:
+            # Apply screen transformation
+            screen_x, screen_y = screen_transform_func(vehicle['x'], vehicle['y'])
+            screen_width = vehicle['width'] * 3  # Approximate scaling
+            screen_height = vehicle['length'] * 3  # Approximate scaling
+
+            # Determine color based on type and confidence
+            if vehicle.get('type', 'car') == 'car':
+                base_color = rl.Color(255, 100, 100, 200)  # Red for cars
+            elif vehicle['type'] == 'truck':
+                base_color = rl.Color(200, 100, 255, 200)  # Purple for trucks
+            else:
+                base_color = rl.Color(100, 200, 255, 200)  # Blue for others
+
+            # Adjust transparency based on confidence
+            alpha = int(min(255, 100 + vehicle.get('prob', 0.5) * 155))
+            color = rl.Color(base_color.r, base_color.g, base_color.b, alpha)
+
+            # Draw vehicle as a rectangle
+            rl.draw_rectangle(int(screen_x - screen_width/2),
+                             int(screen_y - screen_height/2),
+                             int(screen_width),
+                             int(screen_height),
+                             color)
+            rl.draw_rectangle_lines(int(screen_x - screen_width/2),
+                                  int(screen_y - screen_height/2),
+                                  int(screen_width),
+                                  int(screen_height),
+                                  rl.Color(255, 255, 255, 255))
 
 
 def main():

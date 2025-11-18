@@ -147,52 +147,22 @@ class ControlsInterface(UIComponent):
         """Render the controls interface"""
         if not self.visible:
             return
-        
+
         # Update button positions
         self._update_button_positions(rect)
-        
-        # Draw all control buttons
+
+        # Use the reusable button component for each button
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
         for button in self.control_buttons:
-            # Determine button color based on state
-            if button.enabled:
-                color = button.color
-                border_color = rl.Color(200, 200, 220, 255)
-            else:
-                color = self.disabled_color
-                border_color = rl.Color(100, 100, 120, 200)
-            
-            # Draw button background
-            rl.draw_rectangle(
-                int(button.x), int(button.y),
-                int(button.width), int(button.height),
-                color
+            # Use the reusable button component which handles rendering and click detection
+            clicked = ReusableUIComponents.create_button(
+                button.x, button.y, button.width, button.height,
+                button.text, button.enabled
             )
-            
-            # Draw button border
-            rl.draw_rectangle_lines(
-                int(button.x), int(button.y),
-                int(button.width), int(button.height),
-                border_color
-            )
-            
-            # Draw button text centered
-            text_width = rl.measure_text(button.text, 16)
-            text_x = button.x + (button.width - text_width) / 2
-            text_y = button.y + (button.height - 20) / 2  # Approximate vertical center
-            
-            text_color = rl.WHITE if button.enabled else rl.Color(150, 150, 160, 255)
-            rl.draw_text(button.text, int(text_x), int(text_y), 16, text_color)
-        
-        # Handle mouse clicks
-        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_LEFT_BUTTON):
-            mouse_x, mouse_y = rl.get_mouse_x(), rl.get_mouse_y()
-            
-            for button in self.control_buttons:
-                button_rect = rl.Rectangle(button.x, button.y, button.width, button.height)
-                
-                if (button_rect.x <= mouse_x <= button_rect.x + button_rect.width and
-                    button_rect.y <= mouse_y <= button_rect.y + button_rect.height):
-                    self._handle_button_click(button)
+
+            if clicked:
+                self._handle_button_click(button)
     
     def is_engaged(self) -> bool:
         """Return whether autonomous driving is engaged"""

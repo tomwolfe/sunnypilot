@@ -213,36 +213,26 @@ class PerceptionVisualization(UIComponent):
                 )
     
     def _render_lanes(self, rect: rl.Rectangle):
-        """Render lane boundaries"""
+        """Render lane boundaries with optimized drawing"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+
         for lane in self.lanes:
             if len(lane.points) < 2:
                 continue
-            
-            # Get lane color
-            base_color = self.lane_colors.get(lane.type, rl.Color(255, 255, 255, 200))
-            color = rl.Color(
-                base_color.r, 
-                base_color.g, 
-                base_color.b, 
-                int(base_color.a * lane.confidence)  # Adjust alpha by confidence
+
+            # Convert world coordinates to screen coordinates for all points
+            screen_points = []
+            for point in lane.points:
+                screen_x, screen_y = self._world_to_screen(point[0], point[1], rect)
+                screen_points.append((screen_x, screen_y))
+
+            # Use the optimized batch drawing routine for lane lines
+            is_dashed = lane.type == "dashed"
+            EfficientDrawingRoutines.draw_lane_lines_batch(
+                screen_points,
+                lane.confidence,
+                is_dashed
             )
-            
-            # Draw lane points as connected lines
-            for i in range(len(lane.points) - 1):
-                start_point = lane.points[i]
-                end_point = lane.points[i + 1]
-                
-                start_x, start_y = self._world_to_screen(start_point[0], start_point[1], rect)
-                end_x, end_y = self._world_to_screen(end_point[0], end_point[1], rect)
-                
-                # Draw line based on lane type
-                if lane.type == "dashed":
-                    # Draw dashed line by skipping some segments
-                    line_length = math.sqrt((end_x - start_x)**2 + (end_y - start_y)**2)
-                    if int(start_x + start_y) % 20 < 10:  # Alternating pattern
-                        rl.draw_line(int(start_x), int(start_y), int(end_x), int(end_y), color)
-                else:
-                    rl.draw_line(int(start_x), int(start_y), int(end_x), int(end_y), color)
     
     def _render_traffic_signs(self, rect: rl.Rectangle):
         """Render traffic signs"""
@@ -309,15 +299,58 @@ class PerceptionVisualization(UIComponent):
         """Render perception visualization"""
         if not self.visible or not self.visualization_enabled:
             return
-        
+
         # Render lane boundaries first (background)
         self._render_lanes(rect)
-        
+
         # Render traffic signs
         self._render_traffic_signs(rect)
-        
+
         # Render detected objects last (foreground)
         self._render_objects(rect)
+
+    def _render_objects(self, rect: rl.Rectangle):
+        """Render detected objects with proper visualization"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+
+        # Use the optimized drawing routine for multiple vehicles
+        screen_transform_func = lambda x, y: self._world_to_screen(x, y, rect)
+
+        # Convert our objects to the format expected by the drawing routine
+        vehicle_data = []
+        for obj in self.objects[:self.max_objects_to_display]:  # Limit displayed objects
+            if obj.y > self.max_render_distance:  # Skip objects too far away
+                continue
+
+            vehicle_data.append({
+                'x': obj.x,
+                'y': obj.y,
+                'width': obj.width,
+                'length': obj.length,
+                'type': obj.type,
+                'prob': obj.confidence
+            })
+
+        # Use the optimized batch drawing routine
+        EfficientDrawingRoutines.draw_vehicle_batch(vehicle_data, screen_transform_func)
+
+        # Draw velocity vectors separately
+        for obj in self.objects[:self.max_objects_to_display]:
+            if obj.y > self.max_render_distance:
+                continue
+
+            # Convert world coordinates to screen coordinates
+            screen_x, screen_y = self._world_to_screen(obj.x, obj.y, rect)
+
+            # Draw velocity vector
+            if abs(obj.velocity_x) > 0.1 or abs(obj.velocity_y) > 0.1:
+                vel_x = obj.velocity_x * 2  # Scale velocity for visibility
+                vel_y = -obj.velocity_y * 2  # Negative because screen Y increases downward
+                rl.draw_line(
+                    int(screen_x), int(screen_y),
+                    int(screen_x + vel_x), int(screen_y + vel_y),
+                    rl.Color(255, 255, 255, 200)
+                )
 
 
 class PerceptionDebugOverlay(UIComponent):
