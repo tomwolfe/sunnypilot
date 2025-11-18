@@ -13,9 +13,9 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import statistics
 
-from openpilot.common.swaglog import cloudlog
-from openpilot.common.params import Params
-from openpilot.system.hardware import HARDWARE
+from common.swaglog import cloudlog
+from common.params import Params
+from system.hardware.hw import HARDWARE
 import cereal.messaging as messaging
 
 
@@ -138,27 +138,27 @@ class SystemValidator:
   
   def validate_latency(self) -> HardwareConstraint:
     """Validate end-to-end latency"""
-    # This is a simulation - in a real system, we'd measure actual system latency
-    # For now, we'll simulate with a reasonable value
-    simulated_latency = 45.0  # ms, within the 80ms constraint
+        measured_latency = 0.0  # Initialize with a value indicating no measurement yet
     
-    # In a real system, you would measure from input to output of the critical path
-    # For example: camera input -> model processing -> control output
-    sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
-    sm.update(0)
+        sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
+        sm.update(0)
     
-    if sm.updated['modelV2'] and sm.updated['controlsState']:
-      # Calculate time difference between model output and control output
-      model_time = sm.logMonoTime['modelV2'] / 1e9  # Convert to seconds
-      control_time = sm.logMonoTime['controlsState'] / 1e9
-      actual_latency = (control_time - model_time) * 1000  # Convert to ms
-      
-      if actual_latency > 0 and actual_latency < 200:  # Reasonable range
-        simulated_latency = actual_latency
+        if sm.updated['modelV2'] and sm.updated['controlsState']:
+          # Calculate time difference between model output and control output
+          model_time = sm.logMonoTime['modelV2'] / 1e9  # Convert to seconds
+          control_time = sm.logMonoTime['controlsState'] / 1e9
+          actual_latency = (control_time - model_time) * 1000  # Convert to ms
     
-    threshold = self.constraints['latency_ms']['threshold']
-    is_violated = simulated_latency >= threshold
+          if actual_latency > 0 and actual_latency < 200:  # Reasonable range
+            measured_latency = actual_latency
+          else:
+            cloudlog.warning(f"validate_latency: Measured latency {actual_latency:.1f}ms is out of reasonable range (0-200ms). Using 0.0.")
+        else:
+          cloudlog.warning("validate_latency: No 'modelV2' or 'controlsState' messages updated. Latency measurement failed. Using 0.0.")
     
+    
+        threshold = self.constraints['latency_ms']['threshold']
+        is_violated = measured_latency >= threshold or measured_latency == 0.0 # Treat no measurement as a violation    
     constraint = HardwareConstraint(
       name='latency_ms',
       current_value=simulated_latency,
@@ -323,33 +323,29 @@ class PerformanceBenchmark:
     import numpy as np
     from selfdrive.modeld.neon_optimizer import neon_optimizer
     
-    start_time = time.time()
+        # --- Pooled allocation benchmark ---
+        pooled_start_time = time.time()
+        pooled_arrays = []
+        for _ in range(1000):
+          arr = neon_optimizer.memory_pool.get_array(1024, np.float32)
+          pooled_arrays.append(arr)
+        pooled_time = time.time() - pooled_start_time
     
-    # Create arrays using memory pool vs regular allocation
-    pooled_allocations = []
-    for i in range(1000):
-      arr = neon_optimizer.memory_pool.get_array(1024, np.float32)
-      pooled_allocations.append(arr)
+        # Explicitly return arrays to the pool for reuse
+        for arr in pooled_arrays:
+          neon_optimizer.memory_pool.put_array(arr)
     
-    pooled_time = time.time() - start_time
     
-    # Release pooled arrays
-    for arr in pooled_allocations:
-      # Note: In our implementation, we don't actually return arrays to pool for safety
-      pass
+        # --- Regular allocation benchmark ---
+        regular_start_time = time.time()
+        regular_arrays = []
+        for _ in range(1000):
+          arr = np.empty(1024, dtype=np.float32)
+          regular_arrays.append(arr)
+        regular_time = time.time() - regular_start_time
     
-    # Compare with regular allocation
-    start_time = time.time()
-    regular_allocations = []
-    for i in range(1000):
-      arr = np.empty(1024, dtype=np.float32)
-      regular_allocations.append(arr)
-    
-    regular_time = time.time() - start_time
-    
-    # Clean up
-    del regular_allocations
-    
+        # No need to explicitly "clean up" regular_arrays as they are not pooled
+        # and will be garbage collected naturally.    
     return {
       'test': 'memory_pooling',
       'pooled_time_ms': pooled_time * 1000,

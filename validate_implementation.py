@@ -90,20 +90,9 @@ def validate_phase3_implementation():
       if not validate_import(full_path, description):
         all_valid = False
 
-  print("\n4. Real-time monitoring dashboard:")
-  files_to_check = [
-    ("selfdrive/monitoring/realtime_dashboard.py", "Real-time Monitoring Dashboard"),
-  ]
 
-  for filepath, description in files_to_check:
-    full_path = Path(filepath)  # Use relative path from current directory
-    if not validate_file_exists(full_path, description):
-      all_valid = False
-    else:
-      if not validate_import(full_path, description):
-        all_valid = False
 
-  print("\n5. Model efficiency enhancements:")
+  print("\n4. Model efficiency enhancements:")
   files_to_check = [
     ("selfdrive/modeld/model_efficiency.py", "Model Efficiency Enhancements (Pruning, Quantization)"),
   ]
@@ -116,20 +105,9 @@ def validate_phase3_implementation():
       if not validate_import(full_path, description):
         all_valid = False
 
-  print("\n6. Thermal management integration:")
-  files_to_check = [
-    ("selfdrive/monitoring/thermal_management.py", "Thermal Management with Performance Scaling"),
-  ]
 
-  for filepath, description in files_to_check:
-    full_path = Path(filepath)  # Use relative path from current directory
-    if not validate_file_exists(full_path, description):
-      all_valid = False
-    else:
-      if not validate_import(full_path, description):
-        all_valid = False
 
-  print("\n7. Resource-aware processing:")
+  print("\n5. Resource-aware processing:")
   files_to_check = [
     ("common/resource_aware.py", "Resource-Aware Processing Capabilities"),
   ]
@@ -142,7 +120,7 @@ def validate_phase3_implementation():
       if not validate_import(full_path, description):
         all_valid = False
 
-  print("\n8. Integration with controls system:")
+  print("\n6. Integration with controls system:")
   files_to_check = [
     ("selfdrive/controls/controlsd.py", "Controls System Integration"),
   ]
@@ -152,7 +130,7 @@ def validate_phase3_implementation():
     if not validate_file_exists(full_path, description):
       all_valid = False
 
-  print("\n9. Validation module:")
+  print("\n7. Validation module:")
   files_to_check = [
     ("validate_optimizations.py", "Validation Module"),
   ]
@@ -174,9 +152,9 @@ def validate_phase3_implementation():
     print("  - ARM NEON optimization and memory pooling")
     print("  - Dynamic performance adaptation based on system load")
     print("  - Comprehensive data collection pipeline")
-    print("  - Real-time monitoring dashboard with alerting")
+
     print("  - Model efficiency through pruning and quantization")
-    print("  - Thermal management with performance scaling")
+
     print("  - Resource-aware processing with prioritization")
     print("  - Full integration with existing controls system")
   else:

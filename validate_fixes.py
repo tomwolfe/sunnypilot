@@ -10,7 +10,7 @@ def validate_changes():
     print("Validating fixes for critical issues...")
     
     # 1. Check if neon_optimizer.py has been fixed
-    neon_path = "/Users/tom/Documents/apps/sunnypilot/selfdrive/modeld/neon_optimizer.py"
+    neon_path = "selfdrive/modeld/neon_optimizer.py"
     if os.path.exists(neon_path):
         with open(neon_path, 'r') as f:
             content = f.read()
@@ -28,7 +28,7 @@ def validate_changes():
             print("✗ neon_optimizer: Memory pool fix not found")
     
     # 2. Check if data_collector.py has been fixed
-    data_collector_path = "/Users/tom/Documents/apps/sunnypilot/common/data_collector.py"
+    data_collector_path = "common/data_collector.py"
     if os.path.exists(data_collector_path):
         with open(data_collector_path, 'r') as f:
             content = f.read()
@@ -46,7 +46,7 @@ def validate_changes():
             print("✗ data_collector: Compact JSON format not found")
     
     # 3. Check if controlsd.py has been fixed
-    controls_path = "/Users/tom/Documents/apps/sunnypilot/selfdrive/controls/controlsd.py"
+    controls_path = "selfdrive/controls/controlsd.py"
     if os.path.exists(controls_path):
         with open(controls_path, 'r') as f:
             content = f.read()
@@ -64,7 +64,7 @@ def validate_changes():
             print("✗ controlsd: Performance optimization not found")
     
     # 4. Check model_efficiency.py torch dependency fixes
-    model_eff_path = "/Users/tom/Documents/apps/sunnypilot/selfdrive/modeld/model_efficiency.py"
+    model_eff_path = "selfdrive/modeld/model_efficiency.py"
     if os.path.exists(model_eff_path):
         with open(model_eff_path, 'r') as f:
             content = f.read()

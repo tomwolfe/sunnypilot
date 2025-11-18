@@ -19,58 +19,45 @@ class ProfilerResult:
   call_count: int
 
 
+import collections
+# ... other imports
+
 class MemoryPool:
   """Memory pooling system to reduce allocation overhead"""
-  def __init__(self, initial_size: int = 1024 * 1024 * 50):  # 50MB initial
-    self.initial_size = initial_size
-    self.pool: List[np.ndarray] = []
-    self.used_arrays: List[np.ndarray] = []  # Track arrays currently in use
+  def __init__(self):
+    # Pool stores available arrays, organized by (size, dtype)
+    self.pools: Dict[Tuple[int, np.dtype], collections.deque[np.ndarray]] = collections.defaultdict(collections.deque)
     self._initialize_pool()
 
   def _initialize_pool(self):
     """Initialize the memory pool with pre-allocated arrays"""
     try:
-      # Create a pool of commonly used array sizes
-      sizes = [
-        (1024, np.float32),      # For model outputs
-        (2048, np.float32),      # For large computations
-        (512, np.float32),       # For smaller operations
-        (100, np.float32),       # For validation metrics
-        (128, np.float32),       # For temporary calculations
-        (256, np.float32),       # For intermediate results
+      sizes_dtypes = [
+        (1024, np.float32), (2048, np.float32), (512, np.float32),
+        (100, np.float32), (128, np.float32), (256, np.float32),
       ]
 
-      for size, dtype in sizes:
+      for size, dtype in sizes_dtypes:
         for _ in range(5):  # Create 5 of each size
           arr = np.empty(size, dtype=dtype)
-          self.pool.append(arr)
+          self.pools[(size, dtype)].append(arr)
 
-      cloudlog.info(f"Memory pool initialized with {len(self.pool)} arrays")
+      cloudlog.info(f"Memory pool initialized with {sum(len(q) for q in self.pools.values())} arrays")
     except Exception as e:
       cloudlog.error(f"Failed to initialize memory pool: {e}")
 
   def get_array(self, size: int, dtype: np.dtype = np.float32) -> np.ndarray:
     """Get an array from the pool or create a new one if needed"""
-    # Find suitable unused array in pool
-    for i, arr in enumerate(self.pool):
-      if arr.dtype == dtype and arr.size >= size and arr not in self.used_arrays:
-        # Mark as used and return a view of the appropriate size
-        self.used_arrays.append(arr)
-        return np.copy(arr[:size])  # Return a copy to prevent corruption
-
-    # If no suitable array found, create new one
-    new_arr = np.empty(size, dtype=dtype)
-    # Add to used arrays temporarily so it's tracked
-    self.used_arrays.append(new_arr)
-    return new_arr
+    key = (size, dtype)
+    if self.pools[key]:
+      return self.pools[key].popleft()
+    else:
+      return np.empty(size, dtype=dtype)
 
   def put_array(self, arr: np.ndarray):
     """Return an array to be available for reuse"""
-    if arr in self.used_arrays:
-      self.used_arrays.remove(arr)
-      # If it's one of our pre-allocated arrays, keep it in the pool
-      # Otherwise, allow it to be garbage collected
-
+    key = (arr.size, arr.dtype)
+    self.pools[key].append(arr)
 
 class NEONOptimizer:
   """ARM NEON optimization utilities"""
@@ -202,25 +189,30 @@ neon_optimizer = NEONOptimizer()
 def optimize_model_processing(model_outputs: np.ndarray) -> np.ndarray:
   """Optimize model processing using NEON and memory pooling"""
   start_time = __import__('time').time()
-  
+
   # Use memory pool for intermediate calculations
   intermediate = neon_optimizer.memory_pool.get_array(model_outputs.size, model_outputs.dtype)
-  np.copyto(intermediate, model_outputs)
-  
-  # Apply optimizations
-  if len(intermediate.shape) > 1:
-    # Apply along the last axis for confidence calculations
-    result = np.max(intermediate, axis=-1)
-  else:
-    result = intermediate
-  
+  try:
+    np.copyto(intermediate, model_outputs)
+
+    # Apply optimizations
+    if len(intermediate.shape) > 1:
+      # Apply along the last axis for confidence calculations
+      processed_result = np.max(intermediate, axis=-1) # This will create a new array
+    else:
+      processed_result = intermediate # This means intermediate is the result
+
+    # To ensure the caller always gets a non-pooled array (takes ownership)
+    final_result = processed_result.copy() if processed_result is intermediate else processed_result
+  finally:
+    neon_optimizer.memory_pool.put_array(intermediate) # Return intermediate to the pool
+
   # Profile this operation
   end_time = __import__('time').time()
   execution_time = (end_time - start_time) * 1000  # Convert to milliseconds
   neon_optimizer.profile_function("optimize_model_processing", execution_time)
-  
-  return result
 
+  return final_result
 
 def optimize_validation_metrics(lead_confidence: np.ndarray, lane_confidence: np.ndarray) -> Tuple[float, float]:
   """Optimize validation metrics computation using NEON"""
