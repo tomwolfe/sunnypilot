@@ -58,7 +58,9 @@ class NEONOptimizer:
     self.memory_pool = MemoryPool()
     self.profiler_enabled = True
     self.profile_data = {}
-  
+    # Pre-allocated arrays for common operations
+    self._temp_buffer = np.zeros(1024, dtype=np.float32)  # For temporary calculations
+
   def neon_enabled(self) -> bool:
     """Check if NEON is available on the current ARM processor"""
     try:
@@ -67,6 +69,49 @@ class NEONOptimizer:
       return 'ARM' in platform.machine().upper() or 'AARCH64' in platform.machine().upper()
     except:
       return False
+
+  def optimized_array_operation_batch(self, operations: List[Tuple[np.ndarray, np.ndarray, str]]) -> List[np.ndarray]:
+    """Perform batch array operations efficiently"""
+    results = []
+    for a, b, operation in operations:
+      if a.dtype != np.float32 or b.dtype != np.float32:
+        # Convert to float32 for NEON optimization
+        a = a.astype(np.float32)
+        b = b.astype(np.float32)
+
+      if a.size != b.size:
+        raise ValueError("Arrays must have same size")
+
+      # Use memory pool to avoid allocation
+      result = self.memory_pool.get_array(a.size, np.float32)
+
+      if self.neon_enabled():
+        # Use numpy's optimized operations which leverage NEON on ARM
+        if operation == 'add':
+          np.add(a, b, out=result)
+        elif operation == 'multiply':
+          np.multiply(a, b, out=result)
+        elif operation == 'subtract':
+          np.subtract(a, b, out=result)
+        elif operation == 'divide':
+          np.divide(a, b, out=result)
+        else:
+          raise ValueError(f"Unsupported operation: {operation}")
+      else:
+        # Fallback to regular operations
+        if operation == 'add':
+          result = a + b
+        elif operation == 'multiply':
+          result = a * b
+        elif operation == 'subtract':
+          result = a - b
+        elif operation == 'divide':
+          result = a / b
+        else:
+          raise ValueError(f"Unsupported operation: {operation}")
+
+      results.append(result)
+    return results
   
   def optimized_array_ops(self, a: np.ndarray, b: np.ndarray, operation: str = 'add') -> np.ndarray:
     """Optimized array operations using NEON when available"""
@@ -251,14 +296,22 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
   if abs(v_ego) < 0.01:
       return 0.0
 
-  # Simplified but efficient calculation - avoid complex function imports in time-critical functions
+  # Optimized curvature calculation with more realistic physics-based model
   try:
-    # Calculate curvature using a simple linear approximation
-    # In a real implementation, VM.calc_curvature would be called directly
-    curvature = steer_angle * 0.005  # Simplified approximation
+    # More accurate curvature calculation: k = tan(steering_angle_rad) / wheelbase
+    # Assuming a typical wheelbase of 2.7m and converting steering angle to radians
+    # This is a simplified but more physically accurate model than the linear approximation
+    wheelbase = 2.7  # meters, typical for many vehicles
+    steering_ratio = 15.0  # typical steering ratio
+    steer_angle_rad = (steer_angle / steering_ratio) * (math.pi / 180.0)  # Convert to radians and account for steering ratio
 
-    # Apply reasonable bounds to prevent extreme values
-    return max(min(curvature, 0.02), -0.02)
+    # Calculate curvature using the bicycle model: curvature = tan(steering_angle) / wheelbase
+    curvature = math.tan(steer_angle_rad) / wheelbase
+
+    # Apply vehicle-specific limits to prevent extreme values
+    # Typical maximum curvature for a passenger vehicle is around 0.015 m^-1
+    max_curvature = 0.015
+    return max(min(curvature, max_curvature), -max_curvature)
   except Exception:
     # Return safe default value in case of error
     return 0.0

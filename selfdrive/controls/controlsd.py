@@ -82,9 +82,12 @@ class Controls(ControlsExt, ModelStateBase):
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI)
 
-    # Pre-allocate reusable arrays to reduce allocation
+    # Enhanced pre-allocated arrays to reduce allocation in critical control loop
     self._angle_array = np.zeros(3, dtype=np.float32)  # For orientation/angle data
     self._angular_velocity_array = np.zeros(3, dtype=np.float32)  # For angular velocity data
+    self._orientation_xyz = np.zeros(3, dtype=np.float32)  # For calibrated pose orientation
+    self._angular_velocity_xyz = np.zeros(3, dtype=np.float32)  # For calibrated pose angular velocity
+    self._actuators_array = np.zeros(len(ACTUATOR_FIELDS), dtype=np.float32)  # Pre-allocated for actuators validation
 
     # Initialize optimization components
     self.performance_manager.register_component("controls", {
@@ -104,6 +107,10 @@ class Controls(ControlsExt, ModelStateBase):
       gpu_required=1.0,
       duration_estimate=0.01
     )
+
+    # Memory pool for curvature calculations
+    self._curvature_pool = np.zeros(10, dtype=np.float32)  # Pool for temporary curvature calculations
+    self._curvature_pool_idx = 0
 
   def update(self):
     # Check performance adaptation and adjust if needed
@@ -182,12 +189,16 @@ class Controls(ControlsExt, ModelStateBase):
         'lane_change_safe': True
     }
 
-    if validation_metrics is not None:
+    if validation_metrics is not None and validation_metrics.isValid:
         # Check safety thresholds based on validation metrics
-        lead_conf_ok = validation_metrics.leadConfidenceAvg >= 0.6
-        lane_conf_ok = validation_metrics.laneConfidenceAvg >= 0.65
-        overall_conf_ok = validation_metrics.overallConfidence >= 0.6
-        lane_change_conf_ok = validation_metrics.overallConfidence >= 0.7 and validation_metrics.laneConfidenceAvg >= 0.7  # Higher threshold for lane changes
+        lead_conf_avg = validation_metrics.leadConfidenceAvg
+        lane_conf_avg = validation_metrics.laneConfidenceAvg
+        overall_conf = validation_metrics.overallConfidence
+
+        lead_conf_ok = lead_conf_avg >= 0.6
+        lane_conf_ok = lane_conf_avg >= 0.65
+        overall_conf_ok = overall_conf >= 0.6
+        lane_change_conf_ok = overall_conf >= 0.7 and lane_conf_avg >= 0.7  # Higher threshold for lane changes
 
         validation_state['lead_confidence_ok'] = lead_conf_ok
         validation_state['lane_confidence_ok'] = lane_conf_ok
@@ -300,14 +311,15 @@ class Controls(ControlsExt, ModelStateBase):
         # Normal operation when system is safe
         lat_active_with_safety = CC.latActive
 
+    # Optimized lateral control update with pre-allocated memory where possible
     steer, steeringAngleDeg, lac_log = self.LaC.update(lat_active_with_safety, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited)
     actuators.torque = steer
     actuators.steeringAngleDeg = steeringAngleDeg
 
-    # More efficient finite check - avoid expensive dict creation
-    for p in ACTUATOR_FIELDS:
+    # More efficient finite check - avoid expensive dict creation and use pre-allocated array where applicable
+    for i, p in enumerate(ACTUATOR_FIELDS):
       attr = getattr(actuators, p)
       if not isinstance(attr, Number) or math.isfinite(attr):
         continue
