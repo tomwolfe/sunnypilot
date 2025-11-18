@@ -62,41 +62,49 @@ class ResourceAllocation:
 
 
 class ResourceManager:
-  """Main resource management system"""
-  
+  """
+  Main resource management system for sunnypilot
+
+  This class manages system resources (CPU, memory, GPU, thermal) with priority-based allocation
+  and dynamic adaptation based on system conditions.
+  """
+
   def __init__(self):
+    """
+    Initialize the resource management system with default resource tracking and monitoring threads
+    """
     self.current_resources = {
       ResourceType.CPU: 0.0,  # Currently used CPU percentage
       ResourceType.MEMORY: 0.0,  # Currently used memory in MB
       ResourceType.GPU: 0.0,  # Currently used GPU percentage
       ResourceType.THERMAL: 0.0  # Current thermal factor
     }
-    
+
     self.available_resources = {
       ResourceType.CPU: 100.0,  # Available CPU percentage
       ResourceType.MEMORY: self._get_total_memory(),  # Available memory in MB
       ResourceType.GPU: 100.0,  # Available GPU percentage
     }
-    
+
     self.resource_requests = queue.PriorityQueue()  # Priority queue for requests
     self.active_processes: Dict[str, ResourceAllocation] = {}
     self.resource_history = deque(maxlen=100)  # Keep last 100 resource states
-    
+
     self.lock = threading.Lock()
     self.running = True
-    
+
     # Performance adaptation integration
     self.performance_mode = dynamic_adaptation.get_current_mode()
     self.thermal_scale = get_thermal_performance_scale()
-    
+
     # Start resource monitoring thread
     self.monitor_thread = threading.Thread(target=self._monitor_resources, daemon=True)
     self.monitor_thread.start()
-    
+
     # Start allocation thread
     self.allocation_thread = threading.Thread(target=self._process_allocations, daemon=True)
     self.allocation_thread.start()
-    
+
     cloudlog.info("Resource management system initialized")
   
   def _get_total_memory(self) -> float:
@@ -108,51 +116,62 @@ class ResourceManager:
       return 1400.0  # Default to 1.4GB if can't determine
   
   def _monitor_resources(self):
-    """Monitor system resources"""
+    """
+    Monitor system resources with proper error handling
+
+    This function runs in a background thread to continuously monitor
+    CPU, memory, GPU usage, and thermal conditions.
+    """
     while self.running:
       try:
         # Get current system resource usage
         with self.lock:
-          self.current_resources[ResourceType.CPU] = psutil.cpu_percent(interval=None)
-          
-          memory = psutil.virtual_memory()
-          self.current_resources[ResourceType.MEMORY] = memory.used / (1024 * 1024)  # MB used
-          
-          self.current_resources[ResourceType.GPU] = HARDWARE.get_gpu_usage_percent()
-          
-          self.current_resources[ResourceType.THERMAL] = self.thermal_scale
-          
-          # Update available resources based on current usage and thermal scaling
-          self.available_resources[ResourceType.CPU] = (
-            100.0 - self.current_resources[ResourceType.CPU]
-          ) * self.thermal_scale
-          
-          self.available_resources[ResourceType.MEMORY] = (
-            (self._get_total_memory() - self.current_resources[ResourceType.MEMORY])
-          ) * self.thermal_scale
-          
-          self.available_resources[ResourceType.GPU] = (
-            100.0 - self.current_resources[ResourceType.GPU]
-          ) * self.thermal_scale
-          
-          # Store in history
-          self.resource_history.append({
-            'timestamp': time.time(),
-            'cpu_used': self.current_resources[ResourceType.CPU],
-            'cpu_available': self.available_resources[ResourceType.CPU],
-            'memory_used': self.current_resources[ResourceType.MEMORY],
-            'memory_available': self.available_resources[ResourceType.MEMORY],
-            'gpu_used': self.current_resources[ResourceType.GPU],
-            'gpu_available': self.available_resources[ResourceType.GPU],
-            'thermal_scale': self.thermal_scale
-          })
-        
+          try:
+            self.current_resources[ResourceType.CPU] = psutil.cpu_percent(interval=None)
+
+            memory = psutil.virtual_memory()
+            self.current_resources[ResourceType.MEMORY] = memory.used / (1024 * 1024)  # MB used
+
+            self.current_resources[ResourceType.GPU] = HARDWARE.get_gpu_usage_percent()
+
+            self.current_resources[ResourceType.THERMAL] = self.thermal_scale
+
+            # Update available resources based on current usage and thermal scaling
+            self.available_resources[ResourceType.CPU] = (
+              100.0 - self.current_resources[ResourceType.CPU]
+            ) * self.thermal_scale
+
+            self.available_resources[ResourceType.MEMORY] = (
+              (self._get_total_memory() - self.current_resources[ResourceType.MEMORY])
+            ) * self.thermal_scale
+
+            self.available_resources[ResourceType.GPU] = (
+              100.0 - self.current_resources[ResourceType.GPU]
+            ) * self.thermal_scale
+
+            # Store in history
+            self.resource_history.append({
+              'timestamp': time.time(),
+              'cpu_used': self.current_resources[ResourceType.CPU],
+              'cpu_available': self.available_resources[ResourceType.CPU],
+              'memory_used': self.current_resources[ResourceType.MEMORY],
+              'memory_available': self.available_resources[ResourceType.MEMORY],
+              'gpu_used': self.current_resources[ResourceType.GPU],
+              'gpu_available': self.available_resources[ResourceType.GPU],
+              'thermal_scale': self.thermal_scale
+            })
+          except Exception as resource_error:
+            cloudlog.error(f"Error updating resource metrics: {resource_error}")
+
         # Update performance mode and thermal scale
-        self.performance_mode = dynamic_adaptation.get_current_mode()
-        self.thermal_scale = get_thermal_performance_scale()
-        
+        try:
+          self.performance_mode = dynamic_adaptation.get_current_mode()
+          self.thermal_scale = get_thermal_performance_scale()
+        except Exception as mode_error:
+          cloudlog.error(f"Error getting performance mode or thermal scale: {mode_error}")
+
         time.sleep(0.5)  # Monitor every 500ms
-        
+
       except Exception as e:
         cloudlog.error(f"Resource monitoring error: {e}")
         time.sleep(1.0)

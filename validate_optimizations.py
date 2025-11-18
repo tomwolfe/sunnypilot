@@ -138,41 +138,40 @@ class SystemValidator:
   
   def validate_latency(self) -> HardwareConstraint:
     """Validate end-to-end latency"""
-        measured_latency = 0.0  # Initialize with a value indicating no measurement yet
-    
-        sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
-        sm.update(0)
-    
-        if sm.updated['modelV2'] and sm.updated['controlsState']:
-          # Calculate time difference between model output and control output
-          model_time = sm.logMonoTime['modelV2'] / 1e9  # Convert to seconds
-          control_time = sm.logMonoTime['controlsState'] / 1e9
-          actual_latency = (control_time - model_time) * 1000  # Convert to ms
-    
-          if actual_latency > 0 and actual_latency < 200:  # Reasonable range
-            measured_latency = actual_latency
-          else:
-            cloudlog.warning(f"validate_latency: Measured latency {actual_latency:.1f}ms is out of reasonable range (0-200ms). Using 0.0.")
-        else:
-          cloudlog.warning("validate_latency: No 'modelV2' or 'controlsState' messages updated. Latency measurement failed. Using 0.0.")
-    
-    
-        threshold = self.constraints['latency_ms']['threshold']
-        is_violated = measured_latency >= threshold or measured_latency == 0.0 # Treat no measurement as a violation    
+    measured_latency = 0.0  # Initialize with a value indicating no measurement yet
+
+    sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
+    sm.update(0)
+
+    if sm.updated['modelV2'] and sm.updated['controlsState']:
+      # Calculate time difference between model output and control output
+      model_time = sm.logMonoTime['modelV2'] / 1e9  # Convert to seconds
+      control_time = sm.logMonoTime['controlsState'] / 1e9
+      actual_latency = (control_time - model_time) * 1000  # Convert to ms
+
+      if actual_latency > 0 and actual_latency < 200:  # Reasonable range
+        measured_latency = actual_latency
+      else:
+        cloudlog.warning(f"validate_latency: Measured latency {actual_latency:.1f}ms is out of reasonable range (0-200ms). Using 0.0.")
+    else:
+      cloudlog.warning("validate_latency: No 'modelV2' or 'controlsState' messages updated. Latency measurement failed. Using 0.0.")
+
+    threshold = self.constraints['latency_ms']['threshold']
+    is_violated = measured_latency >= threshold or measured_latency == 0.0 # Treat no measurement as a violation
     constraint = HardwareConstraint(
       name='latency_ms',
-      current_value=simulated_latency,
+      current_value=measured_latency,  # Fixed: use measured_latency instead of undefined simulated_latency
       threshold=threshold,
       unit='ms',
       description=self.constraints['latency_ms']['description'],
       is_violated=is_violated
     )
-    
+
     # Track history
     if 'latency_ms' not in self.constraint_history:
       self.constraint_history['latency_ms'] = []
-    self.constraint_history['latency_ms'].append(simulated_latency)
-    
+    self.constraint_history['latency_ms'].append(measured_latency)
+
     return constraint
   
   def run_comprehensive_validation(self) -> List[ValidationResult]:

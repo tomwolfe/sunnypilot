@@ -60,9 +60,17 @@ class MemoryPool:
     self.pools[key].append(arr)
 
 class NEONOptimizer:
-  """ARM NEON optimization utilities"""
-  
+  """
+  ARM NEON optimization utilities
+
+  This class provides ARM NEON-specific optimizations for model processing and control systems.
+  It includes memory pooling, optimized array operations, and performance profiling.
+  """
+
   def __init__(self):
+    """
+    Initialize the NEON optimizer with memory pool and profiling capabilities
+    """
     self.memory_pool = MemoryPool()
     self.profiler_enabled = True
     self.profile_data = {}
@@ -231,7 +239,17 @@ def optimize_validation_metrics(lead_confidence: np.ndarray, lane_confidence: np
 
 
 def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float) -> float:
-  """Optimize curvature calculation with memory pooling"""
+  """
+  Optimize curvature calculation with memory pooling and comprehensive error handling
+
+  Args:
+      steer_angle: Steering angle in degrees
+      v_ego: Ego velocity in m/s
+      roll: Roll angle in radians
+
+  Returns:
+      float: Calculated curvature value, clamped within reasonable bounds
+  """
   start_time = __import__('time').time()
 
   try:
@@ -239,16 +257,19 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
     if not (isinstance(steer_angle, (int, float)) and
             isinstance(v_ego, (int, float)) and
             isinstance(roll, (int, float))):
+        cloudlog.warning(f"Invalid input types: steer_angle={type(steer_angle)}, v_ego={type(v_ego)}, roll={type(roll)}")
         return 0.0
 
     # Check for NaN or infinite values early
     if (np.isnan(steer_angle) or np.isinf(steer_angle) or
         np.isnan(v_ego) or np.isinf(v_ego) or
         np.isnan(roll) or np.isinf(roll)):
+        cloudlog.warning(f"Invalid input values - steer_angle={steer_angle}, v_ego={v_ego}, roll={roll}")
         return 0.0
 
     # Validate inputs to avoid invalid calculations
     if abs(v_ego) < 0.01:  # v_ego is too low to calculate meaningful curvature
+        cloudlog.debug(f"v_ego too low ({v_ego}), returning zero curvature")
         return 0.0
 
     # More robust curvature calculation

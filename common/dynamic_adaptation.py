@@ -59,21 +59,32 @@ class AdaptationConfig:
 
 
 class DynamicPerformanceAdaptation:
-  """Main class for dynamic performance adaptation"""
-  
+  """
+  Main class for dynamic performance adaptation
+
+  This class monitors system conditions (CPU, memory, temperature) and dynamically
+  adjusts performance modes to maintain optimal operation under varying system loads.
+  """
+
   def __init__(self, config: Optional[AdaptationConfig] = None):
+    """
+    Initialize the dynamic performance adaptation system
+
+    Args:
+        config: Optional configuration for adaptation thresholds and parameters
+    """
     self.config = config or AdaptationConfig()
     self.current_mode = PerformanceMode.MAX_PERFORMANCE
     self.last_load: Optional[SystemLoad] = None
     self.load_history = deque(maxlen=20)  # Keep last 10 seconds of data at 0.5s intervals
     self.adaptation_lock = threading.Lock()
-    
+
     # Callbacks for when performance mode changes
     self.mode_change_callbacks: list[Callable[[PerformanceMode, PerformanceMode], None]] = []
-    
+
     # Subscribe to device state for thermal information
     self.sm = messaging.SubMaster(['deviceState'])
-    
+
     # Start monitoring thread
     self.monitoring_thread = threading.Thread(target=self._monitor_system, daemon=True)
     self.monitoring_thread.start()
