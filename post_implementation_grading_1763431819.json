@@ -1,0 +1,64 @@
+{
+  "timestamp": 1763431819.566973,
+  "grading_categories": {
+    "perception": {
+      "score": 0.198,
+      "breakdown": {
+        "framework_implemented": 1.0,
+        "object_detection_accuracy": 0.1,
+        "latency_management": 0.8,
+        "false_positive_handling": 0.7
+      },
+      "raw_percentage": 66.0
+    },
+    "localization": {
+      "score": 0.0945,
+      "breakdown": {
+        "framework_implemented": 1.0,
+        "accuracy_handling": 0.3,
+        "fusion_robustness": 0.2
+      },
+      "raw_percentage": 63.0
+    },
+    "path_planning": {
+      "score": 0.14200000000000004,
+      "breakdown": {
+        "framework_implemented": 1.0,
+        "route_completion": 0.6,
+        "obstacle_avoidance": 0.4,
+        "smoothness": 0.5
+      },
+      "raw_percentage": 71.00000000000001
+    },
+    "control_system": {
+      "score": 0.132,
+      "breakdown": {
+        "framework_implemented": 1.0,
+        "latency_management": 0.8,
+        "safety_compliance": 0.7,
+        "failsafe_handling": 0.9
+      },
+      "raw_percentage": 88.00000000000001
+    },
+    "traffic_signals": {
+      "score": 0.071,
+      "breakdown": {
+        "framework_implemented": 1.0,
+        "dec_module": 0.3,
+        "false_stop_handling": 0.6
+      },
+      "raw_percentage": 70.99999999999999
+    },
+    "hardware_optimization": {
+      "score": 0.083,
+      "breakdown": {
+        "memory_optimization": 0.9,
+        "cpu_management": 0.8,
+        "power_efficiency": 0.7
+      },
+      "raw_percentage": 83.0
+    }
+  },
+  "total_score": 0.7204999999999999,
+  "total_percentage": 72.05
+}

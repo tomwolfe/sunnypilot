@@ -132,32 +132,53 @@ def export_metrics(filepath: str) -> None:
 # Pre-defined metric names for sunnypilot
 class Metrics:
     # Perception metrics
+    PERCEPTION_ACCURACY = "perception.accuracy"
     PERCEPTION_LATENCY_MS = "perception.latency.ms"
+    PERCEPTION_FALSE_POSITIVE_RATE = "perception.false_positive_rate"
+    PERCEPTION_FALSE_NEGATIVE_RATE = "perception.false_negative_rate"
     OBJECT_DETECTION_ACCURACY = "perception.object_detection.accuracy"
     FRAME_PROCESSING_RATE = "perception.frame_rate.fps"
-    
+
+    # Localization metrics
+    LOCALIZATION_ACCURACY_M = "localization.accuracy.m"
+    LOCALIZATION_SENSOR_FUSION_ROBUSTNESS = "localization.sensor_fusion_robustness"
+
+    # Path planning metrics
+    TRAJECTORY_SMOOTHNESS_JERK = "planning.trajectory_smoothness.jerk"
+    OBSTACLE_AVOIDANCE_SUCCESS_RATE = "planning.obstacle_avoidance_success_rate"
+    ROUTE_COMPLETION_RATE = "planning.route_completion_rate"
+
     # Control system metrics
     STEERING_LATENCY_MS = "control.steering_latency.ms"
     BRAKING_LATENCY_MS = "control.braking_latency.ms"
     STEERING_ACCURACY = "control.steering_accuracy"
-    
+    SAFETY_MARGIN_COMPLIANCE = "control.safety_margin_compliance"
+    FAIL_SAFE_BEHAVIOR_RATE = "control.fail_safe_behavior_rate"
+    EMERGENCY_STOP_LATENCY_MS = "control.emergency_stop_latency.ms"
+
+    # Traffic signal handling metrics
+    DEC_MODULE_ACCURACY = "traffic.dec_module_accuracy"
+    FALSE_STOP_RATE = "traffic.false_stop_rate"
+
     # Navigation metrics
     NAVIGATION_ACCURACY = "navigation.accuracy.m"
-    ROUTE_COMPLETION_RATE = "navigation.route_completion_rate"
     MANEUVER_SUCCESS_RATE = "navigation.maneuver_success_rate"
     NAVIGATION_LATENCY_MS = "navigation.latency.ms"
-    
+
+    # Safety metrics
+    COLLISION_AVOIDANCE_SUCCESS_RATE = "safety.collision_avoidance_success_rate"
+    PEDESTRIAN_DETECTION_ACCURACY = "safety.pedestrian_detection_accuracy"
+    SENSOR_FAILURE_DETECTION_RATE = "safety.sensor_failure_detection_rate"
+    SAFETY_MARGIN_VIOLATIONS = "safety.margin_violations.count"
+    STOP_SIGN_DETECTION_RATE = "safety.stop_sign_detection_rate"
+    TRAFFIC_LIGHT_DETECTION_RATE = "safety.traffic_light_detection_rate"
+
     # Hardware optimization metrics
     CPU_USAGE_PERCENT = "hardware.cpu_usage.percent"
     RAM_USAGE_MB = "hardware.ram_usage.mb"
     RAM_USAGE_PERCENT = "hardware.ram_usage.percent"
     POWER_DRAW_WATTS = "hardware.power_draw.watts"
-    
+
     # Route planning metrics
     PLANNING_LATENCY_MS = "planning.latency.ms"
     TRAJECTORY_SMOOTHNESS = "planning.trajectory_smoothness"
-    
-    # Safety metrics
-    SAFETY_MARGIN_VIOLATIONS = "safety.margin_violations.count"
-    STOP_SIGN_DETECTION_RATE = "safety.stop_sign_detection_rate"
-    TRAFFIC_LIGHT_DETECTION_RATE = "safety.traffic_light_detection_rate"
