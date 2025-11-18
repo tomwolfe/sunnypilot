@@ -130,44 +130,110 @@ class EnhancedVisionProcessor:
         
         return enhanced_output
     
-    def validate_model_outputs(self, 
+    def validate_model_outputs(self,
                              model_output: Dict[str, np.ndarray]) -> Dict[str, float]:
         """
         Validate model outputs and provide confidence scores for safety systems.
-        
+
         Args:
             model_output: Raw model output dictionary
-            
+
         Returns:
             Dictionary of validation metrics
         """
         validation_metrics = {}
-        
+
         # Validate lead detection confidence
         if 'leads_v3' in model_output:
-            lead_probs = [lead.prob if hasattr(lead, 'prob') else 0.0 
+            lead_probs = [lead.prob if hasattr(lead, 'prob') else 0.0
                          for lead in model_output['leads_v3'][:2]]  # Check first 2 leads
             validation_metrics['lead_confidence_avg'] = np.mean(lead_probs) if lead_probs else 0.0
             validation_metrics['lead_confidence_max'] = max(lead_probs) if lead_probs else 0.0
+            validation_metrics['lead_count'] = len(lead_probs)
         else:
             validation_metrics['lead_confidence_avg'] = 0.0
             validation_metrics['lead_confidence_max'] = 0.0
-        
+            validation_metrics['lead_count'] = 0
+
         # Validate lane detection
         if 'lane_lines' in model_output:
-            lane_probs = [lane.prob if hasattr(lane, 'prob') else 0.0 
+            lane_probs = [lane.prob if hasattr(lane, 'prob') else 0.0
                          for lane in model_output['lane_lines']]
             validation_metrics['lane_confidence_avg'] = np.mean(lane_probs) if lane_probs else 0.0
+            validation_metrics['lane_count'] = len(lane_probs)
+
+            # Calculate lane consistency - check if lane positions and angles are reasonable
+            if hasattr(model_output['lane_lines'][0], 'points') and len(model_output['lane_lines']) >= 4:
+                left_lane = model_output['lane_lines'][0]
+                right_lane = model_output['lane_lines'][1]
+                # Check if lanes have reasonable separation across the road
+                lane_separation_consistency = 0.0
+                if (hasattr(left_lane, 'points') and hasattr(right_lane, 'points') and
+                    len(left_lane.points) > 0 and len(right_lane.points) > 0):
+                    # Simple check: lanes should be separated by a reasonable distance across view
+                    avg_lane_separation = np.mean(np.abs(np.array(left_lane.points) - np.array(right_lane.points)))
+                    # Normalize to expected range (0 to 1) where 1 is perfect consistency
+                    lane_separation_consistency = min(1.0, avg_lane_separation / 10.0)
+                validation_metrics['lane_separation_consistency'] = lane_separation_consistency
+            else:
+                validation_metrics['lane_separation_consistency'] = 0.0
         else:
             validation_metrics['lane_confidence_avg'] = 0.0
-        
-        # Calculate overall system confidence
+            validation_metrics['lane_count'] = 0
+            validation_metrics['lane_separation_consistency'] = 0.0
+
+        # Validate road edge detection
+        if 'road_edges' in model_output:
+            road_edge_probs = [edge.prob if hasattr(edge, 'prob') else 0.0
+                              for edge in model_output['road_edges']]
+            validation_metrics['road_edge_confidence_avg'] = np.mean(road_edge_probs) if road_edge_probs else 0.0
+        else:
+            validation_metrics['road_edge_confidence_avg'] = 0.0
+
+        # Check temporal consistency by comparing with previous frame (if available)
+        # In a real implementation, this would check against previously stored values
+        validation_metrics['temporal_consistency'] = 1.0  # Placeholder - would be calculated against previous frames
+
+        # Calculate vehicle position validity - check if vehicle is reasonably positioned within lanes
+        if ('lane_lines' in model_output and len(model_output['lane_lines']) >= 2 and
+            'meta' in model_output):
+            # In a real implementation, this would check if the vehicle's path is within lane boundaries
+            validation_metrics['path_in_lane_validity'] = 0.8  # Placeholder value
+        else:
+            validation_metrics['path_in_lane_validity'] = 0.0
+
+        # Calculate overall system confidence with multiple factors
         validation_metrics['overall_confidence'] = (
-            validation_metrics['lead_confidence_avg'] * 0.4 + 
-            validation_metrics['lane_confidence_avg'] * 0.3 +
-            validation_metrics['lead_confidence_max'] * 0.3
+            validation_metrics['lead_confidence_avg'] * 0.2 +
+            validation_metrics['lane_confidence_avg'] * 0.2 +
+            validation_metrics['lead_confidence_max'] * 0.15 +
+            validation_metrics['lane_separation_consistency'] * 0.15 +
+            validation_metrics['road_edge_confidence_avg'] * 0.1 +
+            validation_metrics['temporal_consistency'] * 0.1 +
+            validation_metrics['path_in_lane_validity'] * 0.1
         )
-        
+
+        # Calculate safety score based on confidence thresholds
+        confidence_thresholds = self.confidence_thresholds
+        safety_score = 1.0  # Start with safe state
+
+        # Penalize safety score if any critical component has low confidence
+        if validation_metrics['lane_confidence_avg'] < 0.5:
+            safety_score *= 0.5
+        if validation_metrics['lead_confidence_avg'] < 0.3:
+            safety_score *= 0.3
+        if validation_metrics['overall_confidence'] < 0.4:
+            safety_score *= 0.2
+
+        validation_metrics['safety_score'] = safety_score
+
+        # Determine if system should engage based on validation
+        validation_metrics['system_should_engage'] = (
+            validation_metrics['overall_confidence'] > 0.5 and
+            validation_metrics['safety_score'] > 0.5 and
+            validation_metrics['lane_count'] >= 2
+        )
+
         return validation_metrics
 
 

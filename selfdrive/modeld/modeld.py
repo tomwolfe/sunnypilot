@@ -607,9 +607,17 @@ def main(demo=False):
         vm.leadConfidenceAvg = validation_metrics.get('lead_confidence_avg', 0.0)
         vm.leadConfidenceMax = validation_metrics.get('lead_confidence_max', 0.0)
         vm.laneConfidenceAvg = validation_metrics.get('lane_confidence_avg', 0.0)
+        vm.roadEdgeConfidenceAvg = validation_metrics.get('road_edge_confidence_avg', 0.0)
         vm.overallConfidence = validation_metrics.get('overall_confidence', 0.0)
+        vm.safetyScore = validation_metrics.get('safety_score', 0.0)
+        vm.laneCount = validation_metrics.get('lane_count', 0)
+        vm.leadCount = validation_metrics.get('lead_count', 0)
+        vm.laneSeparationConsistency = validation_metrics.get('lane_separation_consistency', 0.0)
+        vm.temporalConsistency = validation_metrics.get('temporal_consistency', 0.0)
+        vm.pathInLaneValidity = validation_metrics.get('path_in_lane_validity', 0.0)
         vm.timestampMonoTime = meta_main.timestamp_eof
         vm.isValid = validation_metrics.get('overall_confidence', 0.0) > 0.5  # Simple validity check
+        vm.systemShouldEngage = validation_metrics.get('system_should_engage', False)
         vm.confidenceThreshold = 0.5  # Define a threshold for acceptable confidence
         pm.send('validationMetrics', validation_send)
 

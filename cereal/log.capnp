@@ -1061,16 +1061,29 @@ struct ValidationMetrics {
   # Lead detection confidence metrics
   leadConfidenceAvg @0 :Float32;
   leadConfidenceMax @1 :Float32;
+  leadCount @2 :UInt32;
 
   # Lane detection confidence metrics
-  laneConfidenceAvg @2 :Float32;
+  laneConfidenceAvg @3 :Float32;
+  laneCount @4 :UInt32;
+  laneSeparationConsistency @5 :Float32;
 
-  # Overall system confidence
-  overallConfidence @3 :Float32;
+  # Road edge detection metrics
+  roadEdgeConfidenceAvg @6 :Float32;
 
-  # Validity check
-  isValid @4 :Bool;
-  confidenceThreshold @5 :Float32;
+  # System validation metrics
+  overallConfidence @7 :Float32;
+  safetyScore @8 :Float32;
+  temporalConsistency @9 :Float32;
+  pathInLaneValidity @10 :Float32;
+
+  # Timestamp of when metrics were computed
+  timestampMonoTime @11 :UInt64;
+
+  # Additional validation metrics
+  isValid @12 :Bool;
+  systemShouldEngage @13 :Bool;
+  confidenceThreshold @14 :Float32;
 }
 
 # All SI units and in device frame
