@@ -5,7 +5,6 @@ This validates that the core system meets the requirements for point-to-point dr
 
 import time
 import json
-import threading
 from typing import Dict, Any, List
 from dataclasses import dataclass
 
@@ -13,7 +12,22 @@ from core_autonomous_system import AutonomousDrivingSystem, Destination, Autonom
 from navigation_system import NavigationSystem
 from perception_system import PerceptionSystem
 from integrated_control_system import IntegratedControlSystem, ControlOutput
-from comprehensive_analysis import ComprehensiveValidator
+
+# Import configuration settings
+from config import (
+    SLEEP_TIME_PERCEPTION,
+    NAV_ORIGIN,
+    NAV_DESTINATION,
+    NAV_PLANNING_TIMEOUT,
+    PERCEPTION_TEST_FRAMES,
+    PERCEPTION_TARGET_FPS,
+    PERCEPTION_FPS_TOLERANCE,
+    MEMORY_TARGET_MB,
+    DESTINATION_LATITUDE,
+    DESTINATION_LONGITUDE,
+    DESTINATION_NAME,
+    DESTINATION_ARRIVAL_RADIUS
+)
 
 
 @dataclass
@@ -136,7 +150,7 @@ class SystemValidator:
             perception.start()
             
             # Wait for some perception data
-            time.sleep(2.0)
+            time.sleep(SLEEP_TIME_PERCEPTION)
             
             # Get latest perception data
             perception_data = perception.get_latest_perception()
@@ -183,14 +197,14 @@ class SystemValidator:
             nav_system = NavigationSystem()
             
             # Set a destination
-            origin = (40.7128, -74.0060)  # NYC
-            destination_coords = (40.7589, -73.9851)  # Times Square
+            origin = NAV_ORIGIN
+            destination_coords = NAV_DESTINATION
             
             nav_system.set_destination(origin, destination_coords)
             
             # Wait for route calculation
             start_wait = time.time()
-            while nav_system.state == nav_system.state.__class__.PLANNING and (time.time() - start_wait) < 10:
+            while nav_system.state == nav_system.state.__class__.PLANNING and (time.time() - start_wait) < NAV_PLANNING_TIMEOUT:
                 time.sleep(0.1)
             
             route_calculated = nav_system.state in [nav_system.state.__class__.ACTIVE, nav_system.state.__class__.COMPLETE]
@@ -272,10 +286,10 @@ class SystemValidator:
         try:
             # Create destination
             destination = Destination(
-                latitude=40.7589,  # Times Square
-                longitude=-73.9851,
-                name="Times Square",
-                arrival_radius=10.0
+                latitude=DESTINATION_LATITUDE,
+                longitude=DESTINATION_LONGITUDE,
+                name=DESTINATION_NAME,
+                arrival_radius=DESTINATION_ARRIVAL_RADIUS
             )
             
             # Create test integrated control system
@@ -288,8 +302,8 @@ class SystemValidator:
             has_destination = control_system.destination is not None
             destination_correct = (
                 has_destination and 
-                abs(control_system.destination.latitude - 40.7589) < 0.01 and
-                abs(control_system.destination.longitude - (-73.9851)) < 0.01
+                abs(control_system.destination.latitude - DESTINATION_LATITUDE) < 0.01 and
+                abs(control_system.destination.longitude - DESTINATION_LONGITUDE) < 0.01
             )
             
             passed = dest_set and has_destination and destination_correct
@@ -474,12 +488,12 @@ def run_performance_tests():
         
         # Measure frame processing time
         start_time = time.time()
-        for i in range(10):  # Process 10 frames
+        for i in range(PERCEPTION_TEST_FRAMES):  # Process configurable number of frames
             perception_data = perception.get_latest_perception()
             time.sleep(0.05)  # 20 FPS simulation
         
         total_time = time.time() - start_time
-        avg_time_per_frame = total_time / 10
+        avg_time_per_frame = total_time / PERCEPTION_TEST_FRAMES
         fps = 1.0 / avg_time_per_frame if avg_time_per_frame > 0 else 0
         
         print(f"  Average frame processing time: {avg_time_per_frame*1000:.1f}ms")
@@ -488,10 +502,10 @@ def run_performance_tests():
         perception.stop()
         
         # Performance targets for comma three
-        target_fps = 20  # Target 20 FPS for real-time performance
-        performance_target_met = fps >= target_fps * 0.8  # Allow 20% tolerance
+        target_fps = PERCEPTION_TARGET_FPS  # Target FPS for real-time performance
+        performance_target_met = fps >= target_fps * PERCEPTION_FPS_TOLERANCE  # Allow tolerance
         
-        print(f"  Performance target (20 FPS): {'PASS' if performance_target_met else 'FAIL'}")
+        print(f"  Performance target ({PERCEPTION_TARGET_FPS} FPS): {'PASS' if performance_target_met else 'FAIL'}")
         
     except Exception as e:
         print(f"  Performance test failed: {e}")
@@ -518,8 +532,8 @@ def run_performance_tests():
         print(f"  Change: {mem_after - mem_before:.1f}MB")
         
         # Comma three target: < 1.4GB
-        memory_target_met = mem_after < 1433.6  # 1.4GB in MB
-        print(f"  Memory target (<1433MB): {'PASS' if memory_target_met else 'FAIL'}")
+        memory_target_met = mem_after < MEMORY_TARGET_MB  # Target in MB
+        print(f"  Memory target (<{MEMORY_TARGET_MB:.1f}MB): {'PASS' if memory_target_met else 'FAIL'}")
         
     except Exception as e:
         print(f"  Memory test failed: {e}")
