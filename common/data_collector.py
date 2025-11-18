@@ -279,8 +279,11 @@ class DataCollector:
           # Brief sleep to allow other threads to run after processing batch
           time.sleep(0.001)
 
+      except (OSError, IOError, RuntimeError) as e:
+        cloudlog.error(f"Critical data processing error: {e}")
+        time.sleep(0.1)  # Reduced sleep on error to be more responsive
       except Exception as e:
-        cloudlog.error(f"Data processing error: {e}")
+        cloudlog.error(f"Unexpected data processing error: {e}")
         time.sleep(0.1)  # Reduced sleep on error to be more responsive
   
   def _write_performance_metric(self, metric: PerformanceMetric):

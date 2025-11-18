@@ -393,7 +393,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     if validation_metrics is not None:
         # Trigger fallback behaviors based on validation metrics
-        if validation_metrics.overallConfidence < 0.4:
+        overall_confidence = validation_metrics.overallConfidence
+        if overall_confidence < 0.4:
             # Critical safety threshold - system should prepare for disengagement
             safety_status['fallback_active'] = True
             safety_status['system_alert'] = True
@@ -401,17 +402,20 @@ class Controls(ControlsExt, ModelStateBase):
             # and if the driver is ready to take over
             if CC.enabled and self.sm['selfdriveState'].enabled:
                 # Log the event for analysis
-                cloudlog.warning(f"Critical validation confidence detected: {validation_metrics.overallConfidence}, preparing for disengagement")
+                cloudlog.warning(f"Critical validation confidence detected: {overall_confidence}, preparing for disengagement")
                 # Consider disengaging only if conditions are safe to do so
                 # For now, we'll continue with the conservative approach but with a safety message
                 CC.enabled = False
-        elif validation_metrics.overallConfidence < 0.6:
+        elif overall_confidence < 0.6:
             # Degraded mode when confidence is moderate
             safety_status['degraded_mode'] = True
             # Reduce lateral control authority gradually
-        elif validation_metrics.overallConfidence < 0.75:
+        elif overall_confidence < 0.75:
             # Warning level when confidence is somewhat low
             safety_status['system_alert'] = True
+    else:
+        # If validation metrics are not available, default to conservative behavior
+        safety_status['system_alert'] = True  # Alert that we don't have validation data
 
     # controlsState
     dat = messaging.new_message('controlsState')

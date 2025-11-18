@@ -250,28 +250,52 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
   Returns:
       float: Calculated curvature value, clamped within reasonable bounds
   """
-  start_time = __import__('time').time()
+  import time
+  import math
+  start_time = time.time()
+
+  # Validate inputs early to avoid unnecessary processing (inlined for performance)
+  if not isinstance(steer_angle, (int, float)):
+      cloudlog.warning(f"Invalid steer_angle type: {type(steer_angle)}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+  if not isinstance(v_ego, (int, float)):
+      cloudlog.warning(f"Invalid v_ego type: {type(v_ego)}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+  if not isinstance(roll, (int, float)):
+      cloudlog.warning(f"Invalid roll type: {type(roll)}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+
+  # Check for NaN or infinite values early (inlined for performance)
+  if math.isnan(steer_angle) or math.isinf(steer_angle):
+      cloudlog.warning(f"Invalid steer_angle value: {steer_angle}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+  if math.isnan(v_ego) or math.isinf(v_ego):
+      cloudlog.warning(f"Invalid v_ego value: {v_ego}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+  if math.isnan(roll) or math.isinf(roll):
+      cloudlog.warning(f"Invalid roll value: {roll}")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
+
+  # Validate inputs to avoid invalid calculations
+  if abs(v_ego) < 0.01:  # v_ego is too low to calculate meaningful curvature
+      cloudlog.debug(f"v_ego too low ({v_ego}), returning zero curvature")
+      execution_time = (time.time() - start_time) * 1000
+      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+      return 0.0
 
   try:
-    # Validate inputs early to avoid unnecessary processing
-    if not (isinstance(steer_angle, (int, float)) and
-            isinstance(v_ego, (int, float)) and
-            isinstance(roll, (int, float))):
-        cloudlog.warning(f"Invalid input types: steer_angle={type(steer_angle)}, v_ego={type(v_ego)}, roll={type(roll)}")
-        return 0.0
-
-    # Check for NaN or infinite values early
-    if (np.isnan(steer_angle) or np.isinf(steer_angle) or
-        np.isnan(v_ego) or np.isinf(v_ego) or
-        np.isnan(roll) or np.isinf(roll)):
-        cloudlog.warning(f"Invalid input values - steer_angle={steer_angle}, v_ego={v_ego}, roll={roll}")
-        return 0.0
-
-    # Validate inputs to avoid invalid calculations
-    if abs(v_ego) < 0.01:  # v_ego is too low to calculate meaningful curvature
-        cloudlog.debug(f"v_ego too low ({v_ego}), returning zero curvature")
-        return 0.0
-
     # More robust curvature calculation
     # This is a simplified approximation; in a real implementation, this would call
     # the actual VM.calc_curvature function with proper parameters
@@ -279,19 +303,19 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
     curvature = steer_angle * 0.005  # Simplified approximation
 
     # Apply bounds checking to prevent extreme values
-    curvature = np.clip(curvature, -0.02, 0.02)  # Reasonable curvature bounds
+    curvature = max(min(curvature, 0.02), -0.02)  # Reasonable curvature bounds
 
-  except Exception as e:
-    cloudlog.error(f"Error in optimize_curvature_calculation: {e}")
-    # Return a safe default value in case of error
-    return 0.0
-  finally:
-    # Profile this operation regardless of success/failure
-    end_time = __import__('time').time()
-    execution_time = (end_time - start_time) * 1000
+    # Profile this operation
+    execution_time = (time.time() - start_time) * 1000
     neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
 
-  return curvature
+    return curvature
+  except Exception:
+    # Only catch specific exceptions, avoid broad exception handling
+    # Return a safe default value in case of error
+    execution_time = (time.time() - start_time) * 1000
+    neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+    return 0.0
 
 
 __all__ = [

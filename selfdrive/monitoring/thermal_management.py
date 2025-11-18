@@ -299,8 +299,10 @@ class ThermalManager:
         for callback in self.performance_callbacks:
           try:
             callback(new_performance_scale)
+          except (TypeError, ValueError) as e:
+            cloudlog.error(f"Performance callback type/value error: {e}")
           except Exception as e:
-            cloudlog.error(f"Performance callback error: {e}")
+            cloudlog.error(f"Performance callback unexpected error: {e}")
   
   def _get_threshold_for_status(self, status):
     """Get the temperature threshold for a given status"""
@@ -318,8 +320,10 @@ class ThermalManager:
     for callback in self.thermal_callbacks:
       try:
         callback(zone, temp, level)
+      except (TypeError, ValueError) as e:
+        cloudlog.error(f"Thermal callback type/value error: {e}")
       except Exception as e:
-        cloudlog.error(f"Thermal callback error: {e}")
+        cloudlog.error(f"Thermal callback unexpected error: {e}")
   
   def _update_fan_control(self):
     """Update fan control based on temperatures"""
