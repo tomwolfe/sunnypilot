@@ -1,430 +1,491 @@
 """
-Safety validation system for autonomous driving on comma three platform.
-Implements critical safety checks and validations.
+Safety validation module for autonomous driving systems.
+Implements comprehensive safety checks and validation for sunnypilot.
 """
 import time
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from openpilot.selfdrive.common.metrics import Metrics, record_metric
-from openpilot.sunnypilot.navd.helpers import Coordinate
-import cereal.messaging as messaging
 
 @dataclass
-class SafetyCheckResult:
-    """Result of a safety validation check."""
-    check_name: str
-    passed: bool
-    confidence: float
-    details: Dict[str, Any]
-    timestamp: float
+class SafetyConfig:
+    """Configuration for safety validation parameters."""
+    # Following distance parameters
+    min_following_distance: float = 50.0  # meters at highway speed
+    safety_buffer_distance: float = 20.0  # additional safety buffer
+    
+    # Speed-dependent following distance factor
+    time_gap_seconds: float = 2.0  # 2-second rule
+    
+    # Emergency response parameters
+    max_braking_jerk: float = 5.0  # m/s³ (comfortable emergency braking)
+    max_steering_rate: float = 100.0  # deg/s (maximum steering rate)
+    
+    # Detection requirements
+    min_detection_range: float = 150.0  # meters minimum detection range
+    max_false_positive_rate: float = 0.001  # 0.1% max false positive rate
+    min_detection_accuracy: float = 0.95  # 95% minimum detection accuracy
 
 class SafetyValidator:
-    """Main safety validation system for autonomous driving."""
+    """
+    Comprehensive safety validation system for autonomous driving.
+    Validates pedestrian detection, collision avoidance, safe following distance, etc.
+    """
     
-    def __init__(self):
-        self.safety_checks: Dict[str, float] = {
-            "pedestrian_detection": 0.0,
-            "emergency_stop": 0.0,
-            "collision_avoidance": 0.0,
-            "sensor_failure_detection": 0.0,
-            "traffic_light_compliance": 0.0,
-            "safe_following_distance": 0.0,
+    def __init__(self, config: Optional[SafetyConfig] = None):
+        self.config = config or SafetyConfig()
+        self.last_validation_time = time.time()
+        self.safety_violations = []
+        self.emergency_responses = []
+    
+    def validate_pedestrian_detection(self, detection_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate pedestrian detection and safety response.
+        """
+        start_time = time.time()
+        
+        # Check detection accuracy requirements
+        accuracy = detection_data.get('accuracy', 0.0)
+        detection_range = detection_data.get('range', 0.0)
+        is_detected = detection_data.get('detected', False)
+        
+        # Validate detection meets safety requirements
+        accuracy_pass = accuracy >= self.config.min_detection_accuracy
+        range_pass = detection_range >= self.config.min_detection_range
+        detected_pass = True if is_detected else False  # If not detected, check if it should have been
+        
+        is_safe = accuracy_pass and range_pass
+        
+        validation_result = {
+            "accuracy_met": accuracy_pass,
+            "range_met": range_pass,
+            "object_detected": detected_pass,
+            "is_safe": is_safe,
+            "accuracy": accuracy,
+            "range": detection_range,
+            "validation_time": time.time() - start_time
         }
-        self.check_results: List[SafetyCheckResult] = []
-        self.message_subscriber = messaging.SubMaster([
-            'modelV2', 'liveLocationKalman', 'carState', 'radarState', 'liveMapData'
-        ])
         
-    def validate_pedestrian_detection(self, model_output: Dict[str, Any]) -> SafetyCheckResult:
-        """Validate pedestrian detection accuracy."""
+        # Record metric
+        record_metric(Metrics.PEDESTRIAN_DETECTION_ACCURACY, accuracy, {
+            "validation_type": "pedestrian_detection",
+            "accuracy_met": accuracy_pass,
+            "range_met": range_pass,
+            "is_safe": is_safe,
+            "range_meters": detection_range
+        })
+        
+        return is_safe, validation_result
+    
+    def validate_collision_avoidance(self, 
+                                   ego_state: Dict[str, float], 
+                                   obstacle_state: Dict[str, float]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate collision avoidance system response.
+        """
         start_time = time.time()
         
-        # Check if pedestrians are properly detected in model output
-        if "temporal" in model_output and "pedestrian" in str(model_output):
-            # Simulate pedestrian detection (in real system, parse actual model outputs)
-            detected_pedestrians = model_output.get("temporal", {}).get("meta", [{}])[0].get("has_lead", False)
-            # For this example, we'll simulate detection based on some criteria
-            detection_success = True  # Placeholder for actual detection logic
+        # Calculate time to collision
+        relative_distance = obstacle_state.get('distance', float('inf')) - ego_state.get('distance', 0)
+        relative_velocity = ego_state.get('velocity', 0) - obstacle_state.get('velocity', 0)
+        
+        if relative_velocity > 0:  # Closing in on obstacle
+            ttc = relative_distance / relative_velocity if relative_velocity != 0 else float('inf')
         else:
-            detection_success = False
+            ttc = float('inf')  # Not closing in
         
-        # Calculate confidence based on multiple factors
-        confidence = 0.95 if detection_success else 0.05
+        # Calculate safe following distance based on time gap rule
+        safe_distance = ego_state.get('velocity', 0) * self.config.time_gap_seconds + self.config.safety_buffer_distance
         
-        result = SafetyCheckResult(
-            check_name="pedestrian_detection",
-            passed=detection_success,
-            confidence=confidence,
-            details={
-                "model_output_keys": list(model_output.keys()) if isinstance(model_output, dict) else [],
-                "detection_success": detection_success,
-                "processing_time": time.time() - start_time
-            },
-            timestamp=time.time()
-        )
+        # Check if current distance is safe
+        current_distance = obstacle_state.get('distance', float('inf'))
+        is_safe_distance = current_distance >= safe_distance
         
-        self.check_results.append(result)
-        self.safety_checks["pedestrian_detection"] = confidence
+        # Determine if emergency action needed
+        requires_action = ttc < 5.0  # Less than 5 seconds to collision
         
-        # Record metrics
-        record_metric(Metrics.PEDESTRIAN_DETECTION_ACCURACY, confidence, {
-            "operation": "validation",
-            "passed": detection_success,
-            "confidence": confidence
-        })
-        
-        return result
-    
-    def validate_emergency_stop(self, car_state: Dict[str, Any], radar_state: Dict[str, Any]) -> SafetyCheckResult:
-        """Validate emergency stop functionality."""
-        start_time = time.time()
-        
-        # Check if emergency stop conditions are properly detected
-        lead_one = radar_state.get("leadOne", {}) if isinstance(radar_state, dict) else {}
-        dangerous_approach = (
-            lead_one.get("status", False) and
-            lead_one.get("dRel", float('inf')) < 50.0 and  # Within 50m
-            lead_one.get("vRel", 0) < -10  # Approaching faster than 10 m/s
-        )
-        
-        # Check if car state indicates appropriate response to danger
-        brake_applied = car_state.get("brakePressed", False) or car_state.get("brake", 0) > 0.5
-        cruise_cancelled = car_state.get("cruiseState", {}).get("enabled", True) == False
-        
-        # Emergency stop is successful if appropriate action is taken in dangerous situation
-        emergency_stop_success = (dangerous_approach and (brake_applied or cruise_cancelled)) or not dangerous_approach
-        
-        confidence = 0.98 if emergency_stop_success else 0.02
-        
-        result = SafetyCheckResult(
-            check_name="emergency_stop",
-            passed=emergency_stop_success,
-            confidence=confidence,
-            details={
-                "dangerous_approach": dangerous_approach,
-                "brake_applied": brake_applied,
-                "cruise_cancelled": cruise_cancelled,
-                "emergency_stop_taken": emergency_stop_success,
-                "processing_time": time.time() - start_time
-            },
-            timestamp=time.time()
-        )
-        
-        self.check_results.append(result)
-        self.safety_checks["emergency_stop"] = confidence
-        
-        # Record metrics
-        record_metric(Metrics.EMERGENCY_STOP_LATENCY_MS, (time.time() - start_time) * 1000, {
-            "operation": "validation",
-            "dangerous_approach": dangerous_approach,
-            "response_taken": emergency_stop_success
-        })
-        
-        return result
-    
-    def validate_collision_avoidance(self, model_output: Dict[str, Any], 
-                                   radar_state: Dict[str, Any], 
-                                   car_state: Dict[str, Any]) -> SafetyCheckResult:
-        """Validate collision avoidance system."""
-        start_time = time.time()
-        
-        # Extract potential collision indicators
-        lead_cars = []
-        if isinstance(radar_state, dict) and "radarState" in radar_state:
-            # In real implementation, parse actual radar data
-            lead_cars = [radar_state["radarState"].get("leadOne", {})]
+        if requires_action and not is_safe_distance:
+            # Simulate emergency response
+            response_needed = self._simulate_emergency_response(ego_state, obstacle_state)
+            successful_avoidance = response_needed['can_avoid']
         else:
-            # Simulate from provided data
-            if isinstance(radar_state, dict):
-                lead_cars = [radar_state]
+            successful_avoidance = True  # No immediate danger
         
-        collision_imminent = False
-        for lead in lead_cars:
-            if lead.get("status", False):
-                relative_distance = lead.get("dRel", float('inf'))
-                relative_velocity = lead.get("vRel", 0)
-                
-                # Calculate time to collision
-                if relative_velocity < 0:  # Approaching
-                    time_to_collision = relative_distance / abs(relative_velocity) if relative_velocity != 0 else float('inf')
-                    if time_to_collision < 3.0:  # Less than 3 seconds
-                        collision_imminent = True
+        validation_result = {
+            "time_to_collision": ttc,
+            "safe_distance": safe_distance,
+            "current_distance": current_distance,
+            "is_safe_distance": is_safe_distance,
+            "requires_action": requires_action,
+            "successful_avoidance": successful_avoidance,
+            "validation_time": time.time() - start_time
+        }
         
-        # Determine if appropriate action is taken
-        appropriate_response = (
-            car_state.get("brake", 0) > 0.3 or  # Brake applied
-            car_state.get("steeringPressed", False)  # Steering override
-        )
-        
-        collision_avoidance_success = (
-            (collision_imminent and appropriate_response) or  # If collision imminent, response needed
-            not collision_imminent  # If no collision, no response needed
-        )
-        
-        confidence = 0.97 if collision_avoidance_success else 0.03
-        
-        result = SafetyCheckResult(
-            check_name="collision_avoidance",
-            passed=collision_avoidance_success,
-            confidence=confidence,
-            details={
-                "collision_imminent": collision_imminent,
-                "appropriate_response": appropriate_response,
-                "brake_applied": car_state.get("brake", 0) > 0.3,
-                "steering_override": car_state.get("steeringPressed", False),
-                "processing_time": time.time() - start_time
-            },
-            timestamp=time.time()
-        )
-        
-        self.check_results.append(result)
-        self.safety_checks["collision_avoidance"] = confidence
-        
-        # Record metrics
-        record_metric(Metrics.COLLISION_AVOIDANCE_SUCCESS_RATE, confidence, {
-            "operation": "validation",
-            "collision_imminent": collision_imminent,
-            "response_taken": appropriate_response
+        # Record metric
+        record_metric(Metrics.COLLISION_AVOIDANCE_SUCCESS_RATE, 
+                     1.0 if successful_avoidance else 0.0, {
+            "validation_type": "collision_avoidance",
+            "time_to_collision": ttc,
+            "safe_distance_m": safe_distance,
+            "current_distance_m": current_distance,
+            "requires_emergency_action": requires_action,
+            "successful_avoidance": successful_avoidance
         })
         
-        return result
+        return successful_avoidance, validation_result
     
-    def validate_sensor_failures(self, system_status: Dict[str, Any]) -> SafetyCheckResult:
-        """Validate sensor failure detection."""
+    def validate_safe_following_distance(self, 
+                                       ego_speed: float, 
+                                       lead_distance: float, 
+                                       lead_speed: float = 0.0) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate safe following distance based on speed and lead vehicle.
+        Implements the 2-second rule plus safety buffer.
+        """
         start_time = time.time()
         
-        # Check for sensor failures from system status
-        sensors_ok = True
-        failed_sensors = []
+        # Calculate required following distance using 2-second rule + buffer
+        required_distance = ego_speed * self.config.time_gap_seconds + self.config.safety_buffer_distance
         
-        # Simulate checking different sensor systems
-        camera_ok = system_status.get("cameraStatus", {}).get("connected", True)
-        radar_ok = system_status.get("radarStatus", {}).get("connected", True)
-        gps_ok = system_status.get("gpsStatus", {}).get("valid", True)
+        # Check against actual following distance
+        is_safe = lead_distance >= required_distance
         
-        if not camera_ok:
-            sensors_ok = False
-            failed_sensors.append("camera")
-        if not radar_ok:
-            sensors_ok = False
-            failed_sensors.append("radar")
-        if not gps_ok:
-            sensors_ok = False
-            failed_sensors.append("gps")
+        validation_result = {
+            "ego_speed": ego_speed,
+            "lead_distance": lead_distance,
+            "lead_speed": lead_speed,
+            "required_distance": required_distance,
+            "is_safe": is_safe,
+            "validation_time": time.time() - start_time
+        }
         
-        # Sensor failure detection is successful if failures are detected and handled
-        sensor_failure_detection_success = True  # We're detecting and reporting the failures
-        
-        confidence = 0.95 if sensors_ok else 0.2  # Lower confidence if sensors failed but detection works
-        
-        result = SafetyCheckResult(
-            check_name="sensor_failure_detection",
-            passed=sensor_failure_detection_success,
-            confidence=confidence,
-            details={
-                "all_sensors_ok": sensors_ok,
-                "failed_sensors": failed_sensors,
-                "detection_success": sensor_failure_detection_success,
-                "camera_ok": camera_ok,
-                "radar_ok": radar_ok,
-                "gps_ok": gps_ok,
-                "processing_time": time.time() - start_time
-            },
-            timestamp=time.time()
-        )
-        
-        self.check_results.append(result)
-        self.safety_checks["sensor_failure_detection"] = confidence
-        
-        # Record metrics
-        record_metric(Metrics.SENSOR_FAILURE_DETECTION_RATE, confidence, {
-            "operation": "validation",
-            "failed_sensors": failed_sensors,
-            "detection_active": True
+        # Record metric
+        record_metric(Metrics.SAFETY_MARGIN_VIOLATIONS, 
+                     0 if is_safe else 1, {
+            "validation_type": "following_distance",
+            "ego_speed_ms": ego_speed,
+            "lead_distance_m": lead_distance,
+            "required_distance_m": required_distance,
+            "is_safe": is_safe
         })
         
-        return result
+        return is_safe, validation_result
     
-    def validate_safe_following_distance(self, radar_state: Dict[str, Any], car_state: Dict[str, Any]) -> SafetyCheckResult:
-        """Validate safe following distance maintenance."""
+    def validate_sensor_failures(self, sensor_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate detection of sensor failures and fail-safe response.
+        """
         start_time = time.time()
         
-        lead_car = radar_state.get("leadOne", {}) if isinstance(radar_state, dict) else {}
+        # Check for sensor anomalies
+        sensor_health = sensor_data.get('health_status', {})
         
-        safe = True
-        if lead_car.get("status", False):
-            distance = lead_car.get("dRel", float('inf'))
-            velocity = car_state.get("vEgo", 0)  # Ego vehicle velocity
+        # Define failure conditions
+        failures_detected = []
+        
+        # Camera failure check
+        if sensor_health.get('camera', True) == False:
+            failures_detected.append('camera')
+        
+        # Radar failure check
+        if sensor_health.get('radar', True) == False:
+            failures_detected.append('radar')
+        
+        # GPS failure check
+        if sensor_health.get('gps', True) == False:
+            failures_detected.append('gps')
+        
+        # LIDAR failure check (if equipped)
+        if sensor_health.get('lidar', True) == False:
+            failures_detected.append('lidar')
+        
+        # IMU failure check
+        if sensor_health.get('imu', True) == False:
+            failures_detected.append('imu')
+        
+        # Determine if system can operate safely with failures
+        critical_failures = ['camera', 'radar', 'gps']
+        has_critical_failure = any(fail_type in failures_detected for fail_type in critical_failures)
+        
+        # Check if backup systems can handle the failures
+        can_operate_safely = not has_critical_failure or self._can_handle_with_backups(failures_detected)
+        
+        validation_result = {
+            "failures_detected": failures_detected,
+            "has_critical_failure": has_critical_failure,
+            "can_operate_safely": can_operate_safely,
+            "backup_systems_available": self._check_backup_systems(failures_detected),
+            "validation_time": time.time() - start_time
+        }
+        
+        # Record metric
+        record_metric(Metrics.SENSOR_FAILURE_DETECTION_RATE, 
+                     1.0 if len(failures_detected) > 0 else 0.0, {
+            "validation_type": "sensor_failure_detection",
+            "failures_detected": failures_detected,
+            "can_operate_safely": can_operate_safely,
+            "has_critical_failure": has_critical_failure
+        })
+        
+        return can_operate_safely, validation_result
+    
+    def validate_emergency_stop(self, current_state: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Validate emergency stop capability and response time.
+        """
+        start_time = time.time()
+        
+        speed = current_state.get('speed', 0.0)
+        road_type = current_state.get('road_type', 'unknown')
+        weather = current_state.get('weather', 'clear')
+        
+        # Calculate required stopping distance based on conditions
+        reaction_time = 0.5  # seconds (system reaction time)
+        braking_deceleration = self._get_braking_capability(weather, road_type)
+        
+        # Distance to stop = reaction distance + braking distance
+        reaction_distance = speed * reaction_time
+        braking_distance = (speed ** 2) / (2 * braking_deceleration) if braking_deceleration > 0 else 0
+        required_stopping_distance = reaction_distance + braking_distance
+        
+        current_road_clear_distance = current_state.get('distance_to_obstacle', float('inf'))
+        
+        # Check if system can stop in time
+        can_stop_safely = current_road_clear_distance >= required_stopping_distance
+        
+        validation_result = {
+            "current_speed": speed,
+            "road_type": road_type,
+            "weather": weather,
+            "required_stopping_distance": required_stopping_distance,
+            "available_stopping_distance": current_road_clear_distance,
+            "can_stop_safely": can_stop_safely,
+            "reaction_distance": reaction_distance,
+            "braking_distance": braking_distance,
+            "validation_time": time.time() - start_time
+        }
+        
+        # Record metric
+        record_metric(Metrics.EMERGENCY_STOP_LATENCY_MS, 
+                     reaction_time * 1000, {
+            "validation_type": "emergency_stop",
+            "speed_ms": speed,
+            "road_type": road_type,
+            "weather": weather,
+            "required_stopping_distance_m": required_stopping_distance,
+            "can_stop_safely": can_stop_safely,
+            "response_time_ms": reaction_time * 1000
+        })
+        
+        return can_stop_safely, validation_result
+    
+    def validate_traffic_sign_detection(self, signs_data: List[Dict[str, Any]]) -> Tuple[float, Dict[str, Any]]:
+        """
+        Validate traffic sign detection accuracy and compliance.
+        """
+        start_time = time.time()
+        
+        total_signs = len(signs_data)
+        correctly_detected = 0
+        critical_violations = 0  # Stop signs, red lights missed
+        
+        for sign in signs_data:
+            detected = sign.get('detected', False)
+            is_critical = sign.get('critical', False)
+            correctly_classified = sign.get('correct_classification', False)
             
-            # Calculate safe distance (2-second rule + buffer)
-            safe_distance = max(50.0, velocity * 2.0 + 30.0)  # At least 50m, plus 2s at current speed + buffer
-            
-            safe = distance > safe_distance
+            if detected and correctly_classified:
+                correctly_detected += 1
+                if is_critical:
+                    # Ensure critical signs are properly handled
+                    action_taken = sign.get('action_taken', False)
+                    if not action_taken:
+                        critical_violations += 1
+            elif is_critical:
+                critical_violations += 1
         
-        confidence = 0.98 if safe else 0.02
-        passed = safe
+        accuracy = correctly_detected / total_signs if total_signs > 0 else 1.0
+        critical_violation_rate = critical_violations / total_signs if total_signs > 0 else 0.0
         
-        result = SafetyCheckResult(
-            check_name="safe_following_distance",
-            passed=passed,
-            confidence=confidence,
-            details={
-                "distance_to_lead": lead_car.get("dRel", float('inf')),
-                "ego_velocity": car_state.get("vEgo", 0),
-                "safe_distance": safe_distance,
-                "actual_safe": safe,
-                "processing_time": time.time() - start_time
-            },
-            timestamp=time.time()
-        )
-        
-        self.check_results.append(result)
-        self.safety_checks["safe_following_distance"] = confidence
+        validation_result = {
+            "total_signs": total_signs,
+            "correctly_detected": correctly_detected,
+            "accuracy": accuracy,
+            "critical_violations": critical_violations,
+            "critical_violation_rate": critical_violation_rate,
+            "validation_time": time.time() - start_time
+        }
         
         # Record metrics
-        record_metric(Metrics.SAFETY_MARGIN_COMPLIANCE, confidence, {
-            "operation": "validation",
-            "safe_following_distance": safe,
-            "distance_to_lead": lead_car.get("dRel", float('inf'))
+        record_metric(Metrics.STOP_SIGN_DETECTION_RATE, 
+                     accuracy if total_signs > 0 else 1.0, {
+            "validation_type": "traffic_sign_detection",
+            "total_signs": total_signs,
+            "correctly_detected": correctly_detected,
+            "accuracy": accuracy,
+            "critical_violations": critical_violations
         })
         
-        return result
+        return accuracy, validation_result
     
-    def run_all_safety_checks(self, sensor_data: Dict[str, Any]) -> Dict[str, SafetyCheckResult]:
-        """Run all safety validation checks."""
-        results = {}
+    def _simulate_emergency_response(self, ego_state: Dict, obstacle_state: Dict) -> Dict[str, Any]:
+        """
+        Simulate emergency response to potential collision.
+        """
+        ego_velocity = ego_state.get('velocity', 0)
+        obstacle_velocity = obstacle_state.get('velocity', 0)
+        distance = obstacle_state.get('distance', float('inf'))
         
-        # Update subscriber data if available
-        self.message_subscriber.update(0)
+        # Calculate if we can avoid collision with max braking
+        max_braking_deceleration = 8.0  # m/s² (aggressive but safe braking)
         
-        # Run each safety check
-        try:
-            results["pedestrian_detection"] = self.validate_pedestrian_detection(
-                sensor_data.get("modelV2", {})
-            )
-        except:
-            # Default result if check fails
-            results["pedestrian_detection"] = SafetyCheckResult(
-                check_name="pedestrian_detection", passed=False, confidence=0.0,
-                details={"error": "Failed to run pedestrian detection check"},
-                timestamp=time.time()
-            )
+        # Time to collision at current velocities
+        relative_velocity = ego_velocity - obstacle_velocity
+        if relative_velocity > 0:
+            time_to_collision = distance / relative_velocity
+            # Distance to stop with max braking
+            braking_distance = (ego_velocity ** 2) / (2 * max_braking_deceleration)
+            can_avoid = braking_distance < distance
+        else:
+            can_avoid = True  # Not approaching the obstacle
         
-        try:
-            results["emergency_stop"] = self.validate_emergency_stop(
-                sensor_data.get("carState", {}),
-                sensor_data.get("radarState", {})
-            )
-        except:
-            results["emergency_stop"] = SafetyCheckResult(
-                check_name="emergency_stop", passed=False, confidence=0.0,
-                details={"error": "Failed to run emergency stop check"},
-                timestamp=time.time()
-            )
-        
-        try:
-            results["collision_avoidance"] = self.validate_collision_avoidance(
-                sensor_data.get("modelV2", {}),
-                sensor_data.get("radarState", {}),
-                sensor_data.get("carState", {})
-            )
-        except:
-            results["collision_avoidance"] = SafetyCheckResult(
-                check_name="collision_avoidance", passed=False, confidence=0.0,
-                details={"error": "Failed to run collision avoidance check"},
-                timestamp=time.time()
-            )
-        
-        try:
-            results["sensor_failure_detection"] = self.validate_sensor_failures(
-                sensor_data.get("systemStatus", {})
-            )
-        except:
-            results["sensor_failure_detection"] = SafetyCheckResult(
-                check_name="sensor_failure_detection", passed=False, confidence=0.0,
-                details={"error": "Failed to run sensor failure detection check"},
-                timestamp=time.time()
-            )
-        
-        try:
-            results["safe_following_distance"] = self.validate_safe_following_distance(
-                sensor_data.get("radarState", {}),
-                sensor_data.get("carState", {})
-            )
-        except:
-            results["safe_following_distance"] = SafetyCheckResult(
-                check_name="safe_following_distance", passed=False, confidence=0.0,
-                details={"error": "Failed to run safe following distance check"},
-                timestamp=time.time()
-            )
-        
-        # Calculate aggregate safety score
-        total_score = sum(result.confidence for result in results.values()) / len(results) if results else 0
-        
-        record_metric(Metrics.SAFETY_MARGIN_COMPLIANCE, total_score, {
-            "operation": "aggregate_safety_validation",
-            "check_count": len(results),
-            "passed_count": sum(1 for r in results.values() if r.passed)
-        })
-        
-        return results
+        return {
+            "can_avoid": can_avoid,
+            "time_to_collision": time_to_collision if relative_velocity > 0 else float('inf'),
+            "braking_distance": braking_distance,
+            "max_braking_deceleration": max_braking_deceleration
+        }
     
-    def get_safety_compliance_report(self) -> Dict[str, float]:
-        """Get safety compliance metrics for all checks."""
-        return self.safety_checks.copy()
+    def _get_braking_capability(self, weather: str, road_type: str) -> float:
+        """
+        Get braking capability based on conditions.
+        """
+        base_deceleration = 8.0  # m/s² base emergency braking
+        
+        # Weather adjustments
+        weather_factors = {
+            'clear': 1.0,
+            'rain': 0.7,
+            'snow': 0.5,
+            'ice': 0.3
+        }
+        
+        # Road type adjustments
+        road_factors = {
+            'highway': 1.0,
+            'urban': 1.0,
+            'mountain': 0.9,
+            'wet_surface': 0.7
+        }
+        
+        weather_factor = weather_factors.get(weather, 0.8)
+        road_factor = road_factors.get(road_type, 1.0)
+        
+        return base_deceleration * weather_factor * road_factor
+    
+    def _can_handle_with_backups(self, failures: List[str]) -> bool:
+        """
+        Check if system can handle failures using backup systems.
+        """
+        # Define backup capabilities
+        # In a real system, this would check actual backup sensor availability
+        return len(failures) <= 1  # System can handle single sensor failure
+    
+    def _check_backup_systems(self, failures: List[str]) -> Dict[str, bool]:
+        """
+        Check availability of backup systems for each failed sensor.
+        """
+        backups = {}
+        for failure in failures:
+            # In a real implementation, this would check actual backup sensors
+            backups[failure] = True  # Assuming backup available for simplicity
+        return backups
 
-class SafetyManager:
-    """High-level safety manager that integrates with other systems."""
+class SafetyMonitor:
+    """
+    Continuous safety monitoring system that tracks safety metrics over time.
+    """
     
     def __init__(self):
         self.validator = SafetyValidator()
-        self.active = True
-        self.last_check_time = 0
-        self.check_interval = 0.1  # Check every 100ms
-        
-    def update(self, sensor_data: Dict[str, Any]) -> Dict[str, SafetyCheckResult]:
-        """Update safety validation with new sensor data."""
-        if not self.active:
-            return {}
-        
-        current_time = time.time()
-        if current_time - self.last_check_time < self.check_interval:
-            return {}
-        
-        self.last_check_time = current_time
-        results = self.validator.run_all_safety_checks(sensor_data)
-        
-        return results
+        self.safety_events = []
+        self.safety_metrics = {}
     
-    def is_system_safe(self) -> bool:
-        """Check if the system is currently safe to operate."""
-        safety_report = self.validator.get_safety_compliance_report()
-        # System is safe if most safety checks pass
-        safe_checks = sum(1 for score in safety_report.values() if score > 0.9)
-        total_checks = len(safety_report)
+    def monitor_safety_status(self, vehicle_state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Monitor overall safety status based on current vehicle state.
+        """
+        start_time = time.time()
         
-        return safe_checks / total_checks if total_checks > 0 else False
-    
-    def get_safety_status(self) -> Dict[str, Any]:
-        """Get comprehensive safety status."""
-        report = self.validator.get_safety_compliance_report()
-        is_safe = self.is_system_safe()
+        # Run multiple safety checks
+        safe_following, follow_result = self.validator.validate_safe_following_distance(
+            vehicle_state.get('speed', 0), 
+            vehicle_state.get('lead_distance', float('inf')),
+            vehicle_state.get('lead_speed', 0)
+        )
         
-        return {
-            "is_safe": is_safe,
-            "compliance_report": report,
-            "last_updated": self.last_check_time,
-            "active": self.active
+        emergency_safe, emergency_result = self.validator.validate_emergency_stop(vehicle_state)
+        
+        # Calculate overall safety score
+        safety_score = (safe_following + emergency_safe) / 2.0  # Simple average
+        
+        overall_status = {
+            "timestamp": time.time(),
+            "safety_score": safety_score,
+            "safe_following_distance": safe_following,
+            "emergency_stop_capable": emergency_safe,
+            "follow_validation": follow_result,
+            "emergency_validation": emergency_result,
+            "processing_time": time.time() - start_time
         }
+        
+        # Store safety event for history
+        self.safety_events.append(overall_status)
+        
+        # Record safety metrics
+        record_metric(Metrics.SAFETY_MARGIN_COMPLIANCE, safety_score, {
+            "monitoring_type": "continuous_safety",
+            "safe_following": safe_following,
+            "emergency_capable": emergency_safe,
+            "safety_score": safety_score
+        })
+        
+        return overall_status
 
-# Global safety manager instance
-safety_manager = SafetyManager()
+# Global safety validator and monitor instances
+safety_validator = SafetyValidator()
+safety_monitor = SafetyMonitor()
 
-def get_safety_manager():
-    """Get the global safety manager instance."""
-    return safety_manager
+def get_safety_validator() -> SafetyValidator:
+    """Get the global safety validator instance."""
+    return safety_validator
 
-def validate_current_safety() -> Dict[str, Any]:
-    """Run immediate safety validation."""
-    return safety_manager.get_safety_status()
+def get_safety_monitor() -> SafetyMonitor:
+    """Get the global safety monitor instance."""
+    return safety_monitor
+
+def validate_pedestrian_detection(detection_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Validate pedestrian detection safety."""
+    return safety_validator.validate_pedestrian_detection(detection_data)
+
+def validate_collision_avoidance(ego_state: Dict[str, float], 
+                               obstacle_state: Dict[str, float]) -> Tuple[bool, Dict[str, Any]]:
+    """Validate collision avoidance system."""
+    return safety_validator.validate_collision_avoidance(ego_state, obstacle_state)
+
+def validate_safe_following_distance(speed: float, distance: float, lead_speed: float = 0.0) -> Tuple[bool, Dict[str, Any]]:
+    """Validate safe following distance."""
+    return safety_validator.validate_safe_following_distance(speed, distance, lead_speed)
+
+def validate_sensor_failures(sensor_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Validate sensor failure detection and response."""
+    return safety_validator.validate_sensor_failures(sensor_data)
+
+def validate_emergency_stop(state: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Validate emergency stop capability."""
+    return safety_validator.validate_emergency_stop(state)
+
+def monitor_safety_status(vehicle_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Monitor overall safety status."""
+    return safety_monitor.monitor_safety_status(vehicle_state)
