@@ -91,15 +91,32 @@ class DataCollector:
     cloudlog.info("Data collection system initialized")
   
   def collect_performance_metric(self, metric: PerformanceMetric):
-    """Collect a performance metric"""
+    """
+    Collect a performance metric with proper error handling
+
+    Args:
+        metric: PerformanceMetric object to collect
+    """
     if not self.collection_enabled:
       return
-    
+
+    # Validate the metric object before processing
+    if not isinstance(metric, PerformanceMetric):
+      cloudlog.error(f"Invalid metric type passed to collection: {type(metric)}")
+      return
+
+    # More detailed validation of the metric data
+    if metric.execution_time_ms < 0:
+      cloudlog.warning(f"Performance metric with negative execution time: {metric.execution_time_ms}")
+      # Don't return, continue with collection since this is just a warning
+
     try:
       self.performance_queue.put_nowait(metric)
       self.collected_metrics += 1
     except queue.Full:
       cloudlog.warning("Performance metric queue is full, dropping metric")
+    except Exception as e:
+      cloudlog.error(f"Error collecting performance metric: {e}")
   
   def collect_edge_case(self, event: EdgeCaseEvent):
     """Collect an edge case event"""
@@ -493,24 +510,61 @@ class DataCollectionManager:
 data_collection_manager = DataCollectionManager()
 
 
-def collect_model_performance(component: str, operation: str, 
+def collect_model_performance(component: str, operation: str,
                             execution_time_ms: float, additional_data: Dict[str, Any] = None):
-  """Helper function to collect model performance metrics"""
+  """
+  Helper function to collect model performance metrics with enhanced error handling
+
+  Args:
+      component: Name of the component being measured
+      operation: Name of the operation being measured
+      execution_time_ms: Execution time in milliseconds
+      additional_data: Additional data to include with the metric
+  """
   try:
+    # Validate inputs
+    if not isinstance(component, str) or not component:
+      cloudlog.error(f"Invalid component name: {component}")
+      return
+
+    if not isinstance(operation, str) or not operation:
+      cloudlog.error(f"Invalid operation name: {operation}")
+      return
+
+    if not isinstance(execution_time_ms, (int, float)) or execution_time_ms < 0:
+      cloudlog.error(f"Invalid execution time: {execution_time_ms}")
+      return
+
+    if additional_data is not None and not isinstance(additional_data, dict):
+      cloudlog.error(f"Invalid additional_data type: {type(additional_data)}")
+      additional_data = {}  # Fallback to empty dict
+
     import psutil
-    
+
+    # Get system metrics with error handling
+    try:
+      cpu_usage = psutil.cpu_percent(interval=None)
+      memory_usage = psutil.virtual_memory().percent
+      gpu_usage = HARDWARE.get_gpu_usage_percent()
+    except Exception as sys_error:
+      cloudlog.error(f"Error getting system metrics: {sys_error}")
+      # Use safe defaults
+      cpu_usage = 0.0
+      memory_usage = 0.0
+      gpu_usage = 0.0
+
     metric = PerformanceMetric(
       timestamp=time.time(),
       component=component,
       operation=operation,
       execution_time_ms=execution_time_ms,
-      cpu_usage=psutil.cpu_percent(interval=None),
-      memory_usage=psutil.virtual_memory().percent,
-      gpu_usage=HARDWARE.get_gpu_usage_percent(),
-      thermal_status=0,  # Will be updated later with real thermal status
+      cpu_usage=cpu_usage,
+      memory_usage=memory_usage,
+      gpu_usage=gpu_usage,
+      thermal_status=0,  # Will be updated later with real thermal status if available
       additional_data=additional_data
     )
-    
+
     data_collection_manager.collector.collect_performance_metric(metric)
   except Exception as e:
     cloudlog.error(f"Error collecting performance metric: {e}")

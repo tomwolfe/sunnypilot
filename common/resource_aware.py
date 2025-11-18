@@ -624,35 +624,52 @@ def optimize_for_hardware_constraints() -> Dict[str, float]:
   - <5% average CPU utilization
   - <80ms end-to-end latency (control loop)
   """
-  # Get current resource utilization
-  resource_util = resource_manager.get_resource_utilization()
+  try:
+    # Get current resource utilization
+    resource_util = resource_manager.get_resource_utilization()
 
-  # Calculate current efficiency metrics
-  current_metrics = {
-    'ram_usage_mb': resource_util['memory_used_mb'],
-    'cpu_usage_percent': resource_util['cpu_used_pct'],
-    'thermal_scale': resource_util['thermal_scale'],
-    'performance_mode': int(resource_util['performance_mode'])
-  }
+    # Calculate current efficiency metrics
+    current_metrics = {
+      'ram_usage_mb': resource_util['memory_used_mb'],
+      'cpu_usage_percent': resource_util['cpu_used_pct'],
+      'thermal_scale': resource_util['thermal_scale'],
+      'performance_mode': int(resource_util['performance_mode'])
+    }
 
-  # Apply optimizations based on current constraints
-  optimizations_applied = []
+    # Apply optimizations based on current constraints
+    optimizations_applied = []
 
-  # If RAM usage is high, increase memory management
-  if resource_util['memory_used_mb'] > 1200:  # More than ~85% of 1.4GB
-    optimizations_applied.append("memory_reduction_applied")
-    # In real implementation, we would apply more aggressive memory management
+    # If RAM usage is high, increase memory management
+    if resource_util['memory_used_mb'] > 1200:  # More than ~85% of 1.4GB
+      optimizations_applied.append("memory_reduction_applied")
+      # In real implementation, we would apply more aggressive memory management
 
-  # If CPU usage is high, reduce computation
-  if resource_util['cpu_used_pct'] > 4.0:  # Approaching 5% limit
-    optimizations_applied.append("cpu_reduction_applied")
-    # In real implementation, we would apply computation reduction techniques
+    # If CPU usage is high, reduce computation
+    if resource_util['cpu_used_pct'] > 4.0:  # Approaching 5% limit
+      optimizations_applied.append("cpu_reduction_applied")
+      # In real implementation, we would apply computation reduction techniques
 
-  # Return current status and optimizations
-  current_metrics['optimizations_applied'] = optimizations_applied
-  current_metrics['hardware_efficiency_score'] = calculate_hardware_efficiency_score(current_metrics)
+    # Thermal management optimization
+    if resource_util['thermal_scale'] < 0.8:  # Thermal throttling is affecting performance
+      optimizations_applied.append("thermal_optimization_applied")
+      # In real implementation, we would reduce performance-demanding operations
 
-  return current_metrics
+    # Return current status and optimizations
+    current_metrics['optimizations_applied'] = optimizations_applied
+    current_metrics['hardware_efficiency_score'] = calculate_hardware_efficiency_score(current_metrics)
+
+    return current_metrics
+  except Exception as e:
+    cloudlog.error(f"Error in hardware constraint optimization: {e}")
+    # Return safe defaults in case of error
+    return {
+      'ram_usage_mb': 0,
+      'cpu_usage_percent': 0,
+      'thermal_scale': 1.0,
+      'performance_mode': 1,
+      'optimizations_applied': ["error_recovery"],
+      'hardware_efficiency_score': 0.0
+    }
 
 
 def calculate_hardware_efficiency_score(metrics: Dict[str, float]) -> float:

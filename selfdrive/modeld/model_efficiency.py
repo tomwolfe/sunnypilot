@@ -389,13 +389,21 @@ class EfficientModelWrapper:
       try:
         # Create a small dummy input for warmup
         # The specific shape may need to be adjusted based on the actual model
-        dummy_input = self.torch.randn(1, 3, 224, 224) if hasattr(self.torch, 'randn') else None
+        if hasattr(self.torch, 'randn'):
+          dummy_input = self.torch.randn(1, 3, 224, 224)
+        elif hasattr(self.torch, 'zeros'):
+          dummy_input = self.torch.zeros(1, 3, 224, 224)
+        else:
+          cloudlog.warning("Torch module has no randn or zeros method, skipping warmup")
+          return
+
         if dummy_input is not None:
           with self.torch.no_grad():
             _ = self.model(dummy_input)
-      except Exception:
-        # If warmup fails, continue without it
-        pass
+          cloudlog.debug("Model warmup completed successfully")
+      except Exception as e:
+        cloudlog.warning(f"Model warmup failed (this is not critical): {e}")
+        # If warmup fails, continue without it - this is expected in some environments
 
   def forward(self, *args, **kwargs):
     """Forward pass with performance tracking and optimized execution"""
@@ -469,31 +477,58 @@ class EfficientModelWrapper:
     return adapted_model
 
   def run_efficient_inference(self, input_tensor, use_cache: bool = True):
-    """Run inference with additional optimizations"""
+    """
+    Run inference with additional optimizations
+
+    Args:
+        input_tensor: Input tensor for the model
+        use_cache: Whether to use caching if available
+    Returns:
+        Model output or None if inference fails
+    """
     import time
 
     start_time = time.perf_counter()
 
-    # If torch is available, use optimized execution
-    if self.torch is not None:
-      with self.torch.no_grad():
-        # Move tensor to appropriate device if needed
-        if hasattr(input_tensor, 'device'):
-          if input_tensor.device != next(self.model.parameters()).device:
-            input_tensor = input_tensor.to(next(self.model.parameters()).device)
+    try:
+      # Validate input
+      if input_tensor is None:
+        cloudlog.error("Input tensor is None")
+        return None
 
+      # If torch is available, use optimized execution
+      if self.torch is not None:
+        with self.torch.no_grad():
+          # Move tensor to appropriate device if needed
+          if hasattr(input_tensor, 'device'):
+            try:
+              model_device = next(self.model.parameters()).device
+              if input_tensor.device != model_device:
+                input_tensor = input_tensor.to(model_device)
+            except Exception:
+              # If model parameters can't be accessed, continue with original tensor
+              cloudlog.warning("Could not check or move tensor to model device")
+
+          result = self.model(input_tensor)
+      else:
         result = self.model(input_tensor)
-    else:
-      result = self.model(input_tensor)
 
-    inference_time = (time.perf_counter() - start_time) * 1000
+      inference_time = (time.perf_counter() - start_time) * 1000
 
-    # Track the inference time
-    self.inference_times.append(inference_time)
-    if len(self.inference_times) > self.max_inference_history:
-      self.inference_times.pop(0)
+      # Track the inference time
+      self.inference_times.append(inference_time)
+      if len(self.inference_times) > self.max_inference_history:
+        self.inference_times.pop(0)
 
-    return result
+      return result
+    except Exception as e:
+      cloudlog.error(f"Error during efficient inference: {e}")
+      inference_time = (time.perf_counter() - start_time) * 1000
+      # Still track the time even if inference failed
+      self.inference_times.append(inference_time)
+      if len(self.inference_times) > self.max_inference_history:
+        self.inference_times.pop(0)
+      return None
 
 
 # Global model efficiency optimizer instance

@@ -13,9 +13,9 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 import statistics
 
-from common.swaglog import cloudlog
-from common.params import Params
-from system.hardware.hw import HARDWARE
+from openpilot.common.swaglog import cloudlog
+from openpilot.common.params import Params
+from openpilot.system.hardware import HARDWARE
 import cereal.messaging as messaging
 
 
@@ -140,6 +140,7 @@ class SystemValidator:
     """Validate end-to-end latency"""
     measured_latency = 0.0  # Initialize with a value indicating no measurement yet
 
+    # Set up messaging for latency measurement
     sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
     sm.update(0)
 
@@ -322,29 +323,29 @@ class PerformanceBenchmark:
     import numpy as np
     from selfdrive.modeld.neon_optimizer import neon_optimizer
     
-        # --- Pooled allocation benchmark ---
-        pooled_start_time = time.time()
-        pooled_arrays = []
-        for _ in range(1000):
-          arr = neon_optimizer.memory_pool.get_array(1024, np.float32)
-          pooled_arrays.append(arr)
-        pooled_time = time.time() - pooled_start_time
-    
-        # Explicitly return arrays to the pool for reuse
-        for arr in pooled_arrays:
-          neon_optimizer.memory_pool.put_array(arr)
-    
-    
-        # --- Regular allocation benchmark ---
-        regular_start_time = time.time()
-        regular_arrays = []
-        for _ in range(1000):
-          arr = np.empty(1024, dtype=np.float32)
-          regular_arrays.append(arr)
-        regular_time = time.time() - regular_start_time
-    
-        # No need to explicitly "clean up" regular_arrays as they are not pooled
-        # and will be garbage collected naturally.    
+    # --- Pooled allocation benchmark ---
+    pooled_start_time = time.time()
+    pooled_arrays = []
+    for _ in range(1000):
+      arr = neon_optimizer.memory_pool.get_array(1024, np.float32)
+      pooled_arrays.append(arr)
+    pooled_time = time.time() - pooled_start_time
+
+    # Explicitly return arrays to the pool for reuse
+    for arr in pooled_arrays:
+      neon_optimizer.memory_pool.put_array(arr)
+
+
+    # --- Regular allocation benchmark ---
+    regular_start_time = time.time()
+    regular_arrays = []
+    for _ in range(1000):
+      arr = np.empty(1024, dtype=np.float32)
+      regular_arrays.append(arr)
+    regular_time = time.time() - regular_start_time
+
+    # No need to explicitly "clean up" regular_arrays as they are not pooled
+    # and will be garbage collected naturally.    
     return {
       'test': 'memory_pooling',
       'pooled_time_ms': pooled_time * 1000,

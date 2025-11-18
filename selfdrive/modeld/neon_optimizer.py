@@ -24,24 +24,73 @@ import collections
 
 class MemoryPool:
   """Memory pooling system to reduce allocation overhead"""
-  def __init__(self):
+  def __init__(self, max_pool_size: int = 10):
+    """
+    Initialize the memory pool
+
+    Args:
+        max_pool_size: Maximum number of arrays to keep in each size/type pool
+    """
     # Pool stores available arrays, organized by (size, dtype)
     self.pools: Dict[Tuple[int, np.dtype], collections.deque[np.ndarray]] = collections.defaultdict(collections.deque)
+    self.max_pool_size = max_pool_size
+    self.pool_stats = {'get_count': 0, 'new_allocations': 0, 'put_count': 0}  # Track allocation statistics
 
   def get_array(self, size: int, dtype: np.dtype = np.float32) -> np.ndarray:
-    """Get an array from the pool or create a new one if needed"""
+    """
+    Get an array from the pool or create a new one if needed
+
+    Args:
+        size: Size of the array to get
+        dtype: Data type of the array to get
+
+    Returns:
+        np.ndarray: Array of requested size and type
+    """
+    if size <= 0:
+        raise ValueError(f"Size must be positive, got: {size}")
+
     key = (size, dtype)
     if self.pools[key]:
+      self.pool_stats['get_count'] += 1
       return self.pools[key].popleft()
     else:
+      self.pool_stats['new_allocations'] += 1
       return np.empty(size, dtype=dtype)
 
   def put_array(self, arr: np.ndarray):
-    """Return an array to be available for reuse"""
+    """
+    Return an array to be available for reuse
+
+    Args:
+        arr: The array to return to the pool
+    """
+    if not isinstance(arr, np.ndarray):
+        cloudlog.error(f"Invalid array type to return to pool: {type(arr)}")
+        return
+
     # Limit pool size to prevent excessive memory usage
     key = (arr.size, arr.dtype)
-    if len(self.pools[key]) < 10:  # Limit to 10 arrays per size/type to prevent memory bloat
+    if len(self.pools[key]) < self.max_pool_size:  # Limit to max_pool_size arrays per size/type to prevent memory bloat
       self.pools[key].append(arr)
+      self.pool_stats['put_count'] += 1
+    else:
+      # Pool is full, array will be garbage collected
+      cloudlog.debug(f"Pool for size {key} full, array will be garbage collected")
+
+  def get_stats(self) -> Dict[str, int]:
+    """
+    Get statistics about pool usage
+
+    Returns:
+        Dict containing pool statistics
+    """
+    return self.pool_stats.copy()
+
+  def clear_pool(self):
+    """Clear all arrays from the pool (useful for memory management)"""
+    for key in list(self.pools.keys()):
+      self.pools[key].clear()
 
 class NEONOptimizer:
   """
@@ -51,15 +100,19 @@ class NEONOptimizer:
   It includes memory pooling, optimized array operations, and performance profiling.
   """
 
-  def __init__(self):
+  def __init__(self, max_pool_size: int = 15):
     """
     Initialize the NEON optimizer with memory pool and profiling capabilities
+
+    Args:
+        max_pool_size: Maximum number of arrays to keep in each size/type pool
     """
-    self.memory_pool = MemoryPool()
+    self.memory_pool = MemoryPool(max_pool_size=max_pool_size)
     self.profiler_enabled = True
     self.profile_data = {}
     # Pre-allocated arrays for common operations
     self._temp_buffer = np.zeros(1024, dtype=np.float32)  # For temporary calculations
+    self._initialized = True  # Flag to indicate proper initialization
 
   def neon_enabled(self) -> bool:
     """Check if NEON is available on the current ARM processor"""
@@ -281,16 +334,29 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
   """
   import math
 
-  # Simplified validation without time imports or profiling overhead for this critical function
-  # since it runs frequently in the control loop
-  if not isinstance(steer_angle, (int, float)) or not isinstance(v_ego, (int, float)) or not isinstance(roll, (int, float)):
-      return 0.0
+  # Enhanced validation with better error handling
+  if not isinstance(steer_angle, (int, float, np.number)):
+    cloudlog.error(f"Invalid steer_angle type: {type(steer_angle)}")
+    return 0.0
+
+  if not isinstance(v_ego, (int, float, np.number)):
+    cloudlog.error(f"Invalid v_ego type: {type(v_ego)}")
+    return 0.0
+
+  if not isinstance(roll, (int, float, np.number)):
+    cloudlog.error(f"Invalid roll type: {type(roll)}")
+    return 0.0
 
   # Check for NaN or infinite values
-  if math.isnan(steer_angle) or math.isinf(steer_angle) or \
-     math.isnan(v_ego) or math.isinf(v_ego) or \
-     math.isnan(roll) or math.isinf(roll):
-      return 0.0
+  try:
+    if math.isnan(steer_angle) or math.isinf(steer_angle) or \
+       math.isnan(v_ego) or math.isinf(v_ego) or \
+       math.isnan(roll) or math.isinf(roll):
+        cloudlog.warning(f"Invalid numeric values in curvature calc: steer={steer_angle}, v_ego={v_ego}, roll={roll}")
+        return 0.0
+  except Exception as e:
+    cloudlog.error(f"Error checking for NaN/inf values: {e}")
+    return 0.0
 
   # Early exit for low speeds - no meaningful curvature calculation possible
   if abs(v_ego) < 0.01:
@@ -302,23 +368,44 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
     # Assuming a typical wheelbase of 2.7m and converting steering angle to radians
     # This is a simplified but more physically accurate model than the linear approximation
     wheelbase = 2.7  # meters, typical for many vehicles
-    steering_ratio = 15.0  # typical steering ratio
+    steering_ratio = 15.0  # typical steering ratio for the car being controlled
+    # Only convert if we have reasonable steering angle values
+    if abs(steer_angle) > 100:  # Check for possible sensor error
+      cloudlog.warning(f"Unexpectedly large steering angle: {steer_angle}. Clipping to safe range.")
+      steer_angle = max(min(steer_angle, 100), -100)  # Limit to reasonable range
+
     steer_angle_rad = (steer_angle / steering_ratio) * (math.pi / 180.0)  # Convert to radians and account for steering ratio
 
     # Calculate curvature using the bicycle model: curvature = tan(steering_angle) / wheelbase
-    curvature = math.tan(steer_angle_rad) / wheelbase
+    # Use a safer tan calculation to prevent overflow in extreme cases
+    tan_value = math.tan(steer_angle_rad)
+    if abs(tan_value) > 10:  # Prevent extremely large tan values
+      tan_value = math.copysign(10, tan_value)  # Cap to ±10 with sign preserved
+
+    curvature = tan_value / wheelbase
 
     # Apply vehicle-specific limits to prevent extreme values
     # Typical maximum curvature for a passenger vehicle is around 0.015 m^-1
     max_curvature = 0.015
-    return max(min(curvature, max_curvature), -max_curvature)
-  except Exception:
+    result = max(min(curvature, max_curvature), -max_curvature)
+
+    # Log if we're hitting the limits frequently as it might indicate an issue
+    if abs(result) >= max_curvature * 0.95:
+      cloudlog.debug(f"Curvature is near max limit: {result}, indicating potential high steering demand")
+
+    return result
+
+  except ValueError as e:
+    cloudlog.error(f"Value error in curvature calculation: {e}")
+    return 0.0
+  except Exception as e:
+    cloudlog.error(f"Unexpected error in curvature calculation: {e}")
     # Return safe default value in case of error
     return 0.0
 
 
 __all__ = [
   "NEONOptimizer", "MemoryPool", "neon_optimizer",
-  "optimize_model_processing", "optimize_validation_metrics", 
+  "optimize_model_processing", "optimize_validation_metrics",
   "optimize_curvature_calculation", "ProfilerResult"
 ]

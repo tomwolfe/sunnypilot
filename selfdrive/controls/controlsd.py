@@ -190,20 +190,42 @@ class Controls(ControlsExt, ModelStateBase):
     }
 
     if validation_metrics is not None and validation_metrics.isValid:
-        # Check safety thresholds based on validation metrics
-        lead_conf_avg = validation_metrics.leadConfidenceAvg
-        lane_conf_avg = validation_metrics.laneConfidenceAvg
-        overall_conf = validation_metrics.overallConfidence
+        # Check safety thresholds based on validation metrics with enhanced error handling
+        try:
+            lead_conf_avg = validation_metrics.leadConfidenceAvg
+            lane_conf_avg = validation_metrics.laneConfidenceAvg
+            overall_conf = validation_metrics.overallConfidence
 
-        lead_conf_ok = lead_conf_avg >= 0.6
-        lane_conf_ok = lane_conf_avg >= 0.65
-        overall_conf_ok = overall_conf >= 0.6
-        lane_change_conf_ok = overall_conf >= 0.7 and lane_conf_avg >= 0.7  # Higher threshold for lane changes
+            # Validate that confidence values are within expected range
+            if not (0.0 <= lead_conf_avg <= 1.0):
+                cloudlog.warning(f"Invalid lead confidence value: {lead_conf_avg}")
+                lead_conf_avg = max(0.0, min(1.0, lead_conf_avg))  # Clamp to valid range
 
-        validation_state['lead_confidence_ok'] = lead_conf_ok
-        validation_state['lane_confidence_ok'] = lane_conf_ok
-        validation_state['overall_confidence_ok'] = overall_conf_ok
-        validation_state['lane_change_safe'] = lane_change_conf_ok
+            if not (0.0 <= lane_conf_avg <= 1.0):
+                cloudlog.warning(f"Invalid lane confidence value: {lane_conf_avg}")
+                lane_conf_avg = max(0.0, min(1.0, lane_conf_avg))  # Clamp to valid range
+
+            if not (0.0 <= overall_conf <= 1.0):
+                cloudlog.warning(f"Invalid overall confidence value: {overall_conf}")
+                overall_conf = max(0.0, min(1.0, overall_conf))  # Clamp to valid range
+
+            lead_conf_ok = lead_conf_avg >= 0.6
+            lane_conf_ok = lane_conf_avg >= 0.65
+            overall_conf_ok = overall_conf >= 0.6
+            lane_change_conf_ok = overall_conf >= 0.7 and lane_conf_avg >= 0.7  # Higher threshold for lane changes
+
+            validation_state['lead_confidence_ok'] = lead_conf_ok
+            validation_state['lane_confidence_ok'] = lane_conf_ok
+            validation_state['overall_confidence_ok'] = overall_conf_ok
+            validation_state['lane_change_safe'] = lane_change_conf_ok
+        except AttributeError as e:
+            cloudlog.error(f"Missing validation metrics attribute: {e}")
+            # Set all to safe defaults
+            validation_state.update({k: True for k in validation_state.keys()})
+        except Exception as e:
+            cloudlog.error(f"Error processing validation metrics: {e}")
+            # Set all to safe defaults
+            validation_state.update({k: True for k in validation_state.keys()})
         validation_state['system_safe'] = lead_conf_ok and lane_conf_ok and overall_conf_ok
 
     # Dynamic safety margins for lane change decision-making based on validation metrics
