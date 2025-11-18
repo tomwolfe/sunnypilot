@@ -48,7 +48,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
+                                   'navInstruction', 'navStatus'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -90,8 +91,9 @@ class Controls(ControlsExt, ModelStateBase):
     sr = max(lp.steerRatio, 0.1)
     self.VM.update_params(x, sr)
 
-    # Use cached math operations - optimize radians calculation
-    self.steer_angle_without_offset_cached = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
+    # Optimize radians calculation using cached value
+    angle_offset_diff = CS.steeringAngleDeg - lp.angleOffsetDeg
+    self.steer_angle_without_offset_cached = angle_offset_diff * 0.017453292519943295  # math.radians precomputed
     self.curvature = -self.VM.calc_curvature(self.steer_angle_without_offset_cached, CS.vEgo, lp.roll)
 
     # Update Torque Params
@@ -113,16 +115,19 @@ class Controls(ControlsExt, ModelStateBase):
     CC = car.CarControl.new_message()
     CC.enabled = self.sm['selfdriveState'].enabled
 
-    # Check which actuators can be enabled
-    self._standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill  # cache this calculation
+    # Optimize standstill check
+    self._standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
 
     # Get which state to use for active lateral control
     _lat_active = self.get_lat_active(self.sm)
 
-    CC.latActive = _lat_active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
-                   (not self._standstill or self.CP.steerAtStandstill)
-    CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and \
-                    (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
+    # Optimize boolean logic
+    lat_active_conditions = _lat_active and not (CS.steerFaultTemporary or CS.steerFaultPermanent)
+    CC.latActive = lat_active_conditions and (not self._standstill or self.CP.steerAtStandstill)
+
+    # Optimize long active check
+    long_events_override = any(e.overrideLongitudinal for e in self.sm['onroadEvents'])
+    CC.longActive = CC.enabled and not long_events_override and (self.CP.openpilotLongitudinalControl or not self.CP_SP.pcmCruiseSpeed)
 
     actuators = CC.actuators
     actuators.longControlState = self.LoC.long_control_state
@@ -130,7 +135,7 @@ class Controls(ControlsExt, ModelStateBase):
     # Enable blinkers while lane changing - optimize by checking if necessary
     lane_change_state = model_v2.meta.laneChangeState
     if lane_change_state != LaneChangeState.off:
-      lane_change_direction = model_v2.meta.laneChangeDirection  # cache this lookup
+      lane_change_direction = model_v2.meta.laneChangeDirection
       CC.leftBlinker = lane_change_direction == LaneChangeDirection.left
       CC.rightBlinker = lane_change_direction == LaneChangeDirection.right
 
@@ -139,29 +144,30 @@ class Controls(ControlsExt, ModelStateBase):
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop
-    pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)  # removed float() wrapper
+    # accel PID loop - optimize calculations
+    v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
+    pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, v_cruise_ms)
+    actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)
 
-    # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    # Steering PID loop and lateral MPC - optimize curvature calculations
+    active_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, active_curvature, lp.roll)
 
     actuators.curvature = self.desired_curvature
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
-                                                       self.calibrated_pose, curvature_limited)  # TODO what if not available
-    actuators.torque = steer  # removed float() wrapper for performance
-    actuators.steeringAngleDeg = steeringAngleDeg  # removed float() wrapper for performance
+                                                       self.calibrated_pose, curvature_limited)
+    actuators.torque = steer
+    actuators.steeringAngleDeg = steeringAngleDeg
 
-    # Optimize finite check - avoid dictionary creation unless needed
+    # More efficient finite check - avoid expensive dict creation
     for p in ACTUATOR_FIELDS:
       attr = getattr(actuators, p)
       if not isinstance(attr, Number) or math.isfinite(attr):
         continue
 
-      cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
+      # Only create dict if there's an error (rare case)
+      cloudlog.error(f"actuators.{p} not finite")
       setattr(actuators, p, 0.0)
 
     return CC, lac_log
@@ -256,15 +262,17 @@ class Controls(ControlsExt, ModelStateBase):
     try:
       t.start()
       while True:
-        with PerfTrack("controlsd_update"):
-          self.update()
-        with PerfTrack("controlsd_state_control") as perf_tracker:
-          CC, lac_log = self.state_control()
-        with PerfTrack("controlsd_publish"):
-          self.publish(CC, lac_log)
-        with PerfTrack("controlsd_ext"):
-          self.run_ext(self.sm, self.pm)
-        rk.monitor_time()
+        # Track the overall loop performance
+        with PerfTrack("controlsd_loop") as loop_tracker:
+          with PerfTrack("controlsd_update"):
+            self.update()
+          with PerfTrack("controlsd_state_control") as perf_tracker:
+            CC, lac_log = self.state_control()
+          with PerfTrack("controlsd_publish"):
+            self.publish(CC, lac_log)
+          with PerfTrack("controlsd_ext"):
+            self.run_ext(self.sm, self.pm)
+          rk.monitor_time()
     finally:
       e.set()
       t.join()

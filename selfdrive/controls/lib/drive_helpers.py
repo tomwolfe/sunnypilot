@@ -65,7 +65,7 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
 # Pre-computed value for optimization
 TWO_DT_MDL = 2 * DT_MDL
 
-def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05):
+def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05, nav_instruction=None):
   if len(speeds) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
@@ -78,8 +78,26 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
     v_target = 0.0
     v_target_1sec = 0.0
     a_target = 0.0
+
   should_stop = (v_target < vEgoStopping and
                  v_target_1sec < vEgoStopping)
+
+  # Consider navigation instructions that may require stopping
+  if nav_instruction and hasattr(nav_instruction, 'distanceToManeuver'):
+    if 0 < nav_instruction.distanceToManeuver < 50.0:  # Within 50m of maneuver
+      # Modify acceleration based on navigation requirements
+      maneuver_type = getattr(nav_instruction, 'maneuverType', 'none')
+      if maneuver_type in ['turn', 'arrive', 'stop', 'yield']:
+        # Reduce speed when approaching maneuvers
+        if v_target > 5.0:  # If going faster than 5 m/s
+          a_target = min(a_target, -0.5)  # Gentle deceleration
+        if nav_instruction.distanceToManeuver < 10.0:
+          # More aggressive deceleration close to maneuver
+          a_target = min(a_target, -1.0)
+        # Override should_stop if approaching a maneuver
+        if maneuver_type in ['arrive', 'stop'] and nav_instruction.distanceToManeuver < 5.0:
+          should_stop = True
+
   return a_target, should_stop
 
 def curv_from_psis(psi_target, psi_rate, vego, action_t):

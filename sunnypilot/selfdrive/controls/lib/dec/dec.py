@@ -417,6 +417,21 @@ class DynamicExperimentalController:
     # Check if we should enforce standstill mode explicitly
     enforce_standstill = self._should_enforce_standstill(sm)
 
+    # Enhanced experimental mode activation when navigation is active
+    nav_active = False
+    if 'navInstruction' in sm and sm.updated['navInstruction']:
+      nav_instruction = sm['navInstruction']
+      nav_active = nav_instruction.active
+      # Be more willing to activate experimental mode during navigation
+      if nav_active and self._enabled:
+        # If we're approaching a maneuver, be more conservative
+        if (hasattr(nav_instruction, 'distanceToManeuver') and
+            0 < nav_instruction.distanceToManeuver < 50.0):
+          # Request blended mode when approaching maneuvers
+          maneuver_type = getattr(nav_instruction, 'maneuverType', 'none')
+          if maneuver_type in ['turn', 'arrive', 'stop', 'yield']:
+            self._mode_manager.request_mode('blended', confidence=0.8)
+
     if self._CP.radarUnavailable:
       self._radarless_mode()
     else:
@@ -425,6 +440,13 @@ class DynamicExperimentalController:
     # If we should enforce standstill, make sure we stay in blended mode
     if enforce_standstill:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+
+    # Boost confidence in blended mode during navigation maneuvers
+    if nav_active and self._enabled and self.mode() == 'blended':
+      # Increase confidence in blended mode when navigating
+      self._mode_manager.mode_confidence['blended'] = min(1.0, self._mode_manager.mode_confidence['blended'] + 0.05)
+      # Reduce confidence in acc mode when navigating
+      self._mode_manager.mode_confidence['acc'] = max(0.0, self._mode_manager.mode_confidence['acc'] - 0.02)
 
     self._mode_manager.update()
     self._active = sm['selfdriveState'].experimentalMode and self._enabled

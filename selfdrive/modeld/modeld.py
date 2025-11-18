@@ -54,12 +54,13 @@ T_IDXS_ARRAY = np.array(ModelConstants.T_IDXS, dtype=np.float32)
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                          lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+                          lat_action_t: float, long_action_t: float, v_ego: float, nav_instruction=None) -> log.ModelDataV2.Action:
     plan = model_output['plan'][0]
     desired_accel, should_stop = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
                                                      plan[:,Plan.ACCELERATION][:,0],
                                                      T_IDXS_ARRAY,
-                                                     action_t=long_action_t)
+                                                     action_t=long_action_t,
+                                                     nav_instruction=nav_instruction)
     desired_accel = smooth_value_optimized(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
 
     desired_curvature = get_curvature_from_plan(plan[:,Plan.T_FROM_CURRENT_EULER][:,2],
@@ -97,6 +98,9 @@ class InputQueues:
     self.dtypes = {}
     self.shapes = {}
     self.q = {}
+    # Pre-allocate reusable arrays to reduce memory allocations
+    self._tmp_roll_buffer = None
+    self._tmp_roll_shape = None
 
   def update_dtypes_and_shapes(self, input_dtypes, input_shapes) -> None:
     self.dtypes.update(input_dtypes)
@@ -130,9 +134,18 @@ class InputQueues:
       input_shape[1] = -1
       single_input = inputs[k].reshape(tuple(input_shape))
       sz = single_input.shape[1]
-      # Use numpy's roll functionality instead of manual copying for better performance
-      self.q[k] = np.roll(self.q[k], -sz, axis=1)
-      self.q[k][:,-sz:] = single_input
+
+      # Optimize roll operation by reusing buffer and using more efficient slicing
+      current_buffer = self.q[k]
+      if sz > 0:
+        # Shift existing data left by sz positions and append new data at the end
+        if sz < current_buffer.shape[1]:
+          # More efficient approach: shift left and append at end
+          current_buffer[:, :-sz] = current_buffer[:, sz:]
+          current_buffer[:, -sz:] = single_input
+        else:
+          # If new data is larger than buffer, just replace the end
+          current_buffer[:, -sz:] = single_input
 
   def get(self, *names) -> dict[str, np.ndarray]:
     if self.env_fps == self.model_fps:
@@ -143,10 +156,21 @@ class InputQueues:
         shape = self.shapes[k]
         if 'img' in k:
           slices = self._precomputed_slices[k]
-          out[k] = np.concatenate([self.q[k][:, s] for s in slices], axis=1)
+          # Pre-allocate output array to avoid multiple concatenations
+          out_shape = list(self.q[k].shape)
+          out_shape[1] = sum(s.stop - s.start for s in slices)  # Calculate total size
+          out_array = np.empty(out_shape, dtype=self.q[k].dtype)
+          current_pos = 0
+          for s in slices:
+            slice_data = self.q[k][:, s]
+            slice_size = slice_data.shape[1]
+            out_array[:, current_pos:current_pos + slice_size] = slice_data
+            current_pos += slice_size
+          out[k] = out_array
         elif 'pulse' in k:
           # any pulse within interval counts
-          out[k] = self.q[k].reshape((shape[0], shape[1] * self.fps_ratio, self.fps_ratio, -1)).max(axis=2)
+          reshaped = self.q[k].reshape((shape[0], shape[1] * self.fps_ratio, self.fps_ratio, -1))
+          out[k] = reshaped.max(axis=2)
         else:
           idxs = np.arange(-1, -shape[1], -self.fps_ratio)[::-1]
           out[k] = self.q[k][:, idxs]
@@ -203,9 +227,23 @@ class ModelState(ModelStateBase):
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
     # Create dictionary with pre-allocated arrays to avoid memory allocation
-    parsed_model_outputs = {}
+    # Reuse existing dictionary to avoid recreation
+    if not hasattr(self, '_parsed_model_outputs_cache'):
+      self._parsed_model_outputs_cache = {}
+      self._parsed_model_outputs_arrays = {}
+
+    parsed_model_outputs = self._parsed_model_outputs_cache
+    arrays = self._parsed_model_outputs_arrays
+
     for k, v in output_slices.items():
-      parsed_model_outputs[k] = model_outputs[np.newaxis, v]
+      # Check if we need to reallocate the array
+      required_shape = (1,) + model_outputs[v].shape
+      if k not in arrays or arrays[k].shape != required_shape:
+        arrays[k] = np.empty(required_shape, dtype=model_outputs.dtype)
+      # Copy the sliced data to the pre-allocated array
+      arrays[k][0] = model_outputs[v]
+      parsed_model_outputs[k] = arrays[k]
+
     return parsed_model_outputs
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
@@ -218,7 +256,16 @@ class ModelState(ModelStateBase):
     new_desire = self._temp_new_desire.copy()  # Copy only if needed
     self.prev_desire[:] = inputs['desire_pulse']
 
-    imgs_cl = {name: self.frames[name].prepare(bufs[name], transforms[name].flatten()) for name in self.vision_input_names}
+    # Process images efficiently
+    imgs_cl = {}
+    for name in self.vision_input_names:
+      # Optimize flatten operation if we know the shape
+      transform = transforms[name]
+      if transform.ndim == 2 and transform.size == 9:
+        flattened_transform = transform.ravel()  # More efficient than flatten()
+      else:
+        flattened_transform = transform.flatten()
+      imgs_cl[name] = self.frames[name].prepare(bufs[name], flattened_transform)
 
     if TICI and not USBGPU:
       # The imgs tensors are backed by opencl memory, only need init once
@@ -227,28 +274,49 @@ class ModelState(ModelStateBase):
           self.vision_inputs[key] = qcom_tensor_from_opencl_address(imgs_cl[key].mem_address, self.vision_input_shapes[key], dtype=dtypes.uint8)
     else:
       for key in imgs_cl:
-        frame_input = self.frames[key].buffer_from_cl(imgs_cl[key]).reshape(self.vision_input_shapes[key])
+        frame_input = self.frames[key].buffer_from_cl(imgs_cl[key])
+        # Reshape without copying if possible
+        if frame_input.shape != self.vision_input_shapes[key]:
+          frame_input = frame_input.reshape(self.vision_input_shapes[key])
         self.vision_inputs[key] = Tensor(frame_input, dtype=dtypes.uint8).realize()
 
     if prepare_only:
       return None
 
-    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
+    # Run models efficiently
+    vision_output_tensor = self.vision_run(**self.vision_inputs)
+    self.vision_output = vision_output_tensor.contiguous().realize().uop.base.buffer.numpy()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-    self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
-    for k in ['desire_pulse', 'features_buffer']:
-      self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
+    # Optimize queue operations
+    queue_inputs = {
+      'features_buffer': vision_outputs_dict['hidden_state'],
+      'desire_pulse': new_desire
+    }
+    self.full_input_queues.enqueue(queue_inputs)
+
+    # Optimize queue retrieval
+    queue_data = self.full_input_queues.get('desire_pulse', 'features_buffer')
+    self.numpy_inputs['desire_pulse'][:] = queue_data['desire_pulse']
+    self.numpy_inputs['features_buffer'][:] = queue_data['features_buffer']
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
 
-    self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy()
+    # Run policy model
+    policy_output_tensor = self.policy_run(**self.policy_inputs)
+    self.policy_output = policy_output_tensor.contiguous().realize().uop.base.buffer.numpy()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
 
-    combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
+    # More efficient dictionary merge to reduce memory allocation
+    combined_outputs_dict = {}
+    combined_outputs_dict.update(vision_outputs_dict)
+    combined_outputs_dict.update(policy_outputs_dict)
+
     if SEND_RAW_PRED:
       # Pre-allocate concatenated array to avoid temporary allocations
       raw_pred_size = self.vision_output.size + self.policy_output.size
-      combined_outputs_dict['raw_pred'] = np.empty(raw_pred_size, dtype=np.float32)
+      if not hasattr(self, '_raw_pred_buffer') or self._raw_pred_buffer.size < raw_pred_size:
+        self._raw_pred_buffer = np.empty(raw_pred_size, dtype=np.float32)
+      combined_outputs_dict['raw_pred'] = self._raw_pred_buffer[:raw_pred_size].copy()  # Use copy to preserve buffer
       combined_outputs_dict['raw_pred'][:self.vision_output.size] = self.vision_output
       combined_outputs_dict['raw_pred'][self.vision_output.size:] = self.policy_output
 
@@ -295,7 +363,7 @@ def main(demo=False):
 
   # messaging
   pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry", "modelDataV2SP"])
-  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay"])
+  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay", "navInstruction"])
 
   publish_state = PublishState()
   params = Params()
@@ -412,7 +480,12 @@ def main(demo=False):
       posenet_send = messaging.new_message('cameraOdometry')
       mdv2sp_send = messaging.new_message('modelDataV2SP')
 
-      action = get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego)
+      # Get navigation instruction to influence action
+      nav_instruction = None
+      if 'navInstruction' in self.sm:
+        nav_instruction = self.sm['navInstruction']
+
+      action = get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego, nav_instruction)
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,

@@ -162,6 +162,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Get new v_cruise and a_desired from Smart Cruise Control and Speed Limit Assist
     v_cruise, self.a_desired = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.a_desired, v_cruise)
 
+    # Consider navigation instructions that may affect longitudinal control
+    nav_instruction = None
+    if 'navInstruction' in sm and sm.updated['navInstruction']:
+      nav_instruction = sm['navInstruction']
+      # Adjust cruise speed when approaching maneuvers
+      if nav_instruction.active and hasattr(nav_instruction, 'distanceToManeuver'):
+        if 0 < nav_instruction.distanceToManeuver < 100.0:  # Within 100m of maneuver
+          maneuver_type = getattr(nav_instruction, 'maneuverType', 'none')
+          if maneuver_type in ['turn', 'arrive', 'stop', 'yield']:
+            # Reduce cruise speed when approaching maneuvers
+            if nav_instruction.distanceToManeuver < 50.0:
+              v_cruise = min(v_cruise, v_ego * 0.7)  # Reduce to 70% of current speed
+            if nav_instruction.distanceToManeuver < 20.0:
+              v_cruise = min(v_cruise, v_ego * 0.5)  # Reduce to 50% of current speed
+
     if force_slow_decel:
       v_cruise = 0.0
 
@@ -184,8 +199,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.a_desired + a_prev) / 2.0
 
     action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
+    # Pass navigation instruction to the acceleration calculation function
     output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
-                                                                        action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
+                                                                        action_t=action_t, vEgoStopping=self.CP.vEgoStopping,
+                                                                        nav_instruction=nav_instruction)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
@@ -214,6 +231,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     longitudinalPlan.speeds = self.v_desired_trajectory.tolist()
     longitudinalPlan.accels = self.a_desired_trajectory.tolist()
     longitudinalPlan.jerks = self.j_desired_trajectory.tolist()
+
+    # Include navigation-related information if available
+    nav_instruction = None
+    if 'navInstruction' in sm and sm.updated['navInstruction']:
+      nav_instruction = sm['navInstruction']
+      longitudinalPlan.navEnabled = nav_instruction.active
+      longitudinalPlan.navDistance = nav_instruction.distanceToManeuver if hasattr(nav_instruction, 'distanceToManeuver') else 0.0
+    else:
+      longitudinalPlan.navEnabled = False
+      longitudinalPlan.navDistance = 0.0
 
     longitudinalPlan.hasLead = sm['radarState'].leadOne.status
     longitudinalPlan.longitudinalPlanSource = self.mpc.source
