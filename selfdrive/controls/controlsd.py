@@ -2,6 +2,7 @@
 import math
 import threading
 import time
+import numpy as np
 from numbers import Number
 
 from cereal import car, log
@@ -27,6 +28,14 @@ from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 from openpilot.selfdrive.common.metrics import Metrics, record_metric
+from openpilot.selfdrive.modeld.neon_optimizer import optimize_curvature_calculation, neon_optimizer
+from openpilot.common.dynamic_adaptation import dynamic_adaptation, performance_manager
+from openpilot.common.resource_aware import resource_manager, resource_aware_runner, run_safety_critical_function
+from openpilot.common.data_collector import collect_model_performance, collect_lane_change_event
+from openpilot.selfdrive.monitoring.thermal_management import thermal_manager
+from openpilot.selfdrive.modeld.model_efficiency import ModelEfficiencyOptimizer, create_efficient_model_wrapper
+from openpilot.selfdrive.monitoring.realtime_dashboard import realtime_dashboard
+from openpilot.common.resource_aware import PriorityLevel
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -77,7 +86,34 @@ class Controls(ControlsExt, ModelStateBase):
     self._angle_array = np.zeros(3, dtype=np.float32)  # For orientation/angle data
     self._angular_velocity_array = np.zeros(3, dtype=np.float32)  # For angular velocity data
 
+    # Initialize optimization components
+    self.performance_manager.register_component("controls", {
+      'update_rate': 100,  # Base rate of 100Hz
+      'precision': 'high'
+    })
+
+    # Initialize model efficiency wrapper for performance adaptation
+    self.model_efficiency_wrapper = create_efficient_model_wrapper(self.LaC)
+
+    # Register with resource manager
+    self.resource_allocation = resource_manager.request_resources(
+      process_id="controls_system",
+      priority=PriorityLevel.CRITICAL,
+      cpu_required=2.0,
+      memory_required=50.0,
+      gpu_required=1.0,
+      duration_estimate=0.01
+    )
+
   def update(self):
+    # Check performance adaptation and adjust if needed
+    perf_factor = self.performance_manager.get_component_factor("controls")
+    if perf_factor < 0.8:  # Only when significantly throttled
+      # Skip some updates to reduce computational load
+      if np.random.random() > perf_factor:  # Skip based on performance factor
+        self.sm.update(15)
+        return
+
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
       self.pose_calibrator.feed_live_calib(self.sm['liveCalibration'])
@@ -86,6 +122,8 @@ class Controls(ControlsExt, ModelStateBase):
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
   def state_control(self):
+    # Track performance for the entire state_control method
+    perf_start_time = time.time()
     CS = self.sm['carState']
 
     # Update VehicleModel
@@ -94,10 +132,9 @@ class Controls(ControlsExt, ModelStateBase):
     sr = max(lp.steerRatio, 0.1)
     self.VM.update_params(x, sr)
 
-    # Optimize radians calculation using cached value
+    # Use optimized curvature calculation with memory pooling
     angle_offset_diff = CS.steeringAngleDeg - lp.angleOffsetDeg
-    self.steer_angle_without_offset_cached = angle_offset_diff * 0.017453292519943295  # math.radians precomputed
-    self.curvature = -self.VM.calc_curvature(self.steer_angle_without_offset_cached, CS.vEgo, lp.roll)
+    self.curvature = optimize_curvature_calculation(angle_offset_diff, CS.vEgo, lp.roll)
 
     # Update Torque Params
     if self.CP.lateralTuning.which() == 'torque':
@@ -180,6 +217,11 @@ class Controls(ControlsExt, ModelStateBase):
       lane_change_direction = model_v2.meta.laneChangeDirection
       CC.leftBlinker = lane_change_direction == LaneChangeDirection.left
       CC.rightBlinker = lane_change_direction == LaneChangeDirection.right
+
+      # Collect lane change event for data analysis
+      if validation_metrics is not None:
+        collect_lane_change_event(lane_change_state, validation_metrics.overallConfidence,
+                                CS.steeringAngleDeg, CS.vEgo)
 
     if not CC.latActive:
       self.LaC.reset()
@@ -275,6 +317,15 @@ class Controls(ControlsExt, ModelStateBase):
       # Only create dict if there's an error (rare case)
       cloudlog.error(f"actuators.{p} not finite")
       setattr(actuators, p, 0.0)
+
+    # Record control system metrics with performance data
+    state_control_time = (time.time() - perf_start_time) * 1000  # Convert to ms
+    collect_model_performance("controls", "state_control", state_control_time, {
+        "v_ego": CS.vEgo,
+        "steering_angle_deg": CS.steeringAngleDeg,
+        "curvature": self.curvature,
+        "engaged": self.sm['selfdriveState'].enabled
+    })
 
     # Record control system metrics
     record_metric(Metrics.STEERING_LATENCY_MS, 0.0, {  # Placeholder - actual latency would need real measurement
@@ -429,6 +480,9 @@ class Controls(ControlsExt, ModelStateBase):
     try:
       t.start()
       while True:
+        # Check resource availability and adapt if needed
+        perf_factor = self.performance_manager.get_component_factor("controls")
+
         # Track the overall loop performance
         with PerfTrack("controlsd_loop") as loop_tracker:
           with PerfTrack("controlsd_update"):
@@ -439,6 +493,14 @@ class Controls(ControlsExt, ModelStateBase):
             self.publish(CC, lac_log)
           with PerfTrack("controlsd_ext"):
             self.run_ext(self.sm, self.pm)
+
+          # Collect performance data for dashboard
+          loop_time = loop_tracker.get_time_ms()
+          collect_model_performance("controlsd", "main_loop", loop_time, {
+            "perf_factor": perf_factor,
+            "thermal_scale": thermal_manager.get_current_performance_scale()
+          })
+
           rk.monitor_time()
     finally:
       e.set()
