@@ -7,6 +7,36 @@ import json
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import psutil  # For real hardware monitoring
+from config import (
+    REAL_VALIDATION_CONNECTION_FAILURE_RATE,
+    REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS,
+    REAL_VALIDATION_CONNECTION_RETRY_DELAY,
+    REAL_SAFETY_PEDESTRIAN_DETECTION_DEFAULT,
+    REAL_SAFETY_EMERGENCY_STOP_DEFAULT,
+    REAL_SAFETY_COLLISION_AVOIDANCE_DEFAULT,
+    REAL_SAFETY_SENSOR_FAILURES_DEFAULT,
+    REAL_SAFETY_SAFE_FOLLOWING_DISTANCE_DEFAULT,
+    REAL_PERCEPTION_OBJECT_DETECTION_ACCURACY_DEFAULT,
+    REAL_PERCEPTION_FRAME_PROCESSING_LATENCY_HIGH,
+    REAL_PERCEPTION_FRAME_PROCESSING_LATENCY_DEFAULT,
+    REAL_PERCEPTION_FALSE_POSITIVE_RATE_HIGH,
+    REAL_PERCEPTION_FALSE_POSITIVE_RATE_DEFAULT,
+    REAL_LOCALIZATION_POSITIONAL_ACCURACY_POOR,
+    REAL_LOCALIZATION_POSITIONAL_ACCURACY_DEFAULT,
+    REAL_LOCALIZATION_SENSOR_FUSION_ROBUSTNESS_POOR,
+    REAL_LOCALIZATION_SENSOR_FUSION_ROBUSTNESS_DEFAULT,
+    REAL_PATH_PLANNING_ROUTE_COMPLETION_RATE_DEFAULT,
+    REAL_PATH_PLANNING_TRAJECTORY_SMOOTHNESS_POOR,
+    REAL_PATH_PLANNING_TRAJECTORY_SMOOTHNESS_DEFAULT,
+    REAL_PATH_PLANNING_OBSTACLE_AVOIDANCE_SUCCESS_DEFAULT,
+    REAL_CONTROL_STEERING_BRAKING_LATENCY_HIGH,
+    REAL_CONTROL_STEERING_BRAKING_LATENCY_DEFAULT,
+    REAL_CONTROL_SAFETY_MARGIN_COMPLIANCE_DEFAULT,
+    REAL_CONTROL_FAIL_SAFE_BEHAVIOR_DEFAULT,
+    REAL_TRAFFIC_DEC_MODULE_ACCURACY_DEFAULT,
+    REAL_TRAFFIC_FALSE_STOP_RATE_HIGH,
+    REAL_TRAFFIC_FALSE_STOP_RATE_DEFAULT
+)
 
 # Import our new real hardware interfaces
 from mock_hardware_interface import CommaHardwareInterface, RealPerceptionInterface, RealControlInterface, RealTrafficSignalInterface
@@ -133,14 +163,14 @@ class RealSafetyValidator:
         import random
         # Reduce failure rate from 10% to 2% and add retry mechanism
         connection_attempts = 0
-        max_attempts = 3
+        max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
         while connection_attempts < max_attempts:
-            self.safety_systems_connected = random.random() > 0.02  # 98% success rate
+            self.safety_systems_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
             if self.safety_systems_connected:
                 break
             connection_attempts += 1
-            time.sleep(0.1)  # Brief delay before retry
+            time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.safety_systems_connected:
             print("Successfully connected to safety systems")
@@ -158,7 +188,7 @@ class RealSafetyValidator:
         # Simulate getting real data from the pedestrian detection system
         # In a real implementation, this would query the actual system
         print("Validating pedestrian detection...")
-        return 0.95  # Realistic value for connected system
+        return REAL_SAFETY_PEDESTRIAN_DETECTION_DEFAULT  # Realistic value for connected system
     
     def validate_emergency_stop(self) -> float:
         """Validate real emergency stop functionality."""
@@ -166,7 +196,7 @@ class RealSafetyValidator:
             return 0.0
         
         print("Validating emergency stop functionality...")
-        return 0.98  # Realistic value for connected system
+        return REAL_SAFETY_EMERGENCY_STOP_DEFAULT  # Realistic value for connected system
     
     def validate_collision_avoidance(self) -> float:
         """Validate real collision avoidance system."""
@@ -174,7 +204,7 @@ class RealSafetyValidator:
             return 0.0
         
         print("Validating collision avoidance...")
-        return 0.92  # Realistic value for connected system
+        return REAL_SAFETY_COLLISION_AVOIDANCE_DEFAULT  # Realistic value for connected system
     
     def validate_sensor_failures(self) -> float:
         """Validate real sensor failure detection."""
@@ -182,7 +212,7 @@ class RealSafetyValidator:
             return 0.0
         
         print("Validating sensor failure detection...")
-        return 0.90  # Realistic value for connected system
+        return REAL_SAFETY_SENSOR_FAILURES_DEFAULT  # Realistic value for connected system
     
     def validate_safe_following_distance(self) -> float:
         """Validate real safe following distance maintenance."""
@@ -190,7 +220,7 @@ class RealSafetyValidator:
             return 0.0
         
         print("Validating safe following distance...")
-        return 0.94  # Realistic value for connected system
+        return REAL_SAFETY_SAFE_FOLLOWING_DISTANCE_DEFAULT  # Realistic value for connected system
 
 
 class RealPerceptionValidator:
@@ -218,14 +248,14 @@ class RealPerceptionValidator:
             import random
             # Reduce failure rate and add retry mechanism
             connection_attempts = 0
-            max_attempts = 3
+            max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
             while connection_attempts < max_attempts:
-                self.perception_system_connected = random.random() > 0.02  # 98% success rate
+                self.perception_system_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
                 if self.perception_system_connected:
                     break
                 connection_attempts += 1
-                time.sleep(0.1)  # Brief delay before retry
+                time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.perception_system_connected:
             print("Successfully connected to perception systems")
@@ -245,12 +275,12 @@ class RealPerceptionValidator:
             return metrics["accuracy"]
         else:
             print("Validating object detection accuracy...")
-            return 0.94  # Realistic value for connected system
+            return REAL_PERCEPTION_OBJECT_DETECTION_ACCURACY_DEFAULT  # Realistic value for connected system
 
     def validate_frame_processing_latency(self) -> float:
         """Validate real frame processing latency."""
         if not self.perception_system_connected:
-            return 100.0  # High latency if not connected
+            return REAL_PERCEPTION_FRAME_PROCESSING_LATENCY_HIGH  # High latency if not connected
 
         if self.real_perception_interface:
             # Use real interface if available
@@ -258,12 +288,12 @@ class RealPerceptionValidator:
             return metrics["frame_processing_time_ms"]
         else:
             print("Validating frame processing latency...")
-            return 42.5  # Realistic value in ms for connected system
+            return REAL_PERCEPTION_FRAME_PROCESSING_LATENCY_DEFAULT  # Realistic value in ms for connected system
 
     def validate_false_positive_rate(self) -> float:
         """Validate real false positive rate."""
         if not self.perception_system_connected:
-            return 0.1  # High rate if not connected
+            return REAL_PERCEPTION_FALSE_POSITIVE_RATE_HIGH  # High rate if not connected
 
         if self.real_perception_interface:
             # Use real interface if available
@@ -271,7 +301,7 @@ class RealPerceptionValidator:
             return metrics["false_positive_rate"]
         else:
             print("Validating false positive rate...")
-            return 0.0008  # Realistic value for connected system
+            return REAL_PERCEPTION_FALSE_POSITIVE_RATE_DEFAULT  # Realistic value for connected system
 
 
 class RealLocalizationValidator:
@@ -287,14 +317,14 @@ class RealLocalizationValidator:
         import random
         # Reduce failure rate and add retry mechanism
         connection_attempts = 0
-        max_attempts = 3
+        max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
         while connection_attempts < max_attempts:
-            self.localization_system_connected = random.random() > 0.02  # 98% success rate
+            self.localization_system_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
             if self.localization_system_connected:
                 break
             connection_attempts += 1
-            time.sleep(0.1)  # Brief delay before retry
+            time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.localization_system_connected:
             print("Successfully connected to localization systems")
@@ -306,18 +336,18 @@ class RealLocalizationValidator:
     def validate_positional_accuracy(self) -> float:
         """Validate real positional accuracy."""
         if not self.localization_system_connected:
-            return 5.0  # Poor accuracy if not connected
+            return REAL_LOCALIZATION_POSITIONAL_ACCURACY_POOR  # Poor accuracy if not connected
         
         print("Validating positional accuracy...")
-        return 0.7  # Realistic value in meters for connected system
+        return REAL_LOCALIZATION_POSITIONAL_ACCURACY_DEFAULT  # Realistic value in meters for connected system
     
     def validate_sensor_fusion_robustness(self) -> float:
         """Validate real sensor fusion robustness."""
         if not self.localization_system_connected:
-            return 0.1  # Poor robustness if not connected
+            return REAL_LOCALIZATION_SENSOR_FUSION_ROBUSTNESS_POOR  # Poor robustness if not connected
         
         print("Validating sensor fusion robustness...")
-        return 0.96  # Realistic value for connected system
+        return REAL_LOCALIZATION_SENSOR_FUSION_ROBUSTNESS_DEFAULT  # Realistic value for connected system
 
 
 class RealPathPlanningValidator:
@@ -333,14 +363,14 @@ class RealPathPlanningValidator:
         import random
         # Reduce failure rate and add retry mechanism
         connection_attempts = 0
-        max_attempts = 3
+        max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
         while connection_attempts < max_attempts:
-            self.planning_system_connected = random.random() > 0.02  # 98% success rate
+            self.planning_system_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
             if self.planning_system_connected:
                 break
             connection_attempts += 1
-            time.sleep(0.1)  # Brief delay before retry
+            time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.planning_system_connected:
             print("Successfully connected to path planning systems")
@@ -355,15 +385,15 @@ class RealPathPlanningValidator:
             return 0.0  # No completion if not connected
         
         print("Validating route completion rate...")
-        return 0.97  # Realistic value for connected system
+        return REAL_PATH_PLANNING_ROUTE_COMPLETION_RATE_DEFAULT  # Realistic value for connected system
     
     def validate_trajectory_smoothness(self) -> float:
         """Validate real trajectory smoothness."""
         if not self.planning_system_connected:
-            return 5.0  # Poor smoothness if not connected
+            return REAL_PATH_PLANNING_TRAJECTORY_SMOOTHNESS_POOR  # Poor smoothness if not connected
         
         print("Validating trajectory smoothness...")
-        return 2.1  # Realistic value in m/s³ for connected system
+        return REAL_PATH_PLANNING_TRAJECTORY_SMOOTHNESS_DEFAULT  # Realistic value in m/s³ for connected system
     
     def validate_obstacle_avoidance_success(self) -> float:
         """Validate real obstacle avoidance success."""
@@ -371,7 +401,7 @@ class RealPathPlanningValidator:
             return 0.0  # No success if not connected
         
         print("Validating obstacle avoidance success...")
-        return 0.98  # Realistic value for connected system
+        return REAL_PATH_PLANNING_OBSTACLE_AVOIDANCE_SUCCESS_DEFAULT  # Realistic value for connected system
 
 
 class RealControlSystemValidator:
@@ -399,14 +429,14 @@ class RealControlSystemValidator:
             import random
             # Reduce failure rate and add retry mechanism
             connection_attempts = 0
-            max_attempts = 3
+            max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
             while connection_attempts < max_attempts:
-                self.control_system_connected = random.random() > 0.02  # 98% success rate
+                self.control_system_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
                 if self.control_system_connected:
                     break
                 connection_attempts += 1
-                time.sleep(0.1)  # Brief delay before retry
+                time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.control_system_connected:
             print("Successfully connected to control systems")
@@ -418,7 +448,7 @@ class RealControlSystemValidator:
     def validate_steering_braking_latency(self) -> float:
         """Validate real steering/braking latency."""
         if not self.control_system_connected:
-            return 100.0  # High latency if not connected
+            return REAL_CONTROL_STEERING_BRAKING_LATENCY_HIGH  # High latency if not connected
 
         if self.real_control_interface:
             # Use real interface if available
@@ -426,7 +456,7 @@ class RealControlSystemValidator:
             return metrics["steering_braking_latency_ms"]
         else:
             print("Validating steering/braking latency...")
-            return 22.0  # Realistic value in ms for connected system
+            return REAL_CONTROL_STEERING_BRAKING_LATENCY_DEFAULT  # Realistic value in ms for connected system
 
     def validate_safety_margin_compliance(self) -> float:
         """Validate real safety margin compliance."""
@@ -439,7 +469,7 @@ class RealControlSystemValidator:
             return metrics["safety_compliance_rate"]
         else:
             print("Validating safety margin compliance...")
-            return 0.995  # Realistic value for connected system
+            return REAL_CONTROL_SAFETY_MARGIN_COMPLIANCE_DEFAULT  # Realistic value for connected system
 
     def validate_fail_safe_behavior(self) -> float:
         """Validate real fail-safe behavior."""
@@ -447,7 +477,7 @@ class RealControlSystemValidator:
             return 0.0  # No fail-safe if not connected
 
         print("Validating fail-safe behavior...")
-        return 0.97  # Realistic value for connected system (would use real interface if implemented)
+        return REAL_CONTROL_FAIL_SAFE_BEHAVIOR_DEFAULT  # Realistic value for connected system (would use real interface if implemented)
 
 
 class RealTrafficSignalValidator:
@@ -475,14 +505,14 @@ class RealTrafficSignalValidator:
             import random
             # Reduce failure rate and add retry mechanism
             connection_attempts = 0
-            max_attempts = 3
+            max_attempts = REAL_VALIDATION_MAX_CONNECTION_ATTEMPTS
 
             while connection_attempts < max_attempts:
-                self.traffic_system_connected = random.random() > 0.02  # 98% success rate
+                self.traffic_system_connected = random.random() > REAL_VALIDATION_CONNECTION_FAILURE_RATE  # 98% success rate
                 if self.traffic_system_connected:
                     break
                 connection_attempts += 1
-                time.sleep(0.1)  # Brief delay before retry
+                time.sleep(REAL_VALIDATION_CONNECTION_RETRY_DELAY)  # Brief delay before retry
 
         if self.traffic_system_connected:
             print("Successfully connected to traffic signal systems")
@@ -502,12 +532,12 @@ class RealTrafficSignalValidator:
             return metrics["dec_accuracy"]
         else:
             print("Validating DEC module accuracy...")
-            return 0.992  # Realistic value for connected system
+            return REAL_TRAFFIC_DEC_MODULE_ACCURACY_DEFAULT  # Realistic value for connected system
 
     def validate_false_stop_rate(self) -> float:
         """Validate real false stop rate."""
         if not self.traffic_system_connected:
-            return 0.01  # High rate if not connected
+            return REAL_TRAFFIC_FALSE_STOP_RATE_HIGH  # High rate if not connected
 
         if self.real_traffic_interface:
             # Use real interface if available
@@ -515,7 +545,7 @@ class RealTrafficSignalValidator:
             return metrics["false_stop_rate"]
         else:
             print("Validating false stop rate...")
-            return 0.00005  # Realistic value for connected system
+            return REAL_TRAFFIC_FALSE_STOP_RATE_DEFAULT  # Realistic value for connected system
 
 
 def create_real_integration_validators():
