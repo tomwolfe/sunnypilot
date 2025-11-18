@@ -66,6 +66,10 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll):
 TWO_DT_MDL = 2 * DT_MDL
 
 def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05, nav_instruction=None):
+  import time
+  from openpilot.selfdrive.common.metrics import Metrics, record_metric
+
+  start_time = time.time()
   if len(speeds) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
@@ -97,6 +101,16 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
         # Override should_stop if approaching a maneuver
         if maneuver_type in ['arrive', 'stop'] and nav_instruction.distanceToManeuver < 5.0:
           should_stop = True
+
+  # Record metrics for planning performance
+  planning_time = time.time() - start_time
+  record_metric(Metrics.PLANNING_LATENCY_MS, planning_time * 1000, {
+      "operation": "get_accel_from_plan",
+      "v_target": v_target,
+      "a_target": a_target,
+      "should_stop": should_stop,
+      "nav_instruction_active": bool(nav_instruction)
+  })
 
   return a_target, should_stop
 

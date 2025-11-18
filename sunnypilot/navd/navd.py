@@ -17,6 +17,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.longitudinal_planner import A_CRUISE_MAX_VALS, A_CRUISE_MAX_BP
 from openpilot.sunnypilot.navd.navigation import PointToPointNavigation, NavInstructionController
 from openpilot.sunnypilot.navd.helpers import Coordinate
+from openpilot.selfdrive.common.hardware_monitor import start_hardware_monitoring
 
 
 class NavDaemon:
@@ -133,6 +134,9 @@ class NavDaemon:
 
 
 def main():
+  # Start hardware monitoring
+  start_hardware_monitoring()
+
   nav_daemon = NavDaemon()
   nav_daemon.run()
 

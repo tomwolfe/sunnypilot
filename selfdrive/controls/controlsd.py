@@ -25,6 +25,7 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
+from openpilot.selfdrive.common.metrics import Metrics, record_metric
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -169,6 +170,21 @@ class Controls(ControlsExt, ModelStateBase):
       # Only create dict if there's an error (rare case)
       cloudlog.error(f"actuators.{p} not finite")
       setattr(actuators, p, 0.0)
+
+    # Record control system metrics
+    record_metric(Metrics.STEERING_LATENCY_MS, 0.0, {  # Placeholder - actual latency would need real measurement
+        "operation": "steering_update",
+        "v_ego": CS.vEgo,
+        "steering_angle_deg": CS.steeringAngleDeg,
+        "curvature": self.curvature
+    })
+
+    record_metric(Metrics.BRAKING_LATENCY_MS, 0.0, {  # Placeholder - actual latency would need real measurement
+        "operation": "braking_update",
+        "v_ego": CS.vEgo,
+        "a_ego": CS.aEgo,
+        "accel_cmd": actuators.accel
+    })
 
     return CC, lac_log
 

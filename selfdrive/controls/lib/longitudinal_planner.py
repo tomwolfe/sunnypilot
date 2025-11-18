@@ -16,6 +16,7 @@ from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
+from openpilot.selfdrive.common.metrics import Metrics, record_metric
 
 LON_MPC_STEP = 0.2  # first step is 0.2s
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -217,6 +218,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
+
+    # Record metrics for longitudinal planning
+    record_metric(Metrics.PLANNING_LATENCY_MS, self.mpc.solve_time * 1000, {
+        "operation": "longitudinal_planning",
+        "v_ego": v_ego,
+        "v_cruise": v_cruise,
+        "a_desired": self.a_desired,
+        "output_a_target": self.output_a_target,
+        "mode": mode
+    })
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')

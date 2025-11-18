@@ -482,8 +482,8 @@ def main(demo=False):
 
       # Get navigation instruction to influence action
       nav_instruction = None
-      if 'navInstruction' in self.sm:
-        nav_instruction = self.sm['navInstruction']
+      if 'navInstruction' in sm:
+        nav_instruction = sm['navInstruction']
 
       action = get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego, nav_instruction)
       prev_action = action
