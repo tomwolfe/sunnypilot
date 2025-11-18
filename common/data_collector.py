@@ -145,25 +145,26 @@ class DataCollector:
         model_confidence=validation_metrics.get('overallConfidence', 0.0) if validation_metrics else 0.0
       ))
     
-    # Check for unusual driving scenarios
-    v_ego = car_state.get('vEgo', 0.0)
-    a_ego = car_state.get('aEgo', 0.0)
-    
-    if v_ego > 30 and abs(a_ego) > 4.0:  # High speed with high acceleration/deceleration
-      edge_cases.append(EdgeCaseEvent(
-        timestamp=time.time(),
-        event_type="HIGH_SPEED_HIGH_ACCEL",
-        description="High speed with high acceleration/deceleration",
-        severity="medium",
-        data={
-          'v_ego': v_ego,
-          'a_ego': a_ego,
-          'steering_angle': car_state.get('steeringAngleDeg', 0.0)
-        },
-        engaged=car_state.get('enabled', False),
-        v_ego=v_ego,
-        model_confidence=validation_metrics.get('overallConfidence', 1.0) if validation_metrics else 1.0
-      ))
+    # Check for unusual driving scenarios only when validation_metrics are available to avoid overhead
+    if validation_metrics is not None:
+      v_ego = car_state.get('vEgo', 0.0)
+      a_ego = car_state.get('aEgo', 0.0)
+
+      if v_ego > 30 and abs(a_ego) > 4.0:  # High speed with high acceleration/deceleration
+        edge_cases.append(EdgeCaseEvent(
+          timestamp=time.time(),
+          event_type="HIGH_SPEED_HIGH_ACCEL",
+          description="High speed with high acceleration/deceleration",
+          severity="medium",
+          data={
+            'v_ego': v_ego,
+            'a_ego': a_ego,
+            'steering_angle': car_state.get('steeringAngleDeg', 0.0)
+          },
+          engaged=car_state.get('enabled', False),
+          v_ego=v_ego,
+          model_confidence=validation_metrics.get('overallConfidence', 1.0)
+        ))
     
     # Check for lane departure without signal
     if (model_data.get('meta', {}).get('laneChangeState', 0) == 0 and 
@@ -281,10 +282,10 @@ class DataCollector:
 
       except (OSError, IOError, RuntimeError) as e:
         cloudlog.error(f"Critical data processing error: {e}")
-        time.sleep(0.1)  # Reduced sleep on error to be more responsive
+        time.sleep(0.05)  # Reduced sleep on error to be more responsive
       except Exception as e:
         cloudlog.error(f"Unexpected data processing error: {e}")
-        time.sleep(0.1)  # Reduced sleep on error to be more responsive
+        time.sleep(0.05)  # Reduced sleep on error to be more responsive
   
   def _write_performance_metric(self, metric: PerformanceMetric):
     """Write performance metric to storage"""

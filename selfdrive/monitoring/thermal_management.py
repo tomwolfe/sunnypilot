@@ -356,11 +356,13 @@ class ThermalManager:
         # In real implementation, this would call the appropriate hardware function
         # For now, we'll just log the change
         cloudlog.debug(f"Target fan speed updated to {target_fan_speed}%")
-        
+
         # Update device state with desired fan speed
         if self.sm.valid['deviceState']:
           # In real implementation, we would set the desired fan speed
           pass
+      except (TypeError, ValueError) as e:
+        cloudlog.error(f"Fan control type/value error: {e}")
       except Exception as e:
         cloudlog.error(f"Failed to update fan speed: {e}")
   

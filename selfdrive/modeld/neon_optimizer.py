@@ -27,24 +27,6 @@ class MemoryPool:
   def __init__(self):
     # Pool stores available arrays, organized by (size, dtype)
     self.pools: Dict[Tuple[int, np.dtype], collections.deque[np.ndarray]] = collections.defaultdict(collections.deque)
-    self._initialize_pool()
-
-  def _initialize_pool(self):
-    """Initialize the memory pool with pre-allocated arrays"""
-    try:
-      sizes_dtypes = [
-        (1024, np.float32), (2048, np.float32), (512, np.float32),
-        (100, np.float32), (128, np.float32), (256, np.float32),
-      ]
-
-      for size, dtype in sizes_dtypes:
-        for _ in range(5):  # Create 5 of each size
-          arr = np.empty(size, dtype=dtype)
-          self.pools[(size, dtype)].append(arr)
-
-      cloudlog.info(f"Memory pool initialized with {sum(len(q) for q in self.pools.values())} arrays")
-    except Exception as e:
-      cloudlog.error(f"Failed to initialize memory pool: {e}")
 
   def get_array(self, size: int, dtype: np.dtype = np.float32) -> np.ndarray:
     """Get an array from the pool or create a new one if needed"""
@@ -56,8 +38,10 @@ class MemoryPool:
 
   def put_array(self, arr: np.ndarray):
     """Return an array to be available for reuse"""
+    # Limit pool size to prevent excessive memory usage
     key = (arr.size, arr.dtype)
-    self.pools[key].append(arr)
+    if len(self.pools[key]) < 10:  # Limit to 10 arrays per size/type to prevent memory bloat
+      self.pools[key].append(arr)
 
 class NEONOptimizer:
   """
@@ -250,71 +234,33 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
   Returns:
       float: Calculated curvature value, clamped within reasonable bounds
   """
-  import time
   import math
-  start_time = time.time()
 
-  # Validate inputs early to avoid unnecessary processing (inlined for performance)
-  if not isinstance(steer_angle, (int, float)):
-      cloudlog.warning(f"Invalid steer_angle type: {type(steer_angle)}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-      return 0.0
-  if not isinstance(v_ego, (int, float)):
-      cloudlog.warning(f"Invalid v_ego type: {type(v_ego)}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-      return 0.0
-  if not isinstance(roll, (int, float)):
-      cloudlog.warning(f"Invalid roll type: {type(roll)}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+  # Simplified validation without time imports or profiling overhead for this critical function
+  # since it runs frequently in the control loop
+  if not isinstance(steer_angle, (int, float)) or not isinstance(v_ego, (int, float)) or not isinstance(roll, (int, float)):
       return 0.0
 
-  # Check for NaN or infinite values early (inlined for performance)
-  if math.isnan(steer_angle) or math.isinf(steer_angle):
-      cloudlog.warning(f"Invalid steer_angle value: {steer_angle}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-      return 0.0
-  if math.isnan(v_ego) or math.isinf(v_ego):
-      cloudlog.warning(f"Invalid v_ego value: {v_ego}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-      return 0.0
-  if math.isnan(roll) or math.isinf(roll):
-      cloudlog.warning(f"Invalid roll value: {roll}")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+  # Check for NaN or infinite values
+  if math.isnan(steer_angle) or math.isinf(steer_angle) or \
+     math.isnan(v_ego) or math.isinf(v_ego) or \
+     math.isnan(roll) or math.isinf(roll):
       return 0.0
 
-  # Validate inputs to avoid invalid calculations
-  if abs(v_ego) < 0.01:  # v_ego is too low to calculate meaningful curvature
-      cloudlog.debug(f"v_ego too low ({v_ego}), returning zero curvature")
-      execution_time = (time.time() - start_time) * 1000
-      neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+  # Early exit for low speeds - no meaningful curvature calculation possible
+  if abs(v_ego) < 0.01:
       return 0.0
 
+  # Simplified but efficient calculation - avoid complex function imports in time-critical functions
   try:
-    # More robust curvature calculation
-    # This is a simplified approximation; in a real implementation, this would call
-    # the actual VM.calc_curvature function with proper parameters
-    # Original formula: curvature = -VM.calc_curvature(math.radians(angle_offset_diff), v_ego, roll)
+    # Calculate curvature using a simple linear approximation
+    # In a real implementation, VM.calc_curvature would be called directly
     curvature = steer_angle * 0.005  # Simplified approximation
 
-    # Apply bounds checking to prevent extreme values
-    curvature = max(min(curvature, 0.02), -0.02)  # Reasonable curvature bounds
-
-    # Profile this operation
-    execution_time = (time.time() - start_time) * 1000
-    neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
-
-    return curvature
+    # Apply reasonable bounds to prevent extreme values
+    return max(min(curvature, 0.02), -0.02)
   except Exception:
-    # Only catch specific exceptions, avoid broad exception handling
-    # Return a safe default value in case of error
-    execution_time = (time.time() - start_time) * 1000
-    neon_optimizer.profile_function("optimize_curvature_calculation", execution_time)
+    # Return safe default value in case of error
     return 0.0
 
 

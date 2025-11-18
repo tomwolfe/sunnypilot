@@ -495,8 +495,9 @@ class Controls(ControlsExt, ModelStateBase):
           perf_factor = self.performance_manager.get_component_factor("controls")
         else:
           # Use the last known performance factor to reduce computation
-          if 'perf_factor' not in locals():
-            perf_factor = 1.0  # Default value
+          if 'perf_factor' not in locals() or not hasattr(self, 'last_perf_factor'):
+            self.last_perf_factor = 1.0  # Default value
+          perf_factor = self.last_perf_factor
 
         # Track the overall loop performance
         with PerfTrack("controlsd_loop") as loop_tracker:
