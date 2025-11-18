@@ -289,15 +289,16 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Modify lateral control if validation metrics indicate low confidence
     if not validation_state['system_safe']:
-        # Add additional stability checks when system confidence is low
-        if abs(self.desired_curvature) < 0.001:  # Only for very small curvature requests
-            lat_active_with_safety = CC.latActive  # Allow minimal lateral control
+        # Be very conservative with lateral control when system confidence is low
+        if abs(self.desired_curvature) < 0.005:  # Only allow very small corrections
+            # Allow minimal lateral control but with reduced authority
+            lat_active_with_safety = abs(self.desired_curvature) < 0.001
         else:
-            # Be more conservative with lateral control when confidence is low
-            lat_active_with_safety = CC.latActive and (
-                validation_state['lane_confidence_ok'] or
-                abs(self.desired_curvature) < 0.005  # Allow only very small corrections
-            )
+            # Deactivate lateral control if system is not safe and curvature request is significant
+            lat_active_with_safety = False
+    else:
+        # Normal operation when system is safe
+        lat_active_with_safety = CC.latActive
 
     steer, steeringAngleDeg, lac_log = self.LaC.update(lat_active_with_safety, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
@@ -482,9 +483,16 @@ class Controls(ControlsExt, ModelStateBase):
     t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
+      loop_counter = 0
       while True:
         # Check resource availability and adapt if needed
-        perf_factor = self.performance_manager.get_component_factor("controls")
+        # Only check performance factor every few iterations to reduce overhead
+        if loop_counter % 10 == 0:  # Check every 10 loops (about every 0.1 seconds at 100Hz)
+          perf_factor = self.performance_manager.get_component_factor("controls")
+        else:
+          # Use the last known performance factor to reduce computation
+          if 'perf_factor' not in locals():
+            perf_factor = 1.0  # Default value
 
         # Track the overall loop performance
         with PerfTrack("controlsd_loop") as loop_tracker:
@@ -497,13 +505,15 @@ class Controls(ControlsExt, ModelStateBase):
           with PerfTrack("controlsd_ext"):
             self.run_ext(self.sm, self.pm)
 
-          # Collect performance data for dashboard
-          loop_time = loop_tracker.get_time_ms()
-          collect_model_performance("controlsd", "main_loop", loop_time, {
-            "perf_factor": perf_factor,
-            "thermal_scale": thermal_manager.get_current_performance_scale()
-          })
+          # Collect performance data for dashboard - but only periodically to reduce overhead
+          if loop_counter % 50 == 0:  # Collect performance data every 50 loops (about every 0.5 seconds)
+            loop_time = loop_tracker.get_time_ms()
+            collect_model_performance("controlsd", "main_loop", loop_time, {
+              "perf_factor": perf_factor,
+              "thermal_scale": thermal_manager.get_current_performance_scale()
+            })
 
+          loop_counter += 1
           rk.monitor_time()
     finally:
       e.set()

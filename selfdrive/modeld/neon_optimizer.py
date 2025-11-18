@@ -56,11 +56,12 @@ class MemoryPool:
       if arr.dtype == dtype and arr.size >= size and arr not in self.used_arrays:
         # Mark as used and return a view of the appropriate size
         self.used_arrays.append(arr)
-        return arr[:size].copy()  # Return a copy to prevent corruption
+        return np.copy(arr[:size])  # Return a copy to prevent corruption
 
     # If no suitable array found, create new one
     new_arr = np.empty(size, dtype=dtype)
-    self.used_arrays.append(new_arr)  # Track this temporary array too
+    # Add to used arrays temporarily so it's tracked
+    self.used_arrays.append(new_arr)
     return new_arr
 
   def put_array(self, arr: np.ndarray):
@@ -242,20 +243,27 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
   start_time = __import__('time').time()
 
   try:
-    # Use memory pool for temporary calculations
-    temp_arr = neon_optimizer.memory_pool.get_array(3, np.float32)
-    temp_arr[0] = float(steer_angle) if not np.isnan(steer_angle) and not np.isinf(steer_angle) else 0.0
-    temp_arr[1] = float(v_ego) if not np.isnan(v_ego) and not np.isinf(v_ego) else 0.0
-    temp_arr[2] = float(roll) if not np.isnan(roll) and not np.isinf(roll) else 0.0
+    # Validate inputs early to avoid unnecessary processing
+    if not (isinstance(steer_angle, (int, float)) and
+            isinstance(v_ego, (int, float)) and
+            isinstance(roll, (int, float))):
+        return 0.0
+
+    # Check for NaN or infinite values early
+    if (np.isnan(steer_angle) or np.isinf(steer_angle) or
+        np.isnan(v_ego) or np.isinf(v_ego) or
+        np.isnan(roll) or np.isinf(roll)):
+        return 0.0
 
     # Validate inputs to avoid invalid calculations
-    if abs(temp_arr[1]) < 0.01:  # v_ego is too low to calculate meaningful curvature
+    if abs(v_ego) < 0.01:  # v_ego is too low to calculate meaningful curvature
         return 0.0
 
     # More robust curvature calculation
+    # This is a simplified approximation; in a real implementation, this would call
+    # the actual VM.calc_curvature function with proper parameters
     # Original formula: curvature = -VM.calc_curvature(math.radians(angle_offset_diff), v_ego, roll)
-    # The 0.005 factor is a simplified approximation
-    curvature = temp_arr[0] * 0.005
+    curvature = steer_angle * 0.005  # Simplified approximation
 
     # Apply bounds checking to prevent extreme values
     curvature = np.clip(curvature, -0.02, 0.02)  # Reasonable curvature bounds

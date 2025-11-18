@@ -232,64 +232,76 @@ class DataCollector:
     """Process collected data in background thread"""
     while True:
       try:
-        # Process all queued items
+        # Process all queued items (limit batch size to prevent excessive processing)
         processed = 0
-        
+        max_batch_size = 50  # Process up to 50 items per cycle to prevent blocking
+
         # Process performance metrics
-        while not self.performance_queue.empty():
+        for _ in range(max_batch_size):
           try:
             metric = self.performance_queue.get_nowait()
             self._write_performance_metric(metric)
+            processed += 1
           except queue.Empty:
             break
-          processed += 1
-          
+          if processed >= max_batch_size:
+            break
+
         # Process edge cases
-        while not self.edge_cases_queue.empty():
+        for _ in range(max_batch_size):
           try:
             edge_case = self.edge_cases_queue.get_nowait()
             self._write_edge_case(edge_case)
+            processed += 1
           except queue.Empty:
             break
-          processed += 1
-          
+          if processed >= max_batch_size:
+            break
+
         # Process anomalies
-        while not self.anomalies_queue.empty():
+        for _ in range(max_batch_size):
           try:
             anomaly = self.anomalies_queue.get_nowait()
             self._write_anomaly(anomaly)
+            processed += 1
           except queue.Empty:
             break
-          processed += 1
-        
+          if processed >= max_batch_size:
+            break
+
         # Update submaster regularly
         self.sm.update(0)
-        
-        # Sleep if no data was processed
+
+        # Sleep to prevent excessive CPU usage when queues are empty
         if processed == 0:
-          time.sleep(0.1)
-          
+          time.sleep(0.05)  # Reduced from 0.1 to be more responsive
+        else:
+          # Brief sleep to allow other threads to run after processing batch
+          time.sleep(0.001)
+
       except Exception as e:
         cloudlog.error(f"Data processing error: {e}")
-        time.sleep(1.0)
+        time.sleep(0.1)  # Reduced sleep on error to be more responsive
   
   def _write_performance_metric(self, metric: PerformanceMetric):
     """Write performance metric to storage"""
     try:
-      filename = self.output_dir / f"perf_{int(metric.timestamp)}.json"
+      filename = self.output_dir / f"perf_{int(metric.timestamp)}_{metric.component.replace(':', '_')}.json"
+      # Create data dict efficiently
+      data_dict = {
+        'type': 'performance',
+        'timestamp': metric.timestamp,
+        'component': metric.component,
+        'operation': metric.operation,
+        'execution_time_ms': metric.execution_time_ms,
+        'cpu_usage': metric.cpu_usage,
+        'memory_usage': metric.memory_usage,
+        'gpu_usage': metric.gpu_usage,
+        'thermal_status': metric.thermal_status,
+        'additional_data': metric.additional_data or {}
+      }
       with open(filename, 'w') as f:
-        json.dump({
-          'type': 'performance',
-          'timestamp': metric.timestamp,
-          'component': metric.component,
-          'operation': metric.operation,
-          'execution_time_ms': metric.execution_time_ms,
-          'cpu_usage': metric.cpu_usage,
-          'memory_usage': metric.memory_usage,
-          'gpu_usage': metric.gpu_usage,
-          'thermal_status': metric.thermal_status,
-          'additional_data': metric.additional_data or {}
-        }, f)
+        json.dump(data_dict, f, separators=(',', ':'))  # Compact JSON format to save space
     except Exception as e:
       cloudlog.error(f"Failed to write performance metric: {e}")
   
@@ -297,35 +309,39 @@ class DataCollector:
     """Write edge case to storage"""
     try:
       filename = self.output_dir / f"edge_{int(event.timestamp)}_{event.event_type.lower()}.json"
+      # Create data dict efficiently
+      data_dict = {
+        'type': 'edge_case',
+        'timestamp': event.timestamp,
+        'event_type': event.event_type,
+        'description': event.description,
+        'severity': event.severity,
+        'data': event.data,
+        'engaged': event.engaged,
+        'v_ego': event.v_ego,
+        'model_confidence': event.model_confidence
+      }
       with open(filename, 'w') as f:
-        json.dump({
-          'type': 'edge_case',
-          'timestamp': event.timestamp,
-          'event_type': event.event_type,
-          'description': event.description,
-          'severity': event.severity,
-          'data': event.data,
-          'engaged': event.engaged,
-          'v_ego': event.v_ego,
-          'model_confidence': event.model_confidence
-        }, f)
+        json.dump(data_dict, f, separators=(',', ':'))  # Compact JSON format to save space
     except Exception as e:
       cloudlog.error(f"Failed to write edge case: {e}")
-  
+
   def _write_anomaly(self, anomaly: SystemAnomaly):
     """Write anomaly to storage"""
     try:
       filename = self.output_dir / f"anomaly_{int(anomaly.timestamp)}_{anomaly.anomaly_type.lower()}.json"
+      # Create data dict efficiently
+      data_dict = {
+        'type': 'anomaly',
+        'timestamp': anomaly.timestamp,
+        'anomaly_type': anomaly.anomaly_type,
+        'description': anomaly.description,
+        'severity': anomaly.severity,
+        'metrics_before': anomaly.metrics_before,
+        'metrics_after': anomaly.metrics_after
+      }
       with open(filename, 'w') as f:
-        json.dump({
-          'type': 'anomaly',
-          'timestamp': anomaly.timestamp,
-          'anomaly_type': anomaly.anomaly_type,
-          'description': anomaly.description,
-          'severity': anomaly.severity,
-          'metrics_before': anomaly.metrics_before,
-          'metrics_after': anomaly.metrics_after
-        }, f)
+        json.dump(data_dict, f, separators=(',', ':'))  # Compact JSON format to save space
     except Exception as e:
       cloudlog.error(f"Failed to write anomaly: {e}")
   
