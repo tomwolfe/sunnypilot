@@ -619,68 +619,101 @@ class EnhancedSafetySupervisor(SafetySupervisor):
                                  model_outputs: Dict[str, Any],
                                  tracked_objects: Dict[str, Any],
                                  prediction_uncertainties: Dict[str, float] = None,
-                                 car_state: 'log.CarState' = None) -> SafetyCheckResult:
+                                 car_state=None) -> SafetyCheckResult:
         """Enhanced safety validation considering prediction uncertainties"""
         violations = []
         confidence = 1.0
 
         # Original safety checks
-        collision_check = self._assess_collision_risk(ego_state, planning_result, tracked_objects)
-        if not collision_check.is_safe:
-            violations.extend(collision_check.violations)
-            confidence *= collision_check.confidence
+        try:
+            collision_check = self._assess_collision_risk(ego_state, planning_result, tracked_objects)
+            if not collision_check.is_safe:
+                violations.extend(collision_check.violations)
+                confidence *= collision_check.confidence
+        except Exception as e:
+            cloudlog.error(f"Error in collision risk assessment: {e}")
+            violations.append(SafetyViolation.MODEL_DISAGREEMENT)
+            confidence *= 0.5
 
         # Check road boundary compliance
-        boundary_check = self._check_road_boundary_compliance(ego_state, planning_result)
-        if not boundary_check.is_safe:
-            violations.extend(boundary_check.violations)
-            confidence *= boundary_check.confidence
+        try:
+            boundary_check = self._check_road_boundary_compliance(ego_state, planning_result)
+            if not boundary_check.is_safe:
+                violations.extend(boundary_check.violations)
+                confidence *= boundary_check.confidence
+        except Exception as e:
+            cloudlog.error(f"Error in boundary compliance check: {e}")
+            violations.append(SafetyViolation.ROAD_BOUNDARY_VIOLATION)
+            confidence *= 0.5
 
         # Check speed limit compliance
-        speed_check = self._check_speed_limit_compliance(ego_state, planning_result)
-        if not speed_check.is_safe:
-            violations.extend(speed_check.violations)
-            confidence *= speed_check.confidence
+        try:
+            speed_check = self._check_speed_limit_compliance(ego_state, planning_result)
+            if not speed_check.is_safe:
+                violations.extend(speed_check.violations)
+                confidence *= speed_check.confidence
+        except Exception as e:
+            cloudlog.error(f"Error in speed compliance check: {e}")
+            violations.append(SafetyViolation.SPEED_LIMIT_EXCEEDED)
+            confidence *= 0.5
 
         # Check maneuver reasonableness
-        maneuver_check = self._check_maneuver_reasonableness(ego_state, planning_result)
-        if not maneuver_check.is_safe:
-            violations.extend(maneuver_check.violations)
-            confidence *= maneuver_check.confidence
+        try:
+            maneuver_check = self._check_maneuver_reasonableness(ego_state, planning_result)
+            if not maneuver_check.is_safe:
+                violations.extend(maneuver_check.violations)
+                confidence *= maneuver_check.confidence
+        except Exception as e:
+            cloudlog.error(f"Error in maneuver check: {e}")
+            violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
+            confidence *= 0.5
 
         # Enhanced checks considering uncertainties
         if prediction_uncertainties:
-            uncertainty_check = self.uncertainty_aware_validator.check_uncertainty_aware_safety(
-                ego_state, planning_result, tracked_objects, prediction_uncertainties
-            )
-            if not uncertainty_check.is_safe:
-                violations.extend(uncertainty_check.violations)
-                confidence *= uncertainty_check.confidence
+            try:
+                uncertainty_check = self.uncertainty_aware_validator.check_uncertainty_aware_safety(
+                    ego_state, planning_result, tracked_objects, prediction_uncertainties
+                )
+                if not uncertainty_check.is_safe:
+                    violations.extend(uncertainty_check.violations)
+                    confidence *= uncertainty_check.confidence
+            except Exception as e:
+                cloudlog.error(f"Error in uncertainty-aware safety check: {e}")
+                violations.append(SafetyViolation.MODEL_DISAGREEMENT)
+                confidence *= 0.3
 
         # Multi-modal safety check
-        multimodal_check = self.multi_modal_safety_checker.check_multiple_scenarios(
-            ego_state, planning_result, tracked_objects
-        )
-        if not multimodal_check.is_safe:
-            violations.extend(multimodal_check.violations)
-            confidence *= multimodal_check.confidence
+        try:
+            multimodal_check = self.multi_modal_safety_checker.check_multiple_scenarios(
+                ego_state, planning_result, tracked_objects
+            )
+            if not multimodal_check.is_safe:
+                violations.extend(multimodal_check.violations)
+                confidence *= multimodal_check.confidence
+        except Exception as e:
+            cloudlog.error(f"Error in multi-modal safety check: {e}")
+            violations.append(SafetyViolation.MODEL_DISAGREEMENT)
+            confidence *= 0.5
 
         # Traffic sign and light validation
         if car_state is not None:
             try:
-                traffic_safe, traffic_violations, traffic_metrics = self.traffic_safety_system.validate_with_planning(
-                    ego_state, car_state, planning_result, model_outputs
-                )
-                if not traffic_safe:
-                    # Convert traffic violations to our safety violation format
-                    for violation in traffic_violations:
-                        if "RED_LIGHT" in violation or "TRAFFIC_LIGHT" in violation:
-                            violations.append(SafetyViolation.COLLISION_IMMINENT)
-                        elif "STOP_SIGN" in violation:
-                            violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
-                        elif "SPEED" in violation:
-                            violations.append(SafetyViolation.SPEED_LIMIT_EXCEEDED)
-                    confidence *= traffic_metrics.get('traffic_compliance_score', 0.8)
+                # Check if traffic safety system exists and is callable
+                if (hasattr(self.traffic_safety_system, 'validate_with_planning') and
+                    callable(getattr(self.traffic_safety_system, 'validate_with_planning', None))):
+                    traffic_safe, traffic_violations, traffic_metrics = self.traffic_safety_system.validate_with_planning(
+                        ego_state, car_state, planning_result, model_outputs
+                    )
+                    if not traffic_safe:
+                        # Convert traffic violations to our safety violation format
+                        for violation in traffic_violations:
+                            if "RED_LIGHT" in str(violation) or "TRAFFIC_LIGHT" in str(violation):
+                                violations.append(SafetyViolation.COLLISION_IMMINENT)
+                            elif "STOP_SIGN" in str(violation):
+                                violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
+                            elif "SPEED" in str(violation):
+                                violations.append(SafetyViolation.SPEED_LIMIT_EXCEEDED)
+                        confidence *= traffic_metrics.get('traffic_compliance_score', 0.8)
             except Exception as e:
                 cloudlog.warning(f"Traffic validation error: {e}")
 
@@ -692,13 +725,16 @@ class EnhancedSafetySupervisor(SafetySupervisor):
         recovery_action = self._determine_enhanced_recovery_action(violations, ego_state)
 
         # Update safety metrics
-        metrics = self._calculate_safety_metrics(ego_state, planning_result, tracked_objects)
-        self.last_safety_metrics = metrics
+        try:
+            metrics = self._calculate_safety_metrics(ego_state, planning_result, tracked_objects)
+            self.last_safety_metrics = metrics
+        except Exception as e:
+            cloudlog.error(f"Error calculating safety metrics: {e}")
 
         return SafetyCheckResult(
             is_safe=is_safe,
             violations=violations,
-            confidence=confidence,
+            confidence=max(0.0, min(1.0, confidence)),  # Clamp confidence to [0, 1]
             explanation=explanation,
             recovery_action=recovery_action
         )
