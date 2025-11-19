@@ -12,35 +12,39 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
 import time
 
+# Import the new Kalman filter tracking system
+from openpilot.selfdrive.common.kalman_filter import object_tracker
+
 
 class EnhancedCameraFusion:
     """
     Enhanced camera fusion system that improves temporal consistency
     and tracking across multiple camera feeds
     """
-    
+
     def __init__(self):
         self.prev_road_outputs = None
         self.prev_wide_outputs = None
         self.temporal_consistency_buffer = []
         self.max_buffer_size = 10
-        
+
         # Initialize messaging for camera states
         try:
-            self.sm = messaging.SubMaster(['roadCameraState', 'wideRoadCameraState', 
+            self.sm = messaging.SubMaster(['roadCameraState', 'wideRoadCameraState',
                                          'modelV2', 'cameraOdometry'], ignore_alive=True)
         except Exception as e:
             cloudlog.warning(f"Could not initialize SubMaster in EnhancedCameraFusion: {e}")
             self.sm = None
-        
+
         # Camera calibration tracking
         self.road_calibration = None
         self.wide_calibration = None
         self.calibration_valid = False
-        
-        # Object tracking across frames
-        self.tracked_objects = {}
-        self.last_track_id = 0
+
+        # Use enhanced Kalman filter for object tracking
+        # Object tracking is now handled by the Kalman filter system
+        self.kalman_tracker = object_tracker
+        self.frame_count = 0
         
     def update_calibrations(self, live_calib_data) -> None:
         """Update camera calibrations from live calibration data"""
@@ -196,77 +200,117 @@ class EnhancedCameraFusion:
         
         return smoothed_lines if smoothed_lines else current_lines
     
-    def _enhance_object_tracking(self, fused_output: Dict[str, Any], 
+    def _enhance_object_tracking(self, fused_output: Dict[str, Any],
                                wide_output: Dict[str, Any]) -> Dict[str, Any]:
-        """Enhance object tracking across camera feeds"""
-        # Create or update tracked objects
+        """Enhance object tracking across camera feeds using Kalman filters"""
+        # Prepare detections for tracking
+        detections = []
+
+        # Collect leads from fused output
         if 'leads_v3' in fused_output and fused_output['leads_v3']:
             for lead in fused_output['leads_v3']:
-                if lead.prob > 0.5:  # Only track confident detections
-                    self._update_tracked_object(lead)
-        
-        # Update fused output with tracking information
-        fused_output['tracked_objects'] = list(self.tracked_objects.values())
-        
-        return fused_output
-    
-    def _update_tracked_object(self, lead_detection: Any) -> None:
-        """Update tracked object based on new detection"""
-        # Simple tracking based on position proximity
-        closest_id = None
-        min_distance = float('inf')
-        
-        for obj_id, tracked_obj in self.tracked_objects.items():
-            # Calculate distance to existing track
-            dx = abs(tracked_obj.get('dRel', 0) - lead_detection.dRel)
-            dy = abs(tracked_obj.get('yRel', 0) - lead_detection.yRel)
-            distance = (dx**2 + dy**2)**0.5
-            
-            if distance < min_distance and distance < 5.0:  # Within 5m
-                min_distance = distance
-                closest_id = obj_id
-        
-        if closest_id is not None:
-            # Update existing track
-            self.tracked_objects[closest_id].update({
-                'dRel': lead_detection.dRel,
-                'yRel': lead_detection.yRel,
-                'vRel': lead_detection.vRel,
-                'prob': lead_detection.prob,
-                'timestamp': time.time()
-            })
+                if lead.prob > 0.3:  # Lower threshold since Kalman filter handles noise
+                    # Create detection object with dRel (longitudinal distance) and yRel (lateral distance)
+                    detection = type('Detection', (), {})()
+                    detection.dRel = lead.dRel
+                    detection.yRel = lead.yRel
+                    detection.prob = lead.prob
+                    detections.append(detection)
+
+        # Also include leads from wide camera if available (for better near-field tracking)
+        if 'leads_v3' in wide_output and wide_output['leads_v3']:
+            for lead in wide_output['leads_v3']:
+                if lead.prob > 0.3 and lead.dRel < 50:  # Focus on near-field for wide camera
+                    # Check if this detection is already in the main list to avoid duplicates
+                    is_duplicate = False
+                    for main_detection in detections:
+                        dist = ((lead.dRel - main_detection.dRel)**2 + (lead.yRel - main_detection.yRel)**2)**0.5
+                        if dist < 3.0:  # Within 3m considered same object
+                            is_duplicate = True
+                            break
+
+                    if not is_duplicate:
+                        detection = type('Detection', (), {})()
+                        detection.dRel = lead.dRel
+                        detection.yRel = lead.yRel
+                        detection.prob = lead.prob
+                        detections.append(detection)
+
+        # Update the Kalman tracker with current detections
+        current_time = time.time()
+        self.frame_count += 1
+        confirmed_tracks = self.kalman_tracker.update(detections, current_time)
+
+        # Update fused output with enhanced tracking information
+        fused_output['tracked_objects'] = confirmed_tracks
+        fused_output['tracking_quality'] = len(confirmed_tracks)  # Number of confirmed tracks
+
+        # Add tracking confidence based on track quality
+        if confirmed_tracks:
+            avg_track_confidence = sum(track['prob'] for track in confirmed_tracks) / len(confirmed_tracks)
+            fused_output['track_confidence_avg'] = avg_track_confidence
+            fused_output['track_count'] = len(confirmed_tracks)
         else:
-            # Create new track
-            self.last_track_id += 1
-            self.tracked_objects[self.last_track_id] = {
-                'id': self.last_track_id,
-                'dRel': lead_detection.dRel,
-                'yRel': lead_detection.yRel,
-                'vRel': lead_detection.vRel,
-                'prob': lead_detection.prob,
-                'timestamp': time.time()
-            }
+            fused_output['track_confidence_avg'] = 0.0
+            fused_output['track_count'] = 0
+
+        return fused_output
     
     def _calculate_temporal_consistency(self, fused_output: Dict[str, Any]) -> float:
         """Calculate temporal consistency score"""
         if not self.temporal_consistency_buffer:
-            return 1.0
-        
+            # If we have Kalman-filtered tracking, start with that as baseline
+            if 'track_count' in fused_output and fused_output['track_count'] > 0:
+                # Use tracking quality as initial consistency if available
+                track_quality = min(1.0, fused_output['track_count'] * 0.1)  # Up to 0.1 per tracked object
+                return min(1.0, 0.5 + track_quality)  # Base consistency + tracking contribution
+            return 0.8  # Default baseline
+
         # Calculate consistency as the stability of key outputs
         consistency_scores = []
-        
+
         # Compare current with most recent frame
         if len(self.temporal_consistency_buffer) >= 2:
             prev_output = self.temporal_consistency_buffer[-2]
-            
+
             # Calculate plan consistency
             if ('plan' in fused_output and 'plan' in prev_output and
                 fused_output['plan'].shape == prev_output['plan'].shape):
                 plan_diff = np.mean(np.abs(fused_output['plan'] - prev_output['plan']))
                 plan_consistency = max(0.0, 1.0 - plan_diff)  # Higher difference = lower consistency
                 consistency_scores.append(plan_consistency)
-        
-        return np.mean(consistency_scores) if consistency_scores else 0.8  # Default to 0.8 if no comparison possible
+
+            # Calculate lane line consistency
+            if ('lane_lines' in fused_output and 'lane_lines' in prev_output and
+                len(fused_output['lane_lines']) == len(prev_output['lane_lines'])):
+                lane_diffs = []
+                for curr_line, prev_line in zip(fused_output['lane_lines'], prev_output['lane_lines']):
+                    if hasattr(curr_line, 'points') and hasattr(prev_line, 'points'):
+                        if len(curr_line.points) == len(prev_line.points):
+                            point_diff = np.mean(np.abs(np.array(curr_line.points) - np.array(prev_line.points)))
+                            lane_diffs.append(point_diff)
+                if lane_diffs:
+                    avg_lane_diff = np.mean(lane_diffs)
+                    lane_consistency = max(0.0, 1.0 - avg_lane_diff * 0.1)  # Scale appropriately
+                    consistency_scores.append(lane_consistency)
+
+            # Calculate tracking consistency based on number of tracked objects
+            current_tracks = fused_output.get('track_count', 0)
+            prev_tracks = prev_output.get('track_count', 0)
+            if current_tracks > 0 or prev_tracks > 0:
+                track_stability = 1.0 - abs(current_tracks - prev_tracks) / max(current_tracks, prev_tracks, 1) * 0.3
+                consistency_scores.append(track_stability)
+
+        # Combine base consistency with tracking quality for more robust measure
+        base_consistency = np.mean(consistency_scores) if consistency_scores else 0.7
+
+        # Enhance with tracking quality if available in current output
+        track_quality_contribution = 0.0
+        if 'track_confidence_avg' in fused_output and fused_output['track_count'] > 0:
+            # Higher weight for good tracking quality
+            track_quality_contribution = fused_output['track_confidence_avg'] * min(0.2, fused_output['track_count'] * 0.02)
+
+        return min(1.0, base_consistency + track_quality_contribution)
 
 
 # Singleton instance for use across the system

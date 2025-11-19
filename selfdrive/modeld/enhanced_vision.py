@@ -11,6 +11,9 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
+# Import the enhanced fusion system
+from openpilot.selfdrive.common.enhanced_fusion import enhanced_fusion
+
 
 class EnhancedVisionProcessor:
     """
@@ -18,23 +21,26 @@ class EnhancedVisionProcessor:
     by optimizing the fusion between road and wide-road cameras for better
     depth estimation and object detection.
     """
-    
+
     def __init__(self):
         # Enhanced feature extraction parameters
         self.depth_model_params = {
             'baseline': 0.12,  # Estimated baseline between cameras (meters)
             'focal_length_factor': 1.0,  # Adjusted for wide road camera
         }
-        
+
         # Confidence thresholds for model outputs
         self.confidence_thresholds = {
             'object_detection': 0.7,
             'depth_estimation': 0.8,
             'lane_detection': 0.85
         }
-        
+
         # Pre-computed matrices for optimization
         self._precomputed_transforms = {}
+
+        # Reference to the enhanced fusion system
+        self.fusion_system = enhanced_fusion
         
     def estimate_depth_from_stereo(self, 
                                  road_img: np.ndarray, 
@@ -237,6 +243,31 @@ class EnhancedVisionProcessor:
         return validation_metrics
 
 
+    def integrate_multi_camera_fusion(self,
+                                    road_model_output: Dict[str, np.ndarray],
+                                    wide_model_output: Dict[str, np.ndarray],
+                                    live_calib_data: Optional[np.ndarray] = None) -> Dict[str, np.ndarray]:
+        """
+        Integrate multi-camera fusion between road and wide road camera outputs
+
+        Args:
+            road_model_output: Output from road camera model
+            wide_model_output: Output from wide road camera model
+            live_calib_data: Current calibration data for coordinate transforms
+
+        Returns:
+            Fused model output with enhanced tracking and consistency
+        """
+        # Update calibrations if provided
+        if live_calib_data is not None:
+            self.fusion_system.update_calibrations(live_calib_data)
+
+        # Perform enhanced fusion with Kalman filter tracking
+        fused_output = self.fusion_system.enhanced_camera_fusion(road_model_output, wide_model_output)
+
+        return fused_output
+
+
 # Example usage within modeld pipeline
 def integrate_enhanced_vision(model_output: Dict[str, np.ndarray],
                            bufs: Dict[str, object],
@@ -244,26 +275,55 @@ def integrate_enhanced_vision(model_output: Dict[str, np.ndarray],
                            calib_params: np.ndarray) -> Tuple[Dict[str, np.ndarray], Dict[str, float]]:
     """
     Integrate enhanced vision processing into the modeld pipeline.
-    
+
     Args:
         model_output: Raw output from existing model
         bufs: Camera buffers
         transforms: Camera transformation matrices
         calib_params: Calibration parameters
-        
+
     Returns:
         Tuple of (enhanced_model_output, validation_metrics)
     """
     processor = EnhancedVisionProcessor()
-    
+
     # Estimate depth using dual-camera setup
     # Note: This would require access to actual image data in real implementation
     depth_map = None  # Would be computed from actual camera images
-    
+
     # Enhance the model output
     enhanced_output = processor.enhance_feature_extraction(model_output, depth_map)
-    
+
     # Validate outputs
     validation_metrics = processor.validate_model_outputs(enhanced_output)
-    
+
     return enhanced_output, validation_metrics
+
+
+def integrate_multi_camera_fusion_pipeline(road_model_output: Dict[str, np.ndarray],
+                                        wide_model_output: Dict[str, np.ndarray],
+                                        live_calib_data: Optional[np.ndarray] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, float]]:
+    """
+    Integrate the full multi-camera fusion pipeline with enhanced tracking and validation.
+
+    Args:
+        road_model_output: Output from road camera model
+        wide_model_output: Output from wide road camera model
+        live_calib_data: Current calibration data
+
+    Returns:
+        Tuple of (fused_model_output, validation_metrics)
+    """
+    processor = EnhancedVisionProcessor()
+
+    # Perform multi-camera fusion with Kalman filter tracking
+    fused_output = processor.integrate_multi_camera_fusion(
+        road_model_output,
+        wide_model_output,
+        live_calib_data
+    )
+
+    # Validate the fused output
+    validation_metrics = processor.validate_model_outputs(fused_output)
+
+    return fused_output, validation_metrics
