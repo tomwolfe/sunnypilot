@@ -96,29 +96,47 @@ class DynamicPerformanceAdaptation:
   def _get_system_load(self) -> SystemLoad:
     """Get current system load metrics"""
     # Get CPU usage
-    cpu_percent = psutil.cpu_percent(interval=None)
-    cpu_per_core = psutil.cpu_percent(percpu=True)
-    
+    try:
+      cpu_percent = psutil.cpu_percent(interval=None)
+      cpu_per_core = psutil.cpu_percent(percpu=True)
+    except Exception as e:
+      cloudlog.error(f"Error getting CPU usage: {e}")
+      cpu_percent = 0.0
+
     # Get memory usage
-    memory = psutil.virtual_memory()
-    memory_percent = memory.percent
-    
+    try:
+      memory = psutil.virtual_memory()
+      memory_percent = memory.percent
+    except Exception as e:
+      cloudlog.error(f"Error getting memory usage: {e}")
+      memory_percent = 0.0
+
     # Get GPU usage (if available)
     try:
       gpu_percent = HARDWARE.get_gpu_usage_percent()
-    except:
+    except Exception as e:
+      cloudlog.error(f"Error getting GPU usage: {e}")
       gpu_percent = 0.0
-    
+
     # Get temperatures
-    cpu_temps = HARDWARE.get_thermal_config().get_cpu_temps()
-    gpu_temps = HARDWARE.get_thermal_config().get_gpu_temps()
-    
+    try:
+      cpu_temps = HARDWARE.get_thermal_config().get_cpu_temps()
+      gpu_temps = HARDWARE.get_thermal_config().get_gpu_temps()
+    except Exception as e:
+      cloudlog.error(f"Error getting thermal data: {e}")
+      cpu_temps = []
+      gpu_temps = []
+
     cpu_temp = max(cpu_temps) if cpu_temps else 0.0
     gpu_temp = max(gpu_temps) if gpu_temps else 0.0
-    
-    # Get thermal status from device state
-    thermal_status = self.sm['deviceState'].thermalStatus if self.sm.valid['deviceState'] else 0
-    
+
+    # Get thermal status from device state with proper error handling
+    try:
+      thermal_status = self.sm['deviceState'].thermalStatus if self.sm.valid['deviceState'] else 0
+    except Exception as e:
+      cloudlog.error(f"Error getting thermal status: {e}")
+      thermal_status = 0
+
     return SystemLoad(
       cpu_percent=cpu_percent,
       memory_percent=memory_percent,

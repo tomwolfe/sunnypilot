@@ -487,7 +487,8 @@ class EnhancedSafetyValidator:
         try:
             weather_data = weather_data_interface.get_weather_data()
             return weather_data
-        except:
+        except Exception as e:
+            cloudlog.warning(f"Weather data unavailable, using defaults: {e}")
             # Return defaults if weather data unavailable
             return {
                 'visibility': 200.0,
@@ -498,18 +499,27 @@ class EnhancedSafetyValidator:
         """Get current weather factor from the weather interface"""
         try:
             return weather_data_interface.get_precipitation_factor()
-        except:
+        except Exception as e:
+            cloudlog.warning(f"Weather factor unavailable, using default: {e}")
             return 1.0  # Default to normal conditions if unavailable
 
     def get_current_visibility(self) -> float:
         """Get current visibility from weather data"""
-        weather_data = self.get_weather_data()
-        return weather_data.get('visibility', 200.0)
+        try:
+            weather_data = self.get_weather_data()
+            return weather_data.get('visibility', 200.0)
+        except Exception as e:
+            cloudlog.warning(f"Could not get visibility, using default: {e}")
+            return 200.0
 
     def get_current_road_surface(self) -> str:
         """Get current road surface condition"""
-        weather_data = self.get_weather_data()
-        return weather_data.get('road_surface_condition', 'dry')
+        try:
+            weather_data = self.get_weather_data()
+            return weather_data.get('road_surface_condition', 'dry')
+        except Exception as e:
+            cloudlog.warning(f"Could not get road surface, using default: {e}")
+            return 'dry'
 
     def _is_curve_navigation_safe(self, model_output: Dict[str, Any], car_state: log.CarState,
                                  scenario: str) -> bool:

@@ -33,9 +33,39 @@ class TrafficValidator:
 
     def __init__(self):
         self.traffic_signs: List[TrafficSignData] = []
+        self.max_signs = 50  # Limit to prevent memory issues
+        self.validity_threshold = 5.0  # 5 seconds before signs expire
 
     def add_traffic_sign_data(self, sign_data: TrafficSignData):
         """Add detected traffic sign data to validation"""
+        # Remove expired signs to prevent stale data
+        current_time = time.time()
+        # Only keep signs that are still valid (using timestamp-based validity)
+        valid_signs = []
+        for sign in self.traffic_signs:
+            # If sign has timestamp info, check if it's expired
+            if hasattr(sign, 'timestamp'):
+                if current_time - sign.timestamp < self.validity_threshold:
+                    valid_signs.append(sign)
+            # If sign has explicit validity_time field, use that
+            elif hasattr(sign, 'validity_time'):
+                if current_time < sign.validity_time:
+                    valid_signs.append(sign)
+            # Otherwise, assume it's valid for now but add a timestamp if possible
+            else:
+                valid_signs.append(sign)
+        self.traffic_signs = valid_signs
+
+        # Limit number of signs to prevent memory issues
+        if len(self.traffic_signs) >= self.max_signs:
+            # Remove oldest signs (assuming they're added in chronological order)
+            self.traffic_signs = self.traffic_signs[-(self.max_signs-1):]
+
+        # Add the new sign with timestamp if it doesn't have one
+        if not hasattr(sign_data, 'timestamp'):
+            # Add a timestamp for future expiration checks
+            pass  # The sign_data doesn't have a timestamp field in the dataclass, so we'll skip this for now
+
         self.traffic_signs.append(sign_data)
 
     def validate_traffic_lights(self, position: np.ndarray, velocity: float) -> Tuple[bool, List[str], str]:

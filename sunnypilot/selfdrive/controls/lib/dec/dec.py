@@ -16,6 +16,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConsta
 from openpilot.system.statsd import statlog
 from typing import Literal
 import time
+from openpilot.common.swaglog import cloudlog
 
 # d-e2e, from modeldata.h
 TRAJECTORY_SIZE = 33
@@ -431,6 +432,39 @@ class DynamicExperimentalController:
           maneuver_type = getattr(nav_instruction, 'maneuverType', 'none')
           if maneuver_type in ['turn', 'arrive', 'stop', 'yield']:
             self._mode_manager.request_mode('blended', confidence=0.8)
+
+    # Check enhanced validation system for safety
+    try:
+        from openpilot.selfdrive.common.enhanced_validation import enhanced_validator
+
+        # Get validation metrics from system message if available
+        if 'validationMetrics' in sm and sm.updated['validationMetrics']:
+            validation_msg = sm['validationMetrics']
+            system_safe = validation_msg.enhanced.systemSafe if hasattr(validation_msg, 'enhanced') else True
+
+            # If validation system says it's unsafe, switch to blended mode with emergency priority
+            if not system_safe:
+                self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+        else:
+            # If validation metrics aren't available, use our own assessment
+            # Perform local validation based on available model outputs
+            model_output = {
+                'lead_confidence_avg': sm['modelV2'].leadsV3[0].prob if len(sm['modelV2'].leadsV3) > 0 else 0.0,
+                'lane_confidence_avg': min([line.prob for line in sm['modelV2'].laneLines]) if len(sm['modelV2'].laneLines) > 0 else 0.0,
+            }
+
+            # Create a basic assessment
+            lead_conf = model_output['lead_confidence_avg']
+            lane_conf = model_output['lane_confidence_avg']
+
+            # If critical detection is low, be more conservative
+            if lead_conf < 0.5 or lane_conf < 0.5:
+                self._mode_manager.request_mode('blended', confidence=0.9, emergency=True)
+    except ImportError:
+        # If enhanced validation isn't available, continue with normal operation
+        pass
+    except Exception as e:
+        cloudlog.error(f"Error in safety validation integration: {e}")
 
     if self._CP.radarUnavailable:
       self._radarless_mode()

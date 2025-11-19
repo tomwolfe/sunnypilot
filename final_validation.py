@@ -114,6 +114,18 @@ def validate_implementation():
       if not validate_syntax(filepath, description):
         all_valid = False
 
+  print("\n7. Integration validation:")
+  files_to_check = [
+    ("sunnypilot/selfdrive/controls/lib/dec/dec.py", "DEC Integration"),
+  ]
+
+  for filepath, description in files_to_check:
+    if not validate_file_exists(filepath, description):
+      all_valid = False
+    else:
+      if not validate_syntax(filepath, description):
+        all_valid = False
+
   print("\n" + "="*60)
 
   if all_valid:

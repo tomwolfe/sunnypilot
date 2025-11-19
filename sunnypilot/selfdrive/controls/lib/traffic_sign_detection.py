@@ -36,31 +36,43 @@ class TrafficSignDetectionHandler:
         Process raw model data to extract traffic sign information
         """
         traffic_signs = []
-        
+
         try:
             # Process detected objects from the model
             if hasattr(model_data, 'objects') and model_data.objects:
                 for obj in model_data.objects:
+                    # Safety check: ensure obj has required attributes
+                    if not hasattr(obj, 'confidence'):
+                        continue
+
                     # Check if object is a traffic sign based on class and confidence
                     if obj.confidence > self.confidence_threshold:
                         sign_type = self._map_object_to_sign_type(obj)
                         if sign_type:
                             # Calculate distance and position from ego vehicle
                             distance = self._calculate_distance_from_model(obj)
-                            position = np.array([obj.x, obj.y, obj.z]) if hasattr(obj, 'x') and hasattr(obj, 'y') and hasattr(obj, 'z') else np.array([0.0, 0.0, 0.0])
-                            
-                            sign_data = TrafficSignData(
-                                sign_type=sign_type,
-                                distance=distance,
-                                confidence=obj.confidence,
-                                position=position,
-                                validity_time=model_data.frameId / 20.0 + 5.0  # Assume 20Hz and 5s validity
-                            )
-                            traffic_signs.append(sign_data)
-                            
+                            # Safety check for position attributes
+                            pos_x = getattr(obj, 'x', 0.0)
+                            pos_y = getattr(obj, 'y', 0.0)
+                            pos_z = getattr(obj, 'z', 0.0)
+                            position = np.array([pos_x, pos_y, pos_z])
+
+                            # Create sign data with proper error handling
+                            try:
+                                sign_data = TrafficSignData(
+                                    sign_type=sign_type,
+                                    distance=distance,
+                                    confidence=obj.confidence,
+                                    position=position
+                                )
+                                traffic_signs.append(sign_data)
+                            except Exception as e:
+                                cloudlog.error(f"Failed to create TrafficSignData: {e}")
+                                continue
+
         except Exception as e:
             cloudlog.error(f"Error processing traffic signs from model data: {e}")
-            
+
         return traffic_signs
     
     def process_custom_model_output(self, custom_model_data: Any) -> List[TrafficSignData]:
@@ -145,12 +157,19 @@ class TrafficSignDetectionHandler:
         """
         Integrate detected traffic signs with the traffic validation system
         """
-        # Process model data to get traffic signs
-        detected_signs = self.process_modeld_output(model_data)
+        try:
+            # Process model data to get traffic signs
+            detected_signs = self.process_modeld_output(model_data)
 
-        # Add each detected sign to the validator
-        for sign in detected_signs:
-            traffic_validator.add_traffic_sign_data(sign)
+            # Add each detected sign to the validator
+            for sign in detected_signs:
+                try:
+                    traffic_validator.add_traffic_sign_data(sign)
+                except Exception as e:
+                    cloudlog.error(f"Failed to add traffic sign to validator: {e}")
+                    continue
+        except Exception as e:
+            cloudlog.error(f"Error in traffic sign integration: {e}")
 
 
 def create_traffic_sign_handler() -> TrafficSignDetectionHandler:
