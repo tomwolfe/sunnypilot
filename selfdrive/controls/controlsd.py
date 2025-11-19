@@ -274,11 +274,11 @@ class Controls(ControlsExt, ModelStateBase):
             {
                 'lead_confidence_avg': validation_metrics.leadConfidenceAvg if validation_metrics else 0.0,
                 'lane_confidence_avg': validation_metrics.laneConfidenceAvg if validation_metrics else 0.0,
-                'road_edge_confidence_avg': validation_metrics.leadConfidenceAvg if validation_metrics else 0.0,  # Placeholder
-                'temporal_consistency': validation_metrics.overallConfidence if validation_metrics else 1.0,  # Placeholder
-                'path_in_lane_validity': validation_metrics.overallConfidence if validation_metrics else 0.0,  # Placeholder
+                'road_edge_confidence_avg': validation_metrics.roadEdgeConfidenceAvg if validation_metrics and hasattr(validation_metrics, 'roadEdgeConfidenceAvg') else 0.0,
+                'temporal_consistency': validation_metrics.temporalConsistency if validation_metrics and hasattr(validation_metrics, 'temporalConsistency') else 0.8,  # Use actual temporal consistency from validation metrics
+                'path_in_lane_validity': validation_metrics.overallConfidence if validation_metrics else 0.0,  # For now, use overall confidence as proxy
                 'overall_confidence': validation_metrics.overallConfidence if validation_metrics else 0.0,
-                'lane_count': 2  # Placeholder - would need real lane count from modelV2
+                'lane_count': 2  # This would need real implementation from modelV2
             },
             CS,
             road_condition='highway'  # This would be determined from map data in a full implementation
@@ -297,7 +297,6 @@ class Controls(ControlsExt, ModelStateBase):
 
         # Publish enhanced validation metrics for system-wide use
         try:
-            self.validation_metrics_publisher = validation_metrics_publisher
             self.validation_metrics_publisher.publish_metrics(enhanced_validation_result,
                                                             model_v2, CS)
         except Exception as e:
@@ -342,6 +341,7 @@ class Controls(ControlsExt, ModelStateBase):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, v_cruise_ms)
 
     # Enhanced planning using advanced planner
+    advanced_plan = None  # Initialize in case advanced planning doesn't execute
     if hasattr(self, 'advanced_planner') and validation_metrics is not None:
         # Update ego state for planner
         self.ego_state = EgoState(
@@ -438,7 +438,7 @@ class Controls(ControlsExt, ModelStateBase):
             active_curvature = active_curvature * 1.1  # Slightly more responsive when confidence is high
 
     # Incorporate advanced planning system's curvature recommendations if available
-    if hasattr(self, 'advanced_planner') and validation_metrics is not None and 'advanced_plan' in locals():
+    if hasattr(self, 'advanced_planner') and validation_metrics is not None and advanced_plan is not None:
         # Blend planned curvature with model-based curvature based on confidence
         planned_curvature = advanced_plan.desired_curvature
         blending_factor = min(0.5, advanced_plan.confidence)  # Use up to 50% of planned curvature based on confidence
@@ -498,7 +498,7 @@ class Controls(ControlsExt, ModelStateBase):
 
             # Prepare planning result for safety validation
             # Since advanced planning may not always run, create a safe fallback plan
-            if 'advanced_plan' in locals():
+            if advanced_plan is not None:
                 plan_for_validation = advanced_plan
             else:
                 # Create a safe fallback plan based on current state
@@ -708,50 +708,9 @@ class Controls(ControlsExt, ModelStateBase):
     cs.forceDecel = (self.sm['driverMonitoringState'].awarenessStatus < 0.) or \
                      (self.sm['selfdriveState'].state == State.softDisabling)  # Removed bool() wrapper
 
-    # Add safety validation metrics to controlsState for monitoring
-    if validation_metrics is not None:
-        # Set validation metrics - need to create and populate the metrics struct
-        cs.validation.metrics.leadConfidenceAvg = validation_metrics.leadConfidenceAvg
-        cs.validation.metrics.leadConfidenceMax = validation_metrics.leadConfidenceMax
-        cs.validation.metrics.laneConfidenceAvg = validation_metrics.laneConfidenceAvg
-        cs.validation.metrics.overallConfidence = validation_metrics.overallConfidence
-        cs.validation.metrics.isValid = validation_metrics.isValid
-        cs.validation.metrics.confidenceThreshold = validation_metrics.confidenceThreshold
-    else:
-        # Default values when validation metrics are not available
-        cs.validation.metrics.leadConfidenceAvg = 0.0
-        cs.validation.metrics.leadConfidenceMax = 0.0
-        cs.validation.metrics.laneConfidenceAvg = 0.0
-        cs.validation.metrics.overallConfidence = 0.0
-        cs.validation.metrics.isValid = False
-        cs.validation.metrics.confidenceThreshold = 0.5
-
-    # Add safety supervisor metrics if available
-    if hasattr(self, 'safety_supervisor') and self.safety_supervisor.last_safety_metrics:
-        safety_metrics = self.safety_supervisor.last_safety_metrics
-        cs.validation.safetyMetrics.collisionRisk = safety_metrics.collision_risk
-        cs.validation.safetyMetrics.trackingAccuracy = safety_metrics.tracking_accuracy
-        cs.validation.safetyMetrics.modelConsistency = safety_metrics.model_consistency
-        cs.validation.safetyMetrics.environmentalAwareness = safety_metrics.environmental_awareness
-        cs.validation.safetyMetrics.overallSafetyScore = safety_metrics.overall_safety_score
-    else:
-        # Default safety metrics
-        cs.validation.safetyMetrics.collisionRisk = 0.1
-        cs.validation.safetyMetrics.trackingAccuracy = 0.8
-        cs.validation.safetyMetrics.modelConsistency = 0.8
-        cs.validation.safetyMetrics.environmentalAwareness = 0.7
-        cs.validation.safetyMetrics.overallSafetyScore = 0.7
-
-    # Add enhanced validation metrics to controlsState
-    try:
-        if hasattr(self, 'enhanced_validator') and enhanced_validation_result:
-            cs.validation.enhanced.situationFactor = enhanced_validation_result.get('situation_factor', 1.0)
-            cs.validation.enhanced.speedAdjustedConfidence = enhanced_validation_result.get('speed_adjusted_confidence', 0.0)
-            cs.validation.enhanced.temporalConsistency = enhanced_validation_result.get('temporal_consistency', 1.0)
-            cs.validation.enhanced.systemSafe = enhanced_validation_result.get('system_safe', False)
-    except Exception:
-        # Continue without enhanced metrics if there's an error
-        pass
+    # Validation metrics are logged separately via the validationMetrics message
+    # The controlsState does not have validation fields in the capnp definition
+    # Applications should subscribe to validationMetrics for safety validation data
 
     # Update state based on safety status
     cs.fallbackActive = safety_status['fallback_active']
