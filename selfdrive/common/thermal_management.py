@@ -5,7 +5,7 @@ Predictive thermal management and dynamic resource allocation
 
 import time
 import psutil
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from cereal import log
 import cereal.messaging as messaging
 from openpilot.common.swaglog import cloudlog
@@ -184,17 +184,40 @@ class PredictiveThermalManager:
         return metrics
     
     def _calculate_component_score(self, value: float, thresholds: Dict[str, float]) -> float:
-        """Calculate thermal score for a single component (0.0 to 1.0)"""
-        if value <= thresholds['min']:
+        """
+        Calculate thermal score for a single component (0.0 to 1.0)
+
+        Args:
+            value: Current value of the component to score
+            thresholds: Dictionary containing 'min', 'max', and 'critical' thresholds
+
+        Returns:
+            float: Score between 0.0 (critical) and 1.0 (optimal)
+        """
+        # Validate thresholds to avoid division by zero
+        min_val = thresholds.get('min', 0.0)
+        max_val = thresholds.get('max', 100.0)
+        critical_val = thresholds.get('critical', 110.0)
+
+        if max_val <= min_val:
+            cloudlog.error(f"Invalid thresholds: max ({max_val}) <= min ({min_val})")
+            return 1.0  # Return safe default
+
+        if critical_val <= max_val:
+            cloudlog.error(f"Invalid thresholds: critical ({critical_val}) <= max ({max_val})")
+            return 1.0  # Return safe default
+
+        if value <= min_val:
             return 1.0
-        elif value >= thresholds['critical']:
+        elif value >= critical_val:
             return 0.0
-        elif value <= thresholds['max']:
+        elif value <= max_val:
             # Between min and max: good range
-            return 1.0 - ((value - thresholds['min']) / (thresholds['max'] - thresholds['min']))
+            return 1.0 - ((value - min_val) / (max_val - min_val))
         else:
             # Between max and critical: warning range
-            return max(0.0, 0.3 - ((value - thresholds['max']) / (thresholds['critical'] - thresholds['max'])) * 0.3)
+            warning_score = (value - max_val) / (critical_val - max_val)
+            return max(0.0, 0.3 * (1.0 - warning_score))  # Gracefully reduce to 0
     
     def _adjust_performance_scaling(self, thermal_metrics: Dict[str, Any]) -> None:
         """Adjust performance scaling based on thermal state"""

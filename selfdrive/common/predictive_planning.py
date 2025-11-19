@@ -42,11 +42,26 @@ class SimplePredictivePlanner:
         self.time_steps = 10  # Number of time steps in planning
 
     def predict_constant_velocity(self, position: np.ndarray, velocity: np.ndarray, horizon: float = 5.0) -> np.ndarray:
-        """Predict trajectory assuming constant velocity motion"""
+        """
+        Predict trajectory assuming constant velocity motion.
+
+        Args:
+            position: Current position vector [x, y, z]
+            velocity: Current velocity vector [vx, vy, vz]
+            horizon: Prediction horizon in seconds
+
+        Returns:
+            np.ndarray: Predicted trajectory with shape [time_steps, 3]
+        """
         try:
             time_steps = 10  # Fixed number of steps
             dt = horizon / time_steps
             trajectory = np.zeros((time_steps, 3))
+
+            # Validate input dimensions
+            if len(position) < 2 or len(velocity) < 2:
+                cloudlog.error(f"Invalid position or velocity dimensions: pos={len(position)}, vel={len(velocity)}")
+                return np.zeros((time_steps, 3))
 
             for i in range(time_steps):
                 t = i * dt
@@ -55,7 +70,7 @@ class SimplePredictivePlanner:
 
             return trajectory
         except Exception as e:
-            print(f"Error in constant velocity prediction: {e}")
+            cloudlog.error(f"Error in constant velocity prediction: {e}")
             # Return default trajectory in case of error
             return np.zeros((self.time_steps, 3))
 
