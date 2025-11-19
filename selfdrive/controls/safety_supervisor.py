@@ -12,6 +12,7 @@ from enum import Enum
 
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.advanced_planner import PlanningResult, EgoState, UncertaintyEstimator
+from openpilot.sunnypilot.selfdrive.controls.lib.traffic_light_validation import create_traffic_safety_system, EnhancedTrafficSafetySystem
 
 
 class SafetyViolation(Enum):
@@ -610,13 +611,15 @@ class EnhancedSafetySupervisor(SafetySupervisor):
         self.uncertainty_aware_validator = UncertaintyAwareValidator()
         self.multi_modal_safety_checker = MultiModalSafetyChecker()
         self.safety_confidence_calibrator = SafetyConfidenceCalibrator()
+        self.traffic_safety_system = create_traffic_safety_system()
 
     def validate_control_commands(self,
                                  ego_state: EgoState,
                                  planning_result: PlanningResult,
                                  model_outputs: Dict[str, Any],
                                  tracked_objects: Dict[str, Any],
-                                 prediction_uncertainties: Dict[str, float] = None) -> SafetyCheckResult:
+                                 prediction_uncertainties: Dict[str, float] = None,
+                                 car_state: 'log.CarState' = None) -> SafetyCheckResult:
         """Enhanced safety validation considering prediction uncertainties"""
         violations = []
         confidence = 1.0
@@ -661,6 +664,25 @@ class EnhancedSafetySupervisor(SafetySupervisor):
         if not multimodal_check.is_safe:
             violations.extend(multimodal_check.violations)
             confidence *= multimodal_check.confidence
+
+        # Traffic sign and light validation
+        if car_state is not None:
+            try:
+                traffic_safe, traffic_violations, traffic_metrics = self.traffic_safety_system.validate_with_planning(
+                    ego_state, car_state, planning_result, model_outputs
+                )
+                if not traffic_safe:
+                    # Convert traffic violations to our safety violation format
+                    for violation in traffic_violations:
+                        if "RED_LIGHT" in violation or "TRAFFIC_LIGHT" in violation:
+                            violations.append(SafetyViolation.COLLISION_IMMINENT)
+                        elif "STOP_SIGN" in violation:
+                            violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
+                        elif "SPEED" in violation:
+                            violations.append(SafetyViolation.SPEED_LIMIT_EXCEEDED)
+                    confidence *= traffic_metrics.get('traffic_compliance_score', 0.8)
+            except Exception as e:
+                cloudlog.warning(f"Traffic validation error: {e}")
 
         # Determine overall safety
         is_safe = len(violations) == 0
@@ -712,7 +734,8 @@ class RedundantSafetyValidator:
                                      planning_result: PlanningResult,
                                      model_outputs: Dict[str, Any],
                                      tracked_objects: Dict[str, Any],
-                                     prediction_uncertainties: Dict[str, float] = None) -> SafetyCheckResult:
+                                     prediction_uncertainties: Dict[str, float] = None,
+                                     car_state: 'log.CarState' = None) -> SafetyCheckResult:
         """Validate using multiple safety methods and combine results"""
 
         # Method 1: Physics-based validation
@@ -720,7 +743,7 @@ class RedundantSafetyValidator:
 
         # Method 2: Rule-based validation (using the enhanced supervisor)
         rule_check = self.supervisor.validate_control_commands(
-            ego_state, planning_result, model_outputs, tracked_objects, prediction_uncertainties
+            ego_state, planning_result, model_outputs, tracked_objects, prediction_uncertainties, car_state
         )
 
         # Method 3: Model agreement validation
@@ -801,9 +824,9 @@ class RedundantSafetyValidator:
             return "MONITOR_AND_ADAPT"
 
 
-def create_safety_supervisor() -> Tuple[SafetySupervisor, RedundantSafetyValidator]:
+def create_safety_supervisor() -> Tuple[EnhancedSafetySupervisor, RedundantSafetyValidator]:
     """Factory function to create safety supervisor system"""
-    return SafetySupervisor(), RedundantSafetyValidator()
+    return EnhancedSafetySupervisor(), RedundantSafetyValidator()
 
 
 if __name__ == "__main__":
@@ -858,9 +881,9 @@ if __name__ == "__main__":
         'lane_confidence': 0.8
     }
     
-    # Validate safe conditions
+    # Validate safe conditions (pass None for car_state since not a real CarState object in test)
     safety_check = supervisor.validate_control_commands(
-        ego_state, safe_plan, model_outputs, tracked_objects
+        ego_state, safe_plan, model_outputs, tracked_objects, car_state=None
     )
     
     print(f"Safe plan validation: {safety_check.is_safe}")
@@ -883,7 +906,7 @@ if __name__ == "__main__":
     
     # Validate hazardous conditions
     hazardous_check = supervisor.validate_control_commands(
-        ego_state, hazardous_plan, model_outputs, tracked_objects
+        ego_state, hazardous_plan, model_outputs, tracked_objects, car_state=None
     )
     
     print(f"\nHazardous plan validation: {hazardous_check.is_safe}")

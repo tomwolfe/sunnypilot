@@ -23,11 +23,12 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.enhanced_longitudinal_planner import EnhancedLongitudinalPlanner
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.controls.advanced_planner import AdvancedPlanner, EmergencyResponsePlanner, EgoState, EnvironmentalState
-from openpilot.selfdrive.controls.safety_supervisor import create_safety_supervisor, SafetyViolation
+from openpilot.selfdrive.controls.safety_supervisor import create_safety_supervisor, SafetyViolation, EnhancedSafetySupervisor
 
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+from openpilot.sunnypilot.selfdrive.controls.lib.traffic_sign_detection import create_traffic_sign_handler
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 from openpilot.selfdrive.common.metrics import Metrics, record_metric
 from selfdrive.common.arm_optimization import arm_optimizer
@@ -80,6 +81,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.LoC = LongControl(self.CP, self.CP_SP)
     self.VM = VehicleModel(self.CP)
     self.enhanced_long_planner = EnhancedLongitudinalPlanner(self.CP)
+    self.traffic_sign_handler = create_traffic_sign_handler()
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       self.LaC = LatControlAngle(self.CP, self.CP_SP, self.CI)
@@ -182,6 +184,18 @@ class Controls(ControlsExt, ModelStateBase):
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
+
+    # Process traffic signs from model output and integrate with safety system
+    if hasattr(self, 'traffic_sign_handler') and hasattr(self.safety_supervisor, 'traffic_safety_system'):
+        try:
+            # Process traffic signs from model data
+            self.traffic_sign_handler.integrate_with_traffic_validator(
+                self.safety_supervisor.traffic_safety_system,
+                model_v2
+            )
+        except Exception as e:
+            cloudlog.error(f"Error processing traffic signs: {e}")
+
     validation_metrics = self.sm['validationMetrics'] if 'validationMetrics' in self.sm else None
 
     CC = car.CarControl.new_message()
@@ -508,12 +522,26 @@ class Controls(ControlsExt, ModelStateBase):
             )
 
             # Perform safety validation using redundant validator
-            safety_check = self.redundant_validator.validate_with_multiple_methods(
-                ego_state_for_validation,
-                plan_for_validation,
-                model_outputs,
-                tracked_objects
-            )
+            # Update EnhancedSafetySupervisor.validate_control_commands to accept car_state
+            # First, try to validate using the enhanced supervisor if it has traffic validation
+            safety_check = None
+            if hasattr(self.safety_supervisor, 'validate_control_commands'):
+                # Use the enhanced validation that supports car_state
+                safety_check = self.safety_supervisor.validate_control_commands(
+                    ego_state_for_validation,
+                    plan_for_validation,
+                    model_outputs,
+                    tracked_objects,
+                    car_state=CS  # Pass the car state for traffic validation
+                )
+            else:
+                # Fallback to original validation
+                safety_check = self.redundant_validator.validate_with_multiple_methods(
+                    ego_state_for_validation,
+                    plan_for_validation,
+                    model_outputs,
+                    tracked_objects
+                )
 
             # If safety check fails, override control commands
             if not safety_check.is_safe:
