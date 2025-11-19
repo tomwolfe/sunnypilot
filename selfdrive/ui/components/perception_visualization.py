@@ -296,7 +296,7 @@ class PerceptionVisualization(UIComponent):
                         rl.Color(0, 0, 0, 255))
     
     def _render_internal(self, rect: rl.Rectangle):
-        """Render perception visualization"""
+        """Render perception visualization with improved resource management"""
         if not self.visible or not self.visualization_enabled:
             return
 
@@ -310,16 +310,19 @@ class PerceptionVisualization(UIComponent):
         self._render_objects(rect)
 
     def _render_objects(self, rect: rl.Rectangle):
-        """Render detected objects with proper visualization"""
-        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+        """Render detected objects with proper visualization and LOD"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines, ReusableUIComponents
 
         # Use the optimized drawing routine for multiple vehicles
         screen_transform_func = lambda x, y: self._world_to_screen(x, y, rect)
 
         # Convert our objects to the format expected by the drawing routine
+        # Apply distance filtering and confidence threshold
         vehicle_data = []
         for obj in self.objects[:self.max_objects_to_display]:  # Limit displayed objects
             if obj.y > self.max_render_distance:  # Skip objects too far away
+                continue
+            if obj.confidence < 0.3:  # Skip low confidence detections
                 continue
 
             vehicle_data.append({
@@ -334,23 +337,31 @@ class PerceptionVisualization(UIComponent):
         # Use the optimized batch drawing routine
         EfficientDrawingRoutines.draw_vehicle_batch(vehicle_data, screen_transform_func)
 
-        # Draw velocity vectors separately
-        for obj in self.objects[:self.max_objects_to_display]:
-            if obj.y > self.max_render_distance:
-                continue
+        # Draw velocity vectors separately with optimization
+        high_confidence_objects = [obj for obj in self.objects[:self.max_objects_to_display]
+                                  if obj.y <= self.max_render_distance and obj.confidence >= 0.5]
 
-            # Convert world coordinates to screen coordinates
-            screen_x, screen_y = self._world_to_screen(obj.x, obj.y, rect)
+        if len(high_confidence_objects) <= 10:  # Only draw vectors for limited objects to save resources
+            for obj in high_confidence_objects:
+                # Convert world coordinates to screen coordinates
+                screen_x, screen_y = self._world_to_screen(obj.x, obj.y, rect)
 
-            # Draw velocity vector
-            if abs(obj.velocity_x) > 0.1 or abs(obj.velocity_y) > 0.1:
-                vel_x = obj.velocity_x * 2  # Scale velocity for visibility
-                vel_y = -obj.velocity_y * 2  # Negative because screen Y increases downward
-                rl.draw_line(
-                    int(screen_x), int(screen_y),
-                    int(screen_x + vel_x), int(screen_y + vel_y),
-                    rl.Color(255, 255, 255, 200)
-                )
+                # Draw velocity vector
+                if abs(obj.velocity_x) > 0.1 or abs(obj.velocity_y) > 0.1:
+                    vel_x = obj.velocity_x * 2  # Scale velocity for visibility
+                    vel_y = -obj.velocity_y * 2  # Negative because screen Y increases downward
+
+                    # Use scaled values if available
+                    scaled_screen_x = ReusableUIComponents.scaled_value(screen_x) if hasattr(ReusableUIComponents, '_scale_factor') else int(screen_x)
+                    scaled_screen_y = ReusableUIComponents.scaled_value(screen_y) if hasattr(ReusableUIComponents, '_scale_factor') else int(screen_y)
+                    scaled_vel_x = ReusableUIComponents.scaled_value(vel_x) if hasattr(ReusableUIComponents, '_scale_factor') else int(vel_x)
+                    scaled_vel_y = ReusableUIComponents.scaled_value(vel_y) if hasattr(ReusableUIComponents, '_scale_factor') else int(vel_y)
+
+                    rl.draw_line(
+                        scaled_screen_x, scaled_screen_y,
+                        scaled_screen_x + scaled_vel_x, scaled_screen_y + scaled_vel_y,
+                        rl.Color(255, 255, 255, 200)
+                    )
 
 
 class PerceptionDebugOverlay(UIComponent):

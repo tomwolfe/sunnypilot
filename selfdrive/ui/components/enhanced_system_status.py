@@ -163,17 +163,26 @@ class EnhancedSystemStatusPanel(SystemStatusPanel):
         self.data_stats = self.get_data_collection_stats()
 
     def render(self, rect: rl.Rectangle):
-        """Render the enhanced system status panel"""
+        """Render the enhanced system status panel with proper scaling and resource management"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
         # Don't render if hidden
         if not self.visible or not self.enabled:
             return
 
-        # Draw panel background and border
-        self._draw_panel_background()
+        # Apply scaling to coordinates
+        scaled_x = ReusableUIComponents.scaled_value(self.x) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.x)
+        scaled_y = ReusableUIComponents.scaled_value(self.y) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.y)
+        scaled_width = ReusableUIComponents.scaled_value(self.width) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.width)
+        scaled_height = ReusableUIComponents.scaled_value(self.height) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.height)
+
+        # Draw panel background and border with scaled dimensions
+        rl.draw_rectangle(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['background'])
+        rl.draw_rectangle_lines(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['border'])
 
         # Draw section titles
-        title_y = self.y + 10
-        current_y = title_y + 25
+        title_y = scaled_y + ReusableUIComponents.scaled_value(10)
+        current_y = title_y + ReusableUIComponents.scaled_value(25)
 
         # Draw validation metrics
         current_y = self._draw_validation_section(current_y)
@@ -188,7 +197,7 @@ class EnhancedSystemStatusPanel(SystemStatusPanel):
         current_y = self._draw_data_collection_section(current_y)
 
         # Draw overall system health indicator
-        self._draw_health_indicator()
+        self._draw_health_indicator(scaled_x, scaled_y)
 
     def _draw_panel_background(self):
         """Draw the panel background and border"""
@@ -329,42 +338,58 @@ class EnhancedSystemStatusPanel(SystemStatusPanel):
         y += 20
         return y
 
-    def _draw_health_indicator(self):
+    def _draw_health_indicator(self, scaled_x, scaled_y):
         """Draw overall health indicator at the top right"""
         if not self.validation_metrics or not self.thermal_metrics:
             return
-            
+
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
         # Calculate overall health score (simplified)
         conf_score = self.validation_metrics.get('overall_confidence', 0.0)
         thermal_score = self.thermal_metrics.get('thermal_score', 1.0)
-        
+
         overall_score = (conf_score + thermal_score) / 2.0
-        
+
         # Determine color based on overall score
         health_color = self.get_validation_level_color(overall_score)
-        
-        # Draw health indicator
-        indicator_x = self.x + self.width - 30
-        indicator_y = self.y + 10
-        
-        # Draw circle
-        rl.draw_circle(int(indicator_x + 8), int(indicator_y + 8), 8, health_color)
-        rl.draw_circle_lines(int(indicator_x + 8), int(indicator_y + 8), 8, self.colors['border'])
 
-    def _draw_progress_bar(self, x: float, y: float, width: float, height: float, 
-                          value: float, max_value: float, color: rl.Color, 
+        # Draw health indicator using scaled coordinates
+        indicator_x = scaled_x + ReusableUIComponents.scaled_value(self.width) - ReusableUIComponents.scaled_value(30)
+        indicator_y = scaled_y + ReusableUIComponents.scaled_value(10)
+
+        # Draw circle with scaled radius
+        circle_radius = ReusableUIComponents.scaled_value(8)
+        rl.draw_circle(int(indicator_x + circle_radius),
+                      int(indicator_y + circle_radius),
+                      circle_radius, health_color)
+        rl.draw_circle_lines(int(indicator_x + circle_radius),
+                            int(indicator_y + circle_radius),
+                            circle_radius, self.colors['border'])
+
+    def _draw_progress_bar(self, x: float, y: float, width: float, height: float,
+                          value: float, max_value: float, color: rl.Color,
                           bg_color: rl.Color):
-        """Draw a progress bar"""
+        """Draw a progress bar with proper scaling"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
+        # Apply scaling to coordinates and dimensions
+        scaled_x = ReusableUIComponents.scaled_value(x) if hasattr(ReusableUIComponents, '_scale_factor') else int(x)
+        scaled_y = ReusableUIComponents.scaled_value(y) if hasattr(ReusableUIComponents, '_scale_factor') else int(y)
+        scaled_width = ReusableUIComponents.scaled_value(width) if hasattr(ReusableUIComponents, '_scale_factor') else int(width)
+        scaled_height = ReusableUIComponents.scaled_value(height) if hasattr(ReusableUIComponents, '_scale_factor') else int(height)
+
         # Draw background
-        rl.draw_rectangle(int(x), int(y), int(width), int(height), bg_color)
-        
+        rl.draw_rectangle(scaled_x, scaled_y, scaled_width, scaled_height, bg_color)
+
         # Draw filled portion
         if max_value > 0:
-            progress_width = min(width, (value / max_value) * width)
-            rl.draw_rectangle(int(x), int(y), int(progress_width), int(height), color)
-        
+            progress_ratio = min(1.0, value / max_value)  # Prevent overflow
+            progress_width = int(scaled_width * progress_ratio)
+            rl.draw_rectangle(scaled_x, scaled_y, progress_width, scaled_height, color)
+
         # Draw border
-        rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), self.colors['border'])
+        rl.draw_rectangle_lines(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['border'])
 
 
 class CompactEnhancedStatus:
@@ -421,41 +446,58 @@ class CompactEnhancedStatus:
         self.computation_factor = dynamic_adaptation.get_computation_factor()
 
     def render(self, rect: rl.Rectangle):
-        """Render compact status display"""
+        """Render compact status display with proper scaling"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
         if not self.visible or not self.enabled:
             return
 
-        # Draw background
-        rl.draw_rectangle(int(self.x), int(self.y), int(self.width), int(self.height), self.colors['background'])
-        rl.draw_rectangle_lines(int(self.x), int(self.y), int(self.width), int(self.height), self.colors['border'])
+        # Apply scaling to coordinates and dimensions
+        scaled_x = ReusableUIComponents.scaled_value(self.x) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.x)
+        scaled_y = ReusableUIComponents.scaled_value(self.y) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.y)
+        scaled_width = ReusableUIComponents.scaled_value(self.width) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.width)
+        scaled_height = ReusableUIComponents.scaled_value(self.height) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.height)
 
-        y = self.y + 10
-        
+        # Draw background
+        rl.draw_rectangle(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['background'])
+        rl.draw_rectangle_lines(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['border'])
+
+        y = scaled_y + ReusableUIComponents.scaled_value(10)
+
         # Draw validation confidence
         conf_color = self.colors['normal'] if self.validation_confidence >= 0.8 else \
                      self.colors['warning'] if self.validation_confidence >= 0.6 else self.colors['critical']
-        
-        rl.draw_text(f"Conf: {self.validation_confidence:.2f}", int(self.x + 5), int(y), 12, conf_color)
-        
-        y += 15
-        
+
+        text_size = ReusableUIComponents.scaled_value(12)
+        rl.draw_text(f"Conf: {self.validation_confidence:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(5)), int(y),
+                    text_size, conf_color)
+
+        y += ReusableUIComponents.scaled_value(15)
+
         # Draw system safety status
         safe_color = self.colors['safe'] if self.system_safe else self.colors['critical']
         safe_text = "SAFE" if self.system_safe else "UNSAFE"
-        rl.draw_text(f"Sys: {safe_text}", int(self.x + 5), int(y), 12, safe_color)
-        
-        y += 15
-        
+        rl.draw_text(f"Sys: {safe_text}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(5)), int(y),
+                    text_size, safe_color)
+
+        y += ReusableUIComponents.scaled_value(15)
+
         # Draw thermal status
         therm_color = self.colors['normal'] if self.thermal_status == 'normal' else \
                       self.colors['warning'] if self.thermal_status == 'caution' else self.colors['critical']
-        rl.draw_text(f"Th: {self.thermal_status.upper()}", int(self.x + 5), int(y), 12, therm_color)
-        
-        y += 15
-        
+        rl.draw_text(f"Th: {self.thermal_status.upper()}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(5)), int(y),
+                    text_size, therm_color)
+
+        y += ReusableUIComponents.scaled_value(15)
+
         # Draw computation factor
         comp_color = self.colors['normal'] if self.computation_factor >= 0.8 else self.colors['warning']
-        rl.draw_text(f"Comp: {self.computation_factor:.2f}", int(self.x + 5), int(y), 12, comp_color)
+        rl.draw_text(f"Comp: {self.computation_factor:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(5)), int(y),
+                    text_size, comp_color)
 
 
 # Export the enhanced components

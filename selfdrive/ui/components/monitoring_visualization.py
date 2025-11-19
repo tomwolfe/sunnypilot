@@ -124,13 +124,19 @@ class ResourceAllocationVisualizer:
         self._draw_resource_history(y)
 
     def _draw_resource_bar(self, y: float, label: str, current: float, max_val: float, color: rl.Color):
-        """Draw a resource usage bar"""
-        bar_x = self.x + 60
-        bar_width = self.width - 70
-        bar_height = 15
+        """Draw a resource usage bar with proper scaling"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
+        # Apply scaling to coordinates and dimensions
+        bar_x = ReusableUIComponents.scaled_value(self.x) + ReusableUIComponents.scaled_value(60)
+        bar_width = ReusableUIComponents.scaled_value(self.width) - ReusableUIComponents.scaled_value(70)
+        bar_height = ReusableUIComponents.scaled_value(15)
 
         # Draw label
-        rl.draw_text(f"{label}:", int(self.x + 10), int(y + 2), 12, self.colors['text'])
+        label_x = ReusableUIComponents.scaled_value(self.x) + ReusableUIComponents.scaled_value(10)
+        text_size = ReusableUIComponents.scaled_value(12)
+        rl.draw_text(f"{label}:", int(label_x), int(y + ReusableUIComponents.scaled_value(2)),
+                    text_size, self.colors['text'])
 
         # Draw background
         rl.draw_rectangle(int(bar_x), int(y), int(bar_width), int(bar_height), self.colors['available'])
@@ -144,7 +150,12 @@ class ResourceAllocationVisualizer:
         if max_val > 0:
             pct = (current / max_val) * 100
             text = f"{pct:.1f}%" if current <= max_val else f"{current:.0f}MB"
-            rl.draw_text(text, int(bar_x + bar_width - 40), int(y + 1), 10, self.colors['text'])
+
+            # Calculate text position at the end of the bar
+            text_size_small = ReusableUIComponents.scaled_value(10)
+            text_x = int(bar_x + bar_width - ReusableUIComponents.scaled_value(40))
+            text_y = int(y + ReusableUIComponents.scaled_value(1))
+            rl.draw_text(text, text_x, text_y, text_size_small, self.colors['text'])
 
     def _draw_resource_history(self, y: float):
         """Draw historical resource usage graph"""
@@ -401,55 +412,77 @@ class ValidationMetricsVisualizer:
             }
 
     def render(self, rect: rl.Rectangle):
-        """Render validation metrics visualization"""
+        """Render validation metrics visualization with proper scaling"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
         if not self.visible or not self.enabled:
             return
 
-        # Draw container
-        rl.draw_rectangle(int(self.x), int(self.y), int(self.width), int(self.height), self.colors['background'])
-        rl.draw_rectangle_lines(int(self.x), int(self.y), int(self.width), int(self.height), self.colors['border'])
+        # Apply scaling to coordinates and dimensions
+        scaled_x = ReusableUIComponents.scaled_value(self.x) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.x)
+        scaled_y = ReusableUIComponents.scaled_value(self.y) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.y)
+        scaled_width = ReusableUIComponents.scaled_value(self.width) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.width)
+        scaled_height = ReusableUIComponents.scaled_value(self.height) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.height)
 
-        y = self.y + 15
-        rl.draw_text("VALIDATION", int(self.x + 10), int(y), 14, self.colors['title'])
-        y += 20
+        # Draw container
+        rl.draw_rectangle(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['background'])
+        rl.draw_rectangle_lines(scaled_x, scaled_y, scaled_width, scaled_height, self.colors['border'])
+
+        y = scaled_y + ReusableUIComponents.scaled_value(15)
+        text_size_title = ReusableUIComponents.scaled_value(14)
+        text_size_normal = ReusableUIComponents.scaled_value(12)
+        rl.draw_text("VALIDATION",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_title, self.colors['title'])
+        y += ReusableUIComponents.scaled_value(20)
 
         # Draw overall confidence
         conf = self.validation_metrics.get('overall_confidence', 0.0)
         conf_color = self.get_confidence_color(conf)
-        rl.draw_text(f"Conf: {conf:.2f}", int(self.x + 10), int(y), 12, conf_color)
-        
+        rl.draw_text(f"Conf: {conf:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_normal, conf_color)
+
         # Draw confidence bar
-        bar_x = self.x + 60
-        bar_width = self.width - 70
-        bar_height = 12
+        bar_x = scaled_x + ReusableUIComponents.scaled_value(60)
+        bar_width = scaled_width - ReusableUIComponents.scaled_value(70)
+        bar_height = ReusableUIComponents.scaled_value(12)
         rl.draw_rectangle(int(bar_x), int(y), int(bar_width), int(bar_height), self.colors['border'])
-        fill_width = (conf * bar_width) if conf <= 1.0 else bar_width
-        rl.draw_rectangle(int(bar_x), int(y), int(fill_width), int(bar_height), conf_color)
-        y += 18
+        fill_width = int((conf * bar_width)) if conf <= 1.0 else int(bar_width)
+        rl.draw_rectangle(int(bar_x), int(y), fill_width, int(bar_height), conf_color)
+        y += ReusableUIComponents.scaled_value(18)
 
         # Draw lead confidence
         lead_conf = self.validation_metrics.get('lead_confidence_avg', 0.0)
         lead_color = self.get_confidence_color(lead_conf)
-        rl.draw_text(f"Lead: {lead_conf:.2f}", int(self.x + 10), int(y), 12, lead_color)
-        y += 18
+        rl.draw_text(f"Lead: {lead_conf:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_normal, lead_color)
+        y += ReusableUIComponents.scaled_value(18)
 
         # Draw lane confidence
         lane_conf = self.validation_metrics.get('lane_confidence_avg', 0.0)
         lane_color = self.get_confidence_color(lane_conf)
-        rl.draw_text(f"Lane: {lane_conf:.2f}", int(self.x + 10), int(y), 12, lane_color)
-        y += 18
+        rl.draw_text(f"Lane: {lane_conf:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_normal, lane_color)
+        y += ReusableUIComponents.scaled_value(18)
 
         # Draw temporal consistency
         temp_cons = self.validation_metrics.get('temporal_consistency', 1.0)
         temp_color = self.get_confidence_color(temp_cons)
-        rl.draw_text(f"Temp: {temp_cons:.2f}", int(self.x + 10), int(y), 12, temp_color)
-        y += 18
+        rl.draw_text(f"Temp: {temp_cons:.2f}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_normal, temp_color)
+        y += ReusableUIComponents.scaled_value(18)
 
         # Draw validation status
         is_valid = self.validation_metrics.get('is_valid', False)
         valid_color = self.colors['high'] if is_valid else self.colors['critical']
         status_text = "VALID" if is_valid else "INVALID"
-        rl.draw_text(f"Status: {status_text}", int(self.x + 10), int(y), 12, valid_color)
+        rl.draw_text(f"Status: {status_text}",
+                    int(scaled_x + ReusableUIComponents.scaled_value(10)), int(y),
+                    text_size_normal, valid_color)
 
     def get_confidence_color(self, confidence: float) -> rl.Color:
         """Get color based on confidence level"""

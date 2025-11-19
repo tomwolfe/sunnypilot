@@ -166,7 +166,7 @@ class SunnypilotUI:
         self._update_theme()
     
     def update(self):
-        """Update UI state and components"""
+        """Update UI state and components with performance optimization"""
         current_time = time.time()
         self.last_update_time = current_time
 
@@ -184,11 +184,12 @@ class SunnypilotUI:
         # Update theme based on light sensor
         self._update_theme()
 
-        # Update all UI layers with error handling
-        self._safe_layer_update(self.system_layer, self.sm)
-        self._safe_layer_update(self.perception_layer, self.sm)
-        self._safe_layer_update(self.navigation_layer, self.sm)
-        self._safe_layer_update(self.hardware_layer, self.sm)
+        # Update all UI layers with error handling and resource management
+        # Only update layers that are visible and enabled based on driving state
+        active_layers = self._get_active_layers()
+        for layer in active_layers:
+            if layer is not None:
+                self._safe_layer_update(layer, self.sm)
 
         # Performance tracking
         self.frame_count += 1
@@ -426,8 +427,8 @@ class PerceptionVisualizationLayer(UIComponent):
         self._render_lead_cars(rect)
 
     def _render_lane_lines(self, rect: rl.Rectangle):
-        """Render lane boundary lines"""
-        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines
+        """Render lane boundary lines with improved scaling and performance"""
+        from openpilot.selfdrive.ui.raylib_ui_system import EfficientDrawingRoutines, ReusableUIComponents
 
         # Get screen dimensions to scale properly
         screen_width = rect.width

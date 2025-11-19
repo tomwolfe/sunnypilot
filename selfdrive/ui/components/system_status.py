@@ -295,28 +295,37 @@ class SystemStatusPanel(UIComponent):
         return check_y + 5
     
     def _render_system_status(self, rect: rl.Rectangle):
-        """Render the complete system status panel"""
+        """Render the complete system status panel with proper scaling"""
         panel_x = self.panel_x(rect)
         panel_y = self.panel_y(rect)
 
         # Use reusable panel component
         from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
-        ReusableUIComponents.create_panel(int(panel_x), int(panel_y), int(self.panel_width), int(self.panel_height),
+
+        # Apply scaling to all panel dimensions
+        scaled_panel_x = ReusableUIComponents.scaled_value(panel_x) if hasattr(ReusableUIComponents, '_scale_factor') else int(panel_x)
+        scaled_panel_y = ReusableUIComponents.scaled_value(panel_y) if hasattr(ReusableUIComponents, '_scale_factor') else int(panel_y)
+        scaled_panel_width = ReusableUIComponents.scaled_value(self.panel_width) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.panel_width)
+        scaled_panel_height = ReusableUIComponents.scaled_value(self.panel_height) if hasattr(ReusableUIComponents, '_scale_factor') else int(self.panel_height)
+
+        ReusableUIComponents.create_panel(scaled_panel_x, scaled_panel_y, scaled_panel_width, scaled_panel_height,
                                         "SYSTEM STATUS",
                                         rl.Color(25, 35, 45, 220),  # Dark blue-gray background
                                         rl.Color(100, 130, 170, 255))  # Medium blue border
 
         # Draw overall status
-        status_y = panel_y + 35
+        status_y = scaled_panel_y + ReusableUIComponents.scaled_value(35)
         status_color = self._get_status_color(self.system_health.overall_status)
+        scaled_text_size = ReusableUIComponents.scaled_value(14)
         rl.draw_text(f"STATUS: {self.system_health.overall_status}",
-                    int(panel_x + 10), int(status_y), 14, status_color)
+                    scaled_panel_x + ReusableUIComponents.scaled_value(10), status_y,
+                    scaled_text_size, status_color)
 
         # Render individual sections
-        current_y = status_y + 20
-        current_y = self._render_sensor_status(rl.Rectangle(panel_x, current_y, self.panel_width, 0), current_y)
-        current_y = self._render_safety_status(rl.Rectangle(panel_x, current_y, self.panel_width, 0), current_y)
-        self._render_critical_safety_checks(rl.Rectangle(panel_x, current_y, self.panel_width, 0), current_y)
+        current_y = status_y + ReusableUIComponents.scaled_value(20)
+        current_y = self._render_sensor_status(rl.Rectangle(scaled_panel_x, current_y, scaled_panel_width, 0), current_y)
+        current_y = self._render_safety_status(rl.Rectangle(scaled_panel_x, current_y, scaled_panel_width, 0), current_y)
+        self._render_critical_safety_checks(rl.Rectangle(scaled_panel_x, current_y, scaled_panel_width, 0), current_y)
     
     def _render_internal(self, rect: rl.Rectangle):
         """Render the system status panel"""
@@ -368,13 +377,21 @@ class CompactSystemStatus(UIComponent):
             self.last_status_update = current_time
     
     def _render_internal(self, rect: rl.Rectangle):
-        """Render compact system status in corner"""
-        # Draw small status indicator in top-right corner
-        x = rect.x + rect.width - 100
-        y = rect.y + 20
-        width = 90
-        height = 40
-        
+        """Render compact system status in corner with proper scaling"""
+        from openpilot.selfdrive.ui.raylib_ui_system import ReusableUIComponents
+
+        # Calculate scaled position and dimensions
+        base_x = rect.x + rect.width - 100
+        base_y = rect.y + 20
+        base_width = 90
+        base_height = 40
+
+        # Apply scaling to all values
+        x = ReusableUIComponents.scaled_value(base_x) if hasattr(ReusableUIComponents, '_scale_factor') else int(base_x)
+        y = ReusableUIComponents.scaled_value(base_y) if hasattr(ReusableUIComponents, '_scale_factor') else int(base_y)
+        width = ReusableUIComponents.scaled_value(base_width) if hasattr(ReusableUIComponents, '_scale_factor') else int(base_width)
+        height = ReusableUIComponents.scaled_value(base_height) if hasattr(ReusableUIComponents, '_scale_factor') else int(base_height)
+
         # Determine color based on status
         if self.overall_status == "HEALTHY":
             bg_color = rl.Color(30, 60, 30, 180)  # Dark green
@@ -388,15 +405,19 @@ class CompactSystemStatus(UIComponent):
         else:
             bg_color = rl.Color(40, 40, 40, 180)   # Dark gray
             text_color = rl.Color(180, 180, 180, 255)  # Light gray
-        
+
         # Draw background
         rl.draw_rectangle(int(x), int(y), int(width), int(height), bg_color)
         rl.draw_rectangle_lines(int(x), int(y), int(width), int(height), rl.Color(120, 120, 140, 200))
-        
+
         # Draw status text
         status_text = "OK" if self.ready_for_autonomous else "!"
-        rl.draw_text(status_text, int(x + 35), int(y + 10), 20, text_color)
-        
+        text_size = ReusableUIComponents.scaled_value(20)
+        rl.draw_text(status_text, int(x + ReusableUIComponents.scaled_value(35)),
+                    int(y + ReusableUIComponents.scaled_value(10)), text_size, text_color)
+
         # Draw safety score as small indicator
         score_text = f"{int(self.safety_score * 100)}"
-        rl.draw_text(score_text, int(x + 5), int(y + 5), 12, text_color)
+        small_text_size = ReusableUIComponents.scaled_value(12)
+        rl.draw_text(score_text, int(x + ReusableUIComponents.scaled_value(5)),
+                    int(y + ReusableUIComponents.scaled_value(5)), small_text_size, text_color)
