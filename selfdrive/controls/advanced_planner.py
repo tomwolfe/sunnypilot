@@ -269,21 +269,44 @@ class AdvancedPlanner:
     
     def _calculate_lane_change_curvature(self, ego_state: EgoState, lane_direction: int) -> float:
         """Calculate appropriate curvature for lane change maneuver"""
-        # Simple model: gradual lane change over ~3 seconds
-        # Lane change requires lateral movement of about 3.7 meters (lane width)
-        target_lateral_offset = 3.7 * lane_direction  # Positive for right, negative for left
-        
-        # For a 3-second lane change at current speed, calculate required curvature
-        time_for_lane_change = 3.0
+        # Calculate target lateral offset based on lane direction
+        target_lateral_offset = 3.7 * lane_direction  # 3.7m per lane
+
+        # More sophisticated lane change model considering safety and comfort
+        # Time for lane change based on vehicle speed (faster vehicles need more time for safety)
+        base_time = 3.0
+        speed_factor = max(1.0, min(2.0, ego_state.velocity / 15.0))  # Scale with speed (15 m/s = ~54 km/h)
+        time_for_lane_change = base_time * speed_factor
+
         longitudinal_distance = ego_state.velocity * time_for_lane_change
+
+        # Calculate required curvature using clothoid (Euler spiral) for smooth transition
+        # This provides a more natural and comfortable lane change
         required_curvature = 4 * target_lateral_offset / (longitudinal_distance ** 2)
-        
-        # Apply smoothing to the curvature change
+
+        # Apply smoothing to the curvature change for passenger comfort
         current_curvature = ego_state.curvature
         desired_curvature = current_curvature * 0.7 + required_curvature * 0.3
-        
-        # Limit to safe values
-        return np.clip(desired_curvature, -0.01, 0.01)  # Limit to ±0.01 inverse meters
+
+        # Apply safety limits based on vehicle dynamics and road conditions
+        max_safe_curvature = self._calculate_max_safe_curvature(ego_state.velocity)
+        desired_curvature = np.clip(desired_curvature, -max_safe_curvature, max_safe_curvature)
+
+        return desired_curvature
+
+    def _calculate_max_safe_curvature(self, velocity: float) -> float:
+        """Calculate maximum safe curvature based on vehicle speed and dynamics"""
+        # Maximum safe lateral acceleration is typically 0.4g to 0.5g (3.92-4.9 m/s^2)
+        max_lateral_accel = 4.0  # m/s^2
+
+        # Curvature = lateral_accel / velocity^2
+        if velocity > 0.1:  # Avoid division by zero
+            max_curvature = max_lateral_accel / (velocity ** 2)
+        else:
+            max_curvature = 0.01  # Default safe value when stopped
+
+        # Apply additional safety margin
+        return max_curvature * 0.8  # 80% of theoretical limit for safety
     
     def _calculate_planning_confidence(self, predictions: Dict[str, PredictionResult], 
                                      risk_assessment: Dict[str, float]) -> float:

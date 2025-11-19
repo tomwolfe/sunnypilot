@@ -121,7 +121,11 @@ class NEONOptimizer:
     try:
       # On ARM64 systems, NEON is generally available
       import platform
-      return 'ARM' in platform.machine().upper() or 'AARCH64' in platform.machine().upper()
+      machine_arch = platform.machine().upper()
+      is_arm = 'ARM' in machine_arch or 'AARCH64' in machine_arch
+      if is_arm:
+        cloudlog.debug("ARM NEON optimizations enabled")
+      return is_arm
     except:
       return False
 

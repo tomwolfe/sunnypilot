@@ -256,24 +256,43 @@ class SafetySupervisor:
     def _check_maneuver_reasonableness(self, ego_state: EgoState, planning_result: PlanningResult) -> SafetyCheckResult:
         """Check if planned maneuver is reasonable given current conditions"""
         violations = []
-        
+
         # Check for sudden, unplanned changes in direction
         if abs(planning_result.desired_curvature - ego_state.curvature) > 0.01:  # Sudden direction change
             # Only flag if not in a lane change state
             if planning_result.planning_state.name not in ["LANE_CHANGING_LEFT", "LANE_CHANGING_RIGHT"]:
                 violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
-        
+
         # Check for impossible acceleration commands relative to current speed
         if ego_state.velocity > 0 and planning_result.desired_acceleration < -6.0:  # Emergency braking threshold
             if planning_result.planning_state.name != "EMERGENCY_STOP":
                 violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
-        
+
+        # Add additional safety checks for vehicle dynamics
+        max_safe_accel = self._calculate_max_safe_acceleration(ego_state)
+        if abs(planning_result.desired_acceleration) > max_safe_accel:
+            violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
+
         return SafetyCheckResult(
             is_safe=len(violations) == 0,
             violations=violations,
             confidence=1.0,
             explanation=f"Maneuver reasonableness check: {'OK' if not violations else 'Unreasonable maneuver'}"
         )
+
+    def _calculate_max_safe_acceleration(self, ego_state: EgoState) -> float:
+        """Calculate maximum safe acceleration based on vehicle speed and road conditions"""
+        # Maximum safe acceleration/deceleration based on friction coefficient
+        # For dry pavement, assume friction coefficient of 0.8
+        friction_coefficient = 0.8
+        max_longitudinal_accel = friction_coefficient * 9.81  # m/s^2
+
+        # Adjust for speed (higher speeds have lower safe acceleration)
+        speed_factor = max(0.7, min(1.0, 25.0 / max(ego_state.velocity, 1.0)))
+        max_safe_accel = max_longitudinal_accel * speed_factor
+
+        # Apply safety margin
+        return max_safe_accel * 0.7  # 70% of theoretical limit for safety
     
     def _calculate_safety_metrics(self, 
                                  ego_state: EgoState, 
