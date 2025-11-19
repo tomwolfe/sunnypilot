@@ -26,6 +26,7 @@ from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.system import sentry
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value
+from openpilot.selfdrive.common.thermal_management import thermal_manager
 
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.runners import ModelRunner, Runtime
@@ -35,6 +36,7 @@ from openpilot.sunnypilot.modeld.constants import ModelConstants, Plan
 from openpilot.sunnypilot.models.helpers import get_active_bundle, get_model_path, load_metadata, prepare_inputs, load_meta_constants
 from openpilot.sunnypilot.modeld.models.commonmodel_pyx import ModelFrame, CLContext
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
+from openpilot.selfdrive.common.enhanced_fusion import enhanced_fusion
 
 
 PROCESS_NAME = "selfdrive.modeld.modeld_snpe"
@@ -369,6 +371,18 @@ def main(demo=False):
     model_execution_time = mt2 - mt1
 
     if model_output is not None:
+      # Apply enhanced multi-camera fusion if both cameras are available
+      if buf_extra is not None and buf_main is not None:
+        try:
+          # Update calibrations for fusion
+          if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
+            enhanced_fusion.update_calibrations(sm["liveCalibration"])
+
+          # Apply enhanced camera fusion to improve model outputs
+          model_output = enhanced_fusion.enhanced_camera_fusion(model_output, model_output)  # Would use wide camera output in real implementation
+        except Exception as e:
+          cloudlog.error(f"Error in enhanced camera fusion: {e}")
+
       modelv2_send = messaging.new_message('modelV2')
       drivingdata_send = messaging.new_message('drivingModelData')
       posenet_send = messaging.new_message('cameraOdometry')

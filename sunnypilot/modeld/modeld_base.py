@@ -10,3 +10,6 @@ from openpilot.common.params import Params
 class ModelStateBase:
   def __init__(self):
     self.lat_delay = Params().get("LagdValueCache", return_default=True)
+    # Initialize enhanced validation support
+    self.enhanced_validation_enabled = True
+    self.temporal_consistency = 1.0

@@ -32,10 +32,13 @@ from openpilot.selfdrive.modeld.neon_optimizer import optimize_curvature_calcula
 from openpilot.common.dynamic_adaptation import dynamic_adaptation, performance_manager
 from openpilot.common.resource_aware import resource_manager, resource_aware_runner, run_safety_critical_function
 from openpilot.common.data_collector import collect_model_performance, collect_lane_change_event
-from openpilot.selfdrive.monitoring.thermal_management import thermal_manager
+from openpilot.selfdrive.common.thermal_management import thermal_manager, resource_manager as thermal_resource_manager
 from openpilot.selfdrive.modeld.model_efficiency import ModelEfficiencyOptimizer, create_efficient_model_wrapper
 from openpilot.selfdrive.monitoring.realtime_dashboard import realtime_dashboard
 from openpilot.common.resource_aware import PriorityLevel
+from openpilot.selfdrive.common.enhanced_validation import enhanced_validator
+from openpilot.selfdrive.common.adaptive_control import adaptive_control, adaptive_lat_control
+from openpilot.selfdrive.common.validation_publisher import validation_metrics_publisher
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -60,7 +63,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
-                                   'navInstruction', 'navStatus', 'validationMetrics', 'radarState'] + self.sm_services_ext,
+                                   'navInstruction', 'navStatus', 'validationMetrics', 'radarState', 'deviceState'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -107,6 +110,16 @@ class Controls(ControlsExt, ModelStateBase):
       gpu_required=1.0,
       duration_estimate=0.01
     )
+
+    # Initialize enhanced validation system
+    self.enhanced_validator = enhanced_validator
+
+    # Initialize adaptive control system
+    self.adaptive_control = adaptive_control
+    self.adaptive_lat_control = adaptive_lat_control
+
+    # Initialize validation metrics publisher
+    self.validation_metrics_publisher = validation_metrics_publisher
 
     # Memory pool for curvature calculations
     self._curvature_pool = np.zeros(10, dtype=np.float32)  # Pool for temporary curvature calculations
@@ -228,6 +241,44 @@ class Controls(ControlsExt, ModelStateBase):
             validation_state.update({k: True for k in validation_state.keys()})
         validation_state['system_safe'] = lead_conf_ok and lane_conf_ok and overall_conf_ok
 
+    # Apply enhanced validation with situation-aware confidence calculation
+    try:
+        enhanced_validation_result = self.enhanced_validator.calculate_situation_aware_confidence(
+            {
+                'lead_confidence_avg': validation_metrics.leadConfidenceAvg if validation_metrics else 0.0,
+                'lane_confidence_avg': validation_metrics.laneConfidenceAvg if validation_metrics else 0.0,
+                'road_edge_confidence_avg': validation_metrics.leadConfidenceAvg if validation_metrics else 0.0,  # Placeholder
+                'temporal_consistency': validation_metrics.overallConfidence if validation_metrics else 1.0,  # Placeholder
+                'path_in_lane_validity': validation_metrics.overallConfidence if validation_metrics else 0.0,  # Placeholder
+                'overall_confidence': validation_metrics.overallConfidence if validation_metrics else 0.0,
+                'lane_count': 2  # Placeholder - would need real lane count from modelV2
+            },
+            CS,
+            road_condition='highway'  # This would be determined from map data in a full implementation
+        )
+
+        # Override basic validation with enhanced validation results
+        validation_state['lead_confidence_ok'] = enhanced_validation_result['lead_confidence_ok']
+        validation_state['lane_confidence_ok'] = enhanced_validation_result['lane_confidence_ok']
+        validation_state['overall_confidence_ok'] = enhanced_validation_result['overall_confidence_ok']
+        validation_state['system_safe'] = enhanced_validation_result['system_safe']
+        validation_state['lane_change_safe'] = enhanced_validation_result['lane_change_safe']
+
+        # Enhanced safety recommendation
+        is_safe, safety_reason = self.enhanced_validator.get_safety_recommendation(enhanced_validation_result, CS)
+        validation_state['system_engagement_safe'] = is_safe
+
+        # Publish enhanced validation metrics for system-wide use
+        try:
+            self.validation_metrics_publisher = validation_metrics_publisher
+            self.validation_metrics_publisher.publish_metrics(enhanced_validation_result,
+                                                            model_v2, CS)
+        except Exception as e:
+            cloudlog.error(f"Error publishing validation metrics: {e}")
+    except Exception as e:
+        cloudlog.error(f"Error in enhanced validation: {e}")
+        validation_state['system_engagement_safe'] = validation_state['system_safe']  # Fall back to basic validation
+
     # Dynamic safety margins for lane change decision-making based on validation metrics
     original_lane_change_state = model_v2.meta.laneChangeState
     lane_change_state = original_lane_change_state  # Default to original state
@@ -333,6 +384,17 @@ class Controls(ControlsExt, ModelStateBase):
     else:
         # Normal operation when system is safe
         lat_active_with_safety = CC.latActive
+
+    # Apply adaptive control parameters based on current conditions
+    try:
+        env_data = {}  # Would be populated from external sources in a full implementation
+        adaptive_params = self.adaptive_control.adjust_for_conditions(CS, env_data)
+
+        # Update lateral control gains if using torque control
+        if self.CP.lateralTuning.which() == 'torque':
+            self.adaptive_lat_control.update_gains_for_conditions(CS, env_data)
+    except Exception as e:
+        cloudlog.error(f"Error applying adaptive control: {e}")
 
     # Optimized lateral control update with pre-allocated memory where possible
     steer, steeringAngleDeg, lac_log = self.LaC.update(lat_active_with_safety, CS, self.VM, lp,
@@ -486,6 +548,17 @@ class Controls(ControlsExt, ModelStateBase):
         cs.validation.metrics.isValid = False
         cs.validation.metrics.confidenceThreshold = 0.5
 
+    # Add enhanced validation metrics to controlsState
+    try:
+        if hasattr(self, 'enhanced_validator') and enhanced_validation_result:
+            cs.validation.enhanced.situationFactor = enhanced_validation_result.get('situation_factor', 1.0)
+            cs.validation.enhanced.speedAdjustedConfidence = enhanced_validation_result.get('speed_adjusted_confidence', 0.0)
+            cs.validation.enhanced.temporalConsistency = enhanced_validation_result.get('temporal_consistency', 1.0)
+            cs.validation.enhanced.systemSafe = enhanced_validation_result.get('system_safe', False)
+    except Exception:
+        # Continue without enhanced metrics if there's an error
+        pass
+
     # Update state based on safety status
     cs.fallbackActive = safety_status['fallback_active']
     cs.degradedMode = safety_status['degraded_mode']
@@ -533,6 +606,11 @@ class Controls(ControlsExt, ModelStateBase):
           if 'perf_factor' not in locals() or not hasattr(self, 'last_perf_factor'):
             self.last_perf_factor = 1.0  # Default value
           perf_factor = self.last_perf_factor
+
+        # Update thermal status and get performance recommendations
+        if self.sm.updated['deviceState']:
+          thermal_metrics = thermal_manager.update_thermal_status(self.sm['deviceState'])
+          perf_factor = min(perf_factor, thermal_manager.get_current_performance_scale())
 
         # Track the overall loop performance
         with PerfTrack("controlsd_loop") as loop_tracker:
