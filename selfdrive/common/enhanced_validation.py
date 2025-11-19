@@ -249,5 +249,91 @@ class EnhancedValidation:
     return max(0.0, min(1.0, confidence))
 
 
+  def calculate_situation_aware_confidence(self, validation_metrics: Dict[str, Any], car_state: Any, road_condition: str = 'highway') -> Dict[str, bool]:
+    """Calculate situation-aware validation results"""
+    # Initialize result dictionary with default "safe" values
+    result = {
+        'lead_confidence_ok': True,
+        'lane_confidence_ok': True,
+        'overall_confidence_ok': True,
+        'system_safe': True,
+        'lane_change_safe': True,
+        'system_engagement_safe': True
+    }
+
+    # Extract validation metrics with fallback values
+    lead_confidence_avg = validation_metrics.get('lead_confidence_avg', 0.0)
+    lane_confidence_avg = validation_metrics.get('lane_confidence_avg', 0.0)
+    overall_conf = validation_metrics.get('overall_confidence', 0.0)
+    temporal_consistency = validation_metrics.get('temporal_consistency', 1.0)
+    path_in_lane_validity = validation_metrics.get('path_in_lane_validity', 0.0)
+
+    # Apply thresholds for different conditions
+    base_lead_threshold = 0.6
+    base_lane_threshold = 0.65
+    base_overall_threshold = 0.6
+    base_lane_change_threshold = 0.7
+
+    # Adjust thresholds based on road condition and weather factors
+    if road_condition in ['city', 'residential']:
+        # More conservative thresholds in complex urban environments
+        base_lead_threshold *= 0.9
+        base_lane_threshold *= 0.9
+        base_overall_threshold *= 0.9
+        base_lane_change_threshold *= 0.9
+
+    # Apply weather-based adjustments if available in car state
+    if hasattr(car_state, 'weatherFactor') or hasattr(car_state, 'isRaining') or hasattr(car_state, 'isSnowing'):
+        # In adverse weather, be more conservative
+        base_lead_threshold *= 0.85
+        base_lane_threshold *= 0.85
+        base_overall_threshold *= 0.85
+        base_lane_change_threshold *= 0.8
+
+    # Check if current metrics meet adjusted thresholds
+    result['lead_confidence_ok'] = lead_confidence_avg >= base_lead_threshold
+    result['lane_confidence_ok'] = lane_confidence_avg >= base_lane_threshold
+    result['overall_confidence_ok'] = overall_conf >= base_overall_threshold
+    result['system_safe'] = (
+        result['lead_confidence_ok'] and
+        result['lane_confidence_ok'] and
+        result['overall_confidence_ok'] and
+        temporal_consistency >= 0.8  # Require good temporal consistency
+    )
+    result['lane_change_safe'] = (
+        result['overall_confidence_ok'] and
+        result['lane_confidence_ok'] and
+        path_in_lane_validity >= 0.8 and  # Require high path validity for lane changes
+        overall_conf >= base_lane_change_threshold  # Higher threshold for lane changes
+    )
+
+    # System engagement safety is the most conservative
+    result['system_engagement_safe'] = result['system_safe'] and result['lane_change_safe']
+
+    return result
+
+  def get_safety_recommendation(self, enhanced_validation_result: Dict[str, Any], car_state: Any) -> Tuple[bool, str]:
+    """Get safety recommendation based on enhanced validation results"""
+    system_safe = enhanced_validation_result.get('system_engagement_safe', False)
+
+    if not system_safe:
+        # Determine why the system is not safe
+        reasons = []
+
+        if not enhanced_validation_result.get('lead_confidence_ok', True):
+            reasons.append("low lead detection confidence")
+        if not enhanced_validation_result.get('lane_confidence_ok', True):
+            reasons.append("low lane detection confidence")
+        if not enhanced_validation_result.get('overall_confidence_ok', True):
+            reasons.append("low overall confidence")
+        if not enhanced_validation_result.get('lane_change_safe', True):
+            reasons.append("not safe for lane changes")
+
+        reason_str = f"System not safe: {', '.join(reasons)}" if reasons else "Safety validation failed"
+        return False, reason_str
+    else:
+        return True, "System operating safely"
+
+
 # Global instance for use across the system
 enhanced_validator = EnhancedValidation()
