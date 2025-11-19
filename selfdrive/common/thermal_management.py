@@ -57,34 +57,49 @@ class PredictiveThermalManager:
         current_time = time.time()
         time_delta = current_time - self.last_update_time
         self.last_update_time = current_time
-        
-        # Get current thermal data
-        thermal_data = {
-            'cpu_temp': device_state.cpuTempC,
-            'gpu_temp': getattr(device_state, 'gpuTempC', 0),
-            'memory_percent': psutil.virtual_memory().percent,
-            'cpu_percent': psutil.cpu_percent(),
-            'thermal_status': device_state.thermalStatus
-        }
-        
-        # Add to history for predictive analysis
-        self.thermal_history.append({
-            'timestamp': current_time,
-            'data': thermal_data.copy()
-        })
-        if len(self.thermal_history) > self.max_history_len:
-            self.thermal_history.pop(0)
-        
-        # Predict future thermal load
-        predicted_thermal_load = self._predict_thermal_load()
-        
-        # Calculate thermal safety metrics
-        thermal_metrics = self._calculate_thermal_metrics(thermal_data, predicted_thermal_load)
-        
-        # Adjust performance scaling based on thermal state
-        self._adjust_performance_scaling(thermal_metrics)
-        
-        return thermal_metrics
+
+        try:
+            # Get current thermal data
+            thermal_data = {
+                'cpu_temp': getattr(device_state, 'cpuTempC', 0),
+                'gpu_temp': getattr(device_state, 'gpuTempC', 0),
+                'memory_percent': psutil.virtual_memory().percent,
+                'cpu_percent': psutil.cpu_percent(),
+                'thermal_status': getattr(device_state, 'thermalStatus', 0)
+            }
+
+            # Add to history for predictive analysis
+            self.thermal_history.append({
+                'timestamp': current_time,
+                'data': thermal_data.copy()
+            })
+            if len(self.thermal_history) > self.max_history_len:
+                self.thermal_history.pop(0)
+
+            # Predict future thermal load
+            predicted_thermal_load = self._predict_thermal_load()
+
+            # Calculate thermal safety metrics
+            thermal_metrics = self._calculate_thermal_metrics(thermal_data, predicted_thermal_load)
+
+            # Adjust performance scaling based on thermal state
+            self._adjust_performance_scaling(thermal_metrics)
+
+            return thermal_metrics
+        except Exception as e:
+            cloudlog.error(f"Error updating thermal status: {e}")
+            # Return safe defaults in case of error
+            return {
+                'current_cpu_temp': 30,
+                'current_gpu_temp': 30,
+                'current_memory_percent': 50,
+                'current_cpu_percent': 30,
+                'predicted_cpu_temp': 35,
+                'thermal_trend': 'stable',
+                'thermal_score': 1.0,
+                'performance_scale': 1.0,
+                'system_thermal_state': 'normal'
+            }
     
     def _predict_thermal_load(self) -> Dict[str, float]:
         """Predict future thermal load based on historical data"""

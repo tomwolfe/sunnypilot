@@ -57,25 +57,45 @@ class WeatherDataInterface:
         """
         # In a real implementation, this would fetch from weather APIs
         # For now, simulate based on car state or time
-        if self.sm and 'deviceState' in self.sm:
-            # Use device state to potentially determine location-based weather simulation
-            pass
-            
-        # Update timestamp
-        self.weather_data['timestamp'] = time.time()
-        
-        # Simulate some weather changes based on season/time of day concepts
-        # This is just a placeholder for demonstration
-        if time.time() % 300 < 10:  # Randomly simulate weather changes
-            self.weather_data['precipitation_type'] = 'rain'
-            self.weather_data['precipitation_intensity'] = 0.3
-            self.weather_data['visibility'] = 100.0
-            self.weather_data['road_surface_condition'] = 'wet'
-        else:
-            self.weather_data['precipitation_type'] = 'none'
-            self.weather_data['precipitation_intensity'] = 0.0
-            self.weather_data['visibility'] = 200.0
-            self.weather_data['road_surface_condition'] = 'dry'
+        try:
+            if self.sm and 'deviceState' in self.sm:
+                # Use device state to potentially determine location-based weather simulation
+                pass
+
+            # Update timestamp
+            self.weather_data['timestamp'] = time.time()
+
+            # Simulate some weather changes based on season/time of day concepts
+            # This is just a placeholder for demonstration
+            current_time = time.time()
+            # Simulate weather changes every 300 seconds with 10 second windows
+            if int(current_time) % 300 < 10:  # Randomly simulate weather changes
+                self.weather_data['precipitation_type'] = 'rain'
+                self.weather_data['precipitation_intensity'] = 0.3
+                self.weather_data['visibility'] = 100.0
+                self.weather_data['road_surface_condition'] = 'wet'
+            elif int(current_time + 100) % 300 < 10:  # Offset pattern for variety
+                self.weather_data['precipitation_type'] = 'snow'
+                self.weather_data['precipitation_intensity'] = 0.2
+                self.weather_data['visibility'] = 80.0
+                self.weather_data['road_surface_condition'] = 'icy'
+            else:
+                self.weather_data['precipitation_type'] = 'none'
+                self.weather_data['precipitation_intensity'] = 0.0
+                self.weather_data['visibility'] = 200.0
+                self.weather_data['road_surface_condition'] = 'dry'
+        except Exception as e:
+            cloudlog.error(f"Error in weather simulation update: {e}")
+            # Ensure defaults in case of error
+            self.weather_data = {
+                'precipitation_type': 'none',
+                'precipitation_intensity': 0.0,
+                'temperature': 20.0,
+                'visibility': 200.0,
+                'wind_speed': 5.0,
+                'road_surface_condition': 'dry',
+                'timestamp': time.time()
+            }
     
     def get_precipitation_factor(self) -> float:
         """Get a factor based on precipitation for control adjustments"""

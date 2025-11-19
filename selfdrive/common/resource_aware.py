@@ -15,7 +15,13 @@ import numpy as np
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware import HARDWARE
 from openpilot.common.dynamic_adaptation import dynamic_adaptation, PerformanceMode
-from openpilot.selfdrive.monitoring.thermal_management import thermal_manager, get_thermal_performance_scale
+from openpilot.selfdrive.common.thermal_management import thermal_manager, PredictiveThermalManager
+
+def get_thermal_performance_scale():
+    """Compatibility function for thermal performance scale"""
+    if hasattr(thermal_manager, 'get_current_performance_scale'):
+        return thermal_manager.get_current_performance_scale()
+    return 1.0  # Return full performance if function not available
 
 
 class PriorityLevel(IntEnum):

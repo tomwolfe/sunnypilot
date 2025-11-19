@@ -65,9 +65,9 @@ class ValidationMetricsPublisher:
             validation_metrics.confidenceThreshold = 0.6  # Standard threshold
 
             # Set enhanced metrics with bounds checking
-            validation_metrics.enhanced.situationFactor = max(0.0, min(2.0, enhanced_validation_result.get('situation_factor', 1.0)))
-            validation_metrics.enhanced.speedAdjustedConfidence = max(0.0, min(1.0, enhanced_validation_result.get('speed_adjusted_confidence', 0.0)))
-            validation_metrics.enhanced.temporalConsistency = max(0.0, min(1.0, enhanced_validation_result.get('temporal_consistency', 1.0)))
+            validation_metrics.enhanced.situationFactor = max(0.0, min(2.0, float(enhanced_validation_result.get('situation_factor', 1.0))))
+            validation_metrics.enhanced.speedAdjustedConfidence = max(0.0, min(1.0, float(enhanced_validation_result.get('speed_adjusted_confidence', 0.0))))
+            validation_metrics.enhanced.temporalConsistency = max(0.0, min(1.0, float(enhanced_validation_result.get('temporal_consistency', 1.0))))
             validation_metrics.enhanced.systemSafe = bool(enhanced_validation_result.get('system_safe', False))
 
             # Additional metrics for specific use cases
