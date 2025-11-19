@@ -15,17 +15,24 @@ import psutil
 @dataclass
 class OptimizationConfig:
     """Configuration for ARM optimizations"""
-    memory_pool_size: int = 1024 * 1024 * 16  # 16MB memory pool
-    max_cache_size: int = 100  # Maximum number of cached arrays
-    enable_neon_optimizations: bool = True  # Enable ARM NEON instructions
-    enable_memory_pooling: bool = True  # Enable memory pooling
-    enable_cache: bool = True  # Enable result caching
+    memory_pool_size: int = 16777216  # 16MB memory pool (16*1024*1024) - default value that can be overridden
+    max_cache_size: int = 100  # Maximum number of cached arrays - default value that can be overridden
+    enable_neon_optimizations: bool = True  # Enable ARM NEON instructions - default value that can be overridden
+    enable_memory_pooling: bool = True  # Enable memory pooling - default value that can be overridden
+    enable_cache: bool = True  # Enable result caching - default value that can be overridden
 
 
 class MemoryPool:
     """Advanced memory pool to reduce allocation overhead"""
 
-    def __init__(self, pool_size: int = 1024 * 1024 * 16):  # 16MB default
+    def __init__(self, pool_size: int = None):  # Use system parameter or default
+        from openpilot.common.params import Params
+        params = Params()
+
+        # Use provided size, or system parameter, or default
+        if pool_size is None:
+            pool_size = int(params.get("SunnypilotMemoryPoolSize", default="16777216"))  # 16MB (16*1024*1024)
+
         self.pool_size = pool_size
         self.pool = np.zeros(pool_size, dtype=np.uint8)
         self.lock = threading.Lock()
@@ -80,11 +87,14 @@ class ARMOptimizedOperations:
     """ARM-specific optimized operations for neural networks"""
 
     def __init__(self):
+        from openpilot.common.params import Params
+        params = Params()
+
         self.cache: Dict[str, Any] = {}
         self.cache_hits = 0
         self.cache_misses = 0
         self.cache_lock = threading.Lock()
-        self.max_cache_size = 50  # Limit cache size to prevent memory issues
+        self.max_cache_size = int(params.get("SunnypilotARMOpsMaxCacheSize", default="50"))  # Limit cache size to prevent memory issues
 
         # Check if we're on ARM architecture
         import platform
@@ -231,7 +241,22 @@ class ARMNeuralNetworkOptimizer:
     """Complete ARM-specific neural network optimizer incorporating multiple techniques"""
 
     def __init__(self, config: OptimizationConfig = None):
-        self.config = config or OptimizationConfig()
+        # Get system parameters
+        from openpilot.common.params import Params
+        params = Params()
+
+        # Create config with system parameters or defaults
+        if config is None:
+            self.config = OptimizationConfig(
+                memory_pool_size=int(params.get("SunnypilotARMMemoryPoolSize", default="16777216")),  # 16MB memory pool (16*1024*1024)
+                max_cache_size=int(params.get("SunnypilotARMMaxCacheSize", default="100")),  # Maximum number of cached arrays
+                enable_neon_optimizations=params.get("SunnypilotEnableNEONOptimizations", default="1") == "1",  # Enable ARM NEON instructions
+                enable_memory_pooling=params.get("SunnypilotEnableMemoryPooling", default="1") == "1",  # Enable memory pooling
+                enable_cache=params.get("SunnypilotEnableCache", default="1") == "1"  # Enable result caching
+            )
+        else:
+            self.config = config
+
         self.memory_pool = MemoryPool(self.config.memory_pool_size) if self.config.enable_memory_pooling else None
         self.optimized_ops = ARMOptimizedOperations()
         self.performance_monitoring = {

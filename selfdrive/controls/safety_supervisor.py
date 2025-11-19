@@ -53,20 +53,24 @@ class SafetySupervisor:
     """
     
     def __init__(self):
+        from openpilot.common.params import Params
+        self.params = Params()
+
+        # Get configurable safety thresholds from system parameters
         self.safety_thresholds = {
-            'collision_risk': 0.7,  # Maximum acceptable collision risk
-            'tracking_accuracy': 0.6,  # Minimum tracking accuracy
-            'model_consistency': 0.7,  # Minimum model consistency
-            'environmental_awareness': 0.6  # Minimum environmental awareness
+            'collision_risk': float(self.params.get("SunnypilotCollisionRiskThreshold", default="0.7")),  # Maximum acceptable collision risk
+            'tracking_accuracy': float(self.params.get("SunnypilotTrackingAccuracyThreshold", default="0.6")),  # Minimum tracking accuracy
+            'model_consistency': float(self.params.get("SunnypilotModelConsistencyThreshold", default="0.7")),  # Minimum model consistency
+            'environmental_awareness': float(self.params.get("SunnypilotEnvironmentalAwarenessThreshold", default="0.6"))  # Minimum environmental awareness
         }
-        
+
         self.last_safety_metrics = None
         self.safety_log = []  # Log of safety events
-        self.max_log_size = 100
-        
+        self.max_log_size = int(self.params.get("SunnypilotSafetyLogMaxSize", default="100"))
+
         # Collision prediction parameters
-        self.collision_prediction_horizon = 3.0  # seconds ahead to predict
-        self.min_safe_distance = 50.0  # minimum safe distance in meters
+        self.collision_prediction_horizon = float(self.params.get("SunnypilotCollisionPredictionHorizon", default="3.0"))  # seconds ahead to predict
+        self.min_safe_distance = float(self.params.get("SunnypilotMinSafeDistance", default="50.0"))  # minimum safe distance in meters
         
     def validate_control_commands(self, 
                                  ego_state: EgoState, 
@@ -219,12 +223,14 @@ class SafetySupervisor:
         violations = []
         
         # Check if desired curvature is extreme (indicating potential lane departure)
-        if abs(planning_result.desired_curvature) > 0.02:  # Very high curvature
+        max_curvature_threshold = float(self.params.get("SunnypilotMaxCurvatureThreshold", default="0.02"))
+        if abs(planning_result.desired_curvature) > max_curvature_threshold:  # Very high curvature
             violations.append(SafetyViolation.ROAD_BOUNDARY_VIOLATION)
-        
+
         # Check if planned lateral movement is excessive
         # This is a simplified check - in reality would use lane line detection
-        if abs(ego_state.position[1]) > 4.0:  # More than 4m from center line
+        lateral_position_threshold = float(self.params.get("SunnypilotLateralPositionThreshold", default="4.0"))
+        if abs(ego_state.position[1]) > lateral_position_threshold:  # More than configurable distance from center line
             violations.append(SafetyViolation.ROAD_BOUNDARY_VIOLATION)
         
         return SafetyCheckResult(
@@ -239,12 +245,14 @@ class SafetySupervisor:
         violations = []
         
         # Compare desired speed to current speed limit (in a real system, this would come from map data)
-        speed_limit = 25.0  # Default 90 km/h if no map data
-        if planning_result.desired_speed > speed_limit * 1.1:  # Allow 10% overage
+        speed_limit = float(self.params.get("SunnypilotDefaultSpeedLimit", default="25.0"))  # Default 90 km/h if no map data
+        speed_limit_tolerance = float(self.params.get("SunnypilotSpeedLimitTolerance", default="1.1"))  # Allow configurable overage
+        if planning_result.desired_speed > speed_limit * speed_limit_tolerance:
             violations.append(SafetyViolation.SPEED_LIMIT_EXCEEDED)
-        
+
         # Check acceleration/deceleration limits
-        if abs(planning_result.desired_acceleration) > 4.0:  # Very high acceleration/deceleration
+        max_accel_threshold = float(self.params.get("SunnypilotMaxAccelThreshold", default="4.0"))  # Very high acceleration/deceleration
+        if abs(planning_result.desired_acceleration) > max_accel_threshold:
             violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
         
         return SafetyCheckResult(
@@ -259,13 +267,15 @@ class SafetySupervisor:
         violations = []
 
         # Check for sudden, unplanned changes in direction
-        if abs(planning_result.desired_curvature - ego_state.curvature) > 0.01:  # Sudden direction change
+        curvature_change_threshold = float(self.params.get("SunnypilotCurvatureChangeThreshold", default="0.01"))  # Sudden direction change
+        if abs(planning_result.desired_curvature - ego_state.curvature) > curvature_change_threshold:
             # Only flag if not in a lane change state
             if planning_result.planning_state.name not in ["LANE_CHANGING_LEFT", "LANE_CHANGING_RIGHT"]:
                 violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
 
         # Check for impossible acceleration commands relative to current speed
-        if ego_state.velocity > 0 and planning_result.desired_acceleration < -6.0:  # Emergency braking threshold
+        emergency_braking_threshold = float(self.params.get("SunnypilotEmergencyBrakingThreshold", default="-6.0"))  # Emergency braking threshold
+        if ego_state.velocity > 0 and planning_result.desired_acceleration < emergency_braking_threshold:
             if planning_result.planning_state.name != "EMERGENCY_STOP":
                 violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
 
@@ -284,16 +294,19 @@ class SafetySupervisor:
     def _calculate_max_safe_acceleration(self, ego_state: EgoState) -> float:
         """Calculate maximum safe acceleration based on vehicle speed and road conditions"""
         # Maximum safe acceleration/deceleration based on friction coefficient
-        # For dry pavement, assume friction coefficient of 0.8
-        friction_coefficient = 0.8
+        # For dry pavement, configurable friction coefficient
+        friction_coefficient = float(self.params.get("SunnypilotFrictionCoefficient", default="0.8"))
         max_longitudinal_accel = friction_coefficient * 9.81  # m/s^2
 
         # Adjust for speed (higher speeds have lower safe acceleration)
-        speed_factor = max(0.7, min(1.0, 25.0 / max(ego_state.velocity, 1.0)))
+        speed_factor_min = float(self.params.get("SunnypilotSpeedFactorMin", default="0.7"))
+        speed_factor_reference = float(self.params.get("SunnypilotSpeedFactorReference", default="25.0"))
+        speed_factor = max(speed_factor_min, min(1.0, speed_factor_reference / max(ego_state.velocity, 1.0)))
         max_safe_accel = max_longitudinal_accel * speed_factor
 
         # Apply safety margin
-        return max_safe_accel * 0.7  # 70% of theoretical limit for safety
+        safety_margin_factor = float(self.params.get("SunnypilotSafetyMarginFactor", default="0.7"))  # Configurable margin of theoretical limit for safety
+        return max_safe_accel * safety_margin_factor
     
     def _calculate_safety_metrics(self, 
                                  ego_state: EgoState, 
@@ -339,14 +352,17 @@ class SafetySupervisor:
                 dist = np.linalg.norm(ego_state.position - obj_pos)
                 min_distance = min(min_distance, dist)
         
+        min_collision_distance = float(self.params.get("SunnypilotMinCollisionDistance", default="1.0"))
+        max_collision_distance = float(self.params.get("SunnypilotMaxCollisionDistance", default="50.0"))
+
         # Convert distance to risk metric (closer = higher risk)
-        if min_distance < 1.0:
+        if min_distance < min_collision_distance:
             return 1.0
-        elif min_distance > 50.0:
+        elif min_distance > max_collision_distance:
             return 0.0
         else:
-            # Linear scaling between 1-50m
-            return (50.0 - min_distance) / 49.0
+            # Linear scaling between configurable distances
+            return (max_collision_distance - min_distance) / (max_collision_distance - min_collision_distance)
     
     def _calculate_tracking_accuracy_metric(self, tracked_objects: Dict[str, Any]) -> float:
         """Calculate tracking accuracy metric (0-1, where 1 is highest accuracy)"""
@@ -359,14 +375,21 @@ class SafetySupervisor:
         
         # Adjust based on number of tracked objects (more is better, up to a point)
         num_objects = len(tracked_objects)
-        if num_objects > 20:  # Too many might indicate false positives
-            avg_confidence *= 0.8
-        elif num_objects > 10:
-            avg_confidence *= 1.1  # Good amount of objects
-        elif num_objects < 2:  # Too few might indicate poor tracking
-            avg_confidence *= 0.7
-        
-        return max(0.0, min(1.0, avg_confidence))
+
+        too_many_objects_threshold = int(self.params.get("SunnypilotTooManyObjectsThreshold", default="20"))
+        good_objects_threshold = int(self.params.get("SunnypilotGoodObjectsThreshold", default="10"))
+        too_few_objects_threshold = int(self.params.get("SunnypilotTooFewObjectsThreshold", default="2"))
+
+        objects_confidence_factor = 1.0
+        if num_objects > too_many_objects_threshold:  # Too many might indicate false positives
+            objects_confidence_factor = float(self.params.get("SunnypilotTooManyObjectsFactor", default="0.8"))
+        elif num_objects > good_objects_threshold:
+            objects_confidence_factor = float(self.params.get("SunnypilotGoodObjectsFactor", default="1.1"))  # Good amount of objects
+        elif num_objects < too_few_objects_threshold:  # Too few might indicate poor tracking
+            objects_confidence_factor = float(self.params.get("SunnypilotTooFewObjectsFactor", default="0.7"))
+
+        adjusted_confidence = avg_confidence * objects_confidence_factor
+        return max(0.0, min(1.0, adjusted_confidence))
     
     def _calculate_environmental_awareness(self, tracked_objects: Dict[str, Any]) -> float:
         """Calculate environmental awareness metric (0-1, where 1 is highest awareness)"""
@@ -418,10 +441,13 @@ class UncertaintyAwareValidator:
     """Safety validation that considers prediction uncertainties"""
 
     def __init__(self):
+        from openpilot.common.params import Params
+        self.params = Params()
+
         self.uncertainty_safety_thresholds = {
-            'low_uncertainty': 0.1,   # Up to 10% uncertainty: normal thresholds
-            'medium_uncertainty': 0.25,  # 10-25% uncertainty: increased safety margins
-            'high_uncertainty': 0.4     # Above 25%: conservative safety
+            'low_uncertainty': float(self.params.get("SunnypilotLowUncertaintyThreshold", default="0.1")),   # Configurable uncertainty threshold: normal thresholds
+            'medium_uncertainty': float(self.params.get("SunnypilotMediumUncertaintyThreshold", default="0.25")),  # Configurable uncertainty range: increased safety margins
+            'high_uncertainty': float(self.params.get("SunnypilotHighUncertaintyThreshold", default="0.4"))     # Above threshold: conservative safety
         }
 
     def check_uncertainty_aware_safety(self, ego_state: EgoState,
@@ -443,9 +469,11 @@ class UncertaintyAwareValidator:
             ego_state, planning_result, tracked_objects, safety_margin_multiplier
         )
 
-        if collision_risk > 0.7:  # Higher risk threshold due to uncertainty
+        collision_risk_threshold = float(self.params.get("SunnypilotCollisionRiskThresholdForUncertainty", default="0.7"))  # Higher risk threshold due to uncertainty
+        if collision_risk > collision_risk_threshold:
             violations.append(SafetyViolation.COLLISION_IMMINENT)
-            confidence *= 0.3  # Low confidence in high-uncertainty collision scenarios
+            confidence_factor = float(self.params.get("SunnypilotUncertaintyCollisionConfidenceFactor", default="0.3"))  # Configurable confidence in high-uncertainty collision scenarios
+            confidence *= confidence_factor
 
         explanation = f"Uncertainty-aware safety check: max_uncertainty={max_uncertainty:.2f}, margin_mult={safety_margin_multiplier:.2f}"
 
@@ -458,12 +486,19 @@ class UncertaintyAwareValidator:
 
     def _get_safety_margin_multiplier(self, max_uncertainty: float) -> float:
         """Get safety margin multiplier based on prediction uncertainty"""
-        if max_uncertainty <= 0.1:
-            return 1.0  # Normal safety margins
-        elif max_uncertainty <= 0.25:
-            return 1.5  # Increase safety margins by 50%
+        low_uncertainty_threshold = float(self.params.get("SunnypilotLowUncertaintyThreshold", default="0.1"))
+        medium_uncertainty_threshold = float(self.params.get("SunnypilotMediumUncertaintyThreshold", default="0.25"))
+
+        low_multiplier = float(self.params.get("SunnypilotLowUncertaintyMultiplier", default="1.0"))  # Configurable safety margins
+        medium_multiplier = float(self.params.get("SunnypilotMediumUncertaintyMultiplier", default="1.5"))  # Configurable increase in safety margins
+        high_multiplier = float(self.params.get("SunnypilotHighUncertaintyMultiplier", default="2.0"))  # Configurable safety margins in high uncertainty
+
+        if max_uncertainty <= low_uncertainty_threshold:
+            return low_multiplier  # Normal safety margins
+        elif max_uncertainty <= medium_uncertainty_threshold:
+            return medium_multiplier  # Increase safety margins
         else:
-            return 2.0  # Double safety margins in high uncertainty
+            return high_multiplier  # Configurable safety margins in high uncertainty
 
     def _assess_enhanced_collision_risk(self, ego_state: EgoState,
                                       planning_result: PlanningResult,
@@ -490,7 +525,8 @@ class UncertaintyAwareValidator:
                         min_distance = min(min_distance, dist)
 
                 # Adjust required distance based on uncertainty
-                required_distance = 5.0 * margin_multiplier  # Increase based on uncertainty
+                base_required_distance = float(self.params.get("SunnypilotBaseRequiredDistance", default="5.0"))  # Configurable distance
+                required_distance = base_required_distance * margin_multiplier  # Increase based on uncertainty
 
                 if min_distance < required_distance:
                     # Calculate risk based on proximity and uncertainty
@@ -575,11 +611,14 @@ class SafetyConfidenceCalibrator:
     """Calibrate safety confidence based on various factors"""
 
     def __init__(self):
+        from openpilot.common.params import Params
+        self.params = Params()
+
         self.factor_weights = {
-            'model_agreement': 0.3,
-            'environmental_factors': 0.25,
-            'uncertainty': 0.25,
-            'historical_performance': 0.2
+            'model_agreement': float(self.params.get("SunnypilotModelAgreementWeight", default="0.3")),
+            'environmental_factors': float(self.params.get("SunnypilotEnvironmentalFactorsWeight", default="0.25")),
+            'uncertainty': float(self.params.get("SunnypilotUncertaintyWeight", default="0.25")),
+            'historical_performance': float(self.params.get("SunnypilotHistoricalPerformanceWeight", default="0.2"))
         }
 
     def calibrate_safety_confidence(self, base_confidence: float,
@@ -805,11 +844,12 @@ class RedundantSafetyValidator:
         violations = []
         
         # Check maximum possible acceleration/deceleration
-        if abs(planning_result.desired_acceleration) > 5.0:  # Beyond physical limits
+        max_possible_accel = float(self.params.get("SunnypilotMaxPossibleAccel", default="5.0"))  # Configurable physical limits
+        if abs(planning_result.desired_acceleration) > max_possible_accel:
             violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
-        
+
         # Check maximum possible curvature (related to speed and lateral acceleration)
-        max_lateral_accel = 5.0  # m/s^2 maximum safe lateral acceleration
+        max_lateral_accel = float(self.params.get("SunnypilotMaxLateralAccel", default="5.0"))  # m/s^2 maximum safe lateral acceleration
         if ego_state.velocity > 0 and abs(planning_result.desired_curvature) > max_lateral_accel / (ego_state.velocity ** 2):
             violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
         

@@ -130,42 +130,63 @@ class AdaptiveControlParameters:
             weather_factor = weather_data_interface.get_precipitation_factor()
 
             # Additional adjustments based on other weather factors
-            if current_weather['visibility'] < 100:  # Poor visibility
-                weather_factor *= 0.85
-            elif current_weather['visibility'] < 50:
-                weather_factor *= 0.7
+            poor_visibility_threshold = self.params.get("SunnypilotPoorVisibilityThreshold", default="100")
+            low_visibility_threshold = self.params.get("SunnypilotLowVisibilityThreshold", default="50")
 
-            if current_weather['wind_speed'] > 15:  # High winds
-                weather_factor *= 0.9
-            elif current_weather['wind_speed'] > 25:  # Very high winds
-                weather_factor *= 0.75
+            if current_weather['visibility'] < int(poor_visibility_threshold):  # Poor visibility
+                poor_visibility_factor = float(self.params.get("SunnypilotPoorVisibilityFactor", default="0.85"))
+                weather_factor *= poor_visibility_factor
+            elif current_weather['visibility'] < int(low_visibility_threshold):
+                low_visibility_factor = float(self.params.get("SunnypilotLowVisibilityFactor", default="0.7"))
+                weather_factor *= low_visibility_factor
+
+            high_wind_threshold = float(self.params.get("SunnypilotHighWindThreshold", default="15"))
+            very_high_wind_threshold = float(self.params.get("SunnypilotVeryHighWindThreshold", default="25"))
+
+            if current_weather['wind_speed'] > high_wind_threshold:  # High winds
+                high_wind_factor = float(self.params.get("SunnypilotHighWindFactor", default="0.9"))
+                weather_factor *= high_wind_factor
+            elif current_weather['wind_speed'] > very_high_wind_threshold:  # Very high winds
+                very_high_wind_factor = float(self.params.get("SunnypilotVeryHighWindFactor", default="0.75"))
+                weather_factor *= very_high_wind_factor
 
             # Road surface condition adjustments
             road_surface = current_weather.get('road_surface_condition', 'dry')
+            wet_surface_factor = float(self.params.get("SunnypilotWetSurfaceFactor", default="0.85"))
+            icy_snow_factor = float(self.params.get("SunnypilotIcySnowFactor", default="0.7"))
+
             if road_surface == 'wet':
-                weather_factor *= 0.85
+                weather_factor *= wet_surface_factor
             elif road_surface in ['icy', 'snowy']:
-                weather_factor *= 0.7
+                weather_factor *= icy_snow_factor
         except Exception as e:
             cloudlog.warning(f"Could not get weather data for adaptive control: {e}")
 
         # If environment data is also available, use it to further adjust
         if environment_data:
             # Example: rain, snow, fog conditions from environment data
+            rain_factor = float(self.params.get("SunnypilotRainFactor", default="0.7"))
+            snow_factor = float(self.params.get("SunnypilotSnowFactor", default="0.5"))
+            low_visibility_env_factor = float(self.params.get("SunnypilotLowVisibilityEnvFactor", default="0.8"))
+
             if environment_data.get('precipitation_type') == 'rain':
-                weather_factor = min(weather_factor, 0.7)  # More conservative in rain
+                weather_factor = min(weather_factor, rain_factor)  # More conservative in rain
             elif environment_data.get('precipitation_type') == 'snow':
-                weather_factor = min(weather_factor, 0.5)  # Much more conservative in snow
+                weather_factor = min(weather_factor, snow_factor)  # Much more conservative in snow
             elif environment_data.get('visibility') < 50:  # Low visibility
-                weather_factor = min(weather_factor, 0.8)
+                weather_factor = min(weather_factor, low_visibility_env_factor)
 
         # Apply weather adjustments
         self.current_pid_params['kp'] *= weather_factor
         self.current_pid_params['ki'] *= weather_factor
         self.current_pid_params['kd'] *= weather_factor
         self.current_lat_params['max_steer'] *= weather_factor
-        self.current_long_params['max_accel'] *= weather_factor * 0.8  # Even more conservative for acceleration
-        self.current_long_params['min_accel'] = max(-2.5, self.current_long_params['min_accel'] * weather_factor)  # Less braking in bad weather
+
+        # Even more conservative for acceleration
+        accel_weather_factor = float(self.params.get("SunnypilotAccelWeatherFactor", default="0.8"))
+        self.current_long_params['max_accel'] *= weather_factor * accel_weather_factor
+        min_braking_weather = float(self.params.get("SunnypilotMinBrakingWeather", default="-2.5"))  # Less braking in bad weather
+        self.current_long_params['min_accel'] = max(min_braking_weather, self.current_long_params['min_accel'] * weather_factor)
 
     def _adjust_for_road_surface(self, car_state: log.CarState, 
                                environment_data: Optional[Dict[str, Any]]) -> None:
@@ -173,43 +194,73 @@ class AdaptiveControlParameters:
         surface_factor = 1.0
         
         # Estimate road surface based on acceleration patterns and steering behavior
-        if len(self.steering_history) > 10:
+        steering_history_threshold = int(self.params.get("SunnypilotSurfaceSteeringHistoryThreshold", default="10"))
+        if len(self.steering_history) > steering_history_threshold:
             # Look for signs of slippery conditions (high steering with low response)
-            recent_steering_changes = np.diff(self.steering_history[-10:])
+            recent_steering_changes = np.diff(self.steering_history[-steering_history_threshold:])
             avg_change = np.mean(np.abs(recent_steering_changes))
-            
+
             # High steering activity with low car response might indicate slippery surface
-            if avg_change > 0.1 and car_state.vEgo > 5:  # If moving and steering a lot
-                surface_factor = 0.85  # More conservative
-        
+            high_steering_threshold = float(self.params.get("SunnypilotHighSteeringThreshold", default="0.1"))
+            min_speed_threshold = float(self.params.get("SunnypilotMinSpeedThreshold", default="5"))
+            slippery_surface_factor = float(self.params.get("SunnypilotSlipperySurfaceFactor", default="0.85"))
+
+            if avg_change > high_steering_threshold and car_state.vEgo > min_speed_threshold:  # If moving and steering a lot
+                surface_factor = slippery_surface_factor  # More conservative
+
         # Apply surface adjustments
-        self.current_pid_params['kp'] *= surface_factor * 0.9  # More conservative for unknown surfaces
-        self.current_lat_params['max_steer'] *= surface_factor * 0.85
+        surface_base_factor = float(self.params.get("SunnypilotSurfaceBaseFactor", default="0.9"))  # More conservative for unknown surfaces
+        self.current_pid_params['kp'] *= surface_factor * surface_base_factor
+
+        lat_surface_factor = float(self.params.get("SunnypilotLatSurfaceFactor", default="0.85"))
+        self.current_lat_params['max_steer'] *= surface_factor * lat_surface_factor
+
         # Reduce longitudinal aggressiveness on potentially slippery surfaces
-        self.current_long_params['max_accel'] *= surface_factor * 0.8
-        self.current_long_params['min_accel'] = max(-2.0, self.current_long_params['min_accel'] * surface_factor * 0.8)
+        long_surface_factor = float(self.params.get("SunnypilotLongSurfaceFactor", default="0.8"))
+        self.current_long_params['max_accel'] *= surface_factor * long_surface_factor
+
+        min_long_accel_surface = float(self.params.get("SunnypilotMinLongAccelSurface", default="-2.0"))
+        self.current_long_params['min_accel'] = max(min_long_accel_surface, self.current_long_params['min_accel'] * surface_factor * long_surface_factor)
 
     def _adjust_for_speed(self, car_state: log.CarState) -> None:
         """Adjust parameters based on vehicle speed"""
         v_ego = car_state.vEgo
-        
-        if v_ego < 5:  # Very low speed
-            speed_factor = 1.2  # More responsive at low speed
-        elif v_ego < 15:  # Moderate speed (~54 km/h)
-            speed_factor = 1.0
-        elif v_ego < 30:  # Higher speed (~108 km/h)
-            speed_factor = 0.9  # More conservative
+
+        # Define speed thresholds from parameters
+        very_low_speed_threshold = float(self.params.get("SunnypilotVeryLowSpeedThreshold", default="5"))
+        moderate_speed_threshold = float(self.params.get("SunnypilotModerateSpeedThreshold", default="15"))
+        high_speed_threshold = float(self.params.get("SunnypilotHighSpeedThreshold", default="30"))
+
+        # Speed response factors
+        very_low_speed_factor = float(self.params.get("SunnypilotVeryLowSpeedFactor", default="1.2"))  # More responsive at low speed
+        moderate_speed_factor = float(self.params.get("SunnypilotModerateSpeedFactor", default="1.0"))
+        high_speed_factor = float(self.params.get("SunnypilotHighSpeedFactor", default="0.9"))  # More conservative
+        very_high_speed_factor = float(self.params.get("SunnypilotVeryHighSpeedFactor", default="0.8"))  # Most conservative
+
+        # Calculate speed factor based on current speed
+        if v_ego < very_low_speed_threshold:  # Very low speed
+            speed_factor = very_low_speed_factor
+        elif v_ego < moderate_speed_threshold:  # Moderate speed (~54 km/h)
+            speed_factor = moderate_speed_factor
+        elif v_ego < high_speed_threshold:  # Higher speed (~108 km/h)
+            speed_factor = high_speed_factor
         else:  # High speed
-            speed_factor = 0.8  # Most conservative
-            
+            speed_factor = very_high_speed_factor
+
         # Apply speed-based adjustments
         self.current_pid_params['kp'] *= speed_factor
         self.current_pid_params['ki'] *= speed_factor
         self.current_lat_params['max_steer'] *= speed_factor
+
         # Adjust longitudinal parameters based on speed too
-        if v_ego > 25:  # Above ~90 km/h
-            self.current_long_params['max_accel'] *= 0.7  # More conservative acceleration
-            self.current_long_params['min_accel'] = max(-3.0, self.current_long_params['min_accel'] * 0.8)
+        high_speed_long_threshold = float(self.params.get("SunnypilotHighSpeedLongThreshold", default="25"))  # Above ~90 km/h
+        if v_ego > high_speed_long_threshold:
+            high_speed_accel_factor = float(self.params.get("SunnypilotHighSpeedAccelFactor", default="0.7"))  # More conservative acceleration
+            high_speed_min_accel_factor = float(self.params.get("SunnypilotHighSpeedMinAccelFactor", default="0.8"))
+            high_speed_min_accel = float(self.params.get("SunnypilotHighSpeedMinAccel", default="-3.0"))
+
+            self.current_long_params['max_accel'] *= high_speed_accel_factor
+            self.current_long_params['min_accel'] = max(high_speed_min_accel, self.current_long_params['min_accel'] * high_speed_min_accel_factor)
 
     def _adjust_for_traffic(self, car_state: log.CarState) -> None:
         """Adjust parameters based on traffic conditions"""
@@ -218,21 +269,30 @@ class AdaptiveControlParameters:
         # If we have radar state data, use it for traffic awareness
         if self.sm and 'radarState' in self.sm:
             radar_state = self.sm['radarState']
-            
+
             # Check for close lead vehicles
-            if radar_state.leadOne.status and radar_state.leadOne.dRel < 50:  # Lead within 50m
-                if radar_state.leadOne.dRel < 20:  # Very close
-                    traffic_factor = 0.6  # Very conservative
-                elif radar_state.leadOne.dRel < 35:  # Close
-                    traffic_factor = 0.8  # More conservative
-        
+            lead_distance_medium_threshold = float(self.params.get("SunnypilotLeadDistanceMediumThreshold", default="50"))  # Lead within configurable distance
+            lead_distance_close_threshold = float(self.params.get("SunnypilotLeadDistanceCloseThreshold", default="20"))  # Very close
+            lead_distance_near_threshold = float(self.params.get("SunnypilotLeadDistanceNearThreshold", default="35"))  # Close
+
+            very_conservative_factor = float(self.params.get("SunnypilotVeryConservativeFactor", default="0.6"))  # Very conservative
+            conservative_factor = float(self.params.get("SunnypilotConservativeFactor", default="0.8"))  # More conservative
+            lat_conservative_factor = float(self.params.get("SunnypilotLatConservativeFactor", default="0.9"))  # Conservative lateral factor
+
+            if radar_state.leadOne.status and radar_state.leadOne.dRel < lead_distance_medium_threshold:
+                if radar_state.leadOne.dRel < lead_distance_close_threshold:  # Very close
+                    traffic_factor = very_conservative_factor
+                elif radar_state.leadOne.dRel < lead_distance_near_threshold:  # Close
+                    traffic_factor = conservative_factor
+
         # Apply traffic adjustments
         self.current_long_params['max_accel'] *= traffic_factor
+        min_traffic_accel = float(self.params.get("SunnypilotMinTrafficAccel", default="-2.5"))
         self.current_long_params['min_accel'] = max(
-            -2.5, self.current_long_params['min_accel'] * traffic_factor
+            min_traffic_accel, self.current_long_params['min_accel'] * traffic_factor
         )
         # Be more conservative laterally when close to other vehicles
-        self.current_lat_params['max_steer'] *= traffic_factor * 0.9
+        self.current_lat_params['max_steer'] *= traffic_factor * lat_conservative_factor
 
     def _adjust_for_road_curvature(self, car_state: log.CarState) -> None:
         """Adjust parameters based on road curvature from model outputs"""
@@ -242,13 +302,18 @@ class AdaptiveControlParameters:
         if self.sm and 'modelV2' in self.sm:
             model_v2 = self.sm['modelV2']
             # Check if we're approaching a sharp curve
-            if model_v2.position.y[10] > 5 or model_v2.position.y[20] > 8:  # Offsets at 1s and 2s
-                curvature_factor = 0.8  # More conservative on sharp curves
-            
+            sharp_curve_threshold_1s = float(self.params.get("SunnypilotSharpCurveThreshold1s", default="5"))
+            sharp_curve_threshold_2s = float(self.params.get("SunnypilotSharpCurveThreshold2s", default="8"))
+
+            if model_v2.position.y[10] > sharp_curve_threshold_1s or model_v2.position.y[20] > sharp_curve_threshold_2s:  # Offsets at 1s and 2s
+                conservative_curvature_factor = float(self.params.get("SunnypilotConservativeCurvatureFactor", default="0.8"))  # More conservative on sharp curves
+                curvature_factor = conservative_curvature_factor
+
         # Apply curvature adjustments
         self.current_lat_params['max_steer'] *= curvature_factor
         # Reduce longitudinal acceleration when on curves to maintain lateral grip
-        self.current_long_params['max_accel'] *= curvature_factor * 0.9
+        lat_grip_factor = float(self.params.get("SunnypilotLatGripFactor", default="0.9"))
+        self.current_long_params['max_accel'] *= curvature_factor * lat_grip_factor
         
     def _update_historical_data(self, car_state: log.CarState) -> None:
         """Update historical data for adaptive algorithms"""

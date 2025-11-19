@@ -5,7 +5,6 @@ Implements adaptive resource allocation that prioritizes critical functions base
 import time
 import threading
 import psutil
-import queue
 from typing import Dict, List, Optional, Callable, Any, Tuple
 from dataclasses import dataclass
 from enum import IntEnum
@@ -86,7 +85,6 @@ class ResourceManager:
       ResourceType.GPU: 100.0,  # Available GPU percentage
     }
 
-    self.resource_requests = queue.PriorityQueue()  # Priority queue for requests
     self.active_processes: Dict[str, ResourceAllocation] = {}
     self.resource_history = deque(maxlen=100)  # Keep last 100 resource states
 
@@ -101,9 +99,8 @@ class ResourceManager:
     self.monitor_thread = threading.Thread(target=self._monitor_resources, daemon=True)
     self.monitor_thread.start()
 
-    # Start allocation thread
-    self.allocation_thread = threading.Thread(target=self._process_allocations, daemon=True)
-    self.allocation_thread.start()
+    # Note: Allocation is now synchronous, so no allocation thread needed
+    # The queue is kept for potential future async implementation
 
     cloudlog.info("Resource management system initialized")
   
@@ -176,45 +173,6 @@ class ResourceManager:
         cloudlog.error(f"Resource monitoring error: {e}")
         time.sleep(1.0)
   
-  def _process_allocations(self):
-    """Process resource allocation requests"""
-    while self.running:
-      try:
-        # Get request from queue (with timeout)
-        try:
-          request: ResourceRequest = self.resource_requests.get(timeout=1.0)
-        except queue.Empty:
-          continue  # No requests, continue loop
-        
-        allocation = self._allocate_resources(request)
-        
-        # Store allocation
-        with self.lock:
-          self.active_processes[request.process_id] = allocation
-          
-          # Execute callback if provided and allocation is granted
-          if allocation.granted and request.callback:
-            try:
-              # Run in separate thread to avoid blocking allocation process
-              callback_thread = threading.Thread(
-                target=self._execute_callback,
-                args=(request.callback, request.args, request.kwargs)
-              )
-              callback_thread.start()
-            except Exception as e:
-              cloudlog.error(f"Callback execution error: {e}")
-        
-        self.resource_requests.task_done()
-        
-      except Exception as e:
-        cloudlog.error(f"Resource allocation error: {e}")
-  
-  def _execute_callback(self, callback: Callable, args: Tuple, kwargs: Dict[str, Any]):
-    """Execute callback in a separate thread"""
-    try:
-      callback(*args, **(kwargs or {}))
-    except Exception as e:
-      cloudlog.error(f"Callback execution failed: {e}")
   
   def _allocate_resources(self, request: ResourceRequest) -> ResourceAllocation:
     """Allocate resources to a request"""
@@ -280,7 +238,7 @@ class ResourceManager:
         reason=reason
       )
   
-  def request_resources(self, 
+  def request_resources(self,
                        process_id: str,
                        priority: PriorityLevel,
                        cpu_required: float = 0.0,
@@ -291,6 +249,7 @@ class ResourceManager:
                        *args,
                        **kwargs) -> ResourceAllocation:
     """Request resources for a process"""
+    # Synchronous resource request - process immediately and return result
     request = ResourceRequest(
       process_id=process_id,
       priority=priority,
@@ -302,24 +261,16 @@ class ResourceManager:
       args=args,
       kwargs=kwargs or {}
     )
-    
-    # Calculate priority for queue (lower number = higher priority)
-    # Negative priority value ensures higher priority items are processed first
-    queue_priority = request.priority.value
-    
-    self.resource_requests.put((queue_priority, time.time(), request))
-    
-    # Wait for allocation to be processed (in a real system, this would be async)
-    # For now, we'll return a placeholder that will be updated
-    return ResourceAllocation(
-      process_id=process_id,
-      cpu_allocated=0.0,
-      memory_allocated=0.0,
-      gpu_allocated=0.0,
-      granted=False,
-      wait_time=0.0,
-      reason="Request pending"
-    )
+
+    # Process allocation immediately
+    allocation = self._allocate_resources(request)
+
+    # Store allocation if granted
+    if allocation.granted:
+        with self.lock:
+            self.active_processes[request.process_id] = allocation
+
+    return allocation
   
   def release_resources(self, process_id: str) -> bool:
     """Release resources held by a process"""
