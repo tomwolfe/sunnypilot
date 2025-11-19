@@ -3,6 +3,7 @@ Data Collection Pipeline for sunnypilot
 Collects edge cases, system anomalies, and performance metrics for ongoing model improvement
 """
 import json
+import os
 import time
 import threading
 import queue
@@ -46,9 +47,27 @@ class EdgeCaseEvent:
 class DataCollector:
   """Main data collection system"""
 
-  def __init__(self, output_dir: str = "/data/sunnypilot_metrics"):
+  def __init__(self, output_dir: Optional[str] = None):
+    # Use configurable output directory or default
+    if output_dir is None:
+      output_dir = Params().get("SunnypilotMetricsDirectory", encoding='utf8')
+      if not output_dir:
+        output_dir = "/data/sunnypilot_metrics"  # Default fallback
+
+    # Validate the output directory
     self.output_dir = Path(output_dir)
-    self.output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+      self.output_dir.mkdir(parents=True, exist_ok=True)
+      # Verify we can write to the directory
+      test_file = self.output_dir / ".test_write"
+      test_file.touch()
+      test_file.unlink()
+    except (PermissionError, OSError) as e:
+      cloudlog.error(f"Cannot write to output directory {output_dir}: {e}")
+      # Fallback to a safe directory
+      self.output_dir = Path("/tmp/sunnypilot_metrics")
+      self.output_dir.mkdir(parents=True, exist_ok=True)
+      cloudlog.warning(f"Using fallback directory: {self.output_dir}")
 
     # Queues for different types of data
     self.performance_queue = queue.Queue(maxsize=1000)
@@ -195,10 +214,15 @@ def collect_model_performance(component: str, operation: str,
   if execution_time_ms < 0:
     return
 
-  import psutil
-  cpu_usage = psutil.cpu_percent(interval=None)
-  memory_usage = psutil.virtual_memory().percent
-  gpu_usage = HARDWARE.get_gpu_usage_percent()
+  try:
+    cpu_usage = psutil.cpu_percent(interval=None)
+    memory_usage = psutil.virtual_memory().percent
+    gpu_usage = HARDWARE.get_gpu_usage_percent() if hasattr(HARDWARE, 'get_gpu_usage_percent') else 0.0
+  except Exception as e:
+    cloudlog.error(f"Error collecting system metrics for performance tracking: {e}")
+    cpu_usage = 0.0
+    memory_usage = 0.0
+    gpu_usage = 0.0
 
   metric = PerformanceMetric(
     timestamp=time.time(),

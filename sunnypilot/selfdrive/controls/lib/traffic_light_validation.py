@@ -37,10 +37,12 @@ class TrafficSignData:
 class TrafficValidator:
     """Traffic validation system for traffic lights and signs"""
 
-    def __init__(self):
+    def __init__(self, max_signs: int = 50, validity_threshold: float = 5.0, red_light_distance_threshold: float = 50.0, stop_sign_distance_threshold: float = 30.0):
         self.traffic_signs: List[TrafficSignData] = []
-        self.max_signs = 50  # Limit to prevent memory issues # TODO: Make configurable
-        self.validity_threshold = 5.0  # 5 seconds before signs expire # TODO: Make configurable
+        self.max_signs = max_signs  # Limit to prevent memory issues
+        self.validity_threshold = validity_threshold  # seconds before signs expire
+        self.red_light_distance_threshold = red_light_distance_threshold  # meters for red light checking
+        self.stop_sign_distance_threshold = stop_sign_distance_threshold  # meters for stop sign checking
 
     def add_traffic_sign_data(self, sign_data: TrafficSignData):
         """Add detected traffic sign data to validation"""
@@ -83,7 +85,7 @@ class TrafficValidator:
 
         # Check if approach is appropriate for light status
         if closest_light.sign_type == TrafficSignType.TRAFFIC_LIGHT_RED:
-            if velocity > 0.5 and distance_to_light < 50.0:  # 50m buffer for red light # TODO: Make configurable
+            if velocity > 0.5 and distance_to_light < self.red_light_distance_threshold:
                 violations.append("APPROACHING_RED_LIGHT_TOO_FAST")
                 recommended_action = "BRAKE_IMMEDIATELY"
 
@@ -112,13 +114,20 @@ class TrafficValidator:
         distance_to_sign = np.linalg.norm(position - closest_sign.position)
 
         # Check if we're approaching stop sign appropriately
-        if distance_to_sign < 30.0 and velocity > 2.0: # TODO: Make configurable
+        if distance_to_sign < self.stop_sign_distance_threshold and velocity > 2.0:
             violations.append("APPROACHING_STOP_SIGN_TOO_FAST")
             recommended_action = "BRAKE_FOR_STOP"
 
         return len(violations) == 0, violations, recommended_action
 
 
-def create_traffic_validator() -> TrafficValidator:
+def create_traffic_validator(max_signs: int = 50, validity_threshold: float = 5.0,
+                           red_light_distance_threshold: float = 50.0,
+                           stop_sign_distance_threshold: float = 30.0) -> TrafficValidator:
     """Factory function to create traffic validator"""
-    return TrafficValidator()
+    return TrafficValidator(
+        max_signs=max_signs,
+        validity_threshold=validity_threshold,
+        red_light_distance_threshold=red_light_distance_threshold,
+        stop_sign_distance_threshold=stop_sign_distance_threshold
+    )

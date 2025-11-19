@@ -1,0 +1,12 @@
+{
+  "cpu_balanced_threshold": 60.0,
+  "cpu_power_save_threshold": 80.0,
+  "cpu_throttle_threshold": 90.0,
+  "temp_balanced_threshold": 60.0,
+  "temp_power_save_threshold": 70.0,
+  "temp_throttle_threshold": 80.0,
+  "temp_critical_threshold": 90.0,
+  "memory_balanced_threshold": 70.0,
+  "memory_power_save_threshold": 85.0,
+  "update_interval": 0.5
+}

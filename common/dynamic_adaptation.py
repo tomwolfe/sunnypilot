@@ -43,19 +43,37 @@ class AdaptationConfig:
   cpu_balanced_threshold: float = 60.0    # Switch to balanced mode
   cpu_power_save_threshold: float = 80.0  # Switch to power saving
   cpu_throttle_threshold: float = 90.0    # Initiate throttling
-  
+
   # Temperature thresholds (in Celsius)
   temp_balanced_threshold: float = 60.0
   temp_power_save_threshold: float = 70.0
   temp_throttle_threshold: float = 80.0
   temp_critical_threshold: float = 90.0
-  
+
   # Memory thresholds
   memory_balanced_threshold: float = 70.0
   memory_power_save_threshold: float = 85.0
-  
+
   # Update interval (seconds)
   update_interval: float = 0.5
+
+  @classmethod
+  def from_params(cls):
+    """Create configuration from system parameters"""
+    import json
+    from pathlib import Path
+
+    config_file = Path(__file__).parent / "performance_config.json"
+    if config_file.exists():
+      try:
+        with open(config_file, 'r') as f:
+          config_data = json.load(f)
+        return cls(**config_data)
+      except Exception as e:
+        cloudlog.warning(f"Failed to load performance config from {config_file}: {e}")
+
+    # Return default config if file doesn't exist or is invalid
+    return cls()
 
 
 class DynamicPerformanceAdaptation:
@@ -73,7 +91,7 @@ class DynamicPerformanceAdaptation:
     Args:
         config: Optional configuration for adaptation thresholds and parameters
     """
-    self.config = config or AdaptationConfig()
+    self.config = config or AdaptationConfig.from_params()
     self.current_mode = PerformanceMode.MAX_PERFORMANCE
     self.last_load: Optional[SystemLoad] = None
     self.load_history = deque(maxlen=20)  # Keep last 10 seconds of data at 0.5s intervals

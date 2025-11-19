@@ -4,6 +4,7 @@ System Health Monitoring for Sunnypilot
 Provides comprehensive system health monitoring for the autonomous driving system.
 """
 
+import os
 import time
 import psutil
 from typing import Dict, Any, List, Optional

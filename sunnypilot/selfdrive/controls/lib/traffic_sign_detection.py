@@ -14,8 +14,8 @@ class TrafficSignDetectionHandler:
     """
     Handler for processing traffic sign detection from model outputs
     """
-    
-    def __init__(self):
+
+    def __init__(self, default_distance: float = 50.0):
         self.traffic_sign_types = {
             0: TrafficSignType.STOP_SIGN,
             1: TrafficSignType.YIELD_SIGN,
@@ -27,9 +27,15 @@ class TrafficSignDetectionHandler:
             7: TrafficSignType.SCHOOL_ZONE,
             8: TrafficSignType.CONSTRUCTION_ZONE
         }
-        
+
         # Default confidence threshold for traffic sign detection
-        self.confidence_threshold = 0.7 # TODO: Make configurable
+        self.confidence_threshold = 0.7  # Default value, can be overridden
+        self.default_distance = default_distance
+
+    def set_confidence_threshold(self, threshold: float):
+        """Allow setting confidence threshold"""
+        if 0.0 <= threshold <= 1.0:
+            self.confidence_threshold = threshold
 
     def process_modeld_output(self, model_data: log.ModelDataV2) -> List[TrafficSignData]:
         """
@@ -117,7 +123,7 @@ class TrafficSignDetectionHandler:
         """
         # This mapping will depend on how the model classifies objects
         # Common class indices for traffic signs (these are examples)
-        class_map = { # TODO: Make model class mappings configurable
+        class_map = {
             13: TrafficSignType.STOP_SIGN,        # Common class ID for stop signs
             14: TrafficSignType.TRAFFIC_LIGHT_RED,  # Traffic light red
             15: TrafficSignType.TRAFFIC_LIGHT_YELLOW,
@@ -126,13 +132,19 @@ class TrafficSignDetectionHandler:
             18: TrafficSignType.SPEED_LIMIT,
             19: TrafficSignType.PEDESTRIAN_CROSSING,
         }
-        
+
         # Get the classification with highest confidence that meets threshold
         if hasattr(obj, 'classType') and obj.classType in class_map:
             return class_map[obj.classType]
-            
+
         return None
-    
+
+    def set_model_class_mapping(self, new_mapping: Dict[int, TrafficSignType]):
+        """
+        Allow setting custom model class mapping
+        """
+        self.traffic_sign_types = new_mapping
+
     def _map_sign_id_to_type(self, sign_id: int) -> Optional[TrafficSignType]:
         """
         Map sign ID to traffic sign type
@@ -140,7 +152,7 @@ class TrafficSignDetectionHandler:
         if sign_id in self.traffic_sign_types:
             return self.traffic_sign_types[sign_id]
         return None
-    
+
     def _calculate_distance_from_model(self, obj) -> float:
         """
         Calculate distance from ego vehicle based on model output
@@ -152,7 +164,7 @@ class TrafficSignDetectionHandler:
         elif hasattr(obj, 'x') and hasattr(obj, 'y'):
             return np.sqrt(obj.x**2 + obj.y**2)
         else:
-            return 50.0  # Default distance if not available # TODO: Make configurable
+            return self.default_distance  # Default distance if not available
 
     def integrate_with_traffic_validator(self,
                                        traffic_validator: Any,
@@ -175,6 +187,6 @@ class TrafficSignDetectionHandler:
             cloudlog.error(f"Error in traffic sign integration: {e}")
 
 
-def create_traffic_sign_handler() -> TrafficSignDetectionHandler:
+def create_traffic_sign_handler(default_distance: float = 50.0) -> TrafficSignDetectionHandler:
     """Factory function to create traffic sign detection handler"""
-    return TrafficSignDetectionHandler()
+    return TrafficSignDetectionHandler(default_distance=default_distance)

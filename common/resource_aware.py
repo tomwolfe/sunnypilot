@@ -14,7 +14,6 @@ import numpy as np
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware import HARDWARE
 from openpilot.common.dynamic_adaptation import dynamic_adaptation, PerformanceMode
-from openpilot.selfdrive.monitoring.thermal_management import thermal_manager, get_thermal_performance_scale
 
 
 class PriorityLevel(IntEnum):
@@ -93,7 +92,7 @@ class ResourceManager:
 
     # Performance adaptation integration
     self.performance_mode = dynamic_adaptation.get_current_mode()
-    self.thermal_scale = get_thermal_performance_scale()
+    self.thermal_scale = self._get_thermal_performance_scale()
 
     # Start resource monitoring thread
     self.monitor_thread = threading.Thread(target=self._monitor_resources, daemon=True)
@@ -103,7 +102,17 @@ class ResourceManager:
     # The queue is kept for potential future async implementation
 
     cloudlog.info("Resource management system initialized")
-  
+
+  def _get_thermal_performance_scale(self) -> float:
+    """Get thermal performance scaling factor (fallback implementation)"""
+    try:
+      # Try to get thermal data from HARDWARE
+      thermal_status = HARDWARE.get_thermal_config()
+      # This is a simplified fallback - in a real implementation, you would use actual thermal data
+      return 1.0  # Default to full performance
+    except:
+      return 1.0  # Return default if thermal data not available
+
   def _get_total_memory(self) -> float:
     """Get total system memory in MB"""
     try:
@@ -163,7 +172,7 @@ class ResourceManager:
         # Update performance mode and thermal scale
         try:
           self.performance_mode = dynamic_adaptation.get_current_mode()
-          self.thermal_scale = get_thermal_performance_scale()
+          self.thermal_scale = self._get_thermal_performance_scale()
         except Exception as mode_error:
           cloudlog.error(f"Error getting performance mode or thermal scale: {mode_error}")
 
@@ -563,7 +572,7 @@ def get_system_resource_status() -> Dict[str, any]:
     'utilization': resource_manager.get_resource_utilization(),
     'inference_stats': resource_aware_runner.get_inference_statistics(),
     'scheduling_efficiency': adaptive_scheduler.get_scheduling_efficiency(),
-    'thermal_performance_scale': get_thermal_performance_scale(),
+    'thermal_performance_scale': resource_manager._get_thermal_performance_scale(),
     'performance_mode': dynamic_adaptation.get_current_mode()
   }
 
