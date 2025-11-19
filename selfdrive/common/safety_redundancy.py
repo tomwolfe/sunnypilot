@@ -476,7 +476,7 @@ class SafetyMonitor:
         except Exception as e:
             cloudlog.error(f"Error checking system health: {e}")
 
-        return FallbackLevel.PASIVE_MODE, "All systems nominal"
+        return FallbackLevel.PASSIVE_MODE, "All systems nominal"
     
     def initialize_monitoring(self):
         """Initialize safety monitoring"""

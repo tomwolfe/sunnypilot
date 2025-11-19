@@ -7,6 +7,7 @@ import os
 import time
 import threading
 import queue
+import psutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
