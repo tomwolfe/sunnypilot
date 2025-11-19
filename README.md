@@ -3,21 +3,6 @@
 ## 🌞 What is sunnypilot?
 [sunnypilot](https://github.com/sunnyhaibin/sunnypilot) is a fork of comma.ai's openpilot, an open source driver assistance system. sunnypilot offers the user a unique driving experience for over 300+ supported car makes and models with modified behaviors of driving assist engagements. sunnypilot complies with comma.ai's safety rules as accurately as possible.
 
-### 🚀 Enhanced Features in Latest Version
-The latest version of sunnypilot includes advanced features for improved safety, performance, and user experience:
-
-- **Enhanced Safety Validation**: Advanced validation metrics with situation-aware confidence scoring
-- **ARM NEON Optimization**: Specialized ARM NEON optimization for ARM64 processors
-- **Advanced UI Components**: New UI components for system status and visualization
-- **Enhanced Vision Processing**: Improved depth estimation and multi-camera fusion
-- **Model Efficiency**: Optimizations including quantization and pruning
-- **Performance Validation**: Comprehensive benchmarking and validation tools
-- **System Monitoring**: Real-time health, thermal management, and resource monitoring
-- **Predictive Planning**: Behavior prediction and scenario-aware planning
-- **Safety Supervision**: Redundant safety validation and emergency response systems
-- **Thermal Management**: Dynamic thermal-based performance scaling
-- **Hardware Constraint Validation**: Validation for Comma Three platform requirements
-
 ## 💭 Join our Community Forum
 Join the official sunnypilot community forum to stay up to date with all the latest features and be a part of shaping the future of sunnypilot!
 * https://community.sunnypilot.ai/

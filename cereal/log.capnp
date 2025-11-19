@@ -989,17 +989,6 @@ struct ControlsState @0x97ff69c53601abf1 {
   steerOverrideDEPRECATED @20 :Bool;
   steeringAngleDesiredDegDEPRECATED @29 :Float32;
   canMonoTimesDEPRECATED @21 :List(UInt64);
-  # Validation metrics from enhanced vision system
-  # This union allows the system to provide detailed validation data while maintaining backward compatibility
-  validation :union {
-    none @67 :Void;
-    metrics @68 :ValidationMetrics;
-  } = none;
-
-  # Safety status flags
-  fallbackActive @69 :Bool;
-  degradedMode @70 :Bool;
-  systemAlert @71 :Bool;
 
   desiredCurvatureRateDEPRECATED @62 :Float32;
   canErrorCounterDEPRECATED @57 :UInt32;
@@ -1055,36 +1044,6 @@ struct DrivingModelData {
     laneChangeState @0 :LaneChangeState;
     laneChangeDirection @1 :LaneChangeDirection;
   }
-}
-
-# Validation metrics for enhanced vision processing
-struct ValidationMetrics {
-  # Lead detection confidence metrics
-  leadConfidenceAvg @0 :Float32;
-  leadConfidenceMax @1 :Float32;
-  leadCount @2 :UInt32;
-
-  # Lane detection confidence metrics
-  laneConfidenceAvg @3 :Float32;
-  laneCount @4 :UInt32;
-  laneSeparationConsistency @5 :Float32;
-
-  # Road edge detection metrics
-  roadEdgeConfidenceAvg @6 :Float32;
-
-  # System validation metrics
-  overallConfidence @7 :Float32;
-  safetyScore @8 :Float32;
-  temporalConsistency @9 :Float32;
-  pathInLaneValidity @10 :Float32;
-
-  # Timestamp of when metrics were computed
-  timestampMonoTime @11 :UInt64;
-
-  # Additional validation metrics
-  isValid @12 :Bool;
-  systemShouldEngage @13 :Bool;
-  confidenceThreshold @14 :Float32;
 }
 
 # All SI units and in device frame
