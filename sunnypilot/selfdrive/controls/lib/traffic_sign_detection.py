@@ -18,7 +18,7 @@ class TrafficSignDetectionHandler:
     def __init__(self):
         self.traffic_sign_types = {
             0: TrafficSignType.STOP_SIGN,
-            1: TrafficSignType.YIELD_SIGN, 
+            1: TrafficSignType.YIELD_SIGN,
             2: TrafficSignType.TRAFFIC_LIGHT_RED,
             3: TrafficSignType.TRAFFIC_LIGHT_YELLOW,
             4: TrafficSignType.TRAFFIC_LIGHT_GREEN,
@@ -29,8 +29,8 @@ class TrafficSignDetectionHandler:
         }
         
         # Default confidence threshold for traffic sign detection
-        self.confidence_threshold = 0.7
-        
+        self.confidence_threshold = 0.7 # TODO: Make configurable
+
     def process_modeld_output(self, model_data: log.ModelDataV2) -> List[TrafficSignData]:
         """
         Process raw model data to extract traffic sign information
@@ -63,7 +63,9 @@ class TrafficSignDetectionHandler:
                                     sign_type=sign_type,
                                     distance=distance,
                                     confidence=obj.confidence,
-                                    position=position
+                                    position=position,
+                                    # timestamp will be set by default_factory
+                                    additional_data={} # Can add specific model output data here if needed
                                 )
                                 traffic_signs.append(sign_data)
                             except Exception as e:
@@ -94,11 +96,12 @@ class TrafficSignDetectionHandler:
                             position=np.array([getattr(sign, 'x', 0.0), 
                                              getattr(sign, 'y', 0.0), 
                                              getattr(sign, 'z', 0.0)]),
-                            validity_time=getattr(sign, 'validityTime', 0.0),
+                            # timestamp will be set by default_factory
                             additional_data={
                                 'size': getattr(sign, 'size', None),
                                 'color': getattr(sign, 'color', None),
-                                'value': getattr(sign, 'value', None)  # for speed limit signs
+                                'value': getattr(sign, 'value', None),  # for speed limit signs
+                                'validityTime': getattr(sign, 'validityTime', 0.0) # Moved here from direct field
                             }
                         )
                         traffic_signs.append(sign_data)
@@ -114,7 +117,7 @@ class TrafficSignDetectionHandler:
         """
         # This mapping will depend on how the model classifies objects
         # Common class indices for traffic signs (these are examples)
-        class_map = {
+        class_map = { # TODO: Make model class mappings configurable
             13: TrafficSignType.STOP_SIGN,        # Common class ID for stop signs
             14: TrafficSignType.TRAFFIC_LIGHT_RED,  # Traffic light red
             15: TrafficSignType.TRAFFIC_LIGHT_YELLOW,
@@ -149,7 +152,7 @@ class TrafficSignDetectionHandler:
         elif hasattr(obj, 'x') and hasattr(obj, 'y'):
             return np.sqrt(obj.x**2 + obj.y**2)
         else:
-            return 50.0  # Default distance if not available
+            return 50.0  # Default distance if not available # TODO: Make configurable
 
     def integrate_with_traffic_validator(self,
                                        traffic_validator: Any,

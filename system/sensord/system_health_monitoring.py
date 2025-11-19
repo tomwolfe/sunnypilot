@@ -75,27 +75,27 @@ class SystemHealthMonitor:
         critical_issues = []
 
         # Check CPU usage
-        if cpu_usage > 95:
+        if cpu_usage > 95: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: CPU usage is extremely high: {cpu_usage}%")
-        elif cpu_usage > 90:
+        elif cpu_usage > 90: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: CPU usage is very high: {cpu_usage}%")
-        elif cpu_usage > 75:
+        elif cpu_usage > 75: # TODO: Make configurable
             warnings.append(f"WARNING: High CPU usage: {cpu_usage}%")
 
         # Check memory usage
-        if memory_usage > 95:
+        if memory_usage > 95: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: Memory usage is extremely high: {memory_usage}%")
-        elif memory_usage > 90:
+        elif memory_usage > 90: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: Memory usage is very high: {memory_usage}%")
-        elif memory_usage > 85:
+        elif memory_usage > 85: # TODO: Make configurable
             warnings.append(f"WARNING: High memory usage: {memory_usage}%")
 
         # Check disk usage
-        if disk_usage > 98:
+        if disk_usage > 98: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: Disk usage is extremely high: {disk_usage}%")
-        elif disk_usage > 95:
+        elif disk_usage > 95: # TODO: Make configurable
             critical_issues.append(f"CRITICAL: Disk usage is very high: {disk_usage}%")
-        elif disk_usage > 90:
+        elif disk_usage > 90: # TODO: Make configurable
             warnings.append(f"WARNING: High disk usage: {disk_usage}%")
 
         # Determine overall status

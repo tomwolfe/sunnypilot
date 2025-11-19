@@ -287,8 +287,8 @@ class DynamicExperimentalController:
     if not (position_valid and orientation_valid):
       # Invalid trajectory - this itself might indicate a stop scenario
       # Apply more conservative urgency for incomplete trajectories at speed
-      if self._v_ego_kph > 5.0:  # Even at low speeds, consider possible stop
-        urgency = 0.6
+      if self._v_ego_kph > 5.0:  # Even at low speeds, consider possible stop # TODO: Make configurable
+        urgency = 0.6 # TODO: Make configurable
 
       self._slow_down_filter.add_data(urgency)
       urgency_filtered = self._slow_down_filter.get_value() or 0.0
@@ -315,16 +315,16 @@ class DynamicExperimentalController:
       shortage_ratio = shortage / expected_distance
 
       # Base urgency on shortage ratio with more aggressive scaling
-      urgency = min(1.0, shortage_ratio * 3.0)  # Increased from 2.0 to 3.0
+      urgency = min(1.0, shortage_ratio * 3.0)  # Increased from 2.0 to 3.0 # TODO: Make configurable
 
       # Increase urgency for very short trajectories (imminent stops) - more aggressive
-      critical_distance = expected_distance * 0.5  # Increased from 0.3 to 0.5
+      critical_distance = expected_distance * 0.5  # Increased from 0.3 to 0.5 # TODO: Make configurable
       if endpoint_x < critical_distance:
-        urgency = min(1.0, urgency * 3.0)  # Increased from 2.0 to 3.0
+        urgency = min(1.0, urgency * 3.0)  # Increased from 2.0 to 3.0 # TODO: Make configurable
 
       # Speed-based urgency adjustment - more aggressive
-      if self._v_ego_kph > 10.0:  # Lower threshold for speed-based adjustment
-        speed_factor = 1.0 + (self._v_ego_kph - 10.0) / 40.0  # Adjusted for more responsiveness
+      if self._v_ego_kph > 10.0:  # Lower threshold for speed-based adjustment # TODO: Make configurable
+        speed_factor = 1.0 + (self._v_ego_kph - 10.0) / 40.0  # Adjusted for more responsiveness # TODO: Make configurable
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply filtering but with less smoothing for stops
@@ -344,30 +344,30 @@ class DynamicExperimentalController:
       return
 
     # Standstill: use blended with high confidence to ensure complete stop
-    if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
+    if self._standstill_count > 3: # TODO: Make configurable
+      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0 # TODO: Make configurable
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
     # More aggressive standstill enforcement when approaching stop
     if self._has_slow_down:
-      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
+      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping # TODO: Make configurable
         # Emergency: immediate blended mode for high urgency stops
-        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
+        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency # TODO: Make configurable
         self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
-        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.5 for more responsiveness
+        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.5 for more responsiveness # TODO: Make configurable
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
+      self._mode_manager.request_mode('acc', confidence=0.8) # TODO: Make configurable
       return
 
     # Default: ACC
-    self._mode_manager.request_mode('acc', confidence=0.7)
+    self._mode_manager.request_mode('acc', confidence=0.7) # TODO: Make configurable
 
   def _radar_mode(self) -> None:
     """Radar mode with emergency handling."""
@@ -378,35 +378,35 @@ class DynamicExperimentalController:
       return
 
     # If lead detected and not in standstill: always use ACC
-    if self._has_lead_filtered and not (self._standstill_count > 3):
-      self._mode_manager.request_mode('acc', confidence=1.0)
+    if self._has_lead_filtered and not (self._standstill_count > 3): # TODO: Make configurable
+      self._mode_manager.request_mode('acc', confidence=1.0) # TODO: Make configurable
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
     # More aggressive standstill enforcement when approaching stop
     if self._has_slow_down:
-      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
+      if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping # TODO: Make configurable
         # Emergency: immediate blended mode for high urgency stops
-        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
+        confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency # TODO: Make configurable
         self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
-        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.3 for more responsiveness
+        confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.3 for more responsiveness # TODO: Make configurable
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
     # Standstill: use blended with high confidence to ensure complete stop
-    if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
+    if self._standstill_count > 3: # TODO: Make configurable
+      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0 # TODO: Make configurable
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
+      self._mode_manager.request_mode('acc', confidence=0.8) # TODO: Make configurable
       return
 
     # Default: ACC
-    self._mode_manager.request_mode('acc', confidence=0.7)
+    self._mode_manager.request_mode('acc', confidence=0.7) # TODO: Make configurable
 
   def update(self, sm: messaging.SubMaster) -> None:
     self._read_params()
@@ -427,11 +427,11 @@ class DynamicExperimentalController:
       if nav_active and self._enabled:
         # If we're approaching a maneuver, be more conservative
         if (hasattr(nav_instruction, 'distanceToManeuver') and
-            0 < nav_instruction.distanceToManeuver < 50.0):
+            0 < nav_instruction.distanceToManeuver < 50.0): # TODO: Make configurable
           # Request blended mode when approaching maneuvers
           maneuver_type = getattr(nav_instruction, 'maneuverType', 'none')
           if maneuver_type in ['turn', 'arrive', 'stop', 'yield']:
-            self._mode_manager.request_mode('blended', confidence=0.8)
+            self._mode_manager.request_mode('blended', confidence=0.8) # TODO: Make configurable
 
     # Check enhanced validation system for safety
     try:
@@ -458,8 +458,8 @@ class DynamicExperimentalController:
             lane_conf = model_output['lane_confidence_avg']
 
             # If critical detection is low, be more conservative
-            if lead_conf < 0.5 or lane_conf < 0.5:
-                self._mode_manager.request_mode('blended', confidence=0.9, emergency=True)
+            if lead_conf < 0.5 or lane_conf < 0.5: # TODO: Make configurable
+                self._mode_manager.request_mode('blended', confidence=0.9, emergency=True) # TODO: Make configurable
     except ImportError:
         # If enhanced validation isn't available, continue with normal operation
         pass
@@ -478,9 +478,9 @@ class DynamicExperimentalController:
     # Boost confidence in blended mode during navigation maneuvers
     if nav_active and self._enabled and self.mode() == 'blended':
       # Increase confidence in blended mode when navigating
-      self._mode_manager.mode_confidence['blended'] = min(1.0, self._mode_manager.mode_confidence['blended'] + 0.05)
+      self._mode_manager.mode_confidence['blended'] = min(1.0, self._mode_manager.mode_confidence['blended'] + 0.05) # TODO: Make configurable
       # Reduce confidence in acc mode when navigating
-      self._mode_manager.mode_confidence['acc'] = max(0.0, self._mode_manager.mode_confidence['acc'] - 0.02)
+      self._mode_manager.mode_confidence['acc'] = max(0.0, self._mode_manager.mode_confidence['acc'] - 0.02) # TODO: Make configurable
 
     self._mode_manager.update()
     self._active = sm['selfdriveState'].experimentalMode and self._enabled

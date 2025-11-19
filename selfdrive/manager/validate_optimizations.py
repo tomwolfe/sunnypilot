@@ -9,6 +9,7 @@ import time
 import psutil
 from typing import Dict, Any
 import cereal.messaging as messaging
+from openpilot.common.swaglog import cloudlog
 
 
 def validate_hardware_constraints() -> Dict[str, Any]:
@@ -20,7 +21,7 @@ def validate_hardware_constraints() -> Dict[str, Any]:
     memory = psutil.virtual_memory()
     ram_usage_gb = memory.used / (1024**3)
     results['ram_usage_gb'] = ram_usage_gb
-    results['ram_valid'] = ram_usage_gb < 1.4
+    results['ram_valid'] = ram_usage_gb < 1.4 # TODO: Make configurable
   except Exception as e:
     cloudlog.error(f"Error checking RAM usage: {e}")
     results['ram_usage_gb'] = 0.0
@@ -29,9 +30,9 @@ def validate_hardware_constraints() -> Dict[str, Any]:
   # Check CPU usage with better sampling
   try:
     # Get more accurate CPU usage by sampling over time
-    cpu_percent = psutil.cpu_percent(interval=0.1)  # Shorter interval for more responsive measurement
+    cpu_percent = psutil.cpu_percent(interval=0.1)  # Shorter interval for more responsive measurement # TODO: Make configurable
     results['cpu_percent'] = cpu_percent
-    results['cpu_valid'] = cpu_percent < 10.0  # Peak should be under 10%
+    results['cpu_valid'] = cpu_percent < 10.0  # Peak should be under 10% # TODO: Make configurable
   except Exception as e:
     cloudlog.error(f"Error checking CPU usage: {e}")
     results['cpu_percent'] = 0.0
@@ -39,7 +40,7 @@ def validate_hardware_constraints() -> Dict[str, Any]:
 
   # Check latency between model and controls
   try:
-    sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000)
+    sm = messaging.SubMaster(['modelV2', 'controlsState'], timeout=1000) # TODO: Make timeout configurable
     sm.update(0)
 
     latency_ms = 0.0
@@ -49,9 +50,9 @@ def validate_hardware_constraints() -> Dict[str, Any]:
       latency_ms = abs(control_time - model_time) * 1000  # Use absolute difference
 
       # Only consider valid if we got reasonable timestamps
-      if latency_ms > 0 and latency_ms < 500:  # Reasonable upper bound
+      if latency_ms > 0 and latency_ms < 500:  # Reasonable upper bound # TODO: Make configurable
         results['latency_ms'] = latency_ms
-        results['latency_valid'] = latency_ms < 80.0
+        results['latency_valid'] = latency_ms < 80.0 # TODO: Make configurable
       else:
         results['latency_ms'] = 0.0
         results['latency_valid'] = True  # Can't validate, assume acceptable
