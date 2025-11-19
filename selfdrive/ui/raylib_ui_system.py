@@ -15,6 +15,8 @@ from openpilot.selfdrive.ui.components.hardware_status import HardwareStatusDash
 from openpilot.selfdrive.ui.components.navigation_display import NavigationDisplay, DestinationInputPanel
 from openpilot.selfdrive.ui.components.perception_visualization import PerceptionVisualization, PerceptionDebugOverlay
 from openpilot.selfdrive.ui.components.system_status import SystemStatusPanel, CompactSystemStatus
+from openpilot.selfdrive.ui.components.enhanced_system_status import EnhancedSystemStatusPanel, CompactEnhancedStatus
+from openpilot.selfdrive.ui.components.monitoring_visualization import SystemMonitoringDashboard, ValidationMetricsVisualizer
 from openpilot.selfdrive.ui.components.controls_interface import ControlsInterface, EmergencyControls, DrivingModeIndicator
 
 
@@ -149,11 +151,19 @@ class RaylibUI:
         
         # System status layer
         if self.config.use_compact_ui:
-            system_status = CompactSystemStatus()
+            system_status = CompactEnhancedStatus()
         else:
-            system_status = SystemStatusPanel()
+            system_status = EnhancedSystemStatusPanel()
         self.components[UILayer.SYSTEM_STATUS] = [system_status]
         
+        # System monitoring dashboard (in system status layer)
+        monitoring_dashboard = SystemMonitoringDashboard()
+        validation_visualizer = ValidationMetricsVisualizer(580, 160, 200, 150)  # Positioned below the dashboard
+        system_status = self.components[UILayer.SYSTEM_STATUS][0]  # Get the existing system status panel
+
+        # Replace with list containing both system status and monitoring
+        self.components[UILayer.SYSTEM_STATUS] = [system_status, monitoring_dashboard, validation_visualizer]
+
         # Controls layer
         controls = ControlsInterface()
         mode_indicator = DrivingModeIndicator()
