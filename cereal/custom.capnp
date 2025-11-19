@@ -487,3 +487,18 @@ struct CustomReserved18 @0xc86a3d38d13eb3ef {
 
 struct CustomReserved19 @0xa4f1eb3323f5f582 {
 }
+
+# Validation metrics for enhanced safety validation system
+struct ValidationMetrics @0xf74d832e5d1d1d1d {
+  leadConfidenceAvg @0 :Float32;
+  leadConfidenceMax @1 :Float32;
+  laneConfidenceAvg @2 :Float32;
+  roadEdgeConfidenceAvg @3 :Float32;
+  overallConfidence @4 :Float32;
+  safetyScore @5 :Float32;
+  situationFactor @6 :Float32;
+  temporalConsistency @7 :Float32;
+  systemShouldEngage @8 :Bool;
+  isValid @9 :Bool;
+  confidenceThreshold @10 :Float32;
+}

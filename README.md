@@ -8,7 +8,7 @@ Join the official sunnypilot community forum to stay up to date with all the lat
 * https://community.sunnypilot.ai/
 
 ## Documentation
-https://docs.sunnypilot.ai/ is your one stop shop for everything from features to installation to FAQ about the sunnypilot
+https://docs.sunnypilot.ai/ is your one stop shop for everything from features to installation to FAQ about the sunnypilot.
 
 ## 🚘 Running on a dedicated device in a car
 * A supported device to run this software
