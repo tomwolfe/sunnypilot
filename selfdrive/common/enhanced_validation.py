@@ -424,30 +424,23 @@ class EnhancedSafetyValidator:
         Returns:
             Adjusted safety margin
         """
-        # Start with base margin
-        safety_margin = base_margin
-
-        # Adjust for weather
-        if weather_factor < 0.8:
-            safety_margin *= (1.5 - weather_factor)  # Increase margin as weather gets worse
-
-        # Adjust for visibility
+        # Precomputed multipliers for efficiency
+        weather_multiplier = 1.0 if weather_factor >= 0.8 else (1.5 - weather_factor)
+        visibility_multiplier = 1.0
         if visibility < 100:  # Poor visibility
-            safety_margin *= max(1.2, (200.0 / visibility))
+            visibility_multiplier = max(1.2, (200.0 / visibility))
         elif visibility < 200:  # Moderate visibility
-            safety_margin *= (200.0 / visibility)
+            visibility_multiplier = (200.0 / visibility)
 
-        # Adjust for road curvature (sharp curves need more margin)
-        if road_curvature > 0.05:
-            safety_margin *= (1.0 + road_curvature * 10)
-
-        # Adjust for surface condition
+        curvature_multiplier = 1.0 + (road_curvature * 10) if road_curvature > 0.05 else 1.0
+        surface_multiplier = 1.0
         if surface_condition == 'wet':
-            safety_margin *= 1.3  # 30% extra margin on wet roads
+            surface_multiplier = 1.3  # 30% extra margin on wet roads
         elif surface_condition in ['icy', 'snowy']:
-            safety_margin *= 2.0  # Double margin on icy/snowy roads
+            surface_multiplier = 2.0  # Double margin on icy/snowy roads
 
-        return safety_margin
+        # Combined calculation
+        return base_margin * weather_multiplier * visibility_multiplier * curvature_multiplier * surface_multiplier
 
     def _is_intersection_safe(self, model_output: Dict[str, Any], car_state: log.CarState,
                             scenario: str) -> bool:
@@ -489,6 +482,18 @@ class EnhancedSafetyValidator:
 
         return all(checks)
 
+    def get_weather_data(self) -> Dict[str, Any]:
+        """Get current weather data with fallback defaults"""
+        try:
+            weather_data = weather_data_interface.get_weather_data()
+            return weather_data
+        except:
+            # Return defaults if weather data unavailable
+            return {
+                'visibility': 200.0,
+                'road_surface_condition': 'dry'
+            }
+
     def get_weather_factor(self) -> float:
         """Get current weather factor from the weather interface"""
         try:
@@ -498,19 +503,13 @@ class EnhancedSafetyValidator:
 
     def get_current_visibility(self) -> float:
         """Get current visibility from weather data"""
-        try:
-            weather_data = weather_data_interface.get_weather_data()
-            return weather_data.get('visibility', 200.0)
-        except:
-            return 200.0  # Default to good visibility
+        weather_data = self.get_weather_data()
+        return weather_data.get('visibility', 200.0)
 
     def get_current_road_surface(self) -> str:
         """Get current road surface condition"""
-        try:
-            weather_data = weather_data_interface.get_weather_data()
-            return weather_data.get('road_surface_condition', 'dry')
-        except:
-            return 'dry'  # Default to dry road
+        weather_data = self.get_weather_data()
+        return weather_data.get('road_surface_condition', 'dry')
 
     def _is_curve_navigation_safe(self, model_output: Dict[str, Any], car_state: log.CarState,
                                  scenario: str) -> bool:

@@ -86,28 +86,9 @@ class NEONOptimizer:
 
     def _simd_vector_add(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Simulate SIMD vector addition in 4-element chunks"""
-        # Flatten arrays for SIMD processing
-        orig_shape = a.shape
-        a_flat = a.flatten()
-        b_flat = b.flatten()
-
-        result = np.zeros_like(a_flat)
-
-        # Process in chunks of 4 (SIMD width for 32-bit floats on NEON)
-        chunk_size = 4
-        remainder = len(a_flat) % chunk_size
-
-        # Process main chunks
-        for i in range(0, len(a_flat) - remainder, chunk_size):
-            # Simulate SIMD operation on 4 elements at once
-            result[i:i+chunk_size] = a_flat[i:i+chunk_size] + b_flat[i:i+chunk_size]
-
-        # Handle remainder elements
-        if remainder > 0:
-            start_idx = len(a_flat) - remainder
-            result[start_idx:] = a_flat[start_idx:] + b_flat[start_idx:]
-
-        return result.reshape(orig_shape)
+        # For performance, use vectorized operations where possible
+        # This is more efficient than manual chunking for most cases
+        return a + b
 
     def vector_multiply(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Optimized element-wise multiplication with NEON-style chunking"""
@@ -122,26 +103,9 @@ class NEONOptimizer:
 
     def _simd_vector_multiply(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Simulate SIMD vector multiplication in 4-element chunks"""
-        orig_shape = a.shape
-        a_flat = a.flatten()
-        b_flat = b.flatten()
-
-        result = np.zeros_like(a_flat)
-
-        # Process in chunks of 4
-        chunk_size = 4
-        remainder = len(a_flat) % chunk_size
-
-        # Process main chunks
-        for i in range(0, len(a_flat) - remainder, chunk_size):
-            result[i:i+chunk_size] = a_flat[i:i+chunk_size] * b_flat[i:i+chunk_size]
-
-        # Handle remainder
-        if remainder > 0:
-            start_idx = len(a_flat) - remainder
-            result[start_idx:] = a_flat[start_idx:] * b_flat[start_idx:]
-
-        return result.reshape(orig_shape)
+        # For performance, use vectorized operations where possible
+        # This is more efficient than manual chunking for most cases
+        return a * b
     
     def matrix_multiply_optimized(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Optimized matrix multiplication using blocked operations to improve cache usage"""
@@ -186,27 +150,9 @@ class NEONOptimizer:
 
     def _simd_relu(self, x: np.ndarray) -> np.ndarray:
         """Simulate SIMD ReLU operation in chunks"""
-        orig_shape = x.shape
-        x_flat = x.flatten()
-
-        # Process in SIMD chunks (4 elements at a time)
-        chunk_size = 4
-        result = np.zeros_like(x_flat)
-
-        remainder = len(x_flat) % chunk_size
-
-        # Process main chunks
-        for i in range(0, len(x_flat) - remainder, chunk_size):
-            # Apply ReLU to 4 elements at once (simulating SIMD)
-            chunk = x_flat[i:i+chunk_size]
-            result[i:i+chunk_size] = np.maximum(chunk, 0.0)
-
-        # Handle remainder
-        if remainder > 0:
-            start_idx = len(x_flat) - remainder
-            result[start_idx:] = np.maximum(x_flat[start_idx:], 0.0)
-
-        return result.reshape(orig_shape)
+        # For performance, use vectorized operations where possible
+        # This is more efficient than manual chunking for most cases
+        return np.maximum(x, 0.0)
 
     def softmax_optimized(self, x: np.ndarray) -> np.ndarray:
         """Optimized softmax with numerical stability and SIMD processing"""
@@ -221,25 +167,9 @@ class NEONOptimizer:
 
     def _simd_exp(self, x: np.ndarray) -> np.ndarray:
         """Simulate SIMD exponential operation in chunks"""
-        orig_shape = x.shape
-        x_flat = x.flatten()
-
-        # Process in SIMD chunks
-        chunk_size = 4
-        result = np.zeros_like(x_flat)
-
-        remainder = len(x_flat) % chunk_size
-
-        # Process main chunks
-        for i in range(0, len(x_flat) - remainder, chunk_size):
-            result[i:i+chunk_size] = np.exp(x_flat[i:i+chunk_size])
-
-        # Handle remainder
-        if remainder > 0:
-            start_idx = len(x_flat) - remainder
-            result[start_idx:] = np.exp(x_flat[start_idx:])
-
-        return result.reshape(orig_shape)
+        # For performance, use vectorized operations where possible
+        # This is more efficient than manual chunking for most cases
+        return np.exp(x)
 
     def convolution_optimized(self,
                             input_tensor: np.ndarray,
@@ -433,35 +363,7 @@ def get_arm_optimizer() -> ARMNeuralNetworkOptimizer:
 arm_optimizer = get_arm_optimizer()
 
 
-# Example usage and testing
-if __name__ == "__main__":
-    print("Testing ARM Optimization Utilities...")
-    
-    optimizer = get_arm_optimizer()
-    
-    # Test basic operations
-    a = np.random.random((100, 100)).astype(np.float32)
-    b = np.random.random((100, 100)).astype(np.float32)
-    
-    # Test optimized operations
-    result_add = optimizer.optimize_tensor_operation('add', a, b)
-    print(f"Optimized add result shape: {result_add.shape}")
-    
-    result_matmul = optimizer.optimize_tensor_operation('matmul', a, b)
-    print(f"Optimized matmul result shape: {result_matmul.shape}")
-    
-    # Test ReLU
-    result_relu = optimizer.optimize_tensor_operation('relu', a - 0.5)
-    print(f"Optimized ReLU applied")
-    
-    # Test with sample model layers
-    sample_layers = [
-        {'type': 'dense', 'weights': np.random.random((100, 50)), 'activation': 'relu'},
-        {'type': 'dense', 'weights': np.random.random((50, 10)), 'activation': 'softmax'}
-    ]
-    
-    sample_input = np.random.random((1, 100)).astype(np.float32)
-    result = optimizer.optimize_model_inference(None, sample_input, sample_layers)
-    print(f"Optimized model inference result shape: {result.shape}")
-    
-    print("ARM optimization tests completed!")
+__all__ = [
+    "OptimizationConfig", "MemoryPool", "NEONOptimizer",
+    "ARMNeuralNetworkOptimizer", "arm_optimizer", "get_arm_optimizer"
+]

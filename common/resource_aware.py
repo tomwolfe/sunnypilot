@@ -679,9 +679,13 @@ def calculate_hardware_efficiency_score(metrics: Dict[str, float]) -> float:
   - CPU usage < 5% (10% weight)
   - Thermal management (10% weight)
   """
-  ram_score = max(0, 1 - (metrics['ram_usage_mb'] / 1400))  # 1.4GB = 1400MB
-  cpu_score = max(0, 1 - (metrics['cpu_usage_percent'] / 5.0))  # 5% target
-  thermal_score = metrics['thermal_scale']  # Closer to 1.0 is better (less throttling)
+  ram_usage_mb = metrics.get('ram_usage_mb', 0)
+  cpu_usage_percent = metrics.get('cpu_usage_percent', 0)
+  thermal_scale = metrics.get('thermal_scale', 1.0)
+
+  ram_score = max(0, 1 - (ram_usage_mb / 1400))  # 1.4GB = 1400MB
+  cpu_score = max(0, 1 - (cpu_usage_percent / 5.0))  # 5% target
+  thermal_score = thermal_scale  # Closer to 1.0 is better (less throttling)
 
   # Weighted average (80% RAM, 10% CPU, 10% Thermal)
   efficiency_score = (ram_score * 0.8) + (cpu_score * 0.1) + (thermal_score * 0.1)
@@ -692,5 +696,6 @@ __all__ = [
   "PriorityLevel", "ResourceType", "ResourceRequest", "ResourceAllocation",
   "ResourceManager", "ResourceAwareModelRunner", "AdaptiveResourceScheduler",
   "resource_manager", "resource_aware_runner", "adaptive_scheduler",
-  "run_safety_critical_function", "get_system_resource_status"
+  "run_safety_critical_function", "get_system_resource_status",
+  "calculate_hardware_efficiency_score", "optimize_for_hardware_constraints"
 ]

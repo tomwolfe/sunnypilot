@@ -396,41 +396,45 @@ def validate_all_optimizations() -> bool:
   benchmark_results = benchmark.benchmark_all()
   
   # Print results
-  print("\n" + "="*60)
-  print("PHASE 3 OPTIMIZATION VALIDATION RESULTS")
-  print("="*60)
-  
+  # Log results using cloudlog instead of print statements
+  import openpilot.common.swaglog as cloudlog
+
+  cloudlog.info("="*60)
+  cloudlog.info("PHASE 3 OPTIMIZATION VALIDATION RESULTS")
+  cloudlog.info("="*60)
+
   for result in validation_results:
-    print(f"\nTest: {result.test_name}")
-    print(f"Status: {'✓ PASS' if result.passed else '✗ FAIL'}")
-    print(f"Violations: {len(result.constraint_violations)}")
-    
+    status = 'PASS' if result.passed else 'FAIL'
+    cloudlog.info(f"Test: {result.test_name} - Status: {status}")
+    cloudlog.info(f"Violations: {len(result.constraint_violations)}")
+
     if result.constraint_violations:
-      print("Violated Constraints:")
+      cloudlog.info("Violated Constraints:")
       for constraint in result.constraint_violations:
-        print(f"  - {constraint.name}: {constraint.current_value}{constraint.unit} "
-              f"(limit: {constraint.threshold}{constraint.unit})")
-  
-  print(f"\nBenchmark Results:")
+        cloudlog.error(f"  - {constraint.name}: {constraint.current_value}{constraint.unit} "
+                      f"(limit: {constraint.threshold}{constraint.unit})")
+
+  cloudlog.info(f"Benchmark Results:")
   for benchmark in benchmark_results:
-    print(f"  {benchmark['test']}:")
+    cloudlog.info(f"  {benchmark['test']}:")
     for key, value in benchmark.items():
       if key != 'test':
-        print(f"    {key}: {value}")
-  
+        cloudlog.info(f"    {key}: {value}")
+
   # Summary
   all_passed = all(result.passed for result in validation_results)
-  
-  print(f"\nOverall Status: {'✓ ALL VALIDATIONS PASSED' if all_passed else '✗ SOME VALIDATIONS FAILED'}")
-  print("="*60)
-  
+
+  status_msg = 'ALL VALIDATIONS PASSED' if all_passed else 'SOME VALIDATIONS FAILED'
+  cloudlog.info(f"Overall Status: {status_msg}")
+  cloudlog.info("="*60)
+
   # Get detailed summary
   summary = validator.get_validation_summary()
-  print(f"\nValidation Summary:")
-  print(f"  - Tests Run: {summary['total_tests_run']}")
-  print(f"  - Tests Passed: {summary['tests_passed']}")
-  print(f"  - Total Violations: {summary['total_violations']}")
-  
+  cloudlog.info(f"Validation Summary:")
+  cloudlog.info(f"  - Tests Run: {summary['total_tests_run']}")
+  cloudlog.info(f"  - Tests Passed: {summary['tests_passed']}")
+  cloudlog.info(f"  - Total Violations: {summary['total_violations']}")
+
   return all_passed
 
 
