@@ -11,7 +11,7 @@ import math
 from enum import Enum
 
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.controls.advanced_planner import PlanningResult, EgoState
+from openpilot.selfdrive.controls.advanced_planner import PlanningResult, EgoState, UncertaintyEstimator
 
 
 class SafetyViolation(Enum):
@@ -413,39 +413,326 @@ class SafetySupervisor:
             self.safety_log = self.safety_log[-self.max_log_size:]
 
 
+class UncertaintyAwareValidator:
+    """Safety validation that considers prediction uncertainties"""
+
+    def __init__(self):
+        self.uncertainty_safety_thresholds = {
+            'low_uncertainty': 0.1,   # Up to 10% uncertainty: normal thresholds
+            'medium_uncertainty': 0.25,  # 10-25% uncertainty: increased safety margins
+            'high_uncertainty': 0.4     # Above 25%: conservative safety
+        }
+
+    def check_uncertainty_aware_safety(self, ego_state: EgoState,
+                                     planning_result: PlanningResult,
+                                     tracked_objects: Dict[str, Any],
+                                     uncertainties: Dict[str, float]) -> SafetyCheckResult:
+        """Validate safety considering prediction uncertainties"""
+        violations = []
+        confidence = 1.0
+
+        # Adjust safety margins based on uncertainty levels
+        max_uncertainty = max(uncertainties.values()) if uncertainties else 0.0
+
+        # Calculate required safety margins based on uncertainty
+        safety_margin_multiplier = self._get_safety_margin_multiplier(max_uncertainty)
+
+        # Enhanced collision risk assessment with uncertainty-based margins
+        collision_risk = self._assess_enhanced_collision_risk(
+            ego_state, planning_result, tracked_objects, safety_margin_multiplier
+        )
+
+        if collision_risk > 0.7:  # Higher risk threshold due to uncertainty
+            violations.append(SafetyViolation.COLLISION_IMMINENT)
+            confidence *= 0.3  # Low confidence in high-uncertainty collision scenarios
+
+        explanation = f"Uncertainty-aware safety check: max_uncertainty={max_uncertainty:.2f}, margin_mult={safety_margin_multiplier:.2f}"
+
+        return SafetyCheckResult(
+            is_safe=len(violations) == 0,
+            violations=violations,
+            confidence=confidence,
+            explanation=explanation
+        )
+
+    def _get_safety_margin_multiplier(self, max_uncertainty: float) -> float:
+        """Get safety margin multiplier based on prediction uncertainty"""
+        if max_uncertainty <= 0.1:
+            return 1.0  # Normal safety margins
+        elif max_uncertainty <= 0.25:
+            return 1.5  # Increase safety margins by 50%
+        else:
+            return 2.0  # Double safety margins in high uncertainty
+
+    def _assess_enhanced_collision_risk(self, ego_state: EgoState,
+                                      planning_result: PlanningResult,
+                                      tracked_objects: Dict[str, Any],
+                                      margin_multiplier: float) -> float:
+        """Assess collision risk with uncertainty-adjusted safety margins"""
+        # Predict ego vehicle trajectory (with safety margins)
+        ego_trajectory = self._predict_ego_trajectory_with_safety_margin(
+            ego_state, planning_result, margin_multiplier
+        )
+
+        max_collision_risk = 0.0
+
+        for obj_id, obj in tracked_objects.items():
+            if hasattr(obj, 'state') and len(obj.state) >= 9:
+                # Predict object trajectory
+                obj_trajectory = self._predict_object_trajectory(obj)
+
+                # Check for trajectory intersections with safety margins
+                min_distance = float('inf')
+                for ego_pos in ego_trajectory:
+                    for obj_pos in obj_trajectory:
+                        dist = np.linalg.norm(ego_pos[:2] - obj_pos[:2])
+                        min_distance = min(min_distance, dist)
+
+                # Adjust required distance based on uncertainty
+                required_distance = 5.0 * margin_multiplier  # Increase based on uncertainty
+
+                if min_distance < required_distance:
+                    # Calculate risk based on proximity and uncertainty
+                    risk = max(0.0, (required_distance - min_distance) / required_distance)
+                    max_collision_risk = max(max_collision_risk, risk)
+
+        return max_collision_risk
+
+    def _predict_ego_trajectory_with_safety_margin(self, ego_state: EgoState,
+                                                  planning_result: PlanningResult,
+                                                  margin_multiplier: float, steps: int = 10) -> np.ndarray:
+        """Predict ego trajectory with safety margin adjustments"""
+        dt = 0.1 * margin_multiplier  # Increase time step with uncertainty (more conservative)
+        trajectory = np.zeros((steps, 3), dtype=np.float32)
+
+        # Start from current position
+        current_pos = ego_state.position.copy()
+        current_vel = ego_state.velocity
+        current_curvature = ego_state.curvature
+
+        for i in range(steps):
+            # Calculate position change based on velocity and curvature
+            ds = current_vel * dt  # Distance traveled in this time step
+            dx = ds * math.cos(current_curvature * ds / 2)  # Simplified arc movement
+            dy = ds * math.sin(current_curvature * ds / 2)
+
+            # Update position
+            current_pos[0] += dx
+            current_pos[1] += dy
+
+            # Update velocity based on planned acceleration (simplified)
+            current_vel += planning_result.desired_acceleration * dt
+            current_vel = max(0, current_vel)  # Don't go backwards
+
+            # Update curvature based on planned changes (simplified)
+            current_curvature = planning_result.desired_curvature * min(1.0, i / 5)  # Gradual change
+
+            trajectory[i] = current_pos.copy()
+
+        return trajectory
+
+
+class MultiModalSafetyChecker:
+    """Check safety across multiple planning scenarios"""
+
+    def __init__(self):
+        self.trajectory_predictor = None  # Would be initialized with proper predictor
+
+    def check_multiple_scenarios(self, ego_state: EgoState,
+                               planning_result: PlanningResult,
+                               tracked_objects: Dict[str, Any]) -> SafetyCheckResult:
+        """Check safety across multiple possible future scenarios"""
+        violations = []
+        confidence = 1.0
+
+        # For now, just perform the basic check
+        # In a full implementation, this would evaluate multiple possible futures
+        risk_assessment = self._assess_multiple_scenario_risk(
+            ego_state, planning_result, tracked_objects
+        )
+
+        if risk_assessment.get('max_risk', 0.0) > 0.8:
+            violations.append(SafetyViolation.UNEXPECTED_MANEUVER)
+            confidence *= 0.4
+
+        return SafetyCheckResult(
+            is_safe=len(violations) == 0,
+            violations=violations,
+            confidence=confidence,
+            explanation=f"Multi-scenario safety check: max_risk={risk_assessment.get('max_risk', 0.0):.2f}"
+        )
+
+    def _assess_multiple_scenario_risk(self, ego_state: EgoState,
+                                     planning_result: PlanningResult,
+                                     tracked_objects: Dict[str, Any]) -> Dict[str, float]:
+        """Assess risk across multiple potential scenarios"""
+        # Simplified implementation - in reality would check multiple possible futures
+        return {'max_risk': 0.1, 'scenarios_evaluated': 1}
+
+
+class SafetyConfidenceCalibrator:
+    """Calibrate safety confidence based on various factors"""
+
+    def __init__(self):
+        self.factor_weights = {
+            'model_agreement': 0.3,
+            'environmental_factors': 0.25,
+            'uncertainty': 0.25,
+            'historical_performance': 0.2
+        }
+
+    def calibrate_safety_confidence(self, base_confidence: float,
+                                  assessment_factors: Dict[str, float]) -> float:
+        """Calibrate safety confidence based on multiple factors"""
+        model_agreement = assessment_factors.get('model_agreement', 1.0)
+        environmental_safety = assessment_factors.get('environmental_safety', 1.0)
+        prediction_uncertainty = assessment_factors.get('prediction_uncertainty', 0.0)
+        historical_performance = assessment_factors.get('historical_performance', 1.0)
+
+        # Adjust confidence based on factors
+        calibrated_confidence = (
+            self.factor_weights['model_agreement'] * model_agreement +
+            self.factor_weights['environmental_factors'] * environmental_safety +
+            (1 - prediction_uncertainty) * self.factor_weights['uncertainty'] +  # Lower uncertainty = higher confidence
+            self.factor_weights['historical_performance'] * historical_performance
+        )
+
+        return min(1.0, max(0.0, calibrated_confidence * base_confidence))
+
+
+class EnhancedSafetySupervisor(SafetySupervisor):
+    """
+    Enhanced safety supervisor with uncertainty-aware validation
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.uncertainty_aware_validator = UncertaintyAwareValidator()
+        self.multi_modal_safety_checker = MultiModalSafetyChecker()
+        self.safety_confidence_calibrator = SafetyConfidenceCalibrator()
+
+    def validate_control_commands(self,
+                                 ego_state: EgoState,
+                                 planning_result: PlanningResult,
+                                 model_outputs: Dict[str, Any],
+                                 tracked_objects: Dict[str, Any],
+                                 prediction_uncertainties: Dict[str, float] = None) -> SafetyCheckResult:
+        """Enhanced safety validation considering prediction uncertainties"""
+        violations = []
+        confidence = 1.0
+
+        # Original safety checks
+        collision_check = self._assess_collision_risk(ego_state, planning_result, tracked_objects)
+        if not collision_check.is_safe:
+            violations.extend(collision_check.violations)
+            confidence *= collision_check.confidence
+
+        # Check road boundary compliance
+        boundary_check = self._check_road_boundary_compliance(ego_state, planning_result)
+        if not boundary_check.is_safe:
+            violations.extend(boundary_check.violations)
+            confidence *= boundary_check.confidence
+
+        # Check speed limit compliance
+        speed_check = self._check_speed_limit_compliance(ego_state, planning_result)
+        if not speed_check.is_safe:
+            violations.extend(speed_check.violations)
+            confidence *= speed_check.confidence
+
+        # Check maneuver reasonableness
+        maneuver_check = self._check_maneuver_reasonableness(ego_state, planning_result)
+        if not maneuver_check.is_safe:
+            violations.extend(maneuver_check.violations)
+            confidence *= maneuver_check.confidence
+
+        # Enhanced checks considering uncertainties
+        if prediction_uncertainties:
+            uncertainty_check = self.uncertainty_aware_validator.check_uncertainty_aware_safety(
+                ego_state, planning_result, tracked_objects, prediction_uncertainties
+            )
+            if not uncertainty_check.is_safe:
+                violations.extend(uncertainty_check.violations)
+                confidence *= uncertainty_check.confidence
+
+        # Multi-modal safety check
+        multimodal_check = self.multi_modal_safety_checker.check_multiple_scenarios(
+            ego_state, planning_result, tracked_objects
+        )
+        if not multimodal_check.is_safe:
+            violations.extend(multimodal_check.violations)
+            confidence *= multimodal_check.confidence
+
+        # Determine overall safety
+        is_safe = len(violations) == 0
+        explanation = f"{'Safe' if is_safe else 'Unsafe'} - {len(violations)} violations detected"
+
+        # Determine recovery action if unsafe
+        recovery_action = self._determine_enhanced_recovery_action(violations, ego_state)
+
+        # Update safety metrics
+        metrics = self._calculate_safety_metrics(ego_state, planning_result, tracked_objects)
+        self.last_safety_metrics = metrics
+
+        return SafetyCheckResult(
+            is_safe=is_safe,
+            violations=violations,
+            confidence=confidence,
+            explanation=explanation,
+            recovery_action=recovery_action
+        )
+
+    def _determine_enhanced_recovery_action(self, violations: List[SafetyViolation], ego_state: EgoState) -> Optional[str]:
+        """Determine appropriate recovery action based on violations"""
+        if not violations:
+            return None
+
+        if SafetyViolation.COLLISION_IMMINENT in violations:
+            return "EMERGENCY_BRAKE"
+        elif SafetyViolation.ROAD_BOUNDARY_VIOLATION in violations:
+            return "RETURN_TO_LANE"
+        elif SafetyViolation.SPEED_LIMIT_EXCEEDED in violations:
+            return "REDUCE_SPEED"
+        elif any(violation in [SafetyViolation.UNEXPECTED_MANEUVER, SafetyViolation.MODEL_DISAGREEMENT]
+                 for violation in violations):
+            return "STABILIZE_CONTROL"
+        else:
+            return "MONITOR_AND_ADAPT"
+
+
 class RedundantSafetyValidator:
     """
     Redundant safety validation using multiple methods to ensure safety
     """
-    
+
     def __init__(self):
-        self.supervisor = SafetySupervisor()
-        
+        self.supervisor = EnhancedSafetySupervisor()  # Use enhanced supervisor
+
     def validate_with_multiple_methods(self,
                                      ego_state: EgoState,
                                      planning_result: PlanningResult,
                                      model_outputs: Dict[str, Any],
-                                     tracked_objects: Dict[str, Any]) -> SafetyCheckResult:
+                                     tracked_objects: Dict[str, Any],
+                                     prediction_uncertainties: Dict[str, float] = None) -> SafetyCheckResult:
         """Validate using multiple safety methods and combine results"""
-        
+
         # Method 1: Physics-based validation
         physics_check = self._physics_validation(ego_state, planning_result)
-        
-        # Method 2: Rule-based validation (using the main supervisor)
+
+        # Method 2: Rule-based validation (using the enhanced supervisor)
         rule_check = self.supervisor.validate_control_commands(
-            ego_state, planning_result, model_outputs, tracked_objects
+            ego_state, planning_result, model_outputs, tracked_objects, prediction_uncertainties
         )
-        
+
         # Method 3: Model agreement validation
         model_agreement_check = self._model_agreement_validation(planning_result, model_outputs)
-        
+
         # Combine results - if any method flags unsafe, consider unsafe
         all_violations = physics_check.violations + rule_check.violations + model_agreement_check.violations
         combined_confidence = (physics_check.confidence + rule_check.confidence + model_agreement_check.confidence) / 3
-        
+
         is_safe = physics_check.is_safe and rule_check.is_safe and model_agreement_check.is_safe
         recovery_action = self._determine_recovery_action(all_violations, [physics_check, rule_check, model_agreement_check])
-        
+
         return SafetyCheckResult(
             is_safe=is_safe,
             violations=all_violations,

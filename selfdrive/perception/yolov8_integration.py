@@ -369,11 +369,96 @@ class YOLOv8Detector:
         return True
 
 
+class ConfidenceCalibrator:
+    """Calibrate confidence scores based on multiple sensor inputs"""
+
+    def __init__(self):
+        self.calibration_factors = {
+            'vision_clear_weather': 1.0,
+            'vision_low_light': 0.8,
+            'vision_rain': 0.75,
+            'radar_clear_weather': 1.0,
+            'radar_rain': 1.1,  # Radar performs better in rain
+            'radar_fog': 1.0,
+        }
+
+    def calibrate_multi_sensor(self, vision_result: DetectionResult,
+                              radar_matches: List[Dict], camera_name: str) -> DetectionResult:
+        """Calibrate confidence based on sensor fusion"""
+        # Start with original vision confidence
+        calibrated_objects = []
+
+        for obj in vision_result.objects:
+            # Find matching radar detection
+            radar_match = self._find_closest_radar_match(obj, radar_matches)
+
+            if radar_match:
+                # Combine vision and radar confidence with environmental factors
+                environment_factor = self._get_environment_factor()
+                combined_confidence = self._combine_confidences(
+                    obj.get('confidence', 0.0),
+                    radar_match.get('confidence', 0.0),
+                    environment_factor
+                )
+
+                obj['confidence'] = combined_confidence
+                obj['sensor_fusion'] = True
+                obj['radar_match_distance'] = radar_match.get('distance', float('inf'))
+
+            calibrated_objects.append(obj)
+
+        # Update the detection result
+        result = DetectionResult(
+            objects=calibrated_objects,
+            confidence_map=vision_result.confidence_map,
+            processing_time=vision_result.processing_time,
+            model_used=vision_result.model_used
+        )
+
+        return result
+
+    def _find_closest_radar_match(self, vision_obj: Dict, radar_detections: List[Dict]) -> Optional[Dict]:
+        """Find the closest radar detection matching the vision detection"""
+        if not radar_detections:
+            return None
+
+        # Get vision object position in world coordinates
+        # This is a simplified implementation - in reality would use geometric projection
+        vision_bbox = vision_obj.get('bbox', [0, 0, 0, 0])
+        vision_x, vision_y, vision_w, vision_h = vision_bbox
+
+        min_distance = float('inf')
+        closest_match = None
+
+        for radar_det in radar_detections:
+            # Calculate distance between vision and radar detections
+            # This is a placeholder calculation
+            distance = abs(vision_x - radar_det.get('azimuth', 0) * 100)  # Simplified
+            if distance < min_distance:
+                min_distance = distance
+                closest_match = radar_det
+
+        return closest_match if min_distance < 10.0 else None  # Only match if close enough
+
+    def _get_environment_factor(self) -> float:
+        """Get environmental factor for confidence calibration"""
+        # For simplicity, return 1.0 (no environmental adjustment)
+        # In reality, this would consider weather, lighting, etc.
+        return 1.0
+
+    def _combine_confidences(self, vision_conf: float, radar_conf: float,
+                           env_factor: float) -> float:
+        """Combine confidences from multiple sensors"""
+        # Weighted average with environmental adjustment
+        combined = (0.6 * vision_conf + 0.4 * radar_conf) * env_factor
+        return min(1.0, max(0.0, combined))
+
+
 class MultiCameraYOLOv8Processor:
     """
-    Process YOLOv8 detections across multiple virtual cameras
+    Process YOLOv8 detections across multiple virtual cameras with radar fusion
     """
-    
+
     def __init__(self):
         # Initialize YOLOv8 detector for each virtual camera
         # In practice, we might share one model and optimize for multiple inputs
@@ -384,22 +469,26 @@ class MultiCameraYOLOv8Processor:
             'medium': 0.7,
             'low': 0.5
         }
-        
-    def process_multi_camera_detections(self, 
+        self.confidence_calibrator = ConfidenceCalibrator()
+        self.radar_fusion_enabled = True
+
+    def process_multi_camera_detections(self,
                                       camera_data: Dict[str, np.ndarray],
-                                      calibration_params: np.ndarray) -> Dict[str, DetectionResult]:
+                                      calibration_params: np.ndarray,
+                                      radar_data: Optional[Dict] = None) -> Dict[str, DetectionResult]:
         """
         Process detections across all virtual cameras
-        
+
         Args:
             camera_data: Dictionary mapping camera names to images
             calibration_params: Current calibration parameters for geometric corrections
-            
+            radar_data: Optional radar data to fuse with vision results
+
         Returns:
             Dictionary mapping camera names to detection results
         """
         results = {}
-        
+
         for camera_name, image in camera_data.items():
             # Get appropriate confidence threshold based on camera position
             if 'front' in camera_name:
@@ -408,22 +497,99 @@ class MultiCameraYOLOv8Processor:
                 confidence_thresh = 0.65  # Medium importance for side cameras
             else:
                 confidence_thresh = 0.6   # Lower importance for rear cameras
-            
+
             # Perform detection with appropriate threshold
             result = self.detector.detect_objects(
-                image, 
-                camera_name, 
+                image,
+                camera_name,
                 confidence_threshold=confidence_thresh
             )
-            
+
             results[camera_name] = result
-        
-        # After individual detections, perform multi-camera fusion
-        fused_results = self._fuse_multi_camera_detections(results, calibration_params)
-        
+
+        # If radar data is available, fuse with vision results
+        if radar_data and self.radar_fusion_enabled:
+            fused_results = self._fuse_with_radar(results, radar_data)
+        else:
+            # After individual detections, perform multi-camera fusion
+            fused_results = self._fuse_multi_camera_detections(results, calibration_params)
+
         return fused_results
-    
-    def _fuse_multi_camera_detections(self, 
+
+    def _fuse_with_radar(self, vision_results: Dict[str, DetectionResult],
+                        radar_data: Dict) -> Dict[str, DetectionResult]:
+        """Fuse vision and radar detections"""
+        fused_results = {}
+
+        for camera_name, vision_result in vision_results.items():
+            # Convert radar data to appropriate format for matching
+            radar_matches = self._prepare_radar_for_matching(radar_data, camera_name)
+
+            # Calibrate vision results with radar data
+            enhanced_result = self.confidence_calibrator.calibrate_multi_sensor(
+                vision_result, radar_matches, camera_name
+            )
+
+            fused_results[camera_name] = enhanced_result
+
+        # Add fused 3D result
+        all_detections = []
+        for cam_name, result in fused_results.items():
+            for det in result.objects:
+                det['source_camera'] = cam_name
+                all_detections.append(det)
+
+        fused_results['fused_3d'] = DetectionResult(
+            objects=all_detections,
+            confidence_map=self._create_fused_confidence_map(vision_results),
+            processing_time=max(r.processing_time for r in vision_results.values()),
+            model_used="multi_sensor_fused"
+        )
+
+        return fused_results
+
+    def _prepare_radar_for_matching(self, radar_data: Dict, camera_name: str) -> List[Dict]:
+        """Prepare radar data for matching with vision detections"""
+        # Convert radar polar coordinates to image coordinates based on camera position
+        # This is a simplified implementation
+        radar_detections = []
+
+        if 'points' in radar_data and radar_data['points']:
+            for point in radar_data['points']:
+                radar_detection = {
+                    'range': point.get('range', 0.0),
+                    'azimuth': point.get('azimuth', 0.0),
+                    'velocity': point.get('velocity', 0.0),
+                    'power': point.get('power', -50.0),
+                    'confidence': min(1.0, max(0.0, 1.0 + point.get('power', -50.0) / 100.0)),  # Convert power to confidence
+                    'camera_projection_x': point.get('azimuth', 0.0) * 100  # Simplified projection
+                }
+                radar_detections.append(radar_detection)
+
+        return radar_detections
+
+    def _create_fused_confidence_map(self, vision_results: Dict[str, DetectionResult]) -> np.ndarray:
+        """Create fused confidence map from all camera results"""
+        # Find the largest confidence map size
+        max_shape = (0, 0)
+        for result in vision_results.values():
+            if result.confidence_map.shape[0] > max_shape[0]:
+                max_shape = (result.confidence_map.shape[0], result.confidence_map.shape[1])
+
+        if max_shape[0] == 0:
+            return np.zeros((1, 1), dtype=np.float32)  # Fallback
+
+        # Initialize fused confidence map
+        fused_map = np.zeros(max_shape, dtype=np.float32)
+
+        for result in vision_results.values():
+            # Average confidence maps from all cameras
+            if result.confidence_map.shape == fused_map.shape:
+                fused_map = np.maximum(fused_map, result.confidence_map)
+
+        return fused_map
+
+    def _fuse_multi_camera_detections(self,
                                     individual_results: Dict[str, DetectionResult],
                                     calibration_params: np.ndarray) -> Dict[str, DetectionResult]:
         """
@@ -431,21 +597,21 @@ class MultiCameraYOLOv8Processor:
         """
         # This would perform geometric fusion of detections from different viewpoints
         # For now, we'll add a "fused" result that combines information
-        
+
         fused_results = individual_results.copy()
-        
+
         # Add fused/consolidated results
         all_detections = []
         for cam_name, result in individual_results.items():
             for det in result.objects:
                 det['source_camera'] = cam_name
                 all_detections.append(det)
-        
+
         # In a real implementation, this would:
         # 1. Associate detections across cameras based on geometric relationships
         # 2. Create 3D bounding boxes from multiple 2D detections
         # 3. Validate detections using multiple viewpoints
-        
+
         # For now, we'll create a mock fused result
         fused_results['fused_3d'] = DetectionResult(
             objects=all_detections,
@@ -453,7 +619,7 @@ class MultiCameraYOLOv8Processor:
             processing_time=max(r.processing_time for r in individual_results.values()),
             model_used="multi_camera_fused"
         )
-        
+
         return fused_results
     
     def get_scene_understanding(self, 

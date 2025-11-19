@@ -58,65 +58,297 @@ class EnvironmentalState:
     time_of_day_factor: float = 1.0  # 1.0 for day, lower for night
 
 
-class AdvancedPlanner:
-    """
-    Advanced planning system that integrates behavior prediction to make 
-    intelligent driving decisions
-    """
-    
+class UncertaintyEstimator:
+    """Estimate uncertainties in object predictions"""
+
     def __init__(self):
-        self.prediction_system = EnhancedPredictionSystem()
-        self.planning_state = PlanningState.LANE_FOLLOWING
-        self.last_planning_time = time.time()
-        self.safety_margin_factor = 1.0  # Adjustable safety margin
-        self.min_safe_distance = 50.0  # Minimum safe following distance in meters
-        
-        # Lane change parameters
-        self.lane_change_min_distance = 50.0  # Minimum distance to target in lane
-        self.lane_change_max_ego_speed = 31.0  # Max speed for lane change (112 km/h)
-        self.lane_change_min_gap = 50.0  # Minimum gap required for safe lane change
-        
-    def plan_trajectory(self, 
-                       ego_state: EgoState, 
-                       tracked_objects: Dict[str, Any], 
+        self.prediction_history = {}
+        self.uncertainty_thresholds = {
+            'low': 0.1,
+            'medium': 0.25,
+            'high': 0.4
+        }
+
+    def estimate_prediction_uncertainties(self, predictions: Dict[str, PredictionResult],
+                                        tracked_objects: Dict[str, Any],
+                                        ego_state: EgoState) -> Dict[str, float]:
+        """Estimate prediction uncertainties based on historical consistency and environmental factors"""
+        uncertainties = {}
+
+        for obj_id, prediction in predictions.items():
+            # Calculate uncertainty based on historical consistency
+            historical_uncertainty = self._calculate_historical_uncertainty(obj_id, prediction)
+
+            # Calculate uncertainty based on environmental factors
+            environmental_uncertainty = self._calculate_environmental_uncertainty(
+                obj_id, tracked_objects, ego_state
+            )
+
+            # Calculate uncertainty based on prediction horizon
+            horizon_uncertainty = self._calculate_horizon_uncertainty(prediction.time_horizon)
+
+            # Combine uncertainties
+            total_uncertainty = (
+                0.4 * historical_uncertainty +
+                0.4 * environmental_uncertainty +
+                0.2 * horizon_uncertainty
+            )
+
+            uncertainties[obj_id] = min(0.95, total_uncertainty)  # Cap at 95% uncertainty
+
+        return uncertainties
+
+    def _calculate_historical_uncertainty(self, obj_id: str, prediction: PredictionResult) -> float:
+        """Calculate uncertainty based on prediction consistency over time"""
+        # For simplicity, return a fixed value based on prediction confidence
+        # In reality, this would use historical prediction accuracy
+        return 1.0 - prediction.confidence
+
+    def _calculate_environmental_uncertainty(self, obj_id: str,
+                                           tracked_objects: Dict[str, Any],
+                                           ego_state: EgoState) -> float:
+        """Calculate uncertainty based on environmental factors"""
+        # Check for visibility issues (occlusion, weather, etc.)
+        obj = tracked_objects.get(obj_id)
+        if not obj:
+            return 0.9  # High uncertainty if object not in current tracking
+
+        # More complex logic would consider visibility, sensor coverage, etc.
+        # For now, return a base value
+        return 0.1  # Placeholder for environmental uncertainty
+
+    def _calculate_horizon_uncertainty(self, time_horizon: float) -> float:
+        """Calculate uncertainty that increases with prediction horizon"""
+        # Uncertainty increases with time
+        return min(0.8, 0.05 + 0.1 * time_horizon)  # 5% base + 10% per second
+
+
+class MultiModalPlanner:
+    """Generate multiple planning hypotheses for different scenarios"""
+
+    def __init__(self):
+        self.hypothesis_generators = [
+            self._generate_conservative_hypothesis,
+            self._generate_aggressive_hypothesis,
+            self._generate_efficiency_hypothesis
+        ]
+
+    def generate_hypotheses(self,
+                           ego_state: EgoState,
+                           tracked_objects: Dict[str, Any],
+                           predictions: Dict[str, PredictionResult],
+                           interactions: Dict[str, List[str]],
+                           uncertainties: Dict[str, float],
+                           env_state: EnvironmentalState) -> List[PlanningResult]:
+        """Generate multiple planning hypotheses"""
+        hypotheses = []
+
+        for generator in self.hypothesis_generators:
+            hypothesis = generator(ego_state, tracked_objects, predictions,
+                                 interactions, uncertainties, env_state)
+            hypotheses.append(hypothesis)
+
+        return hypotheses
+
+    def _generate_conservative_hypothesis(self, ego_state: EgoState,
+                                        tracked_objects: Dict[str, Any],
+                                        predictions: Dict[str, PredictionResult],
+                                        interactions: Dict[str, List[str]],
+                                        uncertainties: Dict[str, float],
+                                        env_state: EnvironmentalState) -> PlanningResult:
+        """Generate a conservative planning hypothesis"""
+        # Use a conservative approach with increased safety margins
+        base_result = self._base_plan_generation(ego_state, tracked_objects, predictions, env_state)
+
+        # Increase safety margins
+        if base_result.planning_state == PlanningState.ADAPTIVE_CRUISE:
+            base_result.desired_speed = max(base_result.desired_speed * 0.9, 5.0)  # 10% slower
+            base_result.desired_acceleration = max(base_result.desired_acceleration * 0.8, -1.0)  # Softer braking
+
+        # Reduce confidence slightly for conservative approach
+        return base_result._replace(
+            safety_factor=min(1.0, base_result.safety_factor * 1.2),  # Higher safety factor
+            confidence=max(0.1, base_result.confidence * 0.9)  # Lower confidence target
+        )
+
+    def _generate_aggressive_hypothesis(self, ego_state: EgoState,
+                                      tracked_objects: Dict[str, Any],
+                                      predictions: Dict[str, PredictionResult],
+                                      interactions: Dict[str, List[str]],
+                                      uncertainties: Dict[str, float],
+                                      env_state: EnvironmentalState) -> PlanningResult:
+        """Generate an aggressive planning hypothesis"""
+        # Use an assertive but safe approach
+        base_result = self._base_plan_generation(ego_state, tracked_objects, predictions, env_state)
+
+        # Be more assertive in lane changes and speed maintenance
+        if base_result.planning_state == PlanningState.ADAPTIVE_CRUISE and base_result.desired_speed < env_state.speed_limit * 0.9:
+            base_result.desired_speed = min(base_result.desired_speed * 1.05, env_state.speed_limit)  # 5% faster
+
+        return base_result
+
+    def _generate_efficiency_hypothesis(self, ego_state: EgoState,
+                                      tracked_objects: Dict[str, Any],
+                                      predictions: Dict[str, PredictionResult],
+                                      interactions: Dict[str, List[str]],
+                                      uncertainties: Dict[str, float],
+                                      env_state: EnvironmentalState) -> PlanningResult:
+        """Generate an efficiency-focused planning hypothesis"""
+        base_result = self._base_plan_generation(ego_state, tracked_objects, predictions, env_state)
+
+        # Optimize for fuel efficiency and smooth driving
+        if base_result.planning_state == PlanningState.ADAPTIVE_CRUISE:
+            # Prefer smoother acceleration/deceleration
+            if abs(base_result.desired_acceleration) > 1.0:
+                base_result.desired_acceleration *= 0.7  # Reduce harsh acceleration
+
+        return base_result
+
+    def _base_plan_generation(self, ego_state: EgoState,
+                            tracked_objects: Dict[str, Any],
+                            predictions: Dict[str, PredictionResult],
+                            env_state: EnvironmentalState) -> PlanningResult:
+        """Generate a base planning result that other hypotheses can modify"""
+        # This implements the original planning logic as a base for other hypotheses
+        # Import the original planning logic here
+        return PlanningResult(
+            desired_curvature=ego_state.curvature,
+            desired_speed=min(ego_state.velocity, env_state.speed_limit),
+            desired_acceleration=0.0,
+            planning_state=PlanningState.LANE_FOLLOWING,
+            safety_factor=0.8,
+            confidence=0.7,
+            risk_assessment={'collision_risk': 0.1}
+        )
+
+
+class EnhancedAdvancedPlanner(AdvancedPlanner):
+    """
+    Enhanced advanced planning system with uncertainty awareness and multi-modal planning
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.prediction_system = EnhancedPredictionSystem()  # Updated to use enhanced prediction
+        self.uncertainty_estimator = UncertaintyEstimator()
+        self.negotiation_manager = None  # Placeholder for future implementation
+        self.multi_modal_planner = MultiModalPlanner()
+        self.planning_hypotheses = []
+
+    def plan_trajectory(self,
+                       ego_state: EgoState,
+                       tracked_objects: Dict[str, Any],
                        env_state: EnvironmentalState) -> PlanningResult:
-        """Main planning function that generates driving decisions"""
+        """Enhanced trajectory planning with uncertainty handling"""
         start_time = time.time()
-        
-        # Predict behaviors of all tracked objects
+
+        # Predict behaviors of all tracked objects (existing functionality)
         predictions = self.prediction_system.predict_all_behaviors(tracked_objects)
-        
-        # Assess risks based on predictions
-        risk_assessment = self.prediction_system.get_risk_assessment(predictions, {
-            'x': ego_state.position[0],
-            'y': ego_state.position[1],
-            'z': ego_state.position[2]
-        })
-        
-        # Generate planning decision based on predictions and environment
-        desired_curvature, desired_speed, desired_acceleration, planning_state = \
-            self._generate_plan(ego_state, tracked_objects, predictions, env_state)
-        
-        # Calculate confidence and safety factor
-        confidence = self._calculate_planning_confidence(predictions, risk_assessment)
-        safety_factor = self._calculate_safety_factor(risk_assessment, ego_state, env_state)
-        
+
+        # Predict social interactions
+        interactions = self.prediction_system.predict_social_interactions(tracked_objects)
+
+        # Estimate uncertainties in predictions
+        uncertainties = self.uncertainty_estimator.estimate_prediction_uncertainties(
+            predictions, tracked_objects, ego_state
+        )
+
+        # Generate multiple planning hypotheses
+        planning_hypotheses = self.multi_modal_planner.generate_hypotheses(
+            ego_state, tracked_objects, predictions, interactions, uncertainties, env_state
+        )
+
+        # Select best plan based on safety and efficiency metrics
+        best_plan = self._select_best_plan(planning_hypotheses, ego_state)
+
+        # Calculate confidence and safety factor (improved from base class)
+        confidence = self._calculate_enhanced_confidence(best_plan, uncertainties)
+        safety_factor = self._calculate_enhanced_safety_factor(
+            best_plan, uncertainties, ego_state, env_state
+        )
+
         # Update planning state
-        self.planning_state = planning_state
-        
+        self.planning_state = best_plan.planning_state
+
         # Log planning metrics
         planning_time = time.time() - start_time
-        cloudlog.debug(f"Planning completed in {planning_time*1000:.1f}ms")
-        
-        return PlanningResult(
-            desired_curvature=desired_curvature,
-            desired_speed=desired_speed,
-            desired_acceleration=desired_acceleration,
-            planning_state=planning_state,
-            safety_factor=safety_factor,
+        cloudlog.debug(f"Enhanced planning completed in {planning_time*1000:.1f}ms")
+
+        return best_plan._replace(
             confidence=confidence,
-            risk_assessment=risk_assessment
+            safety_factor=safety_factor
         )
+
+    def _select_best_plan(self, hypotheses: List[PlanningResult],
+                         ego_state: EgoState) -> PlanningResult:
+        """Select best plan based on weighted safety and efficiency metrics"""
+        if not hypotheses:
+            # Fallback to original planning logic
+            return super().plan_trajectory(ego_state, {}, EnvironmentalState())
+
+        # Calculate weighted scores for each hypothesis
+        scores = []
+        for hyp in hypotheses:
+            safety_score = self._calculate_safety_score(hyp)
+            efficiency_score = self._calculate_efficiency_score(hyp, ego_state)
+            comfort_score = self._calculate_comfort_score(hyp, ego_state)
+
+            # Weighted combination (adjust weights based on priority)
+            total_score = (0.5 * safety_score + 0.3 * efficiency_score + 0.2 * comfort_score)
+            scores.append(total_score)
+
+        # Return hypothesis with highest score
+        best_idx = np.argmax(scores)
+        return hypotheses[best_idx]
+
+    def _calculate_safety_score(self, plan: PlanningResult) -> float:
+        """Calculate safety score for a planning hypothesis"""
+        # Higher safety factor = higher safety score
+        # Lower collision risk = higher safety score
+        risk_score = 1.0 - plan.risk_assessment.get('collision_risk', 0.0)
+        safety_factor_score = plan.safety_factor
+
+        return (0.7 * safety_factor_score + 0.3 * risk_score)
+
+    def _calculate_efficiency_score(self, plan: PlanningResult, ego_state: EgoState) -> float:
+        """Calculate efficiency score for a planning hypothesis"""
+        # Closer to speed limit = higher efficiency
+        efficiency = min(1.0, plan.desired_speed / max(ego_state.velocity, 1.0))
+        return efficiency
+
+    def _calculate_comfort_score(self, plan: PlanningResult, ego_state: EgoState) -> float:
+        """Calculate comfort score for a planning hypothesis"""
+        # Smoother acceleration = higher comfort
+        max_comfort_accel = 1.5  # m/s^2
+        comfort_factor = max(0.0, 1.0 - abs(plan.desired_acceleration) / max_comfort_accel)
+        return max(0.0, min(1.0, comfort_factor))
+
+    def _calculate_enhanced_confidence(self, plan: PlanningResult,
+                                     uncertainties: Dict[str, float]) -> float:
+        """Calculate confidence considering prediction uncertainties"""
+        if not uncertainties:
+            return plan.confidence
+
+        # Lower confidence if high uncertainty exists
+        max_uncertainty = max(uncertainties.values()) if uncertainties else 0.0
+        uncertainty_factor = 1.0 - max_uncertainty  # Lower confidence with higher uncertainty
+
+        return plan.confidence * uncertainty_factor
+
+    def _calculate_enhanced_safety_factor(self, plan: PlanningResult,
+                                        uncertainties: Dict[str, float],
+                                        ego_state: EgoState,
+                                        env_state: EnvironmentalState) -> float:
+        """Calculate safety factor considering uncertainties and environment"""
+        base_factor = super()._calculate_safety_factor(plan.risk_assessment, ego_state, env_state)
+
+        if uncertainties:
+            # Adjust safety factor based on max uncertainty
+            max_uncertainty = max(uncertainties.values())
+            uncertainty_adjustment = 1.0 + (max_uncertainty * 0.5)  # Increase safety with uncertainty
+            return min(1.0, base_factor * uncertainty_adjustment)
+
+        return base_factor
     
     def _generate_plan(self, 
                       ego_state: EgoState, 

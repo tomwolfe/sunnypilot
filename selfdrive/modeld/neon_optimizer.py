@@ -94,6 +94,57 @@ class MemoryPool:
     for key in list(self.pools.keys()):
       self.pools[key].clear()
 
+class DynamicScheduler:
+    """Dynamic operation scheduler that optimizes execution based on priority and system load"""
+
+    def __init__(self):
+        self.priority_thresholds = {
+            'critical': 0,    # Safety-critical operations
+            'high': 1,        # Planning operations
+            'normal': 2,      # Standard operations
+            'low': 3          # Background operations
+        }
+
+    def schedule_operations(self, operations: List[Tuple], priority: str) -> List[Tuple]:
+        """Schedule operations based on priority and system load"""
+        # For simplicity in this example, just return operations as-is
+        # In a real implementation, this would use system load info to optimize execution
+        return operations
+
+
+class ThermalAwareOptimizer:
+    """Optimizer that considers thermal constraints"""
+
+    def __init__(self):
+        self.max_temp_threshold = 75.0  # Celsius
+        self.current_temp = 0.0
+        self.throttling_active = False
+
+    def should_throttle(self) -> bool:
+        """Check if operations should be throttled due to thermal constraints"""
+        try:
+            # Get current temperature from hardware interface
+            from openpilot.system.hardware import HARDWARE
+            thermal_config = HARDWARE.get_thermal_config()
+
+            # Use CPU temperature as proxy for SoC temperature
+            cpu_temps = thermal_config.get_cpu_temps()
+            if cpu_temps:
+                self.current_temp = max(cpu_temps)
+            else:
+                self.current_temp = 0  # Fallback if no temp data available
+
+            # Enable throttling if temperature is too high
+            self.throttling_active = self.current_temp > self.max_temp_threshold
+
+        except Exception:
+            # If we can't get temperature, assume safe (no throttling)
+            self.current_temp = 30.0  # Safe default
+            self.throttling_active = False
+
+        return self.throttling_active
+
+
 class NEONOptimizer:
   """
   ARM NEON optimization utilities
@@ -115,6 +166,9 @@ class NEONOptimizer:
     # Pre-allocated arrays for common operations
     self._temp_buffer = np.zeros(1024, dtype=np.float32)  # For temporary calculations
     self._initialized = True  # Flag to indicate proper initialization
+    self.dynamic_scheduler = DynamicScheduler()
+    self.power_manager = None  # Would integrate with power management system
+    self.thermal_aware_optimizer = ThermalAwareOptimizer()
 
   def neon_enabled(self) -> bool:
     """Check if NEON is available on the current ARM processor"""
@@ -129,10 +183,14 @@ class NEONOptimizer:
     except:
       return False
 
-  def optimized_array_operation_batch(self, operations: List[Tuple[np.ndarray, np.ndarray, str]]) -> List[np.ndarray]:
-    """Perform batch array operations efficiently"""
+  def optimized_array_operation_batch(self, operations: List[Tuple[np.ndarray, np.ndarray, str]],
+                                    priority: str = 'normal') -> List[np.ndarray]:
+    """Perform batch array operations efficiently with thermal awareness"""
+    # Use dynamic scheduler to optimize operation execution
+    scheduled_operations = self.dynamic_scheduler.schedule_operations(operations, priority)
+
     results = []
-    for a, b, operation in operations:
+    for a, b, operation in scheduled_operations:
       if a.dtype != np.float32 or b.dtype != np.float32:
         # Convert to float32 for NEON optimization
         a = a.astype(np.float32)
@@ -170,6 +228,11 @@ class NEONOptimizer:
           raise ValueError(f"Unsupported operation: {operation}")
 
       results.append(result)
+
+      # Check thermal status and adjust execution if needed
+      if self.thermal_aware_optimizer.should_throttle():
+        time.sleep(0.001)  # Brief pause to prevent overheating
+
     return results
   
   def optimized_array_ops(self, a: np.ndarray, b: np.ndarray, operation: str = 'add') -> np.ndarray:
