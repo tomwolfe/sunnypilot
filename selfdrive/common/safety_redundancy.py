@@ -25,7 +25,7 @@ class FallbackLevel(Enum):
     """Levels of fallback that can be triggered"""
     LANE_ASSIST_ONLY = "lane_assist_only"
     ADAPTIVE_CRUISE_ONLY = "adaptive_cruise_only"
-    PASIVE_MODE = "passive_mode"
+    PASSIVE_MODE = "passive_mode"
     DISENGAGE = "disengage"
 
 
@@ -138,7 +138,7 @@ class RedundancyManager:
             return FallbackLevel.LANE_ASSIST_ONLY, f"Planning degraded: {planning_system.confidence:.2f}"
         
         # If all systems are operational, return no fallback needed
-        return FallbackLevel.PASIVE_MODE, "All systems nominal"  # Return passive as default safe state
+        return FallbackLevel.PASSIVE_MODE, "All systems nominal"  # Return passive as default safe state
     
     def start_monitoring(self):
         """Start the system monitoring thread"""
@@ -158,9 +158,9 @@ class RedundancyManager:
         while self.monitoring_active:
             try:
                 fallback_level, reason = self.evaluate_system_safety()
-                if fallback_level != FallbackLevel.PASIVE_MODE:  # If we need a fallback
+                if fallback_level != FallbackLevel.PASSIVE_MODE:  # If we need a fallback
                     self.trigger_fallback(fallback_level, reason)
-                
+
                 time.sleep(0.1)  # Check every 100ms
             except Exception as e:
                 print(f"Error in monitoring loop: {e}")
@@ -440,29 +440,42 @@ class SafetyMonitor:
         """Get safety recommendation based on current conditions"""
         if env_context is None:
             env_context = {}
-        
+
         # Check for emergency conditions first
-        if self.check_emergency_conditions(car_state, model_output, env_context):
-            return FallbackLevel.DISENGAGE, "Emergency condition detected"
-        
+        try:
+            if self.check_emergency_conditions(car_state, model_output, env_context):
+                return FallbackLevel.DISENGAGE, "Emergency condition detected"
+        except Exception as e:
+            cloudlog.error(f"Error checking emergency conditions: {e}")
+            return FallbackLevel.DISENGAGE, f"Emergency check error: {e}"
+
         # Validate the model output
-        validation_passed, validation_result = self.validate_model_output(
-            model_output, car_state, env_context=env_context
-        )
-        
-        if not validation_passed or validation_result['confidence'] < 0.3:
-            return FallbackLevel.DISENGAGE, f"Model validation failed: {validation_result['confidence']:.2f}"
-        elif validation_result['confidence'] < 0.6:
-            return FallbackLevel.ADAPTIVE_CRUISE_ONLY, f"Low validation confidence: {validation_result['confidence']:.2f}"
-        elif validation_result['confidence'] < 0.8:
-            return FallbackLevel.LANE_ASSIST_ONLY, f"Medium validation confidence: {validation_result['confidence']:.2f}"
-        
+        try:
+            validation_passed, validation_result = self.validate_model_output(
+                model_output, car_state, env_context=env_context
+            )
+        except Exception as e:
+            cloudlog.error(f"Error validating model output: {e}")
+            return FallbackLevel.DISENGAGE, f"Validation error: {e}"
+
+        confidence = validation_result.get('confidence', 0.0) if isinstance(validation_result, dict) else 0.0
+
+        if not validation_passed or confidence < 0.3:
+            return FallbackLevel.DISENGAGE, f"Model validation failed: {confidence:.2f}"
+        elif confidence < 0.6:
+            return FallbackLevel.ADAPTIVE_CRUISE_ONLY, f"Low validation confidence: {confidence:.2f}"
+        elif confidence < 0.8:
+            return FallbackLevel.LANE_ASSIST_ONLY, f"Medium validation confidence: {confidence:.2f}"
+
         # Check other system health indicators
-        system_health = self.redundancy_manager.systems
-        for name, health in system_health.items():
-            if health.confidence < 0.5 and health.status == SafetySystemStatus.DEGRADED:
-                return FallbackLevel.LANE_ASSIST_ONLY, f"Degraded {name} system: {health.confidence:.2f}"
-        
+        try:
+            system_health = self.redundancy_manager.systems
+            for name, health in system_health.items():
+                if isinstance(health, SystemHealth) and health.confidence < 0.5 and health.status == SafetySystemStatus.DEGRADED:
+                    return FallbackLevel.LANE_ASSIST_ONLY, f"Degraded {name} system: {health.confidence:.2f}"
+        except Exception as e:
+            cloudlog.error(f"Error checking system health: {e}")
+
         return FallbackLevel.PASIVE_MODE, "All systems nominal"
     
     def initialize_monitoring(self):

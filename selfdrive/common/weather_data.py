@@ -79,12 +79,18 @@ class WeatherDataInterface:
     
     def get_precipitation_factor(self) -> float:
         """Get a factor based on precipitation for control adjustments"""
-        if self.weather_data['precipitation_type'] == 'rain':
-            return 0.7 - (self.weather_data['precipitation_intensity'] * 0.3)  # More conservative in rain
-        elif self.weather_data['precipitation_type'] == 'snow':
-            return 0.4 - (self.weather_data['precipitation_intensity'] * 0.3)  # Much more conservative in snow
-        else:
-            return 1.0  # Normal conditions
+        try:
+            if self.weather_data['precipitation_type'] == 'rain':
+                factor = 0.7 - (self.weather_data['precipitation_intensity'] * 0.3)  # More conservative in rain
+                return max(0.3, factor)  # Ensure factor doesn't go too low
+            elif self.weather_data['precipitation_type'] == 'snow':
+                factor = 0.4 - (self.weather_data['precipitation_intensity'] * 0.3)  # Much more conservative in snow
+                return max(0.1, factor)  # Ensure factor doesn't go too low
+            else:
+                return 1.0  # Normal conditions
+        except (KeyError, TypeError):
+            cloudlog.warning("Error accessing weather data, returning normal conditions factor")
+            return 1.0  # Return normal conditions as fallback
 
 
 # Global instance

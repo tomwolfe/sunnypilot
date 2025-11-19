@@ -208,14 +208,22 @@ class EnhancedSafetyValidator:
         weather_factor = precipitation_factor  # This already accounts for precipitation
 
         # Adjust further based on visibility
-        visibility = weather_data.get('visibility', 200.0)
+        try:
+            visibility = weather_data.get('visibility', 200.0)
+        except (AttributeError, TypeError):
+            visibility = 200.0  # Default visibility if not available
+
         if visibility < 50:  # Poor visibility
             weather_factor *= 0.7
         elif visibility < 100:  # Moderate visibility
             weather_factor *= 0.85
 
         # Adjust based on road surface condition
-        road_condition = weather_data.get('road_surface_condition', 'dry')
+        try:
+            road_condition = weather_data.get('road_surface_condition', 'dry')
+        except (AttributeError, TypeError):
+            road_condition = 'dry'
+
         if road_condition == 'wet':
             weather_factor *= 0.85  # Reduce confidence on wet roads
         elif road_condition in ['icy', 'snowy']:
@@ -227,8 +235,8 @@ class EnhancedSafetyValidator:
             if weather_factor < 0.8:
                 weather_factor *= 0.85
 
-        # Apply weather adjustment
-        weather_adjusted_confidence = base_confidence * weather_factor
+        # Apply weather adjustment - ensure confidence doesn't go below 0
+        weather_adjusted_confidence = max(0.0, base_confidence * weather_factor)
 
         weather_metrics = {
             'weather_factor': weather_factor,

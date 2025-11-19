@@ -191,8 +191,8 @@ def validate_optimization_features():
     
     # Check for optimization imports
     optimization_imports = [
-      "neon_optimizer",
-      "dynamic_adaptation", 
+      "arm_optimizer",
+      "dynamic_adaptation",
       "resource_manager",
       "collect_model_performance",
       "thermal_manager",

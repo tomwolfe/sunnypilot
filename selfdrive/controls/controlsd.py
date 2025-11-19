@@ -539,21 +539,15 @@ class Controls(ControlsExt, ModelStateBase):
                     actuators.accel = np.clip(actuators.accel, -2.0, 1.5)
                     actuators.curvature = np.clip(actuators.curvature, -0.005, 0.005)
 
-                # Update validation metrics to reflect safety intervention
-                if not hasattr(cs.validation.metrics, 'systemIntervention'):
-                    cs.validation.metrics.systemIntervention = True
-                else:
-                    cs.validation.metrics.systemIntervention = True
-                if not hasattr(cs.validation.metrics, 'safetyOverride'):
-                    cs.validation.metrics.safetyOverride = True
-                else:
-                    cs.validation.metrics.safetyOverride = True
+                # Update validation metrics to reflect safety intervention in the controlsState message (dat)
+                if hasattr(dat, 'controlsState') and hasattr(dat.controlsState, 'validation') and hasattr(dat.controlsState.validation, 'metrics'):
+                    dat.controlsState.validation.metrics.systemIntervention = True
+                    dat.controlsState.validation.metrics.safetyOverride = True
             else:
-                # System is safe, update safety metrics
-                if hasattr(cs.validation.metrics, 'systemIntervention'):
-                    cs.validation.metrics.systemIntervention = False
-                if hasattr(cs.validation.metrics, 'safetyOverride'):
-                    cs.validation.metrics.safetyOverride = False
+                # System is safe, update safety metrics in the controlsState message (dat)
+                if hasattr(dat, 'controlsState') and hasattr(dat.controlsState, 'validation') and hasattr(dat.controlsState.validation, 'metrics'):
+                    dat.controlsState.validation.metrics.systemIntervention = False
+                    dat.controlsState.validation.metrics.safetyOverride = False
         except Exception as e:
             cloudlog.error(f"Safety validation error: {e}")
 
