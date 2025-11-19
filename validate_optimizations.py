@@ -321,7 +321,7 @@ class PerformanceBenchmark:
   def benchmark_memory_pooling(self) -> Dict[str, any]:
     """Benchmark memory pooling performance"""
     import numpy as np
-    from selfdrive.modeld.neon_optimizer import neon_optimizer
+    from selfdrive.common.arm_optimization import arm_optimizer as neon_optimizer
     
     # --- Pooled allocation benchmark ---
     pooled_start_time = time.time()

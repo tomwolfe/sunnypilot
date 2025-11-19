@@ -40,86 +40,87 @@ def validate_phase3_implementation():
   print("="*70)
   print("SUNNYPilot Phase 3: Optimization & Integration - Final Validation")
   print("="*70)
-  
+
   all_valid = True
-  
+
   print("\n1. ARM-specific hardware optimization components:")
   files_to_check = [
-    ("selfdrive/modeld/neon_optimizer.py", "ARM NEON Optimizer and Memory Pooling"),
+    ("selfdrive/common/arm_optimization.py", "ARM NEON Optimizer and Memory Pooling"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n2. Dynamic performance adaptation system:")
   files_to_check = [
     ("common/dynamic_adaptation.py", "Dynamic Performance Adaptation System"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n3. Data collection pipeline:")
   files_to_check = [
     ("common/data_collector.py", "Data Collection Pipeline"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n4. Real-time monitoring dashboard:")
   files_to_check = [
     ("selfdrive/monitoring/realtime_dashboard.py", "Real-time Monitoring Dashboard"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n5. Model efficiency enhancements:")
   files_to_check = [
-    ("selfdrive/modeld/model_efficiency.py", "Model Efficiency Enhancements (Pruning, Quantization)"),
+    ("selfdrive/common/model_pruning.py", "Model Pruning Implementation"),
+    ("selfdrive/common/quantization.py", "Quantization Implementation"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n6. Thermal management integration:")
   files_to_check = [
-    ("selfdrive/monitoring/thermal_management.py", "Thermal Management with Performance Scaling"),
+    ("selfdrive/common/thermal_management.py", "Thermal Management with Performance Scaling"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
     else:
       if not validate_syntax(filepath, description):
         all_valid = False
-  
+
   print("\n7. Resource-aware processing:")
   files_to_check = [
     ("common/resource_aware.py", "Resource-Aware Processing Capabilities"),
   ]
-  
+
   for filepath, description in files_to_check:
     if not validate_file_exists(filepath, description):
       all_valid = False
@@ -131,18 +132,18 @@ def validate_phase3_implementation():
   files_to_check = [
     ("selfdrive/controls/controlsd.py", "Controls System Integration"),
   ]
-  
+
   for filepath, description in files_to_check:
     if validate_file_exists(filepath, description):
       print(f"  ✓ {description}: File exists and was modified for integration")
     else:
       all_valid = False
-  
+
   print("\n9. Validation module:")
   files_to_check = [
     ("validate_optimizations.py", "Validation Module"),
   ]
-  
+
   for filepath, description in files_to_check:
     if validate_file_exists(filepath, description):
       print(f"  ✓ {description}: File exists")
@@ -234,22 +235,22 @@ def validate_requirements_implementation():
   """Validate that all requirements from Phase 3 have been implemented"""
   print("\nValidating Requirements Implementation:")
   print("-" * 50)
-  
+
   requirements = {
-    "ARM-specific hardware optimization": validate_file_exists("selfdrive/modeld/neon_optimizer.py", "NEON/SIMD optimization"),
+    "ARM-specific hardware optimization": validate_file_exists("selfdrive/common/arm_optimization.py", "NEON/SIMD optimization"),
     "Dynamic performance adaptation": validate_file_exists("common/dynamic_adaptation.py", "Dynamic adaptation system"),
     "Data collection pipeline": validate_file_exists("common/data_collector.py", "Data collection system"),
-    "Real-time monitoring dashboard": validate_file_exists("selfdrive/monitoring/realtime_dashboard.py", "Monitoring dashboard"),
-    "Model efficiency enhancements": validate_file_exists("selfdrive/modeld/model_efficiency.py", "Pruning/quantization"),
-    "Thermal management integration": validate_file_exists("selfdrive/monitoring/thermal_management.py", "Thermal management"),
+    "Model pruning": validate_file_exists("selfdrive/common/model_pruning.py", "Model pruning"),
+    "Model quantization": validate_file_exists("selfdrive/common/quantization.py", "Quantization"),
+    "Thermal management integration": validate_file_exists("selfdrive/common/thermal_management.py", "Thermal management"),
     "Resource-aware processing": validate_file_exists("common/resource_aware.py", "Resource awareness"),
   }
-  
+
   all_requirements_met = all(requirements.values())
-  
+
   print(f"\nRequirements Status: {'✓ All requirements met' if all_requirements_met else '✗ Some requirements missing'}")
   print("-" * 50)
-  
+
   return all_requirements_met
 
 

@@ -30,11 +30,12 @@ from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 from openpilot.selfdrive.common.metrics import Metrics, record_metric
-from openpilot.selfdrive.modeld.neon_optimizer import optimize_curvature_calculation, neon_optimizer
-from openpilot.common.dynamic_adaptation import dynamic_adaptation, performance_manager
-from openpilot.common.resource_aware import resource_manager, resource_aware_runner, run_safety_critical_function
-from openpilot.common.data_collector import collect_model_performance, collect_lane_change_event
-from openpilot.selfdrive.common.thermal_management import thermal_manager, resource_manager as thermal_resource_manager
+from selfdrive.common.arm_optimization import arm_optimizer
+from selfdrive.common.latency_optimization import optimize_for_latency
+from selfdrive.common.dynamic_adaptation import dynamic_adaptation, performance_manager
+from selfdrive.common.resource_aware import resource_manager, resource_aware_runner, run_safety_critical_function
+from selfdrive.common.data_collector import collect_model_performance, collect_lane_change_event
+from selfdrive.common.thermal_management import thermal_manager, resource_manager as thermal_resource_manager
 from openpilot.selfdrive.modeld.model_efficiency import ModelEfficiencyOptimizer, create_efficient_model_wrapper
 from openpilot.selfdrive.monitoring.realtime_dashboard import realtime_dashboard
 from openpilot.common.resource_aware import PriorityLevel
