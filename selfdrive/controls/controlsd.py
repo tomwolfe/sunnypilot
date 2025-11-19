@@ -233,6 +233,7 @@ class Controls(ControlsExt, ModelStateBase):
     lane_change_state = original_lane_change_state  # Default to original state
 
     # Modify lane change state based on validation metrics for safety
+    # This prevents lane changes when system confidence is low, reducing accident risk
     if validation_metrics is not None and original_lane_change_state != LaneChangeState.off:
         if not validation_state['lane_change_safe']:
             # If validation metrics indicate low confidence, cancel or prevent lane changes

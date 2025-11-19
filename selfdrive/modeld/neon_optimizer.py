@@ -32,6 +32,8 @@ class MemoryPool:
         max_pool_size: Maximum number of arrays to keep in each size/type pool
     """
     # Pool stores available arrays, organized by (size, dtype)
+    # This prevents frequent memory allocation/deallocation which can cause fragmentation
+    # and improve performance on embedded systems with limited memory
     self.pools: Dict[Tuple[int, np.dtype], collections.deque[np.ndarray]] = collections.defaultdict(collections.deque)
     self.max_pool_size = max_pool_size
     self.pool_stats = {'get_count': 0, 'new_allocations': 0, 'put_count': 0}  # Track allocation statistics
@@ -363,6 +365,8 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
       return 0.0
 
   # Optimized curvature calculation with more realistic physics-based model
+  # Uses bicycle model: curvature = tan(steering_angle_rad) / wheelbase
+  # This provides better handling than linear approximations, especially at higher steering angles
   try:
     # More accurate curvature calculation: k = tan(steering_angle_rad) / wheelbase
     # Assuming a typical wheelbase of 2.7m and converting steering angle to radians
@@ -386,6 +390,7 @@ def optimize_curvature_calculation(steer_angle: float, v_ego: float, roll: float
 
     # Apply vehicle-specific limits to prevent extreme values
     # Typical maximum curvature for a passenger vehicle is around 0.015 m^-1
+    # This prevents unrealistic control inputs that could destabilize the vehicle
     max_curvature = 0.015
     result = max(min(curvature, max_curvature), -max_curvature)
 

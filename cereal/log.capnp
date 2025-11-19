@@ -990,6 +990,7 @@ struct ControlsState @0x97ff69c53601abf1 {
   steeringAngleDesiredDegDEPRECATED @29 :Float32;
   canMonoTimesDEPRECATED @21 :List(UInt64);
   # Validation metrics from enhanced vision system
+  # This union allows the system to provide detailed validation data while maintaining backward compatibility
   validation :union {
     none @67 :Void;
     metrics @68 :ValidationMetrics;
