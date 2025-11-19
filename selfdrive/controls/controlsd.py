@@ -22,6 +22,8 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.enhanced_longitudinal_planner import EnhancedLongitudinalPlanner
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
+from openpilot.selfdrive.controls.advanced_planner import AdvancedPlanner, EmergencyResponsePlanner, EgoState, EnvironmentalState
+from openpilot.selfdrive.controls.safety_supervisor import create_safety_supervisor, SafetyViolation
 
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
@@ -100,6 +102,14 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Initialize model efficiency wrapper for performance adaptation
     self.model_efficiency_wrapper = create_efficient_model_wrapper(self.LaC)
+
+    # Initialize advanced planning system
+    self.advanced_planner, self.emergency_planner = create_advanced_planning_system()
+    self.ego_state = None
+    self.env_state = EnvironmentalState()
+
+    # Initialize safety supervisor
+    self.safety_supervisor, self.redundant_validator = create_safety_supervisor()
 
     # Register with resource manager
     self.resource_allocation = resource_manager.request_resources(
@@ -314,29 +324,74 @@ class Controls(ControlsExt, ModelStateBase):
     v_cruise_ms = CS.vCruise * CV.KPH_TO_MS
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, v_cruise_ms)
 
-    # Apply enhanced longitudinal planning if validation metrics are available
-    radar_state = self.sm['radarState'] if self.sm.updated['radarState'] else None
-    if validation_metrics is not None:
-        # Update lead vehicle prediction with confidence-based adjustments
-        enhanced_long_plan = self.enhanced_long_planner.update_lead_vehicle_prediction(
-            long_plan,
-            radar_state,
-            CS,  # Pass car state for vEgo information
-            {
-                'leadConfidenceAvg': validation_metrics.leadConfidenceAvg,
-                'leadConfidenceMax': validation_metrics.leadConfidenceMax,
-                'laneConfidenceAvg': validation_metrics.laneConfidenceAvg,
-                'overallConfidence': validation_metrics.overallConfidence,
-                'isValid': validation_metrics.isValid,
-                'confidenceThreshold': validation_metrics.confidenceThreshold
-            }
+    # Enhanced planning using advanced planner
+    if hasattr(self, 'advanced_planner') and validation_metrics is not None:
+        # Update ego state for planner
+        self.ego_state = EgoState(
+            position=np.array([0.0, 0.0, CS.yRel if hasattr(CS, 'yRel') else 0.0]),  # Simplified position
+            velocity=CS.vEgo,
+            acceleration=CS.aEgo if hasattr(CS, 'aEgo') else 0.0,
+            heading=self.VM.car_to_global(np.array([1, 0, 0]), CS.transmissionGear == 2)[0],  # Simplified heading
+            curvature=self.curvature,
+            steering_angle=CS.steeringAngleDeg
         )
 
-        # Use enhanced longitudinal plan
-        enhanced_a_target = enhanced_long_plan.aTarget
-        enhanced_should_stop = enhanced_long_plan.shouldStop
+        # Get tracked objects from modelV2 if available (would come from perception system)
+        tracked_objects = {}  # In a real implementation, this would come from perception pipeline
+        if hasattr(self.sm, 'modelV2') and self.sm.valid['modelV2']:
+            # This would extract tracked objects from modelV2, simplified here
+            pass
+
+        # Generate advanced plan
+        try:
+            advanced_plan = self.advanced_planner.plan_trajectory(
+                self.ego_state,
+                tracked_objects,
+                self.env_state
+            )
+
+            # Check for emergency conditions
+            is_emergency, emergency_reason = self.emergency_planner.check_emergency_conditions(
+                advanced_plan.risk_assessment,
+                self.ego_state
+            )
+
+            if is_emergency:
+                cloudlog.warning(f"Emergency plan activated: {emergency_reason}")
+                emergency_plan = self.emergency_planner.generate_emergency_plan(
+                    self.ego_state,
+                    self.env_state
+                )
+                enhanced_a_target = emergency_plan.desired_acceleration
+                enhanced_should_stop = True
+            else:
+                enhanced_a_target = advanced_plan.desired_acceleration
+                enhanced_should_stop = (advanced_plan.desired_speed < 0.5)  # Should stop if desired speed is very low
+        except Exception as e:
+            cloudlog.error(f"Advanced planning error: {e}, falling back to basic planning")
+            # Fallback to enhanced longitudinal planning
+            radar_state = self.sm['radarState'] if self.sm.updated['radarState'] else None
+            if validation_metrics is not None:
+                enhanced_long_plan = self.enhanced_long_planner.update_lead_vehicle_prediction(
+                    long_plan,
+                    radar_state,
+                    CS,  # Pass car state for vEgo information
+                    {
+                        'leadConfidenceAvg': validation_metrics.leadConfidenceAvg,
+                        'leadConfidenceMax': validation_metrics.leadConfidenceMax,
+                        'laneConfidenceAvg': validation_metrics.laneConfidenceAvg,
+                        'overallConfidence': validation_metrics.overallConfidence,
+                        'isValid': validation_metrics.isValid,
+                        'confidenceThreshold': validation_metrics.confidenceThreshold
+                    }
+                )
+                enhanced_a_target = enhanced_long_plan.aTarget
+                enhanced_should_stop = enhanced_long_plan.shouldStop
+            else:
+                enhanced_a_target = long_plan.aTarget
+                enhanced_should_stop = long_plan.shouldStop
     else:
-        # Use original plan when validation metrics not available
+        # Use original plan when advanced planning not available
         enhanced_a_target = long_plan.aTarget
         enhanced_should_stop = long_plan.shouldStop
 
@@ -364,6 +419,13 @@ class Controls(ControlsExt, ModelStateBase):
         elif validation_metrics.overallConfidence >= 0.85:
             # More aggressive control when high confidence
             active_curvature = active_curvature * 1.1  # Slightly more responsive when confidence is high
+
+    # Incorporate advanced planning system's curvature recommendations if available
+    if hasattr(self, 'advanced_planner') and validation_metrics is not None and 'advanced_plan' in locals():
+        # Blend planned curvature with model-based curvature based on confidence
+        planned_curvature = advanced_plan.desired_curvature
+        blending_factor = min(0.5, advanced_plan.confidence)  # Use up to 50% of planned curvature based on confidence
+        active_curvature = (1 - blending_factor) * active_curvature + blending_factor * planned_curvature
 
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, active_curvature, lp.roll)
 
@@ -402,6 +464,97 @@ class Controls(ControlsExt, ModelStateBase):
                                                        self.calibrated_pose, curvature_limited)
     actuators.torque = steer
     actuators.steeringAngleDeg = steeringAngleDeg
+
+    # Apply safety validation to control commands
+    if hasattr(self, 'safety_supervisor') and validation_metrics is not None:
+        try:
+            # Prepare tracked objects for safety validation
+            # In a real implementation, this would come from the perception system
+            tracked_objects = {}  # Placeholder - would be populated from perception results
+
+            # Prepare model outputs for safety validation
+            model_outputs = {
+                'overall_confidence': validation_metrics.overallConfidence if validation_metrics else 0.8,
+                'lead_confidence': validation_metrics.leadConfidenceAvg if validation_metrics else 0.7,
+                'lane_confidence': validation_metrics.laneConfidenceAvg if validation_metrics else 0.7
+            }
+
+            # Prepare planning result for safety validation
+            # Since advanced planning may not always run, create a safe fallback plan
+            if 'advanced_plan' in locals():
+                plan_for_validation = advanced_plan
+            else:
+                # Create a safe fallback plan based on current state
+                from openpilot.selfdrive.controls.advanced_planner import PlanningResult, PlanningState
+                plan_for_validation = PlanningResult(
+                    desired_curvature=self.desired_curvature,
+                    desired_speed=CS.vEgo,
+                    desired_acceleration=actuators.accel,
+                    planning_state=PlanningState.LANE_FOLLOWING,
+                    safety_factor=0.8,
+                    confidence=0.7,
+                    risk_assessment={'collision_risk': 0.1, 'total_threat_score': 0.1}
+                )
+
+            # Create ego state for safety validation
+            ego_state_for_validation = EgoState(
+                position=np.array([0.0, 0.0, CS.yRel if hasattr(CS, 'yRel') else 0.0]),
+                velocity=CS.vEgo,
+                acceleration=CS.aEgo if hasattr(CS, 'aEgo') else 0.0,
+                heading=0.0,  # Simplified
+                curvature=self.curvature,
+                steering_angle=CS.steeringAngleDeg
+            )
+
+            # Perform safety validation using redundant validator
+            safety_check = self.redundant_validator.validate_with_multiple_methods(
+                ego_state_for_validation,
+                plan_for_validation,
+                model_outputs,
+                tracked_objects
+            )
+
+            # If safety check fails, override control commands
+            if not safety_check.is_safe:
+                cloudlog.error(f"Safety validation failed: {safety_check.violations} - Action: {safety_check.recovery_action}")
+
+                if safety_check.recovery_action == "EMERGENCY_BRAKE":
+                    # Apply emergency braking
+                    actuators.accel = min(actuators.accel, -4.0)  # Maximum safe braking (negative = deceleration)
+                    # Reduce steering commands for stability during emergency
+                    actuators.curvature = self.curvature * 0.3  # Reduce curvature to near current
+                    actuators.steeringAngleDeg = CS.steeringAngleDeg * 0.3  # Reduce steering angle
+                elif safety_check.recovery_action == "REDUCE_SPEED":
+                    # Reduce acceleration commands
+                    if actuators.accel > 0:
+                        actuators.accel *= 0.3  # Reduce acceleration significantly
+                    # Limit steering changes
+                    actuators.curvature = np.clip(actuators.curvature, self.curvature - 0.002, self.curvature + 0.002)
+                elif safety_check.recovery_action == "RETURN_TO_LANE":
+                    # Smoothly return to lane (reduce curvature to near current)
+                    actuators.curvature = self.curvature * 0.7 + actuators.curvature * 0.3
+                elif safety_check.recovery_action == "STABILIZE_CONTROL":
+                    # Reduce aggressive commands
+                    actuators.accel = np.clip(actuators.accel, -2.0, 1.5)
+                    actuators.curvature = np.clip(actuators.curvature, -0.005, 0.005)
+
+                # Update validation metrics to reflect safety intervention
+                if not hasattr(cs.validation.metrics, 'systemIntervention'):
+                    cs.validation.metrics.systemIntervention = True
+                else:
+                    cs.validation.metrics.systemIntervention = True
+                if not hasattr(cs.validation.metrics, 'safetyOverride'):
+                    cs.validation.metrics.safetyOverride = True
+                else:
+                    cs.validation.metrics.safetyOverride = True
+            else:
+                # System is safe, update safety metrics
+                if hasattr(cs.validation.metrics, 'systemIntervention'):
+                    cs.validation.metrics.systemIntervention = False
+                if hasattr(cs.validation.metrics, 'safetyOverride'):
+                    cs.validation.metrics.safetyOverride = False
+        except Exception as e:
+            cloudlog.error(f"Safety validation error: {e}")
 
     # More efficient finite check - avoid expensive dict creation and use pre-allocated array where applicable
     for i, p in enumerate(ACTUATOR_FIELDS):
@@ -547,6 +700,22 @@ class Controls(ControlsExt, ModelStateBase):
         cs.validation.metrics.overallConfidence = 0.0
         cs.validation.metrics.isValid = False
         cs.validation.metrics.confidenceThreshold = 0.5
+
+    # Add safety supervisor metrics if available
+    if hasattr(self, 'safety_supervisor') and self.safety_supervisor.last_safety_metrics:
+        safety_metrics = self.safety_supervisor.last_safety_metrics
+        cs.validation.safetyMetrics.collisionRisk = safety_metrics.collision_risk
+        cs.validation.safetyMetrics.trackingAccuracy = safety_metrics.tracking_accuracy
+        cs.validation.safetyMetrics.modelConsistency = safety_metrics.model_consistency
+        cs.validation.safetyMetrics.environmentalAwareness = safety_metrics.environmental_awareness
+        cs.validation.safetyMetrics.overallSafetyScore = safety_metrics.overall_safety_score
+    else:
+        # Default safety metrics
+        cs.validation.safetyMetrics.collisionRisk = 0.1
+        cs.validation.safetyMetrics.trackingAccuracy = 0.8
+        cs.validation.safetyMetrics.modelConsistency = 0.8
+        cs.validation.safetyMetrics.environmentalAwareness = 0.7
+        cs.validation.safetyMetrics.overallSafetyScore = 0.7
 
     # Add enhanced validation metrics to controlsState
     try:

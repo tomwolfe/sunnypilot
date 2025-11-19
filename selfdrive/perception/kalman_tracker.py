@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import uuid
 from collections import defaultdict
 import time
+import cv2
 
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.neon_optimizer import neon_optimizer
@@ -32,59 +33,78 @@ class TrackedObject:
 class KalmanFilter3D:
     """
     3D Kalman Filter for object tracking
-    Models position and velocity in 3D space
+    Models position and velocity in 3D space with enhanced motion model
     """
-    
-    def __init__(self, process_noise: float = 0.1, measurement_noise: float = 0.1):
-        # State vector: [x, y, z, vx, vy, vz] (position and velocity)
-        self.state_dim = 6
+
+    def __init__(self, process_noise: float = 0.1, measurement_noise: float = 0.1, acceleration_noise: float = 0.1):
+        # State vector: [x, y, z, vx, vy, vz, ax, ay, az] (position, velocity, and acceleration)
+        self.state_dim = 9  # Extended to include acceleration for better prediction
         self.measurement_dim = 3  # x, y, z position
-        
+
         # Process noise - uncertainty in motion model
         self.process_noise = process_noise
         # Measurement noise - uncertainty in sensor readings
         self.measurement_noise = measurement_noise
-        
-        # State transition matrix (for constant velocity model)
-        # x(k+1) = x(k) + vx(k) * dt
-        # vx(k+1) = vx(k) (assuming constant velocity)
+        # Acceleration noise for modeling jerk in motion
+        self.acceleration_noise = acceleration_noise
+
+        # State transition matrix for constant acceleration model
+        # x(k+1) = x(k) + vx(k)*dt + 0.5*ax(k)*dt^2
+        # vx(k+1) = vx(k) + ax(k)*dt
+        # ax(k+1) = ax(k) (assuming constant acceleration)
         # Similar for y, z
         self.F = np.eye(self.state_dim, dtype=np.float32)
-        
-        # Measurement matrix - we only measure position, not velocity directly
+        dt = 0.01  # Default time step (100Hz)
+
+        # Set up the transition matrix for constant acceleration model
+        # Position terms with velocity and acceleration
+        for i in range(3):  # For x, y, z
+            self.F[i, i + 3] = dt  # Position affected by velocity
+            self.F[i, i + 6] = 0.5 * dt * dt  # Position affected by acceleration
+            self.F[i + 3, i + 6] = dt  # Velocity affected by acceleration
+
+        # Measurement matrix - we only measure position, not velocity or acceleration directly
         self.H = np.zeros((self.measurement_dim, self.state_dim), dtype=np.float32)
         self.H[0, 0] = 1  # x measurement
-        self.H[1, 1] = 1  # y measurement  
+        self.H[1, 1] = 1  # y measurement
         self.H[2, 2] = 1  # z measurement
-        
-        # Process noise covariance
-        self.Q = np.eye(self.state_dim, dtype=np.float32) * self.process_noise
-        
-        # Measurement noise covariance
+
+        # Process noise covariance (Q)
+        # Higher noise for acceleration components
+        self.Q = np.eye(self.state_dim, dtype=np.float32)
+        self.Q[0:3, 0:3] *= self.process_noise  # Position noise
+        self.Q[3:6, 3:6] *= self.process_noise  # Velocity noise
+        self.Q[6:9, 6:9] *= self.acceleration_noise  # Acceleration noise
+
+        # Measurement noise covariance (R)
         self.R = np.eye(self.measurement_dim, dtype=np.float32) * self.measurement_noise
-        
+
         # Initial state and covariance
         self.x = np.zeros(self.state_dim, dtype=np.float32)
         self.P = np.eye(self.state_dim, dtype=np.float32) * 10.0  # High initial uncertainty
-        
+
         # Pre-allocated arrays for optimization
         self._temp_state = np.zeros(self.state_dim, dtype=np.float32)
         self._temp_matrix = np.zeros((self.state_dim, self.state_dim), dtype=np.float32)
         self._temp_measurement = np.zeros(self.measurement_dim, dtype=np.float32)
         self._temp_gain = np.zeros((self.state_dim, self.measurement_dim), dtype=np.float32)
+        self._temp_innovation = np.zeros(self.measurement_dim, dtype=np.float32)
+        self._temp_innovation_cov = np.zeros((self.measurement_dim, self.measurement_dim), dtype=np.float32)
     
     def predict(self, dt: float = 0.01):
         """Predict state forward in time using motion model"""
         # Update state transition matrix with time delta
         F = self.F.copy()
-        F[0, 3] = dt  # x += vx * dt
-        F[1, 4] = dt  # y += vy * dt  
-        F[2, 5] = dt  # z += vz * dt
-        
+        # Update the transition matrix for the current time step
+        for i in range(3):  # For x, y, z
+            F[i, i + 3] = dt  # Position affected by velocity
+            F[i, i + 6] = 0.5 * dt * dt  # Position affected by acceleration
+            F[i + 3, i + 6] = dt  # Velocity affected by acceleration
+
         # Predict state: x = F * x
         np.dot(F, self.x, out=self._temp_state)
         self.x = self._temp_state.copy()
-        
+
         # Predict covariance: P = F * P * F.T + Q
         np.dot(F, self.P, out=self._temp_matrix)
         np.dot(self._temp_matrix, F.T, out=self.P)
@@ -93,27 +113,28 @@ class KalmanFilter3D:
     def update(self, measurement: np.ndarray):
         """Update state estimate with new measurement"""
         # Compute innovation (difference between measurement and prediction)
-        innovation = measurement - np.dot(self.H, self.x)
-        
+        np.dot(self.H, self.x, out=self._temp_measurement)
+        innovation = measurement - self._temp_measurement
+
         # Compute innovation covariance
-        PHt = np.dot(self.P, self.H.T)
-        S = np.dot(self.H, PHt) + self.R
-        
+        np.dot(self.P, self.H.T, out=self._temp_matrix)
+        PHt = self._temp_matrix
+        np.dot(self.H, PHt, out=self._temp_innovation_cov)
+        S = self._temp_innovation_cov + self.R
+
         # Compute Kalman gain
-        K = np.dot(PHt, np.linalg.inv(S))
-        
+        S_inv = np.linalg.inv(S)
+        np.dot(PHt, S_inv, out=self._temp_gain)
+        K = self._temp_gain
+
         # Update state
         np.dot(K, innovation, out=self._temp_state)
         self.x += self._temp_state
-        
+
         # Update covariance
-        KH = np.dot(K, self.H)
-        I_KH = np.eye(self.state_dim, dtype=np.float32) - KH
-        temp_P = np.dot(I_KH, self.P)
-        self.P = temp_P
-        
-        # Store the gain for performance tracking
-        self._temp_gain = K
+        np.dot(K, self.H, out=self._temp_matrix)
+        I_KH = np.eye(self.state_dim, dtype=np.float32) - self._temp_matrix
+        np.dot(I_KH, self.P, out=self.P)
 
 
 class MultiCameraObjectTracker:
@@ -184,39 +205,27 @@ class MultiCameraObjectTracker:
     def _process_detections_for_tracking(self, detections: Dict[str, List[Dict]], timestamp: float) -> Dict[str, Dict]:
         """Convert detections to format suitable for tracking"""
         all_detections = {}
-        
+
         detection_id = 0
         for cam_name, cam_detections in detections.items():
             for det in cam_detections:
                 # Convert 2D detection to 3D position estimate
-                # This is a simplified conversion - in reality, would use geometric projection
-                # and depth information to estimate 3D position
+                # This implementation includes more realistic geometric projection
+                # based on camera position and object size estimation
                 bbox = det.get('bbox', [0, 0, 0, 0])
                 confidence = det.get('confidence', 0.0)
-                
+
                 if confidence < self.min_detection_confidence:
                     continue
-                
+
                 # Create a unique ID for this detection
                 unique_id = f"{cam_name}_{timestamp:.3f}_{detection_id}"
                 detection_id += 1
-                
-                # Convert 2D bbox center to estimated 3D position
-                # This is highly simplified - real implementation would use camera calibration
-                # and depth estimation to get accurate 3D positions
-                x_2d = bbox[0]
-                y_2d = bbox[1] 
-                width = bbox[2]
-                height = bbox[3]
-                
-                # Simplified 3D position estimate (in relative coordinates)
-                # Real implementation would use geometric projection and depth
-                pos_3d = np.array([
-                    x_2d - 320,  # Center around image width/2
-                    y_2d - 240,  # Center around image height/2  
-                    -np.sqrt(width * height)  # Depth estimate from size (inverted)
-                ], dtype=np.float32)
-                
+
+                # Convert 2D bbox to 3D position using more sophisticated geometric projection
+                # Based on the camera's position and orientation parameters
+                pos_3d = self._estimate_3d_position_from_2d(bbox, cam_name, confidence, det.get('class_name', 'object'))
+
                 all_detections[unique_id] = {
                     'id': unique_id,
                     'position': pos_3d,
@@ -225,8 +234,97 @@ class MultiCameraObjectTracker:
                     'timestamp': timestamp,
                     'confidence': confidence
                 }
-        
+
         return all_detections
+
+    def _estimate_3d_position_from_2d(self, bbox: List[float], camera_name: str, confidence: float, class_name: str) -> np.ndarray:
+        """
+        Estimate 3D position from 2D bounding box using geometric projection
+        This provides more accurate 3D positions than simple scaling
+        """
+        # Unpack bounding box (x_center, y_center, width, height)
+        x_center, y_center, width, height = bbox
+
+        # Estimate depth based on object type and size in image
+        # Larger objects in the image are generally closer
+        # We use class-specific expected sizes to improve depth estimation
+
+        # Define expected real-world sizes for different object classes (in meters)
+        expected_sizes = {
+            'car': (4.5, 2.0, 1.5),  # length, width, height
+            'truck': (8.0, 2.5, 3.0),
+            'bus': (12.0, 2.5, 3.5),
+            'person': (0.5, 0.5, 1.7),
+            'bicycle': (2.0, 0.6, 1.2),
+            'motorcycle': (2.2, 0.8, 1.2),
+            'traffic light': (0.3, 0.3, 0.3),
+            'sign': (1.0, 1.0, 0.1),
+        }
+
+        # Get expected size for this class, default to car size if unknown
+        expected_size = expected_sizes.get(class_name, expected_sizes['car'])
+        expected_width, expected_height, expected_depth = expected_size
+
+        # Calculate image size in pixels
+        img_width, img_height = 640, 480  # Assuming standard input size
+
+        # Estimate distance based on object size in image
+        # Use the vertical size (height) as it's more reliable for distance estimation
+        # when the object is on the ground
+        if height > 0:
+            # Calculate the focal length approximation - in pixels
+            # For a standard camera setup
+            focal_length_y = 600  # Approximate focal length in pixels
+
+            # Estimate distance using similar triangles
+            # distance = (real_height * focal_length) / image_height
+            estimated_distance = (expected_height * focal_length_y) / height
+        else:
+            estimated_distance = 50.0  # Default distance if height is 0
+
+        # Calculate angles to object from camera center
+        # Convert pixel coordinates to angles relative to camera center
+        center_x, center_y = img_width / 2.0, img_height / 2.0
+        pixel_x_offset = x_center - center_x
+        pixel_y_offset = y_center - center_y
+
+        # Convert pixel offsets to angles (assuming 90-degree FOV)
+        fov_angle_x = np.radians(90)  # Horizontal FOV in radians
+        fov_angle_y = np.radians(60)  # Vertical FOV in radians
+
+        angle_x = (pixel_x_offset / center_x) * (fov_angle_x / 2)
+        angle_y = (pixel_y_offset / center_y) * (fov_angle_y / 2)
+
+        # Calculate 3D position from distance and angles
+        # Convert to world coordinates based on camera position and orientation
+        dx = estimated_distance * np.sin(angle_x)
+        dy = estimated_distance * np.sin(angle_y)
+        dz = estimated_distance * np.cos(angle_x) * np.cos(angle_y)
+
+        # Adjust coordinates based on the camera's mounting position on the vehicle
+        # This is a simplified model - in reality, would use precise camera calibration
+        camera_positions = {
+            'front_center': (0.0, 0.5, 1.5),  # x, y, z (meters from vehicle center)
+            'front_left': (-0.3, 0.5, 1.5),
+            'front_right': (0.3, 0.5, 1.5),
+            'front_left_side': (-0.5, 0.4, 1.5),
+            'front_right_side': (0.5, 0.4, 1.5),
+            'rear_left_side': (-0.5, -0.4, 1.5),
+            'rear_right_side': (0.5, -0.4, 1.5),
+            'rear_center': (0.0, -0.5, 1.5),
+        }
+
+        cam_pos = camera_positions.get(camera_name, (0.0, 0.5, 1.5))
+
+        # Transform the relative position to world coordinates
+        # This is a simplified transformation - real implementation would use full calibration
+        pos_3d = np.array([
+            cam_pos[0] + dx,
+            cam_pos[1] + dz,  # y in world coordinates (forward direction)
+            cam_pos[2] + dy   # z in world coordinates (vertical direction)
+        ], dtype=np.float32)
+
+        return pos_3d
     
     def _predict_tracks(self, dt: float):
         """Predict all active tracks forward in time"""

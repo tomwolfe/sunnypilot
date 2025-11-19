@@ -6,6 +6,7 @@ Simulates 8-camera system for Tesla FSD-level perception using 2 physical camera
 import numpy as np
 from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
+import cv2
 from cereal import log
 import cereal.messaging as messaging
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
@@ -29,7 +30,7 @@ class MultiCameraSimulator:
     Simulates an 8-camera system using 2 physical cameras on Comma 3x
     Maps physical cameras to virtual cameras to achieve Tesla FSD-level coverage
     """
-    
+
     def __init__(self):
         # Define virtual camera positions and properties inspired by Tesla FSD
         self.virtual_cameras: List[CameraConfig] = [
@@ -37,17 +38,17 @@ class MultiCameraSimulator:
             CameraConfig("front_left", "front", 120, 90, (-0.3, 0.5, 0.0), (0, 0, 0.2)),
             CameraConfig("front_center", "front", 120, 90, (0.0, 0.5, 0.0), (0, 0, 0)),  # This will be the main road camera
             CameraConfig("front_right", "front", 120, 90, (0.3, 0.5, 0.0), (0, 0, -0.2)),
-            
+
             # Side cameras
             CameraConfig("front_left_side", "front", 90, 60, (-0.5, 0.4, 0.0), (0, 0, 0.5)),
             CameraConfig("front_right_side", "front", 90, 60, (0.5, 0.4, 0.0), (0, 0, -0.5)),
             CameraConfig("rear_left_side", "rear", 90, 60, (-0.5, -0.4, 0.0), (0, 0, 2.6)),
             CameraConfig("rear_right_side", "rear", 90, 60, (0.5, -0.4, 0.0), (0, 0, -2.6)),
-            
+
             # Rear camera
             CameraConfig("rear_center", "rear", 120, 90, (0.0, -0.5, 0.0), (0, 0, 3.14)),  # 180 degree rotation
         ]
-        
+
         # Map physical cameras to virtual cameras
         # Comma 3x road camera maps to front_center virtual camera
         # Comma 3x wide road camera maps to front_left and front_right virtual cameras
@@ -55,10 +56,20 @@ class MultiCameraSimulator:
             'road_camera': ['front_center'],
             'wide_road_camera': ['front_left', 'front_right'],
         }
-        
+
         # Pre-computed transformation matrices for efficiency
         self._precomputed_transforms = {}
-        
+
+        # Store the transformation parameters for each virtual camera
+        self.camera_transform_params = {}
+        for cam_config in self.virtual_cameras:
+            self.camera_transform_params[cam_config.name] = {
+                'position_offset': np.array(cam_config.position_offset),
+                'rotation_offset': np.array(cam_config.rotation_offset),
+                'fov_horizontal': cam_config.fov_horizontal,
+                'fov_vertical': cam_config.fov_vertical
+            }
+
         # Initialize with default camera parameters for Comma 3x
         try:
             self.dc = DEVICE_CAMERAS[('tici', 'ar0231')]  # Comma 3x with AR0231 camera
@@ -118,24 +129,55 @@ class MultiCameraSimulator:
         
         return virtual_data
 
-    def _transform_for_virtual_camera(self, 
-                                    img: np.ndarray, 
-                                    virtual_cam_name: str, 
+    def _transform_for_virtual_camera(self,
+                                    img: np.ndarray,
+                                    virtual_cam_name: str,
                                     transform_matrix: np.ndarray) -> np.ndarray:
         """
         Apply transformation to generate virtual camera perspective
         """
-        # For now, return the original image with basic metadata
-        # In a full implementation, we would apply perspective transformations
-        # based on the virtual camera's position and orientation
-        
-        # Return a copy with appropriate metadata indicating it's been transformed
-        # This is a simplified implementation that will be enhanced in production
-        return img.copy()  # Placeholder - would be replaced with actual transformation
+        # Apply the geometric transformation using the calibration matrix
+        # This simulates the virtual camera's unique position and orientation
+        import cv2
 
-    def _simulate_virtual_camera_data(self, 
-                                    config: CameraConfig, 
-                                    road_img: np.ndarray, 
+        # Apply warp transformation using the precomputed matrix
+        transformed_img = cv2.warpPerspective(img, transform_matrix, (img.shape[1], img.shape[0]))
+
+        # Apply additional perspective adjustments based on virtual camera parameters
+        transform_params = self.camera_transform_params.get(virtual_cam_name, {})
+
+        if transform_params:
+            # Adjust for field of view differences
+            fov_h = transform_params.get('fov_horizontal', 90)
+            fov_w = transform_params.get('fov_vertical', 60)
+
+            # For cameras with wider/narrower FOV, adjust the transformation
+            # For now, we apply a simple zoom effect to simulate FOV differences
+            if fov_h != 90 or fov_w != 60:
+                scale_x = 90.0 / fov_h
+                scale_y = 60.0 / fov_w
+                h, w = transformed_img.shape[:2]
+
+                # Calculate new dimensions based on FOV
+                new_w = int(w * scale_x)
+                new_h = int(h * scale_y)
+
+                if new_w != w or new_h != h:
+                    # Center the image if scaling down
+                    center_x, center_y = w // 2, h // 2
+                    start_x = max(0, center_x - new_w // 2)
+                    end_x = min(w, center_x + new_w // 2)
+                    start_y = max(0, center_y - new_h // 2)
+                    end_y = min(h, center_y + new_h // 2)
+
+                    cropped = transformed_img[start_y:end_y, start_x:end_x]
+                    transformed_img = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        return transformed_img
+
+    def _simulate_virtual_camera_data(self,
+                                    config: CameraConfig,
+                                    road_img: np.ndarray,
                                     wide_road_img: np.ndarray) -> np.ndarray:
         """
         Simulate data for a virtual camera based on available physical camera data
@@ -144,20 +186,69 @@ class MultiCameraSimulator:
         # 1. Scene understanding from front cameras
         # 2. Vehicle dynamics and geometry
         # 3. Environmental context
-        
-        # Return a processed version of existing data or blank with metadata
-        # In a full implementation, this would use advanced simulation techniques
-        
-        # For now, return a processed version of the best available image
-        # with metadata indicating it's simulated
+
+        import cv2
+
+        # Determine which base image to use based on camera position
         if config.mount_point in ['rear']:
-            # Use wide road camera as base for rear simulation (since it has wider FOV)
             base_img = wide_road_img
         else:
-            # Use road camera as base for other simulations
             base_img = road_img
-            
-        return base_img.copy()  # Placeholder implementation
+
+        # Apply camera-specific transformations based on position and rotation
+        h, w = base_img.shape[:2]
+
+        # Create a transformed version that simulates the virtual camera's view
+        # This is a more realistic simulation based on geometric relationships
+
+        # For side cameras, we'll apply a horizontal shift and rotation simulation
+        if 'side' in config.name:
+            # Apply horizontal shift based on position offset
+            pos_offset = config.position_offset[0]
+
+            # Calculate shift in pixels (simplified assumption)
+            shift_pixels = int(pos_offset * 100)  # Adjust scale factor as needed
+
+            # Create transformation matrix for side view
+            M = np.float32([[1, 0, shift_pixels], [0, 1, 0]])
+            simulated_img = cv2.warpAffine(base_img, M, (w, h))
+
+            # Apply rotation if specified
+            if abs(config.rotation_offset[2]) > 0.1:  # If significant yaw rotation
+                rotation_matrix = cv2.getRotationMatrix2D((w//2, h//2),
+                                                        np.degrees(config.rotation_offset[2]), 1)
+                simulated_img = cv2.warpAffine(simulated_img, rotation_matrix, (w, h))
+
+        elif 'rear' in config.name:
+            # For rear camera, simulate 180-degree rotation
+            simulated_img = cv2.rotate(base_img, cv2.ROTATE_180)
+
+        else:
+            # For other cameras, apply basic transformations based on offset
+            simulated_img = base_img.copy()
+
+        # Apply FOV-specific adjustments
+        if config.fov_horizontal != 90:
+            # Apply perspective adjustment for different FOV
+            scale_factor = 90.0 / config.fov_horizontal
+            new_w = min(int(w * scale_factor), 2 * w)  # Don't scale too large
+            new_h = min(int(h * scale_factor), 2 * h)
+
+            if new_w != w or new_h != h:
+                # Resize and center the image
+                resized = cv2.resize(simulated_img, (new_w, new_h))
+                new_img = np.zeros_like(base_img)
+
+                # Center the resized image in the original frame
+                start_x = max(0, (w - new_w) // 2)
+                start_y = max(0, (h - new_h) // 2)
+                end_x = min(w, start_x + new_w)
+                end_y = min(h, start_y + new_h)
+
+                new_img[start_y:end_y, start_x:end_x] = resized[0:end_y-start_y, 0:end_x-start_x]
+                simulated_img = new_img
+
+        return simulated_img
 
     def get_camera_coverage(self) -> Dict[str, Tuple[float, float, float, float]]:
         """
