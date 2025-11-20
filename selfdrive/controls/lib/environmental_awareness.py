@@ -72,10 +72,37 @@ class EnvironmentalConditionMonitor:
                 
             # Check for indicators of poor conditions in model outputs
             # For example, if line detection confidence is low, might indicate bad weather
-            if hasattr(meta, 'lanelessProbs'):
-                # If laneless probability is high, indicates poor visibility
-                if len(meta.lanelessProbs) > 1 and meta.lanelessProbs[1] > 0.7:
+            if hasattr(meta, 'lanelessProbs') and hasattr(meta, 'laneLineProbs'):
+                # If laneless probability is high AND lane line probabilities are low, indicates poor visibility
+                # If laneless probability is high BUT lane line probabilities are high, indicates actual laneless road
+                laneless_prob = meta.lanelessProbs[1] if len(meta.lanelessProbs) > 1 else 0.0
+                avg_lane_prob = 0.0
+
+                # Calculate average lane line probability to distinguish between poor visibility vs laneless road
+                if hasattr(meta, 'laneLineProbs') and len(getattr(meta, 'laneLineProbs', [])) > 0:
+                    lane_line_probs = getattr(meta, 'laneLineProbs', [])
+                    if lane_line_probs:
+                        avg_lane_prob = sum(lane_line_probs) / len(lane_line_probs)
+
+                # Poor visibility: high laneless prob AND low lane line prob
+                # Laneless road: high laneless prob BUT high lane line prob (would mean system recognizes it's laneless)
+                if laneless_prob > 0.7 and avg_lane_prob < 0.3:
                     self.low_visibility = True
+                else:
+                    self.low_visibility = False
+            elif hasattr(meta, 'lanelessProbs'):
+                # Fallback: if we only have lanelessProbs, be more conservative but add context
+                if len(meta.lanelessProbs) > 1 and meta.lanelessProbs[1] > 0.8:  # Higher threshold for conservative assumption
+                    # Only assume low visibility if we also have other indicators (like poor path confidence)
+                    path_stds = getattr(meta, 'pathStds', [])
+                    if path_stds and len(path_stds) > 5:
+                        avg_path_std = sum(path_stds[:5]) / min(5, len(path_stds))
+                        if avg_path_std > 0.4:  # High uncertainty in path prediction
+                            self.low_visibility = True
+                        else:
+                            self.low_visibility = False
+                    else:
+                        self.low_visibility = False  # Default to not low visibility if no additional data
                 else:
                     self.low_visibility = False
             
@@ -179,44 +206,71 @@ class EnvironmentalConditionMonitor:
         :param curvature_ahead: Anticipated curvature ahead
         :return: Risk score from 0.0 (low risk) to 1.0 (high risk)
         """
-        risk_score = 0.0
+        # Base risk components
+        weather_risk = 0.0
+        condition_risk = 0.0
+        dynamic_risk = 0.0
 
-        # Weather condition risk
+        # Calculate weather-related risk with non-linear interactions
+        # Rain + low visibility is more dangerous than sum of individual risks
+        weather_factors = []
         if self.is_rainy:
-            risk_score += RAIN_RISK_FACTOR
+            weather_factors.append(RAIN_RISK_FACTOR)
         if self.is_snowy:
-            risk_score += SNOW_RISK_FACTOR
+            weather_factors.append(SNOW_RISK_FACTOR)
         if self.low_visibility:
-            risk_score += VISIBILITY_RISK_FACTOR
-
-        # Time of day risk
+            weather_factors.append(VISIBILITY_RISK_FACTOR)
         if self.is_night:
-            risk_score += NIGHT_RISK_FACTOR
+            weather_factors.append(NIGHT_RISK_FACTOR)
+
+        # Non-linear combination of weather factors (multiplicative effect for compounding risks)
+        if len(weather_factors) > 0:
+            # Use a formula that increases risk more significantly as multiple factors combine
+            combined_weather_risk = sum(weather_factors)  # Base additive
+            if len(weather_factors) > 1:  # Multiple factors
+                # Apply compounding effect: multiply by factor based on number of conditions
+                compounding_factor = 1.0 + (len(weather_factors) - 1) * 0.2  # 20% extra risk per additional factor
+                combined_weather_risk = min(1.0, combined_weather_risk * compounding_factor)
+            weather_risk = combined_weather_risk
+
+        # Calculate condition-related risk (road quality, surface, model uncertainty)
+        # Apply non-linear interactions between road quality and surface condition
+        base_road_risk = (1.0 - self.model_road_quality) * ROAD_QUALITY_RISK_FACTOR
+        base_surface_risk = (1.0 - self.model_surface_condition) * SURFACE_CONDITION_RISK_FACTOR
+
+        # If both road quality and surface condition are poor, risk compounds
+        if (self.model_road_quality < 0.6 and self.model_surface_condition < 0.6):
+            condition_risk = min(1.0, (base_road_risk + base_surface_risk) * 1.5)  # 50% extra risk for both being poor
+        else:
+            condition_risk = base_road_risk + base_surface_risk
 
         # Model uncertainty risk
         model_uncertainty = (1.0 - self.weather_confidence) * MODEL_UNCERTAINTY_RISK_FACTOR
-        risk_score = max(risk_score, model_uncertainty)
+        condition_risk = max(condition_risk, model_uncertainty)
 
-        # Road condition risk
-        road_quality_factor = (1.0 - self.model_road_quality) * ROAD_QUALITY_RISK_FACTOR
-        risk_score = max(risk_score, road_quality_factor)
+        # Calculate dynamic risk (speed and curvature interactions)
+        # At high speeds, poor conditions become exponentially more dangerous
+        base_speed_factor = (v_ego / SPEED_NORMALIZATION_BASELINE) ** 2  # Quadratic scaling
+        speed_risk = min(0.5, RISK_SPEED_FACTOR * base_speed_factor)
 
-        # Surface condition risk
-        surface_factor = (1.0 - self.model_surface_condition) * SURFACE_CONDITION_RISK_FACTOR
-        risk_score = max(risk_score, surface_factor)
+        # High curvature ahead is especially risky when combined with poor conditions
+        if abs(curvature_ahead) > 0.008:  # Sharp curves
+            base_curvature_risk = min(0.3, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)
+            # If poor conditions exist, increase curvature risk
+            if (weather_risk > 0.3 or condition_risk > 0.3):
+                base_curvature_risk *= 1.5  # 50% extra risk for sharp curves in poor conditions
+            dynamic_risk = base_curvature_risk
 
-        # Add speed-based risk as a component, not multiplication
-        # Quadratic scaling for speed: risk component ∝ v² to reflect kinetic energy relationship
-        speed_factor = (v_ego / SPEED_NORMALIZATION_BASELINE) ** 2  # Normalize to baseline
-        speed_risk = min(0.5, RISK_SPEED_FACTOR * speed_factor)  # Cap individual component
-        risk_score = min(1.0, risk_score + speed_risk)
+        # Combine all risk components with saturation
+        # Use a formula that approaches 1.0 but never exceeds it
+        total_risk = weather_risk + condition_risk + dynamic_risk
+        # Apply saturation to prevent exceeding 1.0, with a smooth transition
+        risk_score = total_risk / (1.0 + total_risk) if total_risk < float('inf') else 1.0
 
-        # High curvature ahead increases risk in poor conditions
-        if curvature_ahead > 0.008:  # Sharp curves
-            curvature_risk = min(0.3, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)  # Add as component, not multiplier
-            risk_score = min(1.0, risk_score + curvature_risk)
+        # Additional safety check to ensure risk is in valid range
+        risk_score = max(0.0, min(1.0, risk_score))
 
-        return min(1.0, risk_score)
+        return risk_score
     
     def get_adjusted_limits(self, original_limits, v_ego, curvature_ahead):
         """

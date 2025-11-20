@@ -8,17 +8,19 @@ import numpy as np
 from typing import Dict, Any, Tuple, Optional
 from openpilot.common.swaglog import cloudlog
 from cereal import log
+from .autonomous_params import LATERAL_SAFETY_PARAMS
 
 
 class ModelConfidenceValidator:
     """
     Enhanced model confidence validation with cross-verification
     """
-    
+
     def __init__(self):
         self.confidence_history = []
         self.max_history = 100  # Keep last 100 confidence readings
-        self.confidence_threshold = 0.7  # Minimum confidence for safe operation
+        # Use centralized threshold from autonomous_params to ensure consistency
+        self.confidence_threshold = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_THRESHOLD']  # Minimum confidence for safe operation
         self.low_confidence_count = 0
         self.max_low_confidence = 5  # Maximum consecutive low confidence readings before safety action
         

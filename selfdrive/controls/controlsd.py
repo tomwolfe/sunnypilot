@@ -28,6 +28,7 @@ from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 from openpilot.selfdrive.controls.lib.adaptive_behavior import AdaptiveBehaviorManager
 from openpilot.selfdrive.controls.lib.environmental_awareness import EnvironmentalConditionProcessor
 from openpilot.selfdrive.controls.lib.lateral_safety import get_adaptive_lateral_curvature
+from openpilot.selfdrive.controls.lib.performance_monitor import performance_monitor
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -181,29 +182,52 @@ class Controls(ControlsExt, ModelStateBase):
 
     except Exception as e:
         cloudlog.error(f"Environmental processor error: {e}")
-        # Graceful degradation: log error and fall back to conservative defaults
-        # Rather than immediate disengagement, use safe defaults and count failures
+        # Gradual degradation: log error and gradually move towards conservative defaults
+        # Rather than immediate worst-case, use historical data with increasing uncertainty
         if not hasattr(self, '_env_processor_failures'):
             self._env_processor_failures = 0
         self._env_processor_failures += 1
 
-        # Use conservative defaults if processor fails
-        self._environmental_flags.update({
-            'is_rainy': True,  # Default to worst case
-            'is_night': True,
-            'low_visibility': True,
-            'road_quality': 0.3,  # Poor road quality
-            'surface_condition': 0.4  # Poor surface condition
-        })
+        # Gradually degrade environmental flags instead of immediate worst-case
+        # Use historical data with increasing uncertainty over time
+        failure_factor = min(1.0, self._env_processor_failures / 10.0)  # Increase uncertainty gradually
 
-        # Only disengage after multiple consecutive failures
-        if self._env_processor_failures >= 5:
-            cloudlog.error("Environmental processor failed 5 times consecutively, disengaging")
+        # Calculate degradation based on time/number of failures
+        current_flags = self._environmental_flags
+        degraded_flags = {}
+
+        # For boolean flags, gradually increase likelihood of worst conditions
+        degraded_flags['is_rainy'] = True if failure_factor > 0.7 else current_flags.get('is_rainy', False)
+        degraded_flags['is_night'] = True if failure_factor > 0.5 else current_flags.get('is_night', False)
+        degraded_flags['low_visibility'] = True if failure_factor > 0.6 else current_flags.get('low_visibility', False)
+
+        # For continuous values, gradually degrade towards conservative values
+        current_road_quality = current_flags.get('road_quality', 1.0)
+        current_surface_condition = current_flags.get('surface_condition', 1.0)
+
+        # Degrade gradually: start with current value, move towards conservative over time
+        degraded_flags['road_quality'] = max(0.3, current_road_quality * (1.0 - failure_factor * 0.7))
+        degraded_flags['surface_condition'] = max(0.4, current_surface_condition * (1.0 - failure_factor * 0.6))
+
+        self._environmental_flags.update(degraded_flags)
+
+        # Only disengage after multiple consecutive failures (increased from 5 to 8 to reflect gradual degradation)
+        if self._env_processor_failures >= 8:
+            cloudlog.error("Environmental processor failed 8 times consecutively, disengaging")
+            performance_monitor.record_fallback_trigger('environmental_processor_failure_critical', {
+                'error': str(e),
+                'failure_count': self._env_processor_failures
+            })
             CC.enabled = False
             return CC, lac_log
         else:
-            cloudlog.warning(f"Environmental processor failed {self._env_processor_failures} times, using conservative defaults")
-            # Continue with conservative defaults instead of disengaging immediately
+            cloudlog.warning(f"Environmental processor failed {self._env_processor_failures} times, using degraded defaults")
+            performance_monitor.record_fallback_trigger('environmental_processor_degraded', {
+                'error': str(e),
+                'failure_count': self._env_processor_failures,
+                'failure_factor': min(1.0, self._env_processor_failures / 10.0)
+            })
+            # Continue with gradually degraded defaults instead of immediately worst-case
 
     # Get adaptive adjustments for current conditions
     try:
@@ -233,8 +257,8 @@ class Controls(ControlsExt, ModelStateBase):
             )
     except Exception as e:
         cloudlog.error(f"Adaptive behavior adjustment error: {e}")
-        # Graceful degradation: log error and fall back to conservative defaults
-        # Rather than immediate disengagement, use original model values and count failures
+        # Gradual degradation: log error and gradually move towards conservative defaults
+        # Rather than immediate worst-case, use original model values with increasing conservatism
         if not hasattr(self, '_adaptive_behavior_failures'):
             self._adaptive_behavior_failures = 0
         self._adaptive_behavior_failures += 1
@@ -242,7 +266,14 @@ class Controls(ControlsExt, ModelStateBase):
         # Use original model values instead of adjusted values
         new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
 
-        # Additional safety check with conservative parameters
+        # Calculate failure factor for gradual degradation
+        failure_factor = min(1.0, self._adaptive_behavior_failures / 10.0)  # Increase uncertainty gradually
+
+        # Use environmental flags with increasing conservatism based on failure count
+        is_rainy_conservative = True if failure_factor > 0.6 else self._environmental_flags.get('is_rainy', False)
+        is_night_conservative = True if failure_factor > 0.4 else self._environmental_flags.get('is_night', False)
+
+        # Additional safety check with gradually more conservative parameters
         if CC.latActive:
             new_desired_curvature = get_adaptive_lateral_curvature(
                 CS.vEgo,
@@ -251,19 +282,28 @@ class Controls(ControlsExt, ModelStateBase):
                 model_v2,
                 lp,
                 CP=self.CP,
-                is_rainy=True,  # Assume worst conditions
-                is_night=True,
+                is_rainy=is_rainy_conservative,  # Use gradually more conservative assumption
+                is_night=is_night_conservative,  # Use gradually more conservative assumption
                 dt=0.01  # approximate time step
             )
 
-        # Only disengage after multiple consecutive failures
-        if self._adaptive_behavior_failures >= 5:
-            cloudlog.error("Adaptive behavior failed 5 times consecutively, disengaging")
+        # Only disengage after multiple consecutive failures (increased to reflect gradual degradation)
+        if self._adaptive_behavior_failures >= 8:
+            cloudlog.error("Adaptive behavior failed 8 times consecutively, disengaging")
+            performance_monitor.record_fallback_trigger('adaptive_behavior_failure_critical', {
+                'error': str(e),
+                'failure_count': self._adaptive_behavior_failures
+            })
             CC.enabled = False
             return CC, lac_log
         else:
-            cloudlog.warning(f"Adaptive behavior failed {self._adaptive_behavior_failures} times, using conservative defaults")
-            # Continue with conservative defaults instead of disengaging immediately
+            cloudlog.warning(f"Adaptive behavior failed {self._adaptive_behavior_failures} times, using degraded defaults")
+            performance_monitor.record_fallback_trigger('adaptive_behavior_degraded', {
+                'error': str(e),
+                'failure_count': self._adaptive_behavior_failures,
+                'failure_factor': min(1.0, self._adaptive_behavior_failures / 10.0)
+            })
+            # Continue with gradually degraded defaults instead of immediately worst-case
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -362,6 +402,12 @@ class Controls(ControlsExt, ModelStateBase):
       cs.lateralControlState.torqueState = lac_log
 
     self.pm.send('controlsState', dat)
+
+    # Periodic performance monitoring report (every minute)
+    current_time = time.time()
+    if not hasattr(self, '_last_performance_report') or current_time - self._last_performance_report > 60:
+        performance_monitor.log_performance_summary()
+        self._last_performance_report = current_time
 
     # carControl
     cc_send = messaging.new_message('carControl')

@@ -8,6 +8,7 @@ import math
 from openpilot.common.constants import CV, ACCELERATION_DUE_TO_GRAVITY
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from .autonomous_params import LATERAL_SAFETY_PARAMS
+from openpilot.common.swaglog import cloudlog
 
 # Import parameters
 MAX_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']
@@ -56,27 +57,55 @@ def calculate_safe_curvature_limits(v_ego, max_lat_accel=MAX_LATERAL_ACCEL, roll
   :param CP: CarParams for vehicle-specific parameters, if available
   :return: Tuple of (min_curvature, max_curvature) allowed
   """
+  # Validate inputs to prevent dangerous calculations
+  try:
+      v_ego = float(v_ego)  # Ensure v_ego is a float
+      max_lat_accel = float(max_lat_accel)  # Ensure max_lat_accel is a float
+      roll_compensation = float(roll_compensation)  # Ensure roll_compensation is a float
+  except (ValueError, TypeError):
+      cloudlog.error("Invalid input types to calculate_safe_curvature_limits, using safe defaults")
+      return -0.1, 0.1  # Very conservative limits for invalid inputs
+
+  # Validate max_lat_accel is within safe ranges
+  max_lat_accel = max(MIN_SAFE_LATERAL_ACCEL, min(MAX_SAFE_LATERAL_ACCEL, max_lat_accel))
+
   if v_ego < 0.1:  # At very low speeds, allow any curvature (essentially no limit)
     return -0.2, 0.2
 
   # Use vehicle-specific parameters if available, otherwise use defaults
   if CP is not None and hasattr(CP, 'lateralParams') and hasattr(CP.lateralParams, 'maxLateralAccel'):
-    vehicle_max_lat_accel = CP.lateralParams.maxLateralAccel
-    # Use the minimum of provided max_lat_accel and vehicle capability
-    max_lat_accel = min(max_lat_accel, vehicle_max_lat_accel)
+    try:
+        vehicle_max_lat_accel = float(CP.lateralParams.maxLateralAccel)
+        # Use the minimum of provided max_lat_accel and vehicle capability
+        max_lat_accel = min(max_lat_accel, vehicle_max_lat_accel)
+    except (ValueError, TypeError, AttributeError):
+        # If vehicle max_lat_accel is invalid, continue with default max_lat_accel
+        pass
 
   v_ego_sq = v_ego ** 2
   max_lat_accel_adjusted = max_lat_accel + roll_compensation
 
-  # Handle case where v_ego_sq is 0 or very close to avoid division by zero
-  if v_ego_sq <= 0.001:  # Very low speed, use conservative limits
+  # Additional safety check for division by zero - ensure v_ego_sq is not too small
+  # Use a more conservative threshold to avoid numerical instability
+  min_v_ego_sq = 0.01  # Square of 0.1 m/s, provides more stable calculation
+  if v_ego_sq < min_v_ego_sq:  # Very low speed, use conservative limits
       max_curvature = 0.2
       min_curvature = -0.2
   else:
-      max_curvature = max_lat_accel_adjusted / v_ego_sq
-      min_curvature = -max_lat_accel_adjusted / v_ego_sq
+      # Safe division with bounds checking
+      try:
+          max_curvature = max_lat_accel_adjusted / v_ego_sq
+          min_curvature = -max_lat_accel_adjusted / v_ego_sq
+      except ZeroDivisionError:
+          # Shouldn't happen with our checks above, but safety net
+          max_curvature = 0.2
+          min_curvature = -0.2
+      except OverflowError:
+          # Handle potential overflow in the division
+          max_curvature = 0.2
+          min_curvature = -0.2
 
-  # Clamp to reasonable bounds
+  # Clamp to reasonable bounds to ensure safety
   max_curvature = min(max_curvature, 0.2)
   min_curvature = max(min_curvature, -0.2)
 
@@ -270,7 +299,9 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
 
         return final_curvature
     except Exception as e:
-        # Comprehensive error handling with fallback
+        # Comprehensive error handling with safer fallback
         cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
-        # Return the previous curvature as a safe fallback
-        return prev_curvature
+        # Instead of returning previous curvature which may be unsafe,
+        # return to neutral (straight) position as a safer fallback
+        # This prevents oscillations from previous unsafe values
+        return 0.0  # Return to neutral/straight curvature
