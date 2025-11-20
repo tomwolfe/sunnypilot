@@ -1,54 +1,31 @@
 #!/usr/bin/env python3
 """
-Simple Validation Controller for Sunnypilot
-Basic validation controller that coordinates validation systems with fundamental error handling
+Validation Controller for Sunnypilot
+Coordinates validation systems with error handling
 """
-import numpy as np
 import time
 from typing import Dict, Any
 
 import cereal.messaging as messaging
-from cereal import log
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
-from sunnypilot.selfdrive.controls.lib.traffic_light_validation import TrafficValidator
-from sunnypilot.selfdrive.controls.lib.traffic_sign_detection import TrafficSignDetectionHandler
-from selfdrive.common.enhanced_validation import SimpleValidation
 
 
-class SimpleValidationController:
-    """Basic validation controller that coordinates validation systems with fundamental error handling"""
+class ValidationController:
+    """Validation controller that coordinates validation systems"""
 
     def __init__(self):
-        # Messaging with basic sources
-        self.sm = messaging.SubMaster(['modelV2', 'carState', 'controlsState', 'cameraOdometry', 'liveCalibration'])
+        self.sm = messaging.SubMaster(['modelV2', 'carState', 'controlsState', 'liveCalibration', 'cameraOdometry'])
         self.pm = messaging.PubMaster(['validationMetrics'])
-
-        # Initialize validation components
-        self.traffic_validator = TrafficValidator()
-        self.traffic_handler = TrafficSignDetectionHandler()
-        self.simple_validator = SimpleValidation()
 
         # State tracking
         self.velocity_history = []
-        self.max_velocity_history = 10  # Reduced for basic implementation
+        self.max_velocity_history = 10
 
     def update_validation_systems(self):
-        """Update validation systems with basic analysis"""
-        start_time = time.time()
-
+        """Update validation systems based on sensor data"""
         try:
             self.sm.update(0)
-
-            # Process model data for traffic sign detection
-            if self.sm.updated['modelV2']:
-                model_data = self.sm['modelV2']
-                traffic_signs = self.traffic_handler.process_modeld_output(model_data)
-
-                # Add detected traffic signs to validator
-                for sign in traffic_signs:
-                    if sign.confidence > 0.7:  # Higher confidence threshold
-                        self.traffic_validator.add_traffic_sign_data(sign)
 
             # Get car state for validation
             velocity = 0.0
@@ -61,61 +38,79 @@ class SimpleValidationController:
                 if len(self.velocity_history) > self.max_velocity_history:
                     self.velocity_history = self.velocity_history[-self.max_velocity_history:]
 
-            # Get position for validation
-            position = np.array([0.0, 0.0, 0.0])
-            if self.sm.updated['cameraOdometry']:
-                odometry = self.sm['cameraOdometry']
-                if hasattr(odometry, 'trans'):
-                    position = np.array([odometry.trans[0], odometry.trans[1], odometry.trans[2]])
-
-            # Get heading from odometry
-            heading = 0.0
-            if self.sm.updated['cameraOdometry'] and hasattr(self.sm['cameraOdometry'], 'rot'):
-                # Simplified heading extraction
-                heading = 0.0
-
-            # Run basic traffic light validation
-            traffic_safe, traffic_violations, traffic_recommendations = self.traffic_validator.validate_traffic_lights(
-                position, velocity, heading
-            )
-
-            # Run basic stop sign validation
-            stop_safe, stop_violations, stop_recommendations = self.traffic_validator.validate_stop_signs(
-                position, velocity, heading
-            )
-
             # Calculate temporal consistency using history
-            temporal_valid = True
+            temporal_consistency = 1.0
             if len(self.velocity_history) > 1:
                 recent_velocities = self.velocity_history[-3:] if len(self.velocity_history) > 3 else self.velocity_history
-                temporal_valid = self.simple_validator.validate_temporal_consistency(
-                    velocity, recent_velocities
-                )
+                # Calculate consistency as variance of recent velocities
+                avg_velocity = sum(recent_velocities) / len(recent_velocities)
+                variance = sum((v - avg_velocity) ** 2 for v in recent_velocities) / len(recent_velocities)
+                # Higher consistency when variance is low (velocities are stable)
+                temporal_consistency = max(0.1, 1.0 - min(0.9, variance))
 
-            # Calculate simple validation scores
-            lead_valid, lead_conf = self.simple_validator.validate_lead_detection({'confidence': 0.8})
-            lane_valid, lane_conf = self.simple_validator.validate_lane_detection(0.85, 0.85)
+            # Process model data for validation
+            validation_data = {
+                'leadConfidenceAvg': 0.0,
+                'leadConfidenceMax': 0.0,
+                'laneConfidenceAvg': 0.0,
+                'roadEdgeConfidenceAvg': 0.0,
+                'overallConfidence': 0.0,
+                'safetyScore': 0.0,
+                'situationFactor': 1.0,
+                'temporalConsistency': temporal_consistency,
+                'systemShouldEngage': False,
+                'isValid': False,
+                'confidenceThreshold': 0.6
+            }
 
-            # Get overall safety score
-            safety_result = self.simple_validator.get_overall_safety_score(
-                lead_valid, lane_valid, temporal_valid, lead_conf, lane_conf
-            )
+            if self.sm.updated['modelV2']:
+                model_data = self.sm['modelV2']
 
-            # Factor in traffic safety violations
-            all_violations = traffic_violations + stop_violations
+                # Extract lead information
+                lead_confidences = []
+                if hasattr(model_data, 'leadsV3') and model_data.leadsV3:
+                    for lead in model_data.leadsV3:
+                        if hasattr(lead, 'confidence'):
+                            lead_confidences.append(lead.confidence)
 
-            if all_violations:
-                safety_result['overallConfidence'] *= 0.5  # Reduce confidence on violations
-                safety_result['isValid'] = False
-                safety_result['systemShouldEngage'] = False
-                safety_result['situationFactor'] = 0.3  # Low situation factor due to violations
-            else:
-                safety_result['situationFactor'] = 0.8
+                if lead_confidences:
+                    validation_data['leadConfidenceAvg'] = sum(lead_confidences) / len(lead_confidences)
+                    validation_data['leadConfidenceMax'] = max(lead_confidences)
 
-            # Calculate processing time
-            step_time = time.time() - start_time
+                # Calculate lane confidence metrics
+                lane_confidences = []
+                if hasattr(model_data, 'laneLineProbs'):
+                    lane_probs = model_data.laneLineProbs
+                    if lane_probs:
+                        lane_confidences.extend(lane_probs)
 
-            return safety_result
+                if lane_confidences:
+                    validation_data['laneConfidenceAvg'] = sum(lane_confidences) / len(lane_confidences)
+
+                # Calculate road edge confidence if available
+                if hasattr(model_data, 'roadEdgeStds') and model_data.roadEdgeStds:
+                    road_edge_confidences = [1.0 - std for std in model_data.roadEdgeStds if std is not None]
+                    if road_edge_confidences:
+                        validation_data['roadEdgeConfidenceAvg'] = sum(road_edge_confidences) / len(road_edge_confidences)
+
+                # Calculate overall confidence as weighted average
+                weights = [0.3, 0.3, 0.2, 0.2]  # lead, lane, road_edge, temporal consistency
+                confidences = [
+                    validation_data['leadConfidenceAvg'],
+                    validation_data['laneConfidenceAvg'],
+                    validation_data['roadEdgeConfidenceAvg'],
+                    validation_data['temporalConsistency']
+                ]
+
+                validation_data['overallConfidence'] = sum(w * c for w, c in zip(weights, confidences))
+
+                # Determine if system should engage based on confidence threshold
+                threshold = validation_data['confidenceThreshold']
+                validation_data['systemShouldEngage'] = validation_data['overallConfidence'] >= threshold
+                validation_data['isValid'] = (validation_data['systemShouldEngage'] and
+                                           validation_data['overallConfidence'] > 0.1)
+
+            return validation_data
         except Exception as e:
             cloudlog.error(f"Error in validation controller: {e}")
             # Return safe defaults on error
@@ -134,7 +129,7 @@ class SimpleValidationController:
             }
 
     def publish_validation_metrics(self, validation_data: Dict[str, Any]):
-        """Publish validation metrics with basic error handling"""
+        """Publish validation metrics with error handling"""
         try:
             dat = messaging.new_message('validationMetrics')
             validation = dat.validationMetrics
@@ -157,7 +152,7 @@ class SimpleValidationController:
             cloudlog.error(f"Error publishing validation metrics: {e}")
 
     def run_step(self):
-        """Run a single validation step with basic error handling"""
+        """Run a single validation step with error handling"""
         try:
             validation_data = self.update_validation_systems()
             self.publish_validation_metrics(validation_data)
@@ -166,11 +161,11 @@ class SimpleValidationController:
 
 
 def main():
-    """Main validation controller loop with basic functionality"""
-    controller = SimpleValidationController()
-    rk = Ratekeeper(10.0)  # 10Hz for basic validation
+    """Main validation controller loop"""
+    controller = ValidationController()
+    rk = Ratekeeper(10.0)  # 10Hz update rate
 
-    cloudlog.info("Simple validation controller starting...")
+    cloudlog.info("Validation controller starting...")
 
     while True:
         controller.run_step()
