@@ -52,7 +52,7 @@ ADAPTIVE_BEHAVIOR_PARAMS = {
     'HIGH_SPEED_THRESHOLD': 25.0,  # Threshold for high speed (~55 mph)
     'VERY_HIGH_SPEED_THRESHOLD': 30.0,  # Threshold for very high speed (~65 mph)
     'CONSERVATIVE_PERSONALITY_FACTOR': 0.8,  # Factor for conservative personality
-    'AGGRESSIVE_PERSONALITY_FACTOR': 1.1,  # Factor for aggressive personality when conditions allow
+    'AGGRESSIVE_PERSONALITY_FACTOR': 0.8,  # Factor for aggressive personality has been removed, kept for backward compatibility but set to conservative
     'CONSERVATIVE_CURVE_FACTOR': 0.85,  # Factor for curve conservatism
     'CONSERVATIVE_GRADE_FACTOR': 0.9,  # Factor for grade conservatism
     'CONSERVATIVE_LOW_CONFIDENCE_FACTOR': 0.75,  # Factor for low confidence conservatism
@@ -63,7 +63,7 @@ ADAPTIVE_BEHAVIOR_PARAMS = {
     'VISIBILITY_FOLLOWING_DISTANCE_FACTOR': 1.3,  # Factor for poor visibility following distance
     'HIGH_SPEED_FOLLOWING_DISTANCE_FACTOR': 1.2,  # Factor for high speed following distance
     'CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR': 1.4,  # Factor for conservative following distance
-    'AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR': 0.85,  # Factor for aggressive following distance when conditions allow
+    'AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR': 1.2,  # Factor for aggressive following distance has been removed, kept for backward compatibility but set to safe value
     'SHARP_CURVE_THRESHOLD': 0.01,  # Threshold for sharp curve detection
     'BASE_FOLLOW_TIME': 1.5,  # Base follow time in seconds
     'MIN_FOLLOW_DISTANCE': 30.0  # Minimum follow distance
@@ -134,8 +134,9 @@ def validate_parameter_ranges():
         "BASE_LATERAL_ACCEL_LIMIT must be between 1.0 and 5.0 m/s^2"
     assert 0.5 <= ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_PERSONALITY_FACTOR'] <= 1.0, \
         "CONSERVATIVE_PERSONALITY_FACTOR must be between 0.5 and 1.0"
-    assert 1.0 <= ADAPTIVE_BEHAVIOR_PARAMS['AGGRESSIVE_PERSONALITY_FACTOR'] <= 1.5, \
-        "AGGRESSIVE_PERSONALITY_FACTOR must be between 1.0 and 1.5"
+    # AGGRESSIVE_PERSONALITY_FACTOR has been deprecated but kept for compatibility - now should be <= 1.0 for safety
+    assert 0.5 <= ADAPTIVE_BEHAVIOR_PARAMS['AGGRESSIVE_PERSONALITY_FACTOR'] <= 1.0, \
+        "AGGRESSIVE_PERSONALITY_FACTOR has been removed and should now be between 0.5 and 1.0 for safety"
 
     # Validate performance parameters
     assert 10 <= PERFORMANCE_PARAMS['TARGET_FPS'] <= 30, \

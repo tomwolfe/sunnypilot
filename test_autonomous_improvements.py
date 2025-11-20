@@ -215,17 +215,17 @@ class TestAdaptiveBehavior(unittest.TestCase):
         # (but they're relative to base limits, so we just check they're calculated)
         self.assertLessEqual(max_lat, 3.0)  # Should be at or below base limit
         
-        # Test aggressive personality under good conditions
-        controller.personality = DrivingPersonality.AGGRESSIVE
+        # Test balanced personality under good conditions (aggressive mode has been removed for safety)
+        controller.personality = DrivingPersonality.BALANCED
         controller.model_confidence_low = False
         controller.visibility_poor = False
         controller.is_curving = False
         controller.is_on_grade = False
-        
+
         min_lat_agg, max_lat_agg = controller.get_adaptive_lateral_limits()
-        # In good conditions, aggressive should allow higher limits
-        # The implementation multiplies by 1.05 when conditions allow
-        self.assertGreaterEqual(max_lat_agg, max_lat)  # Should be higher in good conditions
+        # With safe-only implementation, balanced mode should still maintain conservative limits
+        # The implementation multiplies by 0.95 when set to balanced for safety
+        self.assertLessEqual(max_lat_agg, max_lat)  # Should be more conservative for safety
     
     def test_adaptive_curvature_rate_limit(self):
         """Test adaptive curvature rate limiting"""

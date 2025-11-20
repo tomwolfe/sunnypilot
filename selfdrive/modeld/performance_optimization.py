@@ -54,22 +54,37 @@ class InferencePerformanceOptimizer:
             if avg_time > 0:
                 self.current_fps = 1.0 / avg_time
     
-    def should_skip_frame(self, current_cpu: float, current_temp: float, lat_active: bool = True) -> bool:
+    def should_skip_frame(self, current_cpu: float, current_temp: float,
+                         lat_active: bool = True, longitudinal_active: bool = True,
+                         model_confidence: float = 1.0, lead_present: bool = True) -> bool:
         """
         Determine if we should skip the current frame to maintain performance
+        Enhanced safety checks to ensure frame skipping only occurs when completely safe
         :param current_cpu: Current CPU utilization percentage
         :param current_temp: Current temperature in Celsius
         :param lat_active: Whether lateral control is currently active
+        :param longitudinal_active: Whether longitudinal control is currently active
+        :param model_confidence: Current model confidence (0.0-1.0)
+        :param lead_present: Whether lead vehicle is present (affects longitudinal control safety)
         :return: True if frame should be skipped, False otherwise
         """
-        # NEVER skip frames during active control - this is safety-critical
-        if lat_active:
+        # NEVER skip frames during ANY active control - this is safety-critical
+        # Frame skipping is only safe when the system is completely inactive
+        if lat_active or longitudinal_active:
+            return False
+
+        # Don't skip if model confidence is low - need consistent processing for safety
+        if model_confidence < 0.7:
+            return False
+
+        # Don't skip if there are safety-critical objects nearby (e.g., lead vehicle)
+        if lead_present:
             return False
 
         if not self.frame_skip_enabled:
             return False
 
-        # Skip frame if system is under stress and lateral control is not active
+        # Only consider skipping if system is under stress AND all safety checks pass
         system_stress = (current_cpu > self.cpu_util_threshold or
                         current_temp > self.thermal_threshold)
 
@@ -306,17 +321,17 @@ class ModelQuantizationOptimizer:
         self.quantization_enabled = True
         self.quantization_scale = 1.0  # Controls quantization aggressiveness
         self.min_precision = 8  # Minimum bit precision allowed
-        self.safety_critical_keys = ['desiredCurvature', 'curvature', 'path', 'laneLine', 'roadEdge', 'leadOne']  # Safety-critical outputs that should not be quantized aggressively
+        self.safety_critical_keys = ['desiredCurvature', 'curvature', 'path', 'laneLine', 'roadEdge', 'leadOne']  # Safety-critical outputs that should NOT be quantized
 
     def apply_quantization(self, model_output: Dict[str, np.ndarray],
                           complexity_factor: float = 1.0,
                           safety_critical_keys: list = None) -> Dict[str, np.ndarray]:
         """
         Apply quantization to model output based on system constraints
-        Prioritizes safety-critical components by reducing quantization impact on them
+        Safety-critical components are NEVER quantized to maintain precision
         :param model_output: Raw model output
         :param complexity_factor: Current complexity factor (0.0-1.0)
-        :param safety_critical_keys: List of safety-critical keys to protect from aggressive quantization
+        :param safety_critical_keys: List of safety-critical keys to protect from quantization
         :return: Quantized model output
         """
         if not self.quantization_enabled:
@@ -326,7 +341,7 @@ class ModelQuantizationOptimizer:
         if safety_critical_keys is None:
             safety_critical_keys = self.safety_critical_keys
 
-        # Adjust quantization based on complexity factor
+        # Adjust quantization based on complexity factor for non-critical outputs
         effective_precision = max(self.min_precision,
                                  int(8 * complexity_factor))  # Scale from 8-bit to 16-bit
 
@@ -336,41 +351,30 @@ class ModelQuantizationOptimizer:
                 # Check if this is a safety-critical output
                 is_safety_critical = any(safety_key in key for safety_key in safety_critical_keys)
 
-                # Apply less aggressive quantization to safety-critical outputs
+                # Safety-critical outputs should NEVER be quantized
                 if is_safety_critical:
-                    # Use higher precision for safety-critical outputs - never go below 12-bit
-                    effective_precision_safe = max(12, effective_precision)  # Safety-critical get minimum 12-bit
+                    # Preserve full floating-point precision for safety-critical outputs
+                    quantized_output[key] = value.astype(np.float32)
                 else:
-                    # Use standard precision for non-critical outputs
-                    effective_precision_safe = effective_precision
-
-                # Apply quantization to floating point outputs
-                if effective_precision_safe <= 8:
-                    # 8-bit quantization (least aggressive - for non-critical)
-                    if is_safety_critical:
-                        # For safety critical, we don't allow <= 8-bit, so this shouldn't happen
-                        # Default to 12-bit minimum for safety-critical
-                        scale = 4095.0  # 12-bit
-                        quantized_value = np.clip(value * scale, -2048, 2047)
-                        quantized_output[key] = (quantized_value / scale).astype(np.float32)
-                    else:
-                        # 8-bit quantization for non-critical
+                    # Apply quantization to non-critical outputs based on system load
+                    if effective_precision <= 8:
+                        # 8-bit quantization (most aggressive - for non-critical)
                         scale = 255.0
                         quantized_value = np.clip(value * scale, -128, 127)
                         quantized_output[key] = (quantized_value / scale).astype(np.float32)
-                elif effective_precision_safe <= 12:
-                    # 12-bit quantization - good for safety-critical
-                    scale = 4095.0
-                    quantized_value = np.clip(value * scale, -2048, 2047)
-                    quantized_output[key] = (quantized_value / scale).astype(np.float32)
-                elif effective_precision_safe <= 16:
-                    # 16-bit quantization - standard
-                    scale = 65535.0
-                    quantized_value = np.clip(value * scale, -32768, 32767)
-                    quantized_output[key] = (quantized_value / scale).astype(np.float32)
-                else:
-                    # No quantization needed
-                    quantized_output[key] = value.astype(np.float32)
+                    elif effective_precision <= 12:
+                        # 12-bit quantization - moderate
+                        scale = 4095.0
+                        quantized_value = np.clip(value * scale, -2048, 2047)
+                        quantized_output[key] = (quantized_value / scale).astype(np.float32)
+                    elif effective_precision <= 16:
+                        # 16-bit quantization - standard
+                        scale = 65535.0
+                        quantized_value = np.clip(value * scale, -32768, 32767)
+                        quantized_output[key] = (quantized_value / scale).astype(np.float32)
+                    else:
+                        # No quantization needed
+                        quantized_output[key] = value.astype(np.float32)
             else:
                 quantized_output[key] = value
 
@@ -394,12 +398,14 @@ class PerformanceOptimizer:
         
     def optimize_inference_cycle(self, inputs: Dict[str, Any],
                                 system_metrics: Dict[str, float],
-                                lat_active: bool = True) -> Dict[str, Any]:
+                                lat_active: bool = True,
+                                longitudinal_active: bool = True) -> Dict[str, Any]:
         """
         Perform full optimization cycle for model inference
         :param inputs: Input data for the model
         :param system_metrics: Current system metrics (CPU, memory, temperature, etc.)
         :param lat_active: Whether lateral control is currently active
+        :param longitudinal_active: Whether longitudinal control is currently active
         :return: Optimized inputs and parameters
         """
         # Adjust model complexity based on system load
@@ -409,7 +415,19 @@ class PerformanceOptimizer:
         cpu_load = system_metrics.get('cpu_util', 0.0)
         temperature = system_metrics.get('temperature', 0.0)
 
-        should_skip = self.inference_optimizer.should_skip_frame(cpu_load, temperature, lat_active)
+        # Additional safety parameters for frame skipping decision
+        longitudinal_active = system_metrics.get('long_active', True)  # Default to active for safety
+        model_confidence = system_metrics.get('model_confidence', 1.0)  # Default to high confidence
+        lead_present = system_metrics.get('lead_present', True)  # Default to assume lead present for safety
+
+        should_skip = self.inference_optimizer.should_skip_frame(
+            cpu_load,
+            temperature,
+            lat_active,
+            longitudinal_active,
+            model_confidence,
+            lead_present
+        )
 
         if should_skip:
             return {'skip_inference': True}

@@ -44,20 +44,19 @@ MIN_FOLLOW_DISTANCE = ADAPTIVE_BEHAVIOR_PARAMS['MIN_FOLLOW_DISTANCE']
 
 
 class DrivingPersonality(Enum):
-    """Different driving personalities based on conditions and user preference"""
-    CONSERVATIVE = "conservative"
-    BALANCED = "balanced" 
-    AGGRESSIVE = "aggressive"
-    ADAPTIVE = "adaptive"
+    """Driving personality enum - Only conservative behavior is allowed for safety"""
+    CONSERVATIVE = "conservative"  # Only safe, conservative behavior allowed
+    BALANCED = "balanced"  # Balanced approach - conservative by default
 
 
 class AdaptiveController:
     """
     Main controller for adaptive behavior based on driving conditions
+    NOTE: Only safe, conservative driving behavior is allowed - no aggressive modes
     """
-    
+
     def __init__(self):
-        self.personality = DrivingPersonality.ADAPTIVE
+        self.personality = DrivingPersonality.BALANCED  # Default to balanced/conservative
         self.current_road_curvature = 0.0
         self.current_speed = 0.0
         self.environmental_risk = 0.0
@@ -102,10 +101,10 @@ class AdaptiveController:
         :return: Tuple of (min_lat_accel, max_lat_accel)
         """
         base_limit = self.lateral_accel_limit
-        
+
         # Adjust based on current conditions
         adjustment = 1.0
-        
+
         if self.is_curving:
             adjustment *= 0.85  # More conservative in curves
         if self.is_on_grade:
@@ -117,16 +116,13 @@ class AdaptiveController:
         if self.current_speed > HIGH_SPEED_THRESHOLD:  # ~55 mph
             adjustment *= 0.95  # More conservative at high speeds
 
-        # Apply personality-based adjustment
+        # Apply personality-based adjustment (only conservative or balanced)
         if self.personality == DrivingPersonality.CONSERVATIVE:
             adjustment *= CONSERVATIVE_PERSONALITY_FACTOR
-        elif self.personality == DrivingPersonality.AGGRESSIVE and not any([
-            self.is_curving, self.model_confidence_low, self.visibility_poor
-        ]):
-            adjustment *= AGGRESSIVE_PERSONALITY_FACTOR  # Slightly more aggressive when conditions allow
-        elif self.personality == DrivingPersonality.ADAPTIVE:
-            # For adaptive mode, use calculated adjustments
-            pass
+        # No aggressive personality allowed - all behavior must be safe
+        # Default to conservative adjustment when in doubt
+        else:  # BALANCED personality
+            adjustment *= 0.95  # Slightly conservative by default for safety
 
         adjusted_limit = base_limit * adjustment
         return -adjusted_limit, adjusted_limit
@@ -137,14 +133,14 @@ class AdaptiveController:
         :return: Tuple of (min_long_accel, max_long_accel)
         """
         from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
-        
+
         # Base limits
         min_accel = ACCEL_MIN
         max_accel = ACCEL_MAX
-        
+
         # Adjust based on conditions
         adjustment = 1.0
-        
+
         if self.is_curving:
             adjustment *= 0.7   # Reduce acceleration in curves
         if self.is_on_grade:
@@ -160,13 +156,13 @@ class AdaptiveController:
         if self.current_speed > VERY_HIGH_SPEED_THRESHOLD:  # ~65 mph
             adjustment *= 0.8   # Be more conservative at very high speeds
 
-        # Apply personality-based adjustment
+        # Apply personality-based adjustment (only conservative or balanced)
         if self.personality == DrivingPersonality.CONSERVATIVE:
             adjustment *= 0.85
-        elif self.personality == DrivingPersonality.AGGRESSIVE and not any([
-            self.is_curving, self.model_confidence_low, self.visibility_poor
-        ]):
-            adjustment *= 1.05  # Slightly more aggressive when conditions allow
+        # No aggressive personality allowed - all behavior must be safe
+        # Default to conservative adjustment (90% of normal limits) for safety
+        else:  # BALANCED personality
+            adjustment *= 0.90  # Slightly conservative by default for safety
 
         return min_accel * adjustment, max_accel * adjustment
     
@@ -249,19 +245,20 @@ class AdaptiveController:
         if self.current_speed > HIGH_SPEED_THRESHOLD:  # ~55 mph
             adjustment *= HIGH_SPEED_FOLLOWING_DISTANCE_FACTOR  # More distance at high speeds
 
-        # Apply personality-based adjustment
+        # Apply personality-based adjustment (only conservative or balanced)
         if self.personality == DrivingPersonality.CONSERVATIVE:
             adjustment *= CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR
-        elif self.personality == DrivingPersonality.AGGRESSIVE and not any([
-            self.is_curving, self.model_confidence_low, self.visibility_poor
-        ]):
-            adjustment *= AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR  # Closer following when conditions allow
+        # No aggressive personality allowed - all behavior must be safe
+        # Default to safe following distance for balanced personality
+        else:  # BALANCED personality
+            adjustment *= 1.2  # Maintain safe following distance by default
 
         return base_distance * adjustment
 
     def get_adaptive_personality_from_conditions(self) -> DrivingPersonality:
         """
         Dynamically determine the appropriate driving personality based on conditions
+        NOTE: Only safe, conservative behavior is allowed - no aggressive modes
         :return: Appropriate DrivingPersonality enum
         """
         # Check for hazardous conditions that require conservative behavior
@@ -269,14 +266,9 @@ class AdaptiveController:
             abs(self.current_road_curvature) > SHARP_CURVE_THRESHOLD or  # Sharp curve
             self.current_speed > VERY_HIGH_SPEED_THRESHOLD):  # Very high speed
             return DrivingPersonality.CONSERVATIVE
-            
-        # Check for clear conditions where more aggressive driving is OK
-        if (not self.is_curving and not self.is_on_grade and 
-            not self.model_confidence_low and not self.visibility_poor):
-            # In clear, safe conditions
-            return DrivingPersonality.AGGRESSIVE
-            
-        # Otherwise, use balanced driving
+
+        # No aggressive driving allowed - all conditions must be handled conservatively
+        # Return balanced (conservative by default) for all other conditions
         return DrivingPersonality.BALANCED
 
 
@@ -315,9 +307,9 @@ class ConditionBasedParameterTuner:
             v_ego, curvature, model_v2, road_pitch, model_confidence, visibility_factor
         )
         
-        # Dynamically adjust personality based on conditions
-        if self.adaptive_controller.personality == DrivingPersonality.ADAPTIVE:
-            self.adaptive_controller.personality = self.adaptive_controller.get_adaptive_personality_from_conditions()
+        # The controller personality is always set to safe behavior - no dynamic adjustment
+        # to aggressive modes which are not allowed for safety
+        self.adaptive_controller.personality = self.adaptive_controller.get_adaptive_personality_from_conditions()
         
         # Get adjusted parameters
         adjusted_params = {}

@@ -4,6 +4,7 @@ Environmental awareness module for sunnypilot
 Detects and responds to environmental conditions like weather, lighting, etc.
 """
 import numpy as np
+import math
 import threading
 from cereal import log
 import cereal.messaging as messaging
@@ -11,6 +12,7 @@ from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from .autonomous_params import ENVIRONMENTAL_PARAMS
+from .backup_safety import RedundantControlValidator
 
 # Import environmental parameters
 VISIBILITY_THRESHOLD = ENVIRONMENTAL_PARAMS['VISIBILITY_THRESHOLD']
@@ -203,15 +205,16 @@ class EnvironmentalConditionMonitor:
         surface_factor = (1.0 - self.model_surface_condition) * SURFACE_CONDITION_RISK_FACTOR
         risk_score = max(risk_score, surface_factor)
 
-        # Combine with speed and curvature for dynamic risk
-        # Quadratic scaling for speed: risk ∝ v² to reflect kinetic energy relationship
+        # Add speed-based risk as a component, not multiplication
+        # Quadratic scaling for speed: risk component ∝ v² to reflect kinetic energy relationship
         speed_factor = (v_ego / SPEED_NORMALIZATION_BASELINE) ** 2  # Normalize to baseline
-        # Apply speed factor with saturation to prevent excessive risk scores
-        risk_score = min(1.0, risk_score * (1.0 + RISK_SPEED_FACTOR * speed_factor))
+        speed_risk = min(0.5, RISK_SPEED_FACTOR * speed_factor)  # Cap individual component
+        risk_score = min(1.0, risk_score + speed_risk)
 
         # High curvature ahead increases risk in poor conditions
         if curvature_ahead > 0.008:  # Sharp curves
-            risk_score = min(1.0, risk_score * RISK_CURVATURE_FACTOR)
+            curvature_risk = min(0.3, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)  # Add as component, not multiplier
+            risk_score = min(1.0, risk_score + curvature_risk)
 
         return min(1.0, risk_score)
     
@@ -269,6 +272,9 @@ class EnvironmentalConditionProcessor:
         }
         # Add thread lock for safe access to shared state
         self._lock = threading.Lock()
+
+        # Add redundant safety validation
+        self.redundant_validator = RedundantControlValidator()
     
     def update(self, sm):
         """
@@ -331,26 +337,50 @@ class EnvironmentalConditionProcessor:
         # Validate boolean flags
         for key in ['is_rainy', 'is_snowy', 'is_night', 'low_visibility']:
             if key in weather_data:
-                validated_data[key] = bool(weather_data[key])  # Ensure boolean type
+                try:
+                    validated_data[key] = bool(weather_data[key])  # Ensure boolean type
+                except (TypeError, ValueError):
+                    validated_data[key] = False  # Default to False if conversion fails
             else:
                 validated_data[key] = False  # Default to False if not provided
 
         # Validate floating point values with ranges
         if 'weather_confidence' in weather_data:
-            confidence = float(weather_data['weather_confidence'])
-            validated_data['weather_confidence'] = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
+            try:
+                confidence = float(weather_data['weather_confidence'])
+                # Validate confidence is a valid number and clamp to [0, 1]
+                if not (0.0 <= confidence <= 1.0) or math.isnan(confidence) or math.isinf(confidence):
+                    validated_data['weather_confidence'] = 0.8  # Default to safe value
+                else:
+                    validated_data['weather_confidence'] = confidence
+            except (TypeError, ValueError):
+                validated_data['weather_confidence'] = 0.8  # Default to safe value
         else:
             validated_data['weather_confidence'] = 0.8  # Default confidence
 
         if 'road_quality' in weather_data:
-            road_quality = float(weather_data['road_quality'])
-            validated_data['road_quality'] = max(0.0, min(1.0, road_quality))  # Clamp to [0, 1]
+            try:
+                road_quality = float(weather_data['road_quality'])
+                # Validate road_quality is a valid number and clamp to [0, 1]
+                if not (0.0 <= road_quality <= 1.0) or math.isnan(road_quality) or math.isinf(road_quality):
+                    validated_data['road_quality'] = 0.7  # Default to moderate quality (conservative)
+                else:
+                    validated_data['road_quality'] = road_quality
+            except (TypeError, ValueError):
+                validated_data['road_quality'] = 0.7  # Default to moderate quality (conservative)
         else:
             validated_data['road_quality'] = 1.0  # Default to good quality
 
         if 'surface_condition' in weather_data:
-            surface_condition = float(weather_data['surface_condition'])
-            validated_data['surface_condition'] = max(0.0, min(1.0, surface_condition))  # Clamp to [0, 1]
+            try:
+                surface_condition = float(weather_data['surface_condition'])
+                # Validate surface_condition is a valid number and clamp to [0, 1]
+                if not (0.0 <= surface_condition <= 1.0) or math.isnan(surface_condition) or math.isinf(surface_condition):
+                    validated_data['surface_condition'] = 0.7  # Default to moderate condition (conservative)
+                else:
+                    validated_data['surface_condition'] = surface_condition
+            except (TypeError, ValueError):
+                validated_data['surface_condition'] = 0.7  # Default to moderate condition (conservative)
         else:
             validated_data['surface_condition'] = 1.0  # Default to good condition
 
