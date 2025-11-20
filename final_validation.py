@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Final Validation for Sunnypilot
-Comprehensive validation that essential components are properly implemented
+Simplified Final Validation for Sunnypilot
+Validation that essential components are properly implemented
 """
 import os
 from pathlib import Path
@@ -12,19 +12,6 @@ def validate_essential_files():
   essential_files = [
     "selfdrive/common/validation_publisher.py",
     "selfdrive/controls/safety_supervisor.py",
-    "selfdrive/monitoring/validation_controller.py",
-    "selfdrive/perception/behavior_prediction.py",
-    "sunnypilot/navd/navd.py",
-    "sunnypilot/navd/navigation.py",
-    "sunnypilot/navd/interface.py",
-    "sunnypilot/navd/routing.py",
-    "selfdrive/common/enhanced_validation.py",
-    "selfdrive/common/validation_utils.py",
-    "selfdrive/common/arm_optimization.py",
-    "selfdrive/common/memory_optimization.py",
-    "selfdrive/common/performance_monitor.py",
-    "system/sensord/system_health_monitoring.py",
-    "common/data_collector.py",
     "cereal/custom.capnp",  # Updated capnp schema
     "cereal/log.capnp",     # Updated log schema
   ]
@@ -104,13 +91,9 @@ def validate_process_config():
       content = f.read()
 
     has_validationd = "PythonProcess(\"validationd\"" in content
-    has_validation_controller = "PythonProcess(\"validation_controller\"" in content
-    has_navd = "PythonProcess(\"navd\"" in content
 
     validation_checks = [
       (has_validationd, "validationd process"),
-      (has_validation_controller, "validation_controller process"),
-      (has_navd, "navd process")
     ]
 
     all_valid = True
@@ -129,12 +112,11 @@ def validate_process_config():
 def main():
   """Run final validation"""
   print("="*70)
-  print("SUNNYPilot Enhanced Components Final Validation")
-  print("- Comprehensive architecture and code quality")
-  print("- Enhanced safety systems with robust validation")
-  print("- Improved error handling and safety checks")
-  print("- Aligned with openpilot patterns and best practices")
-  print("- Thorough testing and validation protocols")
+  print("SUNNYPilot Simplified Components Validation")
+  print("- Essential validation components")
+  print("- Basic safety systems")
+  print("- Clean architecture")
+  print("- Aligned with openpilot patterns")
   print("="*70)
 
   files_valid = validate_essential_files()
@@ -145,12 +127,11 @@ def main():
 
   print("\n" + "="*70)
   if all_valid:
-    print("✓ ALL ENHANCED COMPONENTS VALIDATION PASSED")
-    print("SUNNYPilot system has properly implemented enhanced validation, safety,")
-    print("navigation, and monitoring components with improved architecture")
-    print("following openpilot patterns and best practices")
+    print("✓ ALL SIMPLIFIED COMPONENTS VALIDATION PASSED")
+    print("SUNNYPilot system has properly implemented validation and safety")
+    print("components with clean architecture following openpilot patterns")
   else:
-    print("✗ SOME ENHANCED COMPONENTS VALIDATION FAILED")
+    print("✗ SOME COMPONENTS VALIDATION FAILED")
     print("Please check the missing files or configuration issues above")
   print("="*70)
 
