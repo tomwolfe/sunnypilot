@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Dict, Tuple, Optional
 from cereal import log
 from openpilot.common.constants import CV
+from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.drive_helpers import get_safe_speed_from_curvature, adjust_curvature_for_road_conditions
 from openpilot.selfdrive.controls.lib.lateral_safety import adjust_lateral_limits_for_conditions
@@ -357,31 +358,36 @@ class AdaptiveBehaviorManager:
         :param CP: CarParams
         :return: Adjusted action considering current conditions
         """
-        # Update adaptive parameters
-        adjustments = self.update(sm, CP)
-        
-        # Apply curvature adjustments
-        adjusted_curvature = self.condition_tuner.adaptive_controller.adjust_curvature_for_conditions(
-            original_action.desiredCurvature,
-            sm['controlsState'].curvature if 'controlsState' in sm else 0.0
-        )
-        
-        # Apply acceleration adjustments based on conditions
-        desired_accel = original_action.desiredAcceleration
-        max_accel = adjustments.get('max_long_accel', desired_accel)
-        min_accel = adjustments.get('max_decel', -3.0)
-        
-        # Limit acceleration based on adaptive limits
-        adjusted_accel = np.clip(desired_accel, min_accel, max_accel)
-        
-        # Create new action with adjustments
-        adjusted_action = log.ModelDataV2.Action(
-            desiredCurvature=float(adjusted_curvature),
-            desiredAcceleration=float(adjusted_accel),
-            shouldStop=original_action.shouldStop
-        )
-        
-        return adjusted_action
+        try:
+            # Update adaptive parameters
+            adjustments = self.update(sm, CP)
+
+            # Apply curvature adjustments
+            adjusted_curvature = self.condition_tuner.adaptive_controller.adjust_curvature_for_conditions(
+                original_action.desiredCurvature,
+                sm['controlsState'].curvature if 'controlsState' in sm else 0.0
+            )
+
+            # Apply acceleration adjustments based on conditions
+            desired_accel = original_action.desiredAcceleration
+            max_accel = adjustments.get('max_long_accel', desired_accel)
+            min_accel = adjustments.get('max_decel', -3.0)
+
+            # Limit acceleration based on adaptive limits
+            adjusted_accel = np.clip(desired_accel, min_accel, max_accel)
+
+            # Create new action with adjustments
+            adjusted_action = log.ModelDataV2.Action(
+                desiredCurvature=float(adjusted_curvature),
+                desiredAcceleration=float(adjusted_accel),
+                shouldStop=original_action.shouldStop
+            )
+
+            return adjusted_action
+        except Exception as e:
+            # Log the error and re-raise for proper handling by controlling function
+            cloudlog.error(f"AdaptiveBehaviorManager apply_adjustments error: {e}")
+            raise
     
     def get_following_distance_adjustment(self, lead_distance, lead_velocity, sm):
         """

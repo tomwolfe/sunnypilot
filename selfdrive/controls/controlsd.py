@@ -165,6 +165,9 @@ class Controls(ControlsExt, ModelStateBase):
         self._environmental_flags.update(self.environmental_processor.environmental_conditions)
     except Exception as e:
         cloudlog.error(f"Environmental processor error: {e}")
+        # Trigger immediate disengagement on environmental processor failure
+        CC.enabled = False
+        return CC, lac_log  # Return early to disengage
 
     # Get adaptive adjustments for current conditions
     try:
@@ -188,8 +191,9 @@ class Controls(ControlsExt, ModelStateBase):
             )
     except Exception as e:
         cloudlog.error(f"Adaptive behavior adjustment error: {e}")
-        # Fallback to original behavior if adaptive system fails
-        new_desired_curvature = model_v2.action.desiredCurvature if CC.lat_active else self.curvature
+        # Trigger immediate disengagement on adaptive system failure
+        CC.enabled = False
+        return CC, lac_log  # Return early to disengage
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

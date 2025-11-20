@@ -54,20 +54,25 @@ class InferencePerformanceOptimizer:
             if avg_time > 0:
                 self.current_fps = 1.0 / avg_time
     
-    def should_skip_frame(self, current_cpu: float, current_temp: float) -> bool:
+    def should_skip_frame(self, current_cpu: float, current_temp: float, lat_active: bool = True) -> bool:
         """
         Determine if we should skip the current frame to maintain performance
         :param current_cpu: Current CPU utilization percentage
         :param current_temp: Current temperature in Celsius
+        :param lat_active: Whether lateral control is currently active
         :return: True if frame should be skipped, False otherwise
         """
+        # NEVER skip frames during active control - this is safety-critical
+        if lat_active:
+            return False
+
         if not self.frame_skip_enabled:
             return False
-            
-        # Skip frame if system is under stress
-        system_stress = (current_cpu > self.cpu_util_threshold or 
+
+        # Skip frame if system is under stress and lateral control is not active
+        system_stress = (current_cpu > self.cpu_util_threshold or
                         current_temp > self.thermal_threshold)
-        
+
         if system_stress and self.frame_skip_count < self.frame_skip_max:
             self.frame_skip_count += 1
             return True
@@ -355,36 +360,38 @@ class PerformanceOptimizer:
         self.last_optimization_time = time.time()
         self.optimization_interval = 5.0  # seconds between optimizations
         
-    def optimize_inference_cycle(self, inputs: Dict[str, Any], 
-                                system_metrics: Dict[str, float]) -> Dict[str, Any]:
+    def optimize_inference_cycle(self, inputs: Dict[str, Any],
+                                system_metrics: Dict[str, float],
+                                lat_active: bool = True) -> Dict[str, Any]:
         """
         Perform full optimization cycle for model inference
         :param inputs: Input data for the model
         :param system_metrics: Current system metrics (CPU, memory, temperature, etc.)
+        :param lat_active: Whether lateral control is currently active
         :return: Optimized inputs and parameters
         """
         # Adjust model complexity based on system load
         self.inference_optimizer.adjust_model_complexity(system_metrics)
-        
+
         # Check if we should skip this frame
         cpu_load = system_metrics.get('cpu_util', 0.0)
         temperature = system_metrics.get('temperature', 0.0)
-        
-        should_skip = self.inference_optimizer.should_skip_frame(cpu_load, temperature)
-        
+
+        should_skip = self.inference_optimizer.should_skip_frame(cpu_load, temperature, lat_active)
+
         if should_skip:
             return {'skip_inference': True}
-        
+
         # Preprocess inputs for optimal performance
         optimized_inputs = self.preprocessor.optimize_input_pipeline(inputs)
-        
+
         # Apply any necessary quantization based on complexity factor
         complexity_factor = self.inference_optimizer.model_complexity_factor
         if complexity_factor < 0.7:  # Only apply quantization under high load
             optimized_inputs = self.quantization_optimizer.apply_quantization(
                 optimized_inputs, complexity_factor
             )
-        
+
         return {
             'skip_inference': False,
             'inputs': optimized_inputs,

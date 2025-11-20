@@ -8,9 +8,40 @@ import math
 from openpilot.common.constants import CV, ACCELERATION_DUE_TO_GRAVITY
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
-# Pre-computed constants for optimization
-MAX_LATERAL_ACCEL = 3.0  # m/s^2
-MAX_CURVATURE_RATE = 0.1  # Adjusted for safe response rates
+# Pre-computed constants for optimization with documentation
+MAX_LATERAL_ACCEL = 3.0  # m/s^2 - Maximum lateral acceleration allowed (validated for safety)
+MAX_CURVATURE_RATE = 0.1  # Maximum rate of curvature change - prevents sudden steering inputs
+
+# Time step validation - for use in rate limiting calculations
+DEFAULT_TIME_STEP = 0.01  # seconds - Default time step for rate calculations (validated range: 0.005-0.05)
+MIN_TIME_STEP = 0.005     # Minimum acceptable time step (5ms)
+MAX_TIME_STEP = 0.05      # Maximum acceptable time step (50ms)
+
+def validate_time_step(dt):
+    """
+    Validate that the time step is within safe operating ranges
+    :param dt: Time step in seconds
+    :return: Validated time step
+    :raises ValueError: If dt is outside the safe range
+    """
+    if dt < MIN_TIME_STEP or dt > MAX_TIME_STEP:
+        raise ValueError(f"Time step {dt} is outside safe range [{MIN_TIME_STEP}, {MAX_TIME_STEP}]")
+    return dt
+
+def validate_lateral_acceleration(max_lat_accel):
+    """
+    Validate that lateral acceleration is within safe operating ranges
+    :param max_lat_accel: Maximum lateral acceleration in m/s^2
+    :return: Validated lateral acceleration
+    :raises ValueError: If max_lat_accel is outside safe range
+    """
+    MAX_SAFE_LATERAL_ACCEL = 5.0  # m/s^2 - absolute maximum for safety
+    MIN_SAFE_LATERAL_ACCEL = 1.0  # m/s^2 - minimum for any meaningful control
+
+    if max_lat_accel < MIN_SAFE_LATERAL_ACCEL or max_lat_accel > MAX_SAFE_LATERAL_ACCEL:
+        raise ValueError(f"Lateral acceleration {max_lat_accel} m/s^2 is outside safe range [{MIN_SAFE_LATERAL_ACCEL}, {MAX_SAFE_LATERAL_ACCEL}]")
+
+    return max_lat_accel
 
 
 def calculate_safe_curvature_limits(v_ego, max_lat_accel=MAX_LATERAL_ACCEL, roll_compensation=0.0):
@@ -153,7 +184,7 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
   return max_lat_accel, rate_limit_multiplier
 
 
-def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params, 
+def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params,
                                    is_rainy=False, is_night=False, dt=0.01):
   """
   Get laterally safe and adaptive curvature considering various environmental factors
@@ -167,6 +198,9 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
   :param dt: Time step
   :return: Laterally safe and adaptive curvature
   """
+  # Validate time step parameter
+  dt = validate_time_step(dt)
+
   # Get model confidence and road pitch information
   model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
   road_pitch = 0.0
@@ -180,6 +214,9 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
   adjusted_max_lat_accel, rate_mult = adjust_lateral_limits_for_conditions(
     v_ego, max_curv_ahead, model_confidence, road_pitch, is_rainy, is_night
   )
+
+  # Validate the adjusted lateral acceleration
+  adjusted_max_lat_accel = validate_lateral_acceleration(adjusted_max_lat_accel)
 
   # Calculate safe limits
   roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY

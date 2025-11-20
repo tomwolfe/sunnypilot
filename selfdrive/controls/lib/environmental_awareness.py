@@ -157,7 +157,7 @@ class EnvironmentalConditionMonitor:
         :return: Risk score from 0.0 (low risk) to 1.0 (high risk)
         """
         risk_score = 0.0
-        
+
         # Weather condition risk
         if self.is_rainy:
             risk_score += 0.3
@@ -165,33 +165,33 @@ class EnvironmentalConditionMonitor:
             risk_score += 0.4
         if self.low_visibility:
             risk_score += 0.25
-            
+
         # Time of day risk
         if self.is_night:
             risk_score += 0.15
-            
+
         # Model uncertainty risk
         model_uncertainty = (1.0 - self.weather_confidence) * 0.4
         risk_score = max(risk_score, model_uncertainty)
-        
+
         # Road condition risk
         road_quality_factor = (1.0 - self.model_road_quality) * 0.3
         risk_score = max(risk_score, road_quality_factor)
-        
+
         # Surface condition risk
         surface_factor = (1.0 - self.model_surface_condition) * 0.35
         risk_score = max(risk_score, surface_factor)
-        
+
         # Combine with speed and curvature for dynamic risk
-        if v_ego > 20.0:  # Higher speeds increase risk in poor conditions
-            risk_score *= 1.2
-        elif v_ego > 30.0:  # Even higher speeds
-            risk_score *= 1.5
-            
+        # Quadratic scaling for speed: risk ∝ v² to reflect kinetic energy relationship
+        speed_factor = (v_ego / 25.0) ** 2  # Normalize to baseline of 25 m/s
+        # Apply speed factor with saturation to prevent excessive risk scores
+        risk_score = min(1.0, risk_score * (1.0 + 0.5 * speed_factor))
+
         # High curvature ahead increases risk in poor conditions
         if curvature_ahead > 0.008:  # Sharp curves
             risk_score = min(1.0, risk_score * 1.3)
-        
+
         return min(1.0, risk_score)
     
     def get_adjusted_limits(self, original_limits, v_ego, curvature_ahead):
@@ -253,17 +253,25 @@ class EnvironmentalConditionProcessor:
         :param sm: SubMaster with messages from different services
         """
         # Update from model
-        if sm.updated['modelV2']:
+        if sm.updated.get('modelV2', False):
             self.monitor.update_from_model(sm['modelV2'])
-        
-        # Update from sensors if available
-        if sm.updated['carState'] and sm.updated['deviceState'] and sm.updated['roadCameraState']:
+
+        # Update from sensors if available - add proper checks
+        if (sm.updated.get('carState', False) and
+            sm.updated.get('deviceState', False) and
+            sm.updated.get('roadCameraState', False)):
             self.monitor.update_from_sensors(
-                sm['carState'], 
-                sm['deviceState'], 
+                sm['carState'],
+                sm['deviceState'],
                 sm['roadCameraState']
             )
-        
+        elif not sm.updated.get('carState', False):
+            cloudlog.warning("EnvironmentalConditionProcessor: carState not available in sm.updated")
+        elif not sm.updated.get('deviceState', False):
+            cloudlog.warning("EnvironmentalConditionProcessor: deviceState not available in sm.updated")
+        elif not sm.updated.get('roadCameraState', False):
+            cloudlog.warning("EnvironmentalConditionProcessor: roadCameraState not available in sm.updated")
+
         # Detect and update weather conditions
         weather_data = self.monitor.detect_weather_conditions(sm['modelV2'], sm['carState'])
         self.environmental_conditions.update(weather_data)

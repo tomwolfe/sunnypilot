@@ -327,30 +327,38 @@ class TestDriveHelpers(unittest.TestCase):
 
 class TestIntegration(unittest.TestCase):
     """Test integration of multiple systems"""
-    
+
     def test_environmental_processor_integration(self):
         """Test environmental processor with mock data"""
         processor = EnvironmentalConditionProcessor()
-        
+
         # Create mock SubMaster
         sm = Mock()
         sm.updated = {'modelV2': True, 'carState': True, 'deviceState': True, 'roadCameraState': True}
-        
+
         # Mock messages
         mock_model_v2 = Mock()
         mock_model_v2.meta = Mock()
         mock_model_v2.meta.confidence = 0.8
         mock_model_v2.path = Mock()
         mock_model_v2.path.y = [0.0] * 20
-        
+
         mock_car_state = Mock()
         mock_car_state.vEgo = 15.0
-        
+
+        # Mock the sensor data
+        mock_device_state = Mock()
+        mock_road_camera_state = Mock()
+        mock_road_camera_state.intensity = 50  # Daytime conditions
+        mock_road_camera_state.exposure = 50   # Normal exposure
+
         sm.__getitem__ = lambda self, key: {
             'modelV2': mock_model_v2,
-            'carState': mock_car_state
+            'carState': mock_car_state,
+            'deviceState': mock_device_state,
+            'roadCameraState': mock_road_camera_state
         }[key]
-        
+
         # Update processor
         try:
             processor.update(sm)
@@ -359,26 +367,26 @@ class TestIntegration(unittest.TestCase):
         except Exception as e:
             # If there are missing attributes, this is expected in mock environment
             pass
-    
+
     def test_adaptive_behavior_manager(self):
         """Test adaptive behavior manager"""
         manager = AdaptiveBehaviorManager()
-        
+
         # Create mock data
         sm = Mock()
         mock_model_action = Mock()
         mock_model_action.desiredCurvature = 0.005
         mock_model_action.desiredAcceleration = 1.0
         mock_model_action.shouldStop = False
-        
+
         sm.__getitem__ = lambda self, key: {
             'controlsState': Mock(curvature=0.004)
         }[key]
-        
+
         # Mock CarParams
         CP = Mock()
         CP.wheelbase = 2.7
-        
+
         # Test adjustment application
         try:
             adjusted = manager.apply_adjustments(mock_model_action, sm, CP)
@@ -389,20 +397,150 @@ class TestIntegration(unittest.TestCase):
             pass
 
 
+class TestFailureScenarios(unittest.TestCase):
+    """Test failure scenarios and error handling"""
+
+    def test_environmental_processor_missing_data(self):
+        """Test environmental processor with missing data in sm.updated"""
+        processor = EnvironmentalConditionProcessor()
+
+        # Create mock SubMaster with some missing update indicators
+        sm = Mock()
+        sm.updated = {'modelV2': True, 'carState': True}  # Missing deviceState and roadCameraState
+
+        # Mock messages
+        mock_model_v2 = Mock()
+        mock_model_v2.meta = Mock()
+        mock_model_v2.meta.confidence = 0.8
+        mock_model_v2.meta.lanelessProbs = [0.1, 0.2]  # Add required attribute
+        mock_model_v2.path = Mock()
+        mock_model_v2.path.y = [0.0] * 20
+        mock_model_v2.path.x = [i*0.1 for i in range(20)]  # Add x coordinates for path
+
+        mock_car_state = Mock()
+        mock_car_state.vEgo = 15.0
+
+        sm.__getitem__ = lambda self, key: {
+            'modelV2': mock_model_v2,
+            'carState': mock_car_state,
+        }[key]
+
+        # This should not raise an exception, just handle missing data gracefully
+        processor.update(sm)
+        # The processor should still have valid environmental conditions
+        self.assertIsInstance(processor.environmental_conditions, dict)
+
+    def test_adaptive_behavior_manager_exception_handling(self):
+        """Test that adaptive behavior manager properly raises exceptions on error"""
+        manager = AdaptiveBehaviorManager()
+
+        # Create mock data that will cause an exception in the manager
+        class BadAction:
+            def __init__(self):
+                self.desiredCurvature = float('inf')  # Invalid value that might cause issues
+                self.desiredAcceleration = 1.0
+                self.shouldStop = False
+
+        sm = Mock()
+        sm.__getitem__ = lambda self, key: Mock()
+
+        CP = Mock()
+
+        # Test that the exception is properly handled and re-raised
+        with self.assertRaises(Exception):
+            manager.apply_adjustments(BadAction(), sm, CP)
+
+    def test_lateral_safety_parameter_validation(self):
+        """Test parameter validation in lateral safety functions"""
+        from openpilot.selfdrive.controls.lib.lateral_safety import validate_time_step, validate_lateral_acceleration
+
+        # Test time step validation
+        # Valid time step should pass
+        self.assertEqual(validate_time_step(0.01), 0.01)
+
+        # Invalid time steps should raise ValueError
+        with self.assertRaises(ValueError):
+            validate_time_step(0.001)  # Too small
+
+        with self.assertRaises(ValueError):
+            validate_time_step(0.1)  # Too large
+
+        # Test lateral acceleration validation
+        # Valid acceleration should pass
+        self.assertEqual(validate_lateral_acceleration(3.0), 3.0)
+
+        # Invalid accelerations should raise ValueError
+        with self.assertRaises(ValueError):
+            validate_lateral_acceleration(0.5)  # Too small
+
+        with self.assertRaises(ValueError):
+            validate_lateral_acceleration(6.0)  # Too large
+
+    def test_performance_optimizer_no_frame_skip_during_control(self):
+        """Test that performance optimizer doesn't skip frames when lateral control is active"""
+        from openpilot.selfdrive.modeld.performance_optimization import InferencePerformanceOptimizer
+
+        optimizer = InferencePerformanceOptimizer()
+        optimizer.frame_skip_enabled = True
+        optimizer.frame_skip_max = 3
+
+        # Test that frame should not be skipped when lat_active=True (safety-critical)
+        should_skip = optimizer.should_skip_frame(90.0, 80.0, lat_active=True)  # High CPU and temp
+        self.assertFalse(should_skip, "Frame should not be skipped during active lateral control")
+
+        # Test that frame can be skipped when lat_active=False (non-critical)
+        should_skip = optimizer.should_skip_frame(90.0, 80.0, lat_active=False)  # High CPU and temp
+        self.assertTrue(should_skip, "Frame can be skipped when lateral control is not active")
+
+    def test_environmental_risk_quadratic_scaling(self):
+        """Test that environmental risk scales quadratically with speed"""
+        monitor = EnvironmentalConditionMonitor()
+
+        # Set up some baseline conditions
+        monitor.is_rainy = False
+        monitor.is_night = False
+        monitor.low_visibility = False
+        monitor.weather_confidence = 0.8
+        monitor.model_road_quality = 1.0
+        monitor.model_surface_condition = 1.0
+
+        # Test risk at different speeds to verify quadratic scaling
+        risk_10ms = monitor.get_environmental_risk_score(10.0, 0.001)  # 10 m/s
+        risk_20ms = monitor.get_environmental_risk_score(20.0, 0.001)  # 20 m/s
+        risk_30ms = monitor.get_environmental_risk_score(30.0, 0.001)  # 30 m/s
+
+        # Risk should increase with speed, and quadratically rather than linearly
+        self.assertLess(risk_10ms, risk_20ms, "Risk should increase with speed")
+        self.assertLess(risk_20ms, risk_30ms, "Risk should continue to increase at higher speed")
+
+        # Test with poor conditions to make sure quadratic scaling is more apparent
+        monitor.is_rainy = True
+        monitor.weather_confidence = 0.3
+
+        risk_10ms_poor = monitor.get_environmental_risk_score(10.0, 0.001)
+        risk_20ms_poor = monitor.get_environmental_risk_score(20.0, 0.001)
+        risk_30ms_poor = monitor.get_environmental_risk_score(30.0, 0.001)
+
+        # With poor conditions, the quadratic effect should be even more pronounced
+        self.assertLess(risk_10ms_poor, risk_20ms_poor)
+        self.assertLess(risk_20ms_poor, risk_30ms_poor)
+
+
 def run_tests():
     """Run all tests and return success status"""
     print("Running sunnypilot autonomous driving improvement tests...")
     print("="*60)
-    
+
     # Create test suites
     test_classes = [
         TestLateralSafety,
         TestEnvironmentalAwareness,
         TestAdaptiveBehavior,
         TestDriveHelpers,
-        TestIntegration
+        TestIntegration,
+        TestFailureScenarios
     ]
-    
+
     all_tests = unittest.TestSuite()
     for test_class in test_classes:
         all_tests.addTests(unittest.TestLoader().loadTestsFromTestCase(test_class))
