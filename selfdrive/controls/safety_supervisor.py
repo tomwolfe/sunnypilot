@@ -8,6 +8,7 @@ from typing import Dict, Any
 import cereal.messaging as messaging
 from cereal import log
 from openpilot.common.swaglog import cloudlog
+from selfdrive.common.validation_config import get_validation_config
 
 
 class SafetySupervisor:
@@ -18,12 +19,12 @@ class SafetySupervisor:
                                   'liveCalibration', 'radarState', 'gpsLocation'])
     self.pm = messaging.PubMaster(['onroadEvents'])
 
+    # Get configuration
+    self.config = get_validation_config()
+
     # Initialize safety state
     self.safety_engaged = False
     self.last_check_time = time.time()
-    self.safety_threshold = 0.7  # Increased threshold for safety
-    self.min_engagement_velocity = 0.1  # Minimum speed for engagement
-    self.max_engagement_velocity = 60.0  # Maximum speed for engagement (about 134 mph)
 
     # Safety state history for temporal consistency
     self.safety_history = []
@@ -47,7 +48,7 @@ class SafetySupervisor:
     # Check for panda health (critical safety component)
     if self.sm.updated['pandaStates']:
       for pandaState in self.sm['pandaStates']:
-        if hasattr(pandaState, 'safetyRxInvalid') and pandaState.safetyRxInvalid > 20:  # Lowered threshold
+        if hasattr(pandaState, 'safetyRxInvalid') and pandaState.safetyRxInvalid > self.config.max_panda_rx_invalid:
           safety_status['system_safe'] = False
           safety_status['engagement_permitted'] = False
           safety_status['reason'] = 'Panda safety errors detected'
@@ -80,8 +81,8 @@ class SafetySupervisor:
         safety_status['engagement_permitted'] = False
         safety_status['reason'] = 'Controls not allowed by car safety'
         safety_status['detailed_checks']['controls_allowed'] = False
-      elif hasattr(car_state, 'vEgo') and (car_state.vEgo < self.min_engagement_velocity or
-                                           car_state.vEgo > self.max_engagement_velocity):
+      elif hasattr(car_state, 'vEgo') and (car_state.vEgo < self.config.min_engagement_velocity or
+                                           car_state.vEgo > self.config.max_engagement_velocity):
         if safety_status['engagement_permitted']:  # Only update reason if not already set
           safety_status['engagement_permitted'] = False
           safety_status['reason'] = f'Velocity out of safe range: {car_state.vEgo:.2f} m/s'
@@ -97,10 +98,10 @@ class SafetySupervisor:
         system_should_engage = self.sm['validationMetrics'].systemShouldEngage
         safety_score = self.sm['validationMetrics'].safetyScore
 
-        if overall_conf < self.safety_threshold:
+        if overall_conf < self.config.confidence_threshold:
           safety_status['system_safe'] = False
           safety_status['engagement_permitted'] = False
-          safety_status['reason'] = f'Low validation confidence: {overall_conf:.2f} (threshold: {self.safety_threshold})'
+          safety_status['reason'] = f'Low validation confidence: {overall_conf:.2f} (threshold: {self.config.confidence_threshold})'
           safety_status['detailed_checks']['validation_confidence'] = False
         elif not is_valid:
           safety_status['system_safe'] = False
@@ -111,7 +112,7 @@ class SafetySupervisor:
           safety_status['engagement_permitted'] = False
           safety_status['reason'] = 'Validation indicates system should not engage'
           safety_status['detailed_checks']['should_engage'] = False
-        elif safety_score < 0.6:  # Additional safety check
+        elif safety_score < self.config.min_confidence_for_engagement:  # Additional safety check
           safety_status['system_safe'] = False
           safety_status['engagement_permitted'] = False
           safety_status['reason'] = f'Low safety score: {safety_score:.2f}'
@@ -160,11 +161,12 @@ class SafetySupervisor:
 def main():
   """Main safety supervisor loop"""
   supervisor = SafetySupervisor()
+  config = get_validation_config()
 
   try:
     while True:
       status = supervisor.run_step()
-      time.sleep(0.05)  # 20Hz check rate
+      time.sleep(1.0 / config.validation_frequency)  # Use configured frequency (default 20Hz)
   except KeyboardInterrupt:
     cloudlog.info("Safety supervisor stopped")
 

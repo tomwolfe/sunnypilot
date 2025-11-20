@@ -10,7 +10,16 @@ import numpy as np
 import cereal.messaging as messaging
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
-from selfdrive.common.validation_utils import calculate_temporal_consistency, calculate_safety_score
+from selfdrive.common.validation_utils import (
+    calculate_temporal_consistency,
+    calculate_environment_complexity,
+    calculate_overall_confidence,
+    calculate_safety_score,
+    calculate_lead_confidences,
+    calculate_lane_confidences,
+    calculate_road_edge_confidence
+)
+from selfdrive.common.validation_config import get_validation_config
 
 
 class ValidationController:
@@ -21,11 +30,18 @@ class ValidationController:
                                       'radarState', 'gpsLocation', 'liveParameters'])
         self.pm = messaging.PubMaster(['validationMetrics'])
 
+        # Get configuration
+        self.config = get_validation_config()
+
         # State tracking
         self.velocity_history = []
-        self.max_velocity_history = 50  # Increased for better temporal analysis
+        self.max_velocity_history = self.config.max_velocity_history  # Increased for better temporal analysis
         self.validation_history = []    # Track validation metrics over time
-        self.max_validation_history = 20
+        self.max_validation_history = self.config.max_previous_states
+
+        # Performance optimization - only recalculate complex metrics periodically
+        self._last_complex_calculation_time = 0
+        self._calculation_interval = 0.1  # Recalculate complex metrics every 0.1 seconds
 
     def update_validation_systems(self):
         """Update validation systems based on sensor data with enhanced algorithms"""
@@ -43,19 +59,16 @@ class ValidationController:
                 if len(self.velocity_history) > self.max_velocity_history:
                     self.velocity_history = self.velocity_history[-self.max_velocity_history:]
 
-            # Calculate environment complexity
-            environment_complexity = self._calculate_environment_complexity()
+            # Calculate temporal consistency using shared utility
+            temporal_consistency = calculate_temporal_consistency(self.velocity_history)
 
-            # Calculate temporal consistency using velocity history
-            temporal_consistency = 1.0
-            if len(self.velocity_history) > 1:
-                recent_velocities = self.velocity_history[-10:] if len(self.velocity_history) > 10 else self.velocity_history
-                if len(recent_velocities) > 1:
-                    velocity_changes = [abs(recent_velocities[i] - recent_velocities[i-1])
-                                       for i in range(1, len(recent_velocities))]
-                    avg_change = sum(velocity_changes) / len(velocity_changes) if velocity_changes else 0.0
-                    # Lower average change means higher temporal consistency
-                    temporal_consistency = max(0.1, 1.0 - min(0.9, avg_change * 3))  # Adjust scale factor as needed
+            # Calculate environment complexity using shared utility
+            model_data = self.sm['modelV2'] if self.sm.updated['modelV2'] else None
+            radar_state = self.sm['radarState'] if self.sm.updated['radarState'] else None
+            car_state_for_complexity = self.sm['carState'] if self.sm.updated['carState'] else None
+            environment_complexity = calculate_environment_complexity(
+                model_data, radar_state, car_state_for_complexity
+            )
 
             # Process model data for validation with enhanced algorithms
             validation_data = {
@@ -69,7 +82,7 @@ class ValidationController:
                 'temporalConsistency': temporal_consistency,
                 'systemShouldEngage': False,
                 'isValid': False,
-                'confidenceThreshold': 0.7,  # Increased for safety
+                'confidenceThreshold': self.config.confidence_threshold,  # Increased for safety
                 'environmentComplexity': environment_complexity,
                 'predictionAccuracy': 0.85  # Default high accuracy
             }
@@ -77,65 +90,25 @@ class ValidationController:
             if self.sm.updated['modelV2']:
                 model_data = self.sm['modelV2']
 
-                # Extract lead information with more sophisticated validation
-                lead_confidences = []
-                if hasattr(model_data, 'leadsV3') and model_data.leadsV3:
-                    for lead in model_data.leadsV3:
-                        if hasattr(lead, 'confidence') and hasattr(lead, 'dRel'):
-                            # Apply distance-based confidence weighting
-                            distance_factor = 1.0
-                            if lead.dRel < 10:  # Very close
-                                distance_factor = 0.8
-                            elif lead.dRel > 100:  # Very far
-                                distance_factor = 0.6
-                            lead_confidences.append(lead.confidence * distance_factor)
+                # Calculate lead confidences using shared utility
+                lead_avg, lead_max = calculate_lead_confidences(model_data)
+                validation_data['leadConfidenceAvg'] = lead_avg
+                validation_data['leadConfidenceMax'] = lead_max
 
-                if lead_confidences:
-                    validation_data['leadConfidenceAvg'] = sum(lead_confidences) / len(lead_confidences)
-                    validation_data['leadConfidenceMax'] = max(lead_confidences)
+                # Calculate lane confidences using shared utility
+                validation_data['laneConfidenceAvg'] = calculate_lane_confidences(model_data)
 
-                # Calculate lane confidence metrics with better validation
-                lane_confidences = []
-                if hasattr(model_data, 'laneLineProbs') and len(model_data.laneLineProbs) >= 4:
-                    # Consider only the most reliable lane lines
-                    reliable_probs = [p for p in model_data.laneLineProbs[:4] if p is not None and p >= 0.1]
-                    if reliable_probs:
-                        # Apply distance weighting to lane confidence
-                        distance_weights = [1.0, 0.9, 0.8, 0.7]  # More weight to closer lane lines
-                        weighted_sum = sum(p * w for p, w in zip(reliable_probs, distance_weights[:len(reliable_probs)]))
-                        weight_sum = sum(distance_weights[:len(reliable_probs)])
-                        avg_confidence = weighted_sum / weight_sum if weight_sum > 0 else 0.0
-                        lane_confidences.extend([avg_confidence] * len(reliable_probs))
+                # Calculate road edge confidences using shared utility
+                validation_data['roadEdgeConfidenceAvg'] = calculate_road_edge_confidence(model_data)
 
-                if lane_confidences:
-                    validation_data['laneConfidenceAvg'] = sum(lane_confidences) / len(lane_confidences)
-
-                # Calculate road edge confidence if available with better validation
-                if hasattr(model_data, 'roadEdgeStds') and model_data.roadEdgeStds:
-                    # Calculate confidence based on standard deviation (inverted)
-                    road_edge_confidences = []
-                    for std in model_data.roadEdgeStds:
-                        if std is not None and std >= 0:
-                            # Lower std = higher confidence
-                            conf = max(0.0, min(1.0, 1.0 - std))
-                            road_edge_confidences.append(conf)
-
-                    if road_edge_confidences:
-                        validation_data['roadEdgeConfidenceAvg'] = sum(road_edge_confidences) / len(road_edge_confidences)
-
-                # Calculate overall confidence with more sophisticated weighting
-                base_weights = [0.25, 0.25, 0.15, 0.1, 0.15]  # lead, lane, road_edge, temporal, situation
-                complexity_factor = 1.0 - (environment_complexity * 0.3)  # Reduce weights in complex environments
-
-                weighted_confidences = [
-                    validation_data['leadConfidenceAvg'] * base_weights[0] * complexity_factor,
-                    validation_data['laneConfidenceAvg'] * base_weights[1] * complexity_factor,
-                    validation_data['roadEdgeConfidenceAvg'] * base_weights[2] * complexity_factor,
-                    validation_data['temporalConsistency'] * base_weights[3],
-                    validation_data['situationFactor'] * base_weights[4] * complexity_factor
-                ]
-
-                validation_data['overallConfidence'] = sum(weighted_confidences)
+                # Calculate overall confidence using shared utility
+                validation_data['overallConfidence'] = calculate_overall_confidence(
+                    validation_data['leadConfidenceAvg'],
+                    validation_data['laneConfidenceAvg'],
+                    validation_data['roadEdgeConfidenceAvg'],
+                    validation_data['temporalConsistency'],
+                    validation_data['environmentComplexity']
+                )
 
             # Calculate safety score considering environment complexity
             validation_data['safetyScore'] = calculate_safety_score(
@@ -146,14 +119,14 @@ class ValidationController:
 
             # Determine if system should engage with more sophisticated checks
             threshold = validation_data['confidenceThreshold']
-            min_confidence_for_engagement = 0.6  # Minimum even if threshold is lower
+            min_confidence_for_engagement = self.config.min_confidence_for_engagement  # Minimum even if threshold is lower
 
             # Additional checks beyond confidence
             engagement_conditions = [
                 validation_data['overallConfidence'] >= threshold,
                 validation_data['safetyScore'] >= min_confidence_for_engagement,
-                validation_data['environmentComplexity'] < 0.8,  # Don't engage in very complex environments
-                validation_data['temporalConsistency'] > 0.3  # Require some temporal consistency
+                validation_data['environmentComplexity'] < self.config.max_environment_complexity,  # Don't engage in very complex environments
+                validation_data['temporalConsistency'] > self.config.min_temporal_consistency  # Require some temporal consistency
             ]
 
             validation_data['systemShouldEngage'] = all(engagement_conditions)
@@ -183,41 +156,10 @@ class ValidationController:
                 'temporalConsistency': 0.0,
                 'systemShouldEngage': False,
                 'isValid': False,
-                'confidenceThreshold': 0.7,
-                'environmentComplexity': 0.9,  # High complexity on error
+                'confidenceThreshold': self.config.confidence_threshold,
+                'environmentComplexity': self.config.max_environment_complexity,  # High complexity on error
                 'predictionAccuracy': 0.0
             }
-
-    def _calculate_environment_complexity(self) -> float:
-        """Calculate environment complexity based on various sensor inputs"""
-        complexity = 0.3  # Base complexity
-
-        # Check radar state for lead vehicles
-        if self.sm.updated['radarState']:
-            radar_state = self.sm['radarState']
-            if hasattr(radar_state, 'leadOne') and radar_state.leadOne:
-                lead = radar_state.leadOne
-                if lead and hasattr(lead, 'dRel') and lead.dRel < 50:  # Within 50m
-                    # Closer leads increase complexity
-                    complexity += max(0.0, min(0.4, (50 - lead.dRel) / 50 * 0.4))
-
-        # Check car state for current conditions
-        if self.sm.updated['carState']:
-            car_state = self.sm['carState']
-            if hasattr(car_state, 'vEgo') and car_state.vEgo > 25:  # High speed increases complexity
-                complexity = min(0.9, complexity + 0.25)
-
-        # Check model data for lane conditions
-        if self.sm.updated['modelV2']:
-            model_data = self.sm['modelV2']
-            if hasattr(model_data, 'laneLineProbs'):
-                # Highly curved lanes increase complexity
-                if hasattr(model_data, 'laneLineAngles') and len(model_data.laneLineAngles) >= 4:
-                    curvature = abs(model_data.laneLineAngles[3] - model_data.laneLineAngles[0])
-                    if curvature > 0.3:
-                        complexity = min(0.9, complexity + 0.3)
-
-        return min(1.0, complexity)
 
     def publish_validation_metrics(self, validation_data: Dict[str, Any]):
         """Publish validation metrics with enhanced error handling"""
@@ -260,7 +202,8 @@ class ValidationController:
 def main():
     """Main validation controller loop"""
     controller = ValidationController()
-    rk = Ratekeeper(20.0)  # Increased to 20Hz for more responsive validation
+    config = get_validation_config()
+    rk = Ratekeeper(config.validation_frequency)  # Use configured frequency
 
     cloudlog.info("Enhanced validation controller starting...")
 
