@@ -393,17 +393,75 @@ class ModelQuantizationOptimizer:
         return quantized_output
 
 
+class PerformanceMonitor:
+    """
+    Real-time performance monitoring with automatic fallback to conservative mode
+    when inference time exceeds safety threshold
+    """
+
+    def __init__(self, max_inference_time_ms=25.0):  # 25ms threshold as recommended in review
+        self.max_inference_time_ms = max_inference_time_ms
+        self.inference_times = deque(maxlen=20)  # Track last 20 inference times
+        self.consecutive_high_inference_count = 0  # Track consecutive high inference times
+        self.in_safe_mode = False  # Track if system is in conservative mode
+
+    def record_inference_time(self, execution_time_s):
+        """
+        Record inference time and set automatic fallback if threshold exceeded
+        """
+        execution_time_ms = execution_time_s * 1000  # Convert to milliseconds
+        self.inference_times.append(execution_time_ms)
+
+        # Check if current time exceeds threshold
+        if execution_time_ms > self.max_inference_time_ms:
+            self.consecutive_high_inference_count += 1
+            # If multiple consecutive high times, switch to safe mode
+            if self.consecutive_high_inference_count >= 3:
+                self.in_safe_mode = True
+        else:
+            # Reset counter when time is within threshold
+            self.consecutive_high_inference_count = max(0, self.consecutive_high_inference_count - 1)
+            # Exit safe mode if consistently within threshold
+            if self.consecutive_high_inference_count == 0:
+                self.in_safe_mode = False
+
+    def get_performance_stats(self):
+        """
+        Get current performance statistics
+        """
+        if len(self.inference_times) == 0:
+            return {
+                'avg_inference_time_ms': 0.0,
+                'max_inference_time_ms': 0.0,
+                'min_inference_time_ms': 0.0,
+                'current_inference_time_ms': 0.0,
+                'exceeds_threshold_count': 0,
+                'in_safe_mode': self.in_safe_mode
+            }
+
+        exceeds_threshold_count = sum(1 for t in self.inference_times if t > self.max_inference_time_ms)
+        return {
+            'avg_inference_time_ms': sum(self.inference_times) / len(self.inference_times),
+            'max_inference_time_ms': max(self.inference_times),
+            'min_inference_time_ms': min(self.inference_times),
+            'current_inference_time_ms': self.inference_times[-1] if self.inference_times else 0.0,
+            'exceeds_threshold_count': exceeds_threshold_count,
+            'in_safe_mode': self.in_safe_mode
+        }
+
+
 class PerformanceOptimizer:
     """
     Main performance optimization controller that coordinates all optimization strategies
     """
-    
+
     def __init__(self):
         self.inference_optimizer = InferencePerformanceOptimizer()
-        self.preprocessor = ModelInputPreprocessor() 
+        self.preprocessor = ModelInputPreprocessor()
         self.caching_system = InferenceCachingSystem()
         self.quantization_optimizer = ModelQuantizationOptimizer()
-        
+        self.performance_monitor = PerformanceMonitor()  # Add performance monitor
+
         # Performance monitoring
         self.last_optimization_time = time.time()
         self.optimization_interval = 5.0  # seconds between optimizations
@@ -467,7 +525,7 @@ class PerformanceOptimizer:
             'batch_size': self.inference_optimizer.get_optimized_batch_size()
         }
     
-    def record_inference_completion(self, execution_time: float, 
+    def record_inference_completion(self, execution_time: float,
                                   model_output: Dict[str, np.ndarray]):
         """
         Record completion of inference for performance tracking
@@ -476,7 +534,10 @@ class PerformanceOptimizer:
         """
         # Record inference time for future optimization decisions
         self.inference_optimizer.record_inference_time(execution_time)
-        
+
+        # Use the new performance monitor to track and potentially trigger safe mode
+        self.performance_monitor.record_inference_time(execution_time)
+
         # Optionally cache certain outputs if beneficial
         # This would depend on the specific use case
     
@@ -495,5 +556,6 @@ class PerformanceOptimizer:
                 'frame_skip_enabled': self.inference_optimizer.frame_skip_enabled,
                 'frame_skip_count': self.inference_optimizer.frame_skip_count
             },
+            'monitoring_stats': self.performance_monitor.get_performance_stats(),  # Add monitoring stats
             'cache_stats': self.caching_system.get_cache_stats()
         }

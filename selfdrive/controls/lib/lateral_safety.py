@@ -10,6 +10,10 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from .autonomous_params import LATERAL_SAFETY_PARAMS
 from openpilot.common.swaglog import cloudlog
 
+# Global variables for tracking error states across function calls
+_prev_curvature_for_fallback = 0.0
+_error_count = 0
+
 # Import parameters
 MAX_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']
 MAX_CURVATURE_RATE = LATERAL_SAFETY_PARAMS['MAX_CURVATURE_RATE']
@@ -137,38 +141,68 @@ def anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=50.0):
   if points_ahead < 2:
     return 0.0, 0.0
 
-  curvatures_ahead = []
-  for i in range(1, points_ahead):  # Start from 1 to compute curvature from path points
-    if i < len(path_y) and i < len(path_x):
-      # Simple curvature approximation from path points
-      if i + 1 < len(path_y) and i + 1 < len(path_x):
-        # Calculate curvature from three consecutive points (if available)
-        dx1 = path_x[i] - path_x[i-1] if i > 0 else 0.0
-        dy1 = path_y[i] - path_y[i-1] if i > 0 else 0.0
-        dx2 = path_x[i+1] - path_x[i] if i+1 < len(path_x) else dx1
-        dy2 = path_y[i+1] - path_y[i] if i+1 < len(path_y) else dy1
+  # Use vectorized operations for performance optimization
+  try:
+    # Convert to numpy arrays for vectorized operations
+    path_y_slice = np.array(path_y[:points_ahead])
+    path_x_slice = np.array(path_x[:points_ahead])
 
-        if abs(dx1) > 0.001 or abs(dy1) > 0.001:
-          # Approximate curvature as the rate of heading change
-          heading1 = math.atan2(dy1, dx1)
-          heading2 = math.atan2(dy2, dx2)
-          heading_change = heading2 - heading1
-          # Normalize angle to be within [-π, π]
-          while heading_change > math.pi:
-            heading_change -= 2 * math.pi
-          while heading_change < -math.pi:
-            heading_change += 2 * math.pi
+    # Compute differences in one vectorized operation
+    dx = np.diff(path_x_slice)
+    dy = np.diff(path_y_slice)
 
-          # Approximate curvature (simplified - in real implementation could use more sophisticated method)
-          curvature = heading_change  # This is a simplified approximation
-          curvatures_ahead.append(abs(curvature))
+    # Calculate headings for all points at once
+    headings = np.arctan2(dy, dx)
 
-  if curvatures_ahead:
-    max_curvature = max(curvatures_ahead)
-    avg_curvature = sum(curvatures_ahead) / len(curvatures_ahead)
-    return max_curvature, avg_curvature
+    # Calculate heading changes
+    heading_changes = np.diff(headings)
 
-  return 0.0, 0.0
+    # Normalize angles to be within [-π, π]
+    heading_changes = ((heading_changes + np.pi) % (2 * np.pi)) - np.pi
+
+    # Calculate absolute curvatures
+    curvatures_ahead = np.abs(heading_changes)
+
+    if len(curvatures_ahead) > 0:
+        max_curvature = float(np.max(curvatures_ahead))
+        avg_curvature = float(np.mean(curvatures_ahead))
+        return max_curvature, avg_curvature
+    else:
+        return 0.0, 0.0
+  except Exception:
+    # Fallback to original method if vectorization fails (e.g., due to input data issues)
+    curvatures_ahead = []
+    for i in range(1, points_ahead):  # Start from 1 to compute curvature from path points
+      if i < len(path_y) and i < len(path_x):
+        # Simple curvature approximation from path points
+        if i + 1 < len(path_y) and i + 1 < len(path_x):
+          # Calculate curvature from three consecutive points (if available)
+          dx1 = path_x[i] - path_x[i-1] if i > 0 else 0.0
+          dy1 = path_y[i] - path_y[i-1] if i > 0 else 0.0
+          dx2 = path_x[i+1] - path_x[i] if i+1 < len(path_x) else dx1
+          dy2 = path_y[i+1] - path_y[i] if i+1 < len(path_y) else dy1
+
+          if abs(dx1) > 0.001 or abs(dy1) > 0.001:
+            # Approximate curvature as the rate of heading change
+            heading1 = math.atan2(dy1, dx1)
+            heading2 = math.atan2(dy2, dx2)
+            heading_change = heading2 - heading1
+            # Normalize angle to be within [-π, π]
+            while heading_change > math.pi:
+              heading_change -= 2 * math.pi
+            while heading_change < -math.pi:
+              heading_change += 2 * math.pi
+
+            # Approximate curvature (simplified - in real implementation could use more sophisticated method)
+            curvature = heading_change  # This is a simplified approximation
+            curvatures_ahead.append(abs(curvature))
+
+    if curvatures_ahead:
+      max_curvature = max(curvatures_ahead)
+      avg_curvature = sum(curvatures_ahead) / len(curvatures_ahead)
+      return max_curvature, avg_curvature
+
+    return 0.0, 0.0
 
 
 def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidence, road_pitch=0.0, is_rainy=False, is_night=False):
@@ -236,6 +270,9 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
     Get laterally safe and adaptive curvature considering various environmental factors
     Optimized for performance while maintaining safety
     """
+    # Declare global variables at the beginning of function
+    global _error_count, _prev_curvature_for_fallback
+
     try:
         # Validate time step parameter early and return if invalid
         try:
@@ -297,11 +334,27 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
             max_curv_safe
         )
 
+        # Reset error counter on successful execution
+        _error_count = 0
         return final_curvature
     except Exception as e:
         # Comprehensive error handling with safer fallback
         cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
-        # Instead of returning previous curvature which may be unsafe,
-        # return to neutral (straight) position as a safer fallback
-        # This prevents oscillations from previous unsafe values
-        return 0.0  # Return to neutral/straight curvature
+
+        # Update global variables
+        _prev_curvature_for_fallback = prev_curvature
+        _error_count += 1
+
+        # Implement tiered fallbacks as suggested in the review
+        if _error_count > 3:
+            # Gradual reduction when multiple consecutive errors occur
+            fallback_curvature = _prev_curvature_for_fallback * 0.8
+        elif _error_count > 1:
+            # Moderate fallback when some errors occur
+            min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(v_ego, MAX_LATERAL_ACCEL)
+            fallback_curvature = max(min_curv_safe, min(_prev_curvature_for_fallback * 1.2, max_curv_safe))
+        else:
+            # Maintain current state for first error
+            fallback_curvature = _prev_curvature_for_fallback
+
+        return fallback_curvature
