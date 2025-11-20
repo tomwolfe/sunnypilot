@@ -13,7 +13,10 @@ from tinygrad.helpers import Timing
 from cereal import log
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.controls.lib.drive_helpers import LIMIT_STEER
+# Define LIMIT_STEER constant (maximum steering torque)
+LIMIT_STEER = 1.0
+
+from openpilot.selfdrive.controls.lib.drive_helpers import *
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad import NNTorqueModelTinygrad
 
 
