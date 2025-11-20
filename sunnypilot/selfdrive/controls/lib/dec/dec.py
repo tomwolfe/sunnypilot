@@ -10,6 +10,7 @@ from collections import deque
 from cereal import messaging
 from opendbc.car import structs
 from numpy import interp
+import numpy as np
 import math
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
@@ -384,33 +385,112 @@ class DynamicExperimentalController:
     # NEW: Get environmental data from various sensors and services
     car_state = sm['carState']
 
-    # Placeholder for weather data (in real implementation, this would come from various sources)
-    # For now, use car sensors that might indicate conditions
-    steering_torque_input = abs(car_state.steeringTorqueEps) if hasattr(car_state, 'steeringTorqueEps') else 0.0
-    wheel_speed_fl = car_state.wheelSpeeds.fl if hasattr(car_state.wheelSpeeds, 'fl') else 0.0
-    wheel_speed_fr = car_state.wheelSpeeds.fr if hasattr(car_state.wheelSpeeds, 'fr') else 0.0
+    # Enhanced weather confidence assessment using multiple sensor fusion
+    # Consider various indicators that could suggest poor weather conditions
+    weather_indicators = []
 
-    # Simple heuristic for weather conditions based on steering and wheel speed consistency
-    # In real implementation, this would use actual weather data from APIs or sensors
+    # 1. Steering behavior analysis - more frequent corrections might indicate poor visibility
     if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
-      # If driver is making frequent steering corrections, assume adverse conditions
-      self._weather_confidence = max(0.3, self._weather_confidence - 0.01)
+      # If driver is making frequent steering corrections, this could indicate poor conditions
+      weather_indicators.append(0.3)
     else:
-      # Gradually restore confidence if conditions appear stable
-      self._weather_confidence = min(1.0, self._weather_confidence + 0.001)
+      # Consider steering rate as indicator (if available)
+      if hasattr(car_state, 'steeringRateDeg'):
+        if abs(car_state.steeringRateDeg) > 10.0:  # High steering rate might indicate unstable conditions
+          weather_indicators.append(0.2)
 
-    # Lighting condition assessment (simplified)
-    # In real implementation, this would use light sensor data or time of day
-    if self._v_ego_kph > 5 and self._v_ego_kph < 25 and self._has_slow_down:
-      # In low-light conditions with stop anticipation, reduce confidence
-      self._lighting_condition = 0.8
+    # 2. Wheel speed consistency - inconsistent speeds might indicate slippery conditions
+    if hasattr(car_state, 'wheelSpeeds'):
+      wheel_speeds = []
+      if hasattr(car_state.wheelSpeeds, 'fl'): wheel_speeds.append(car_state.wheelSpeeds.fl)
+      if hasattr(car_state.wheelSpeeds, 'fr'): wheel_speeds.append(car_state.wheelSpeeds.fr)
+      if hasattr(car_state.wheelSpeeds, 'rl'): wheel_speeds.append(car_state.wheelSpeeds.rl)
+      if hasattr(car_state.wheelSpeeds, 'rr'): wheel_speeds.append(car_state.wheelSpeeds.rr)
 
-    # Radar confidence assessment
+      if len(wheel_speeds) >= 2:
+        speed_variance = np.var(wheel_speeds)
+        # High variance in wheel speeds might indicate slippery conditions
+        if speed_variance > 1.0:
+          weather_indicators.append(0.4)
+
+    # 3. Acceleration/braking pattern analysis - frequent small adjustments might indicate poor conditions
+    if hasattr(car_state, 'aEgo'):
+      # Track recent acceleration patterns to detect unstable driving conditions
+      recent_accel = abs(car_state.aEgo)
+      if recent_accel > 2.0:  # High acceleration/deceleration might indicate poor traction
+        weather_indicators.append(0.3)
+
+    # 4. Model-based perception confidence - poor perception might indicate weather issues
+    if 'modelV2' in sm and sm.updated['modelV2']:
+      model_msg = sm['modelV2']
+      # Check if model confidence is low (might indicate poor visibility)
+      if hasattr(model_msg, 'meta') and hasattr(model_msg.meta, 'modelExecutionTime'):
+        # If model execution time is unusually high, it might indicate trying to process noisy data
+        if model_msg.meta.modelExecutionTime > 0.05:  # 50ms threshold (adjust as needed)
+          weather_indicators.append(0.2)
+
+    # Calculate weather confidence based on indicators
+    if weather_indicators:
+      # Average the indicators and apply to weather confidence
+      avg_weather_indicator = np.mean(weather_indicators)
+      # Reduce weather confidence as indicators of poor conditions increase
+      self._weather_confidence = max(0.1, self._weather_confidence - avg_weather_indicator * 0.1)
+    else:
+      # Gradually restore confidence if no indicators of poor conditions
+      self._weather_confidence = min(1.0, self._weather_confidence + 0.002)
+
+    # Lighting condition assessment based on multiple factors
+    # Consider time of day, ambient light sensors (if available), and driving conditions
+    device_state = sm['deviceState'] if 'deviceState' in sm else None
+    if device_state and hasattr(device_state, 'lightSensor'):
+      # Use actual light sensor data if available
+      light_level = device_state.lightSensor or 100.0  # Default if not available
+      # Lower light levels indicate poor visibility
+      if light_level < 50.0:
+        self._lighting_condition = 0.6
+      elif light_level < 100.0:
+        self._lighting_condition = 0.8
+      else:
+        self._lighting_condition = 1.0
+    else:
+      # Fallback to speed and behavior-based assessment
+      if self._v_ego_kph > 5 and self._v_ego_kph < 25 and self._has_slow_down:
+        # In low-light conditions with stop anticipation, reduce confidence
+        self._lighting_condition = 0.7
+      else:
+        self._lighting_condition = 1.0
+
+    # Enhanced radar confidence assessment considering signal quality
     radar_state = sm['radarState']
     if not radar_state.radarFaulted:
-      self._radar_confidence = min(1.0, self._radar_confidence + 0.001)  # Slowly increase when radar is healthy
+      # Calculate confidence based on multiple radar metrics, not just fault status
+      radar_metrics = []
+
+      # Number of detected objects (low count might indicate poor weather affecting detection)
+      if hasattr(radar_state, 'leadOne') and radar_state.leadOne.status:
+        radar_metrics.append(0.9)  # Good detection capability
+      else:
+        radar_metrics.append(0.5)  # No lead detected, reduced confidence
+
+      # Check for other detected objects
+      if hasattr(radar_state, 'tracks'):
+        object_count = sum(1 for track in radar_state.tracks if track.status == 1)  # Active tracks
+        if object_count > 5:
+          radar_metrics.append(1.0)
+        elif object_count > 0:
+          radar_metrics.append(0.7)
+        else:
+          radar_metrics.append(0.4)  # No objects detected, might indicate radar issues
+
+      # Use average of radar quality metrics
+      if radar_metrics:
+        avg_radar_confidence = np.mean(radar_metrics)
+        # Increase radar confidence if all systems show good performance
+        self._radar_confidence = min(1.0, self._radar_confidence * 0.95 + avg_radar_confidence * 0.05)
+      else:
+        self._radar_confidence = min(1.0, self._radar_confidence + 0.002)  # Slowly increase when radar is healthy
     else:
-      self._radar_confidence = max(0.1, self._radar_confidence - 0.1)   # Quickly decrease when radar fails
+      self._radar_confidence = max(0.05, self._radar_confidence - 0.15)   # Quickly decrease when radar fails
 
   def _update_driver_behavior(self, sm: messaging.SubMaster) -> None:
     """Track and adapt to driver behavior preferences"""
