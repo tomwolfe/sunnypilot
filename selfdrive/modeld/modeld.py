@@ -96,6 +96,19 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
                                    prev_action.desiredCurvature - max_curvature_change,
                                    prev_action.desiredCurvature + max_curvature_change)
 
+    # NEW: Environmental awareness integration - adjust actions based on detected conditions
+    # This would be passed down from higher level controller with environmental awareness
+    # For now, we'll implement the logic with default values
+    environmental_factor = 1.0  # Adjust based on environmental conditions in higher level
+
+    # Reduce desired acceleration in poor conditions
+    if hasattr(model_output, 'meta') and hasattr(model_output['meta'], 'confidence'):
+        model_confidence = model_output['meta'].confidence if model_output['meta'].confidence else 1.0
+        if model_confidence < 0.7:  # Low confidence
+            # Be more conservative with both acceleration and steering in low confidence situations
+            desired_accel = desired_accel * 0.85  # Reduce by 15%
+            desired_curvature = desired_curvature * 0.9  # Reduce steering aggressiveness by 10%
+
     return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
                                   shouldStop=bool(should_stop))

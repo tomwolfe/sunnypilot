@@ -25,6 +25,9 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
+from openpilot.selfdrive.controls.lib.adaptive_behavior import AdaptiveBehaviorManager
+from openpilot.selfdrive.controls.lib.environmental_awareness import EnvironmentalConditionProcessor
+from openpilot.selfdrive.controls.lib.lateral_safety import get_adaptive_lateral_curvature
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -48,7 +51,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
+                                   'deviceState', 'roadCameraState', 'gpsLocationExternal'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -69,9 +73,20 @@ class Controls(ControlsExt, ModelStateBase):
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI)
 
+    # Initialize new adaptive systems
+    self.adaptive_behavior = AdaptiveBehaviorManager()
+    self.environmental_processor = EnvironmentalConditionProcessor()
+
     # Pre-allocate reusable arrays to reduce allocation
     self._angle_array = np.zeros(3, dtype=np.float32)  # For orientation/angle data
     self._angular_velocity_array = np.zeros(3, dtype=np.float32)  # For angular velocity data
+    self._environmental_flags = {
+        'is_rainy': False,
+        'is_night': False,
+        'low_visibility': False,
+        'road_quality': 1.0,
+        'surface_condition': 1.0
+    }
 
   def update(self):
     self.sm.update(15)
@@ -143,9 +158,41 @@ class Controls(ControlsExt, ModelStateBase):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)  # removed float() wrapper
 
+    # Environmental and adaptive behavior processing
+    # Update environmental processor with current data
+    try:
+        self.environmental_processor.update(self.sm)
+        self._environmental_flags.update(self.environmental_processor.environmental_conditions)
+    except Exception as e:
+        cloudlog.error(f"Environmental processor error: {e}")
+
+    # Get adaptive adjustments for current conditions
+    try:
+        # Apply adaptive behavior to desired curvature from model
+        adjusted_action = self.adaptive_behavior.apply_adjustments(model_v2.action, self.sm, self.CP)
+
+        # Use adaptive lateral curvature based on conditions
+        new_desired_curvature = adjusted_action.desiredCurvature if CC.latActive else self.curvature
+
+        # Additional safety check using lateral_safety functions
+        if CC.latActive:
+            new_desired_curvature = get_adaptive_lateral_curvature(
+                CS.vEgo,
+                new_desired_curvature,
+                self.desired_curvature,  # previous curvature
+                model_v2,
+                lp,
+                is_rainy=self._environmental_flags['is_rainy'],
+                is_night=self._environmental_flags['is_night'],
+                dt=0.01  # approximate time step
+            )
+    except Exception as e:
+        cloudlog.error(f"Adaptive behavior adjustment error: {e}")
+        # Fallback to original behavior if adaptive system fails
+        new_desired_curvature = model_v2.action.desiredCurvature if CC.lat_active else self.curvature
+
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
     actuators.curvature = self.desired_curvature
@@ -223,6 +270,14 @@ class Controls(ControlsExt, ModelStateBase):
     cs.ufAccelCmd = self.LoC.pid.f  # Removed float() wrapper
     cs.forceDecel = (self.sm['driverMonitoringState'].awarenessStatus < 0.) or \
                      (self.sm['selfdriveState'].state == State.softDisabling)  # Removed bool() wrapper
+
+    # Add environmental awareness status to controls state
+    cs.environmentalRisk = self.environmental_processor.get_risk_score(CS.vEgo, abs(self.desired_curvature))
+    cs.isRaining = self._environmental_flags['is_rainy']
+    cs.isNight = self._environmental_flags['is_night']
+    cs.lowVisibility = self._environmental_flags['low_visibility']
+    cs.roadQuality = self._environmental_flags['road_quality']
+    cs.surfaceCondition = self._environmental_flags['surface_condition']
 
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:

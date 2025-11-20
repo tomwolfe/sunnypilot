@@ -14,6 +14,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDX
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.controls.lib.lateral_safety import anticipate_curvature_ahead
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
@@ -191,23 +192,44 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.90)  # Be more conservative on braking too
 
       # NEW: Additional safety check for vehicle speed relative to curvature
-      if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10 and v_ego > 5.0:
-        # Calculate safe speed based on maximum anticipated curvature
-        max_curvature_ahead = 0.0
-        for i in range(10, min(25, len(sm['modelV2'].path.y))):
-          if i < len(sm['modelV2'].path.y):
-            max_curvature_ahead = max(max_curvature_ahead, abs(sm['modelV2'].path.y[i]))
+      max_curv_ahead, avg_curv_ahead = anticipate_curvature_ahead(sm['modelV2'], v_ego, lookahead_distance=40.0)
+      if max_curv_ahead > 0.005:
+        # Calculate safe speed based on curvature: v_safe = sqrt(curvature * radius * g)
+        # For small curvatures, approximate radius = 1/curvature
+        max_lat_accel = 3.0  # Maximum lateral acceleration considered safe
+        safe_speed = (max_lat_accel / max_curv_ahead) ** 0.5 if max_curv_ahead > 0.0001 else v_ego
 
-        # If high curvature ahead, be more conservative with acceleration
-        if max_curvature_ahead > 0.005:
-          # Calculate safe speed based on curvature: v_safe = sqrt(curvature * radius * g)
-          # For small curvatures, approximate radius = 1/curvature
-          max_lat_accel = 3.0  # Maximum lateral acceleration considered safe
-          safe_speed = (max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else v_ego
+        # Be more conservative if current speed is approaching safe speed for upcoming curve
+        if v_ego > safe_speed * 0.8:  # Within 20% of safe speed
+          accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
 
-          # Be more conservative if current speed is approach safe speed for upcoming curve
-          if v_ego > safe_speed * 0.8:  # Within 20% of safe speed
-            accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
+        # Also reduce deceleration in curves to prevent skidding
+        if v_ego > safe_speed * 0.6:  # Even more conservative on braking with high curvature
+          accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.85)  # Reduce max braking by 15%
+
+      # NEW: Enhanced lead vehicle safety based on road conditions
+      if sm['radarState'].leadOne.status:
+        lead_rel_vel = sm['radarState'].leadOne.relVel
+        lead_dangerous = False
+
+        # Consider lead vehicle more dangerous if:
+        # 1. We're approaching rapidly in curves
+        if max_curv_ahead > 0.008 and lead_rel_vel < -2.0:  # Approaching lead rapidly in sharp curve
+          lead_dangerous = True
+
+        # 2. Low model confidence in curve areas
+        model_confidence = getattr(sm['modelV2'].meta, 'confidence', 1.0) if hasattr(sm['modelV2'], 'meta') else 1.0
+        if max_curv_ahead > 0.005 and model_confidence < 0.7:
+          lead_dangerous = True
+
+        # 3. On hills with poor visibility
+        if abs(road_pitch) > 0.08:  # Steep grade
+          lead_dangerous = True
+
+        if lead_dangerous:
+          # Reduce following distance and increase safety margins
+          safety_margin_factor = 0.8  # More conservative acceleration toward lead
+          accel_clip[1] = min(accel_clip[1], accel_clip[1] * safety_margin_factor)
     else:
       # In blended mode, still apply reasonable limits for experimental mode
       max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX

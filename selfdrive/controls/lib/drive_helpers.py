@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.realtime import DT_CTRL, DT_MDL
@@ -93,3 +94,65 @@ def get_curvature_from_plan(yaws, yaw_rates, t_idxs, vego, action_t):
   psi_target = np.interp(action_t, t_idxs, yaws)
   psi_rate = yaw_rates[0]
   return curv_from_psis(psi_target, psi_rate, vego, action_t)
+
+
+def get_safe_speed_from_curvature(curvature, max_lat_accel=3.0):
+  """
+  Calculate the maximum safe speed given a curvature and maximum lateral acceleration
+  :param curvature: Road curvature (1/m)
+  :param max_lat_accel: Maximum allowed lateral acceleration (m/s^2)
+  :return: Maximum safe speed (m/s)
+  """
+  abs_curvature = abs(curvature)
+  if abs_curvature < 0.0001:  # Nearly straight
+    return float('inf')  # No speed limit for straight roads
+
+  # Safe speed formula: v = sqrt(a * r) where r = 1/curvature
+  # Ensure we don't have negative values inside sqrt
+  if max_lat_accel <= 0 or abs_curvature <= 0:
+    return 0.0
+
+  safe_speed = math.sqrt(max_lat_accel / abs_curvature)
+  return safe_speed
+
+
+def adjust_curvature_for_road_conditions(curvature, v_ego, road_pitch=0.0, model_confidence=1.0,
+                                        is_rainy=False, is_night=False):
+  """
+  Adjust curvature for safer execution based on road and environmental conditions
+  :param curvature: Desired curvature
+  :param v_ego: Current speed (m/s)
+  :param road_pitch: Road grade/pitch (rad)
+  :param model_confidence: Model confidence (0-1)
+  :param is_rainy: Whether it's raining
+  :param is_night: Whether it's night
+  :return: Adjusted curvature for safer execution
+  """
+  # Base adjustment factor
+  adjustment = 1.0
+
+  # Reduce adjustment (i.e., make turn wider) in adverse conditions
+  if is_rainy:
+    adjustment *= 0.8  # More conservative in rain
+  if is_night:
+    adjustment *= 0.9  # More conservative at night
+  if model_confidence < 0.7:
+    adjustment *= 0.85  # More conservative with low model confidence
+  if abs(road_pitch) > 0.08:  # Steep grade
+    adjustment *= 0.9  # Be more conservative on hills
+
+  # At high speeds, be more conservative with curvature
+  if v_ego > 20.0:  # Above ~45 mph
+    adjustment *= 0.95
+
+  # Adjust the curvature (reducing absolute value makes the turn less sharp)
+  adjusted_curvature = curvature * adjustment
+
+  # Apply additional constraints at high speeds and high curvatures
+  safe_v = get_safe_speed_from_curvature(abs(adjusted_curvature))
+  if safe_v < v_ego * 0.9:  # If current speed is 90% above safe speed
+    # Reduce curvature further to ensure safety
+    excessive_factor = min(0.9, safe_v / (v_ego * 0.9 + 0.1))  # Avoid division by zero
+    adjusted_curvature = adjusted_curvature * excessive_factor
+
+  return adjusted_curvature
