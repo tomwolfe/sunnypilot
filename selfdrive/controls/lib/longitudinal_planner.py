@@ -154,17 +154,60 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.8, -0.8))  # Be more restrictive on braking
 
       # NEW: Additional safety check based on model-based curve anticipation
-      if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10:
-        # Look at curvature 2 seconds ahead (assuming 0.05m spacing and 10m/s average speed)
+      # Enhanced curve detection with more conservative thresholds
+      if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 20:
+        # Look at curvature 2-3 seconds ahead for better anticipation
         curve_ahead_idx = min(20, len(sm['modelV2'].path.y) - 1)  # About 2 seconds ahead at 10m/s
         if curve_ahead_idx < len(sm['modelV2'].path.y):
           curve_ahead = abs(sm['modelV2'].path.y[curve_ahead_idx])
+
+          # Look at multiple points ahead for more robust curve detection
+          curve_ahead_extended = 0.0
+          points_ahead = min(25, len(sm['modelV2'].path.y))
+          for i in range(curve_ahead_idx, points_ahead):
+            if i < len(sm['modelV2'].path.y):
+              curve_ahead_extended = max(curve_ahead_extended, abs(sm['modelV2'].path.y[i]))
+
+          # Take the maximum curvature in the prediction horizon
+          max_curve = max(curve_ahead, curve_ahead_extended)
+
           # If upcoming curve is significant, reduce acceleration limits
-          if curve_ahead > 0.003:  # Significant curve ahead
-            accel_clip[1] = min(accel_clip[1], max(accel_clip[1] * 0.85, 0.3))  # Reduce max accel by 15%
-            # Be more conservative on braking as well
-            if curve_ahead > 0.008:  # Very sharp curve ahead
-              accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.9, -0.5))  # Reduce brake aggressiveness
+          if max_curve > 0.003:  # Significant curve ahead
+            # More aggressive reduction for sharper curves
+            reduction_factor = 0.85 if max_curve <= 0.008 else 0.80  # 15% for moderate, 20% for sharp
+            accel_clip[1] = min(accel_clip[1], max(accel_clip[1] * reduction_factor, 0.3))
+
+            # Be more conservative on braking as well for curves
+            if max_curve > 0.008:  # Very sharp curve ahead
+              accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.85, -0.5))  # More conservative braking
+
+      # NEW: Environmental confidence adjustment based on weather/lighting conditions
+      # Apply confidence-based adjustments to acceleration limits
+      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
+        # Adjust based on model confidence (lower confidence = more conservative)
+        model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
+        if model_confidence < 0.7:  # Low model confidence
+          accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.85)  # Be 15% more conservative
+          accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.90)  # Be more conservative on braking too
+
+      # NEW: Additional safety check for vehicle speed relative to curvature
+      if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10 and v_ego > 5.0:
+        # Calculate safe speed based on maximum anticipated curvature
+        max_curvature_ahead = 0.0
+        for i in range(10, min(25, len(sm['modelV2'].path.y))):
+          if i < len(sm['modelV2'].path.y):
+            max_curvature_ahead = max(max_curvature_ahead, abs(sm['modelV2'].path.y[i]))
+
+        # If high curvature ahead, be more conservative with acceleration
+        if max_curvature_ahead > 0.005:
+          # Calculate safe speed based on curvature: v_safe = sqrt(curvature * radius * g)
+          # For small curvatures, approximate radius = 1/curvature
+          max_lat_accel = 3.0  # Maximum lateral acceleration considered safe
+          safe_speed = (max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else v_ego
+
+          # Be more conservative if current speed is approach safe speed for upcoming curve
+          if v_ego > safe_speed * 0.8:  # Within 20% of safe speed
+            accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
     else:
       # In blended mode, still apply reasonable limits for experimental mode
       max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX
@@ -234,8 +277,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       if abs(road_pitch) > 0.05:  # More than 5% grade
         accel_rate_limit = 0.03  # More conservative acceleration rate
 
+    # NEW: Performance optimization - use local variables to reduce attribute access
+    prev_accel_clip = self.prev_accel_clip
+    # NEW: Optimize clipping operations by calculating bounds once
+    lower_bounds = [prev_accel_clip[0] - accel_rate_limit, prev_accel_clip[1] - accel_rate_limit]
+    upper_bounds = [prev_accel_clip[0] + accel_rate_limit, prev_accel_clip[1] + accel_rate_limit]
+
     for idx in range(2):
-      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - accel_rate_limit, self.prev_accel_clip[idx] + accel_rate_limit)
+      accel_clip[idx] = np.clip(accel_clip[idx], lower_bounds[idx], upper_bounds[idx])
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 

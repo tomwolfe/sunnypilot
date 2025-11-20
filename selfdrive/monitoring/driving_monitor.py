@@ -15,6 +15,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.monitoring.autonomous_metrics import get_metrics_collector, AutonomousMetricsCollector
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
+from openpilot.selfdrive.monitoring.performance_monitor import get_performance_monitor, time_critical_function
 
 
 class AutonomousDrivingMonitor:
@@ -57,6 +58,7 @@ class AutonomousDrivingMonitor:
   
   def collect_and_monitor(self) -> Dict[str, Any]:
     """Main monitoring function - collect metrics and monitor system performance"""
+    start_time = time.time()
     self.sm.update(0)
     self.frame_count += 1
 
@@ -71,25 +73,58 @@ class AutonomousDrivingMonitor:
     # Non-critical monitoring operations happen after critical control updates
     # This moves monitoring off the critical control path
     current_metrics = None
+    collection_start = time.time()
     try:
       # Collect metrics in a non-blocking way or with timeout
       current_metrics = self.metrics_collector.collect_metrics()
+
+      # Track metrics collection time for performance monitoring
+      collection_time = (time.time() - collection_start) * 1000  # Convert to ms
+      if collection_time > 25.0:  # If collection takes more than 25ms
+        cloudlog.warning(f"Metrics collection took {collection_time:.1f}ms, which is above threshold")
     except Exception as e:
       cloudlog.warning(f"Non-critical metrics collection failed: {e}")
       # Continue operation even if metrics collection fails
+
+    # NEW: Enhanced safety monitoring with faster alerts
+    system_health = self.metrics_collector.get_system_health()
+
+    # Check for critical safety issues that need immediate attention
+    if system_health.get('status') == 'concerning':
+      # Log critical issues immediately regardless of reporting interval
+      cloudlog.error(f"CRITICAL SAFETY ISSUE DETECTED: {system_health.get('issues', [])}")
+
+      # NEW: Send critical alerts to the system
+      critical_event = {
+        'type': 'safety_concern',
+        'timestamp': time.time(),
+        'issues': system_health.get('issues', []),
+        'safety_score': system_health.get('safety_score', 1.0),
+        'stability_score': system_health.get('stability_score', 1.0)
+      }
+
+      # Publish critical event if we have a pubmaster
+      try:
+        if hasattr(self, 'pm'):
+          event_msg = messaging.new_message('onroadEvents')
+          event_msg.valid = True
+          event_msg.onroadEvents = [critical_event]
+          self.pm.send('onroadEvents', event_msg)
+      except Exception as e:
+        cloudlog.error(f"Failed to send critical safety event: {e}")
 
     # Check if it's time for a detailed report (non-critical)
     current_time = time.time()
     if current_time - self.last_report_time >= self.reporting_interval:
       try:
         performance_report = self.metrics_collector.get_performance_report()
-        system_health = self.metrics_collector.get_system_health()
 
         # Log important metrics
         cloudlog.info(f"Driving Performance Report: "
                      f"Duration: {performance_report['duration']:.1f}s, "
                      f"Avg CPU: {performance_report['avg_cpu_util']:.1f}%, "
                      f"Avg Lat Jerk: {performance_report['avg_lateral_jerk']:.2f}, "
+                     f"Driver Interventions: {performance_report['driver_interventions']}, "
                      f"Health: {system_health['status']}")
 
         self.last_report_time = current_time
@@ -97,16 +132,48 @@ class AutonomousDrivingMonitor:
         return {
           "performance_report": performance_report,
           "system_health": system_health,
-          "current_metrics": current_metrics.__dict__ if current_metrics else {}
+          "current_metrics": current_metrics.__dict__ if current_metrics else {},
+          "collection_time_ms": collection_time,
+          "cycle_time_ms": (time.time() - start_time) * 1000
         }
       except Exception as e:
         cloudlog.warning(f"Non-critical reporting failed: {e}")
 
+    # NEW: Performance monitoring for the monitor itself
+    cycle_time = (time.time() - start_time) * 1000  # Convert to ms
+    if cycle_time > 30.0:  # If monitoring cycle takes more than 30ms
+      cloudlog.warning(f"Monitoring cycle took {cycle_time:.1f}ms, which may impact performance")
+
+    # NEW: Enhanced driver assistance metrics
+    try:
+      # Publish driver assistance metrics if we have appropriate pubmaster
+      if hasattr(self, 'pm'):
+        assistance_msg = messaging.new_message('driverAssistance')
+        assistance_msg.valid = True
+        assistance_msg.driverAssistance = {
+          'safety_score': system_health.get('safety_score', 1.0),
+          'stability_score': system_health.get('stability_score', 1.0),
+          'smoothness_score': system_health.get('smoothness_score', 1.0),
+          'system_status': system_health.get('status', 'healthy'),
+          'driver_intervention_estimate': system_health.get('driver_interventions', 0)
+        }
+        self.pm.send('driverAssistance', assistance_msg)
+    except Exception as e:
+        cloudlog.warning(f"Failed to publish driver assistance metrics: {e}")
+
     # Return minimal essential data quickly
-    return {
-      "system_health": self.metrics_collector.get_system_health() if current_metrics else {"status": "healthy"},
-      "current_metrics": current_metrics.__dict__ if current_metrics else {}
+    result = {
+      "system_health": system_health,
+      "current_metrics": current_metrics.__dict__ if current_metrics else {},
+      "cycle_time_ms": cycle_time
     }
+
+    # NEW: Add safety-critical alerts to the result
+    if system_health.get('status') == 'concerning':
+      result['safety_alert'] = True
+      result['critical_issues'] = system_health.get('issues', [])
+
+    return result
   
   def run_monitoring_cycle(self, duration: float = 60.0):
     """Run a monitoring cycle for specified duration"""

@@ -124,12 +124,50 @@ class NNPerformanceOptimizer:
         elif avg_inference_time < 10:  # Can afford more complexity
           self.model_complexity_target = min(1.0, self.model_complexity_target + 0.02)
 
+    # NEW: Optimize input preparation with caching to avoid redundant processing
     # Prepare input with potential optimizations
     optimized_input = self._prepare_optimized_input(input_data)
+
+    # NEW: Performance optimization - early return if input hasn't changed significantly
+    if hasattr(self, '_last_input') and hasattr(self, '_last_result'):
+      # Check if input is similar to last input (within tolerance)
+      if len(input_data) == len(self._last_input):
+        input_similar = all(abs(a - b) < 0.001 for a, b in zip(input_data, self._last_input))
+        if input_similar:
+          # Return cached result with updated timing info
+          cache_return_time = time.perf_counter()
+          cache_inference_time = (cache_return_time - start_time) * 1000  # Convert to ms
+
+          # Update performance tracking
+          self.inference_times.append(cache_inference_time)  # Track very fast cache hits
+
+          # Calculate monitoring overhead for this call
+          total_time = time.perf_counter() - start_time
+          monitoring_overhead = (total_time * 1000) - cache_inference_time
+          self.total_monitoring_time += monitoring_overhead
+          self.monitoring_call_count += 1
+
+          # Calculate average overhead
+          avg_monitoring_overhead = self.total_monitoring_time / max(1, self.monitoring_call_count)
+
+          optimization_info = {
+            "inference_time_ms": cache_inference_time,
+            "model_complexity": self.model_complexity_target,
+            "optimized": True,
+            "quantized": self.quantization_enabled,
+            "monitoring_overhead_ms": monitoring_overhead,
+            "avg_monitoring_overhead_ms": avg_monitoring_overhead,
+            "cache_hit": True
+          }
+
+          return float(self._last_result), optimization_info
 
     # Evaluate the model
     try:
       result = self.model.evaluate(optimized_input)
+      # Cache the result for potential future reuse
+      self._last_input = input_data.copy()
+      self._last_result = result
     except Exception as e:
       cloudlog.error(f"Model evaluation error: {e}")
       return 0.0, {"error": str(e)}
@@ -163,7 +201,8 @@ class NNPerformanceOptimizer:
       "optimized": True,
       "quantized": self.quantization_enabled,
       "monitoring_overhead_ms": monitoring_overhead,
-      "avg_monitoring_overhead_ms": avg_monitoring_overhead
+      "avg_monitoring_overhead_ms": avg_monitoring_overhead,
+      "cache_hit": False  # This was an actual evaluation, not a cache hit
     }
 
     return float(result), optimization_info

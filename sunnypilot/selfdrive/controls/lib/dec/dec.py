@@ -803,10 +803,16 @@ class DynamicExperimentalController:
     """Handle errors with a multi-level fallback system"""
     cloudlog.error(f"Multi-level fallback triggered due to error: {error}")
 
+    # Track the error disengagement for metrics
+    if hasattr(self._mode_manager, 'error_disengagement_count'):
+      self._mode_manager.error_disengagement_count += 1
+
     # Level 1: Fallback to basic experimental mode
     try:
+      # Ensure we transition properly to ACC mode with high confidence
       self._mode_manager.request_mode('acc', confidence=1.0, emergency=True)
       self._active = False  # Deactivate experimental features
+      # Preserve the original enabled setting but disable active experimental mode
       cloudlog.info("Level 1 fallback: Deactivated experimental mode, keeping ACC active")
       return
     except Exception as e2:
@@ -815,9 +821,11 @@ class DynamicExperimentalController:
       # Level 2: Disable all experimental control
       try:
         self._active = False
-        # Reset to safe defaults
+        # Reset to safe defaults and ensure the mode manager is in a known state
         self._mode_manager.current_mode = 'acc'
         self._mode_manager.mode_confidence = {'acc': 1.0, 'blended': 0.0}
+        # Reset transition timeout to allow immediate re-evaluation
+        self._mode_manager.transition_timeout = 0
         cloudlog.info("Level 2 fallback: Disabled all experimental control")
         return
       except Exception as e3:
@@ -827,12 +835,20 @@ class DynamicExperimentalController:
         try:
           self._active = False
           self._enabled = False  # Completely disable the system
+          # Ensure mode manager is set to safe state
+          if hasattr(self._mode_manager, 'current_mode'):
+            self._mode_manager.current_mode = 'acc'
           cloudlog.error("Level 3 fallback: System completely disengaged for safety")
           return
         except Exception as e4:
           cloudlog.error(f"All fallback levels failed: {e4}. System in undefined state.")
           # In the worst case, ensure the system is at least not in experimental mode
-          self._active = False
+          try:
+            self._active = False
+            self._enabled = False
+          except:
+            # Final safety - if we can't modify the state, log the critical failure
+            cloudlog.error("CRITICAL: Unable to modify system state after error - manual intervention required")
 
   def _monitor_modes(self) -> None:
     """Monitor mode changes and time spent in each mode."""

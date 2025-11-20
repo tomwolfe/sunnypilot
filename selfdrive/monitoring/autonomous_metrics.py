@@ -83,6 +83,17 @@ class AutonomousMetricsCollector:
         # Enhanced metrics: Track steering smoothness
         if hasattr(car_state, 'steeringRateDeg'):
           self.lateral_jerk_buffer.append(abs(car_state.steeringRateDeg))  # Track steering rate as a smoothness metric
+
+        # NEW: Add safety-related metrics
+        if hasattr(car_state, 'standstill'):
+          if car_state.standstill:
+            self.driver_interventions += 0.1  # Track situations requiring complete stops
+
+        if hasattr(car_state, 'brakePressed') and car_state.brakePressed:
+          self.driver_interventions += 0.5  # Track brake interventions
+
+        if hasattr(car_state, 'gasPressed') and car_state.gasPressed:
+          self.driver_interventions += 0.2  # Track gas interventions
     except Exception as e:
       cloudlog.error(f"Error collecting carState metrics: {e}")
 
@@ -108,6 +119,19 @@ class AutonomousMetricsCollector:
           # Track lateral control accuracy metrics
           if hasattr(lateral_state, 'error'):
             self.lateral_jerk_buffer.append(abs(lateral_state.error))  # Use error as a control performance metric
+
+        # NEW: Track system state and safety metrics
+        if hasattr(controls_state, 'state'):
+          # Track the current control state for safety monitoring
+          state_str = str(controls_state.state)
+          if 'preEnabled' in state_str or 'disabled' in state_str:
+            # Track system transitions for safety analysis
+            self.mode_switches += 0.1  # Count state changes as metrics
+
+        # NEW: Track selfdrive state changes
+        if hasattr(controls_state, 'enabled') and not controls_state.enabled:
+          # System was disengaged, track this for safety metrics
+          self.driver_interventions += 0.3
     except Exception as e:
       cloudlog.error(f"Error collecting controlsState metrics: {e}")
 
@@ -152,6 +176,13 @@ class AutonomousMetricsCollector:
             output_error = abs(lateral_state.output - lateral_state.actual)
             if output_error > 0.1:  # Only track significant errors
               self.lateral_jerk_buffer.append(output_error)
+
+        # NEW: System health monitoring
+        if hasattr(device_state, 'thermalStatus'):
+          # Monitor system thermal status for safety
+          thermal_status = device_state.thermalStatus
+          if thermal_status > 2:  # If thermal status is critical
+            self.driver_interventions += 0.2  # Add to interventions for thermal issues
     except Exception as e:
       cloudlog.error(f"Error collecting deviceState metrics: {e}")
 
@@ -171,6 +202,17 @@ class AutonomousMetricsCollector:
             ttc = lead.dRel / abs(lead.vRel) if abs(lead.vRel) > 0.1 else float('inf')
             if ttc < 3.0:  # TTC under 3 seconds
               self.driver_interventions += 1  # Could indicate need for intervention
+
+        # NEW: Enhanced lead tracking for safety metrics
+        if hasattr(radar_state, 'leadOne') and radar_state.leadOne.status:
+          lead = radar_state.leadOne
+          # Track relative distances and speeds for safety analysis
+          if lead.dRel < 50.0:  # Within 50m
+            # Check for potentially dangerous situations
+            if lead.vRel < -5.0 and lead.dRel < 30.0:  # Approaching fast at close distance
+              self.driver_interventions += 0.5  # This could require driver intervention
+            elif lead.dRel < 15.0:  # Very close to lead
+              self.driver_interventions += 0.3  # Close distance situation
     except Exception as e:
       cloudlog.error(f"Error collecting radarState metrics: {e}")
 
@@ -200,8 +242,49 @@ class AutonomousMetricsCollector:
               prediction_error = abs(predicted_curvature - actual_curvature)
               if prediction_error > 0.01:  # If error is significant
                 self.driver_interventions += 0.1  # Add fractional count for prediction mismatch
+
+        # NEW: Enhanced safety metrics based on model predictions
+        if hasattr(model_msg, 'meta') and hasattr(model_msg.meta, 'dangerousModelExecutionTime'):
+          # Track dangerous execution times that could affect safety
+          if model_msg.meta.dangerousModelExecutionTime:
+            self.driver_interventions += 0.2  # Count extended model execution as potential safety issue
+
+        # NEW: Check for model confidence issues
+        if hasattr(model_msg, 'meta') and hasattr(model_msg.meta, 'modelExecutionTime'):
+          execution_time = model_msg.meta.modelExecutionTime
+          if execution_time > 0.05:  # If model execution takes more than 50ms
+            # This could indicate issues with the model or system performance
+            self.driver_interventions += 0.1
+
+        # NEW: Monitor path prediction consistency
+        if (hasattr(model_msg, 'path') and
+            hasattr(model_msg.path, 'y') and
+            len(model_msg.path.y) > 20):
+          # Calculate path curvature variance as a metric for path stability
+          path_curvatures = [abs(model_msg.path.y[i]) for i in range(len(model_msg.path.y))]
+          curvature_variance = np.var(path_curvatures) if len(path_curvatures) > 1 else 0.0
+          # High curvature variance might indicate unstable path planning
+          if curvature_variance > 0.001:  # Threshold for unstable path planning
+            self.driver_interventions += 0.15  # Add to intervention count for unstable paths
     except Exception as e:
       cloudlog.error(f"Error collecting modelV2 metrics: {e}")
+
+    # NEW: Enhanced safety check for longitudinal control
+    try:
+      if 'longitudinalPlan' in self.sm and self.sm.updated['longitudinalPlan']:
+        long_plan = self.sm['longitudinalPlan']
+
+        # Track longitudinal control metrics
+        if hasattr(long_plan, 'aTarget'):
+          self.accelerations.append(long_plan.aTarget)
+
+        # Check for extreme longitudinal commands that might indicate issues
+        if hasattr(long_plan, 'aTarget'):
+          a_target = long_plan.aTarget
+          if abs(a_target) > 3.0:  # Extreme acceleration/deceleration
+            self.driver_interventions += 0.2  # Count as potential safety issue
+    except Exception as e:
+      cloudlog.error(f"Error collecting longitudinalPlan metrics: {e}")
 
     return self
   
@@ -216,47 +299,56 @@ class AutonomousMetricsCollector:
       'avg_frame_rate': self.frame_count / duration if duration > 0 else 0,
     }
 
+    # NEW: Optimize calculations by using efficient numpy operations
     # Add lateral jerk metrics
     if self.lateral_jerk_buffer:
-      report['avg_lateral_jerk'] = float(np.mean(self.lateral_jerk_buffer))
-      report['max_lateral_jerk'] = float(np.max(self.lateral_jerk_buffer))
-      report['std_lateral_jerk'] = float(np.std(self.lateral_jerk_buffer))
+      jerk_array = np.array(self.lateral_jerk_buffer)
+      report['avg_lateral_jerk'] = float(np.mean(jerk_array))
+      report['max_lateral_jerk'] = float(np.max(jerk_array))
+      report['std_lateral_jerk'] = float(np.std(jerk_array))
 
     # Add longitudinal jerk metrics
     if self.longitudinal_jerk_buffer:
-      report['avg_longitudinal_jerk'] = float(np.mean(self.longitudinal_jerk_buffer))
-      report['max_longitudinal_jerk'] = float(np.max(self.longitudinal_jerk_buffer))
-      report['std_longitudinal_jerk'] = float(np.std(self.longitudinal_jerk_buffer))
+      long_jerk_array = np.array(self.longitudinal_jerk_buffer)
+      report['avg_longitudinal_jerk'] = float(np.mean(long_jerk_array))
+      report['max_longitudinal_jerk'] = float(np.max(long_jerk_array))
+      report['std_longitudinal_jerk'] = float(np.std(long_jerk_array))
 
     # Add steering angle metrics
     if self.steering_angles:
-      report['avg_steering_angle'] = float(np.mean(self.steering_angles))
-      report['max_steering_angle'] = float(np.max(np.abs(self.steering_angles)))
-      report['std_steering_angle'] = float(np.std(self.steering_angles))
+      steering_array = np.array(self.steering_angles)
+      report['avg_steering_angle'] = float(np.mean(steering_array))
+      report['max_steering_angle'] = float(np.max(np.abs(steering_array)))
+      report['std_steering_angle'] = float(np.std(steering_array))
 
     # Add acceleration metrics
     if self.accelerations:
-      report['avg_acceleration'] = float(np.mean(self.accelerations))
-      report['max_acceleration'] = float(np.max(np.abs(self.accelerations)))
-      report['std_acceleration'] = float(np.std(self.accelerations))
+      accel_array = np.array(self.accelerations)
+      report['avg_acceleration'] = float(np.mean(accel_array))
+      report['max_acceleration'] = float(np.max(np.abs(accel_array)))
+      report['std_acceleration'] = float(np.std(accel_array))
 
     # Add velocity metrics
     if self.velocities:
-      report['avg_velocity'] = float(np.mean(self.velocities))
-      report['max_velocity'] = float(np.max(self.velocities))
-      report['std_velocity'] = float(np.std(self.velocities))
+      vel_array = np.array(self.velocities)
+      report['avg_velocity'] = float(np.mean(vel_array))
+      report['max_velocity'] = float(np.max(vel_array))
+      report['std_velocity'] = float(np.std(vel_array))
 
     # Add system resource metrics
     if self.cpu_usage_buffer:
-      report['avg_cpu_util'] = float(np.mean(self.cpu_usage_buffer))
-      report['max_cpu_util'] = float(np.max(self.cpu_usage_buffer))
+      cpu_array = np.array(self.cpu_usage_buffer)
+      report['avg_cpu_util'] = float(np.mean(cpu_array))
+      report['max_cpu_util'] = float(np.max(cpu_array))
 
     if self.memory_usage_buffer:
-      report['avg_memory_util'] = float(np.mean(self.memory_usage_buffer))
+      mem_array = np.array(self.memory_usage_buffer)
+      report['avg_memory_util'] = float(np.mean(mem_array))
 
     if self.temperature_buffer:
-      report['avg_temperature'] = float(np.mean(self.temperature_buffer))
-      report['max_temperature'] = float(np.max(self.temperature_buffer))
+      temp_array = np.array(self.temperature_buffer)
+      report['avg_temperature'] = float(np.mean(temp_array))
+      report['max_temperature'] = float(np.max(temp_array))
 
     # Add safety metrics
     report['fcw_events'] = self.fcw_events
@@ -287,6 +379,9 @@ class AutonomousMetricsCollector:
       'thermal_issue_count': 0,  # Add this field to match test expectations
       'cpu_issue_count': 0,  # Add this field to match test expectations
       'memory_issue_count': 0,  # Add this field to match test expectations
+      'safety_score': 0.0,  # NEW: Overall safety score
+      'stability_score': 0.0,  # NEW: System stability score
+      'prediction_accuracy': 0.0, # NEW: Model prediction accuracy
     }
 
     # Get performance metrics
@@ -347,6 +442,64 @@ class AutonomousMetricsCollector:
     health['smoothness_score'] = (health['lateral_smoothness'] + health['longitudinal_smoothness']) / 2.0
     health['responsiveness_score'] = health['system_responsiveness']
 
+    # NEW: Enhanced safety scoring based on multiple factors
+    safety_score = 1.0  # Start with perfect score
+
+    # Reduce safety for high intervention count
+    driver_interventions = perf_report.get('driver_interventions', 0)
+    if driver_interventions > 10:
+        safety_score *= 0.5
+    elif driver_interventions > 5:
+        safety_score *= 0.7
+    elif driver_interventions > 2:
+        safety_score *= 0.85
+
+    # Reduce safety for high FCW events
+    fcw_events = perf_report.get('fcw_events', 0)
+    if fcw_events > 5:
+        safety_score *= 0.3
+    elif fcw_events > 2:
+        safety_score *= 0.6
+    elif fcw_events > 0:
+        safety_score *= 0.8
+
+    # Reduce safety for high jerk values
+    if avg_long_jerk > 3.0 or avg_lat_jerk > 3.0:
+        safety_score *= 0.4
+    elif avg_long_jerk > 2.0 or avg_lat_jerk > 2.0:
+        safety_score *= 0.6
+    elif avg_long_jerk > 1.5 or avg_lat_jerk > 1.5:
+        safety_score *= 0.8
+
+    # Reduce safety for high resource usage
+    if avg_cpu > 90.0 or perf_report.get('avg_memory_util', 0) > 90.0:
+        safety_score *= 0.5
+    elif avg_cpu > 80.0 or perf_report.get('avg_memory_util', 0) > 85.0:
+        safety_score *= 0.7
+
+    health['safety_score'] = max(0.0, safety_score)
+
+    # NEW: Stability scoring based on consistent performance
+    stability_score = 1.0
+
+    # Check consistency in performance metrics
+    if self.accelerations and len(self.accelerations) > 10:
+        accel_std = np.std(list(self.accelerations))
+        if accel_std > 2.0:
+            stability_score *= 0.6
+        elif accel_std > 1.0:
+            stability_score *= 0.8
+
+    # Check consistency in steering
+    if self.steering_angles and len(self.steering_angles) > 10:
+        steering_std = np.std(list(self.steering_angles))
+        if steering_std > 5.0:
+            stability_score *= 0.7
+        elif steering_std > 2.0:
+            stability_score *= 0.9
+
+    health['stability_score'] = stability_score
+
     # Check for safety issues
     if perf_report.get('fcw_events', 0) > 0:
       health['status'] = 'caution' if health['status'] == 'healthy' else health['status']
@@ -355,6 +508,23 @@ class AutonomousMetricsCollector:
     if perf_report.get('driver_interventions', 0) > 5:
       health['status'] = 'caution' if health['status'] == 'healthy' else health['status']
       health['issues'].append(f"{perf_report['driver_interventions']} driver interventions detected")
+
+    # NEW: Additional safety checks
+    if health['safety_score'] < 0.6:
+        health['status'] = 'concerning'
+        health['issues'].append(f"Low safety score: {health['safety_score']:.2f}")
+    elif health['safety_score'] < 0.8:
+        if health['status'] == 'healthy':
+            health['status'] = 'caution'
+        health['issues'].append(f"Moderate safety score: {health['safety_score']:.2f}")
+
+    if health['stability_score'] < 0.6:
+        health['status'] = 'concerning' if health['status'] != 'concerning' else health['status']
+        health['issues'].append(f"Low stability score: {health['stability_score']:.2f}")
+    elif health['stability_score'] < 0.8:
+        if health['status'] == 'healthy':
+            health['status'] = 'caution'
+        health['issues'].append(f"Moderate stability score: {health['stability_score']:.2f}")
 
     return health
 
