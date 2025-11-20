@@ -56,7 +56,9 @@ class InferencePerformanceOptimizer:
     
     def should_skip_frame(self, current_cpu: float, current_temp: float,
                          lat_active: bool = True, longitudinal_active: bool = True,
-                         model_confidence: float = 1.0, lead_present: bool = True) -> bool:
+                         model_confidence: float = 1.0, lead_present: bool = True,
+                         environmental_risk: float = 0.0,
+                         v_ego: float = 0.0) -> bool:
         """
         Determine if we should skip the current frame to maintain performance
         Enhanced safety checks to ensure frame skipping only occurs when completely safe
@@ -66,6 +68,8 @@ class InferencePerformanceOptimizer:
         :param longitudinal_active: Whether longitudinal control is currently active
         :param model_confidence: Current model confidence (0.0-1.0)
         :param lead_present: Whether lead vehicle is present (affects longitudinal control safety)
+        :param environmental_risk: Environmental risk assessment (0.0-1.0)
+        :param v_ego: Current vehicle speed
         :return: True if frame should be skipped, False otherwise
         """
         # NEVER skip frames during ANY active control - this is safety-critical
@@ -75,6 +79,14 @@ class InferencePerformanceOptimizer:
 
         # Don't skip if model confidence is low - need consistent processing for safety
         if model_confidence < 0.7:
+            return False
+
+        # Don't skip if environmental risk is high - need consistent processing in risky conditions
+        if environmental_risk > 0.6:  # High risk threshold
+            return False
+
+        # Don't skip at high speeds even if system is under stress - high speeds need consistent processing
+        if v_ego > 15.0:  # Above ~54 km/h
             return False
 
         # Don't skip if there are safety-critical objects nearby (e.g., lead vehicle)
@@ -419,6 +431,8 @@ class PerformanceOptimizer:
         longitudinal_active = system_metrics.get('long_active', True)  # Default to active for safety
         model_confidence = system_metrics.get('model_confidence', 1.0)  # Default to high confidence
         lead_present = system_metrics.get('lead_present', True)  # Default to assume lead present for safety
+        environmental_risk = system_metrics.get('environmental_risk', 0.0)  # Environment risk factor
+        v_ego = system_metrics.get('v_ego', 0.0)  # Vehicle speed
 
         should_skip = self.inference_optimizer.should_skip_frame(
             cpu_load,
@@ -426,7 +440,9 @@ class PerformanceOptimizer:
             lat_active,
             longitudinal_active,
             model_confidence,
-            lead_present
+            lead_present,
+            environmental_risk,
+            v_ego
         )
 
         if should_skip:

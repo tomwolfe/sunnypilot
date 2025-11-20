@@ -413,3 +413,12 @@ class EnvironmentalConditionProcessor:
                 return desired_v_cruise * 0.85  # Reduce speed by 15%
             else:
                 return desired_v_cruise  # No reduction needed
+
+
+def validate_environmental_risk(risk_score: float) -> float:
+    """
+    Validate environmental risk score to ensure it's in valid range [0.0, 1.0]
+    :param risk_score: Risk score to validate
+    :return: Risk score clamped to valid range
+    """
+    return max(0.0, min(1.0, float(risk_score)))
