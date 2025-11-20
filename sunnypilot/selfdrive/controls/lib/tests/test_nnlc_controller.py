@@ -39,13 +39,41 @@ class TestNeuralNetworkLateralControl:
         
         # Create mock VehicleModel
         self.mock_vm = Mock()
-        
-        # Initialize the controller with minimal mocks
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModel'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
-            self.nnlc = NeuralNetworkLateralControl(self.mock_cp, self.mock_vm)
+
+        # Mock the params and model - patches need to be in place during instantiation
+        mock_params = Mock()
+        mock_params.get_bool.return_value = True
+        with patch('openpilot.common.params.Params') as MockParams, \
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+            MockParams.return_value = mock_params
+            mock_model_instance = Mock()
+            mock_model_instance.friction_override = False
+            MockModel.return_value = mock_model_instance
+
+            # We need to provide all required arguments: lac_torque, CP, CP_SP, CI
+            mock_lac_torque = Mock()
+            mock_lac_torque.steer_max = 1.0
+            mock_lac_torque.torque_params = Mock()
+            mock_lac_torque.torque_params.STEER_MAX = 2.0
+            mock_lac_torque.torque_params.STEER_DELTA_UP = 0.5
+            mock_lac_torque.torque_params.STEER_DELTA_DOWN = 0.5
+            mock_lac_torque.torque_params.STEER_ERROR_MAX = 0.5
+            mock_lac_torque.torque_params.TORQUE_MEASURED_SCALAR = 1000.0
+            mock_lac_torque.torque_params.TORQUE_OFFSET = 0.0
+            mock_lac_torque.torque_params.TORQUE_POSITION_SCALAR = 1000.0
+
+            # Create CP_SP (SunPyPilot CarParams)
+            mock_cp_sp = Mock()
+            mock_nnlc_sp = Mock()
+            mock_model_path = Mock()
+            mock_model_path.path = "test_path_for_mocking"  # Will be ignored due to mocking
+            mock_nnlc_sp.model = mock_model_path
+            mock_cp_sp.neuralNetworkLateralControl = mock_nnlc_sp
+
+            # Create CI (Car Interface)
+            mock_ci = Mock()
+
+            self.nnlc = NeuralNetworkLateralControl(mock_lac_torque, self.mock_cp, mock_cp_sp, mock_ci)
 
     def test_initialization(self):
         """Test initialization of NeuralNetworkLateralControl"""
@@ -58,12 +86,40 @@ class TestNeuralNetworkLateralControl:
         from sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
         
         # Create a test instance to access the method
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModel'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
-            
-            nnlc = NeuralNetworkLateralControl(self.mock_cp, self.mock_vm)
+        # Mock the params and model
+        mock_params = Mock()
+        mock_params.get_bool.return_value = True
+        with patch('openpilot.common.params.Params') as MockParams, \
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+            MockParams.return_value = mock_params
+            mock_model_instance = Mock()
+            mock_model_instance.friction_override = False
+            MockModel.return_value = mock_model_instance
+
+            # We need to provide all required arguments: lac_torque, CP, CP_SP, CI
+            mock_lac_torque = Mock()
+            mock_lac_torque.steer_max = 1.0
+            mock_lac_torque.torque_params = Mock()
+            mock_lac_torque.torque_params.STEER_MAX = 2.0
+            mock_lac_torque.torque_params.STEER_DELTA_UP = 0.5
+            mock_lac_torque.torque_params.STEER_DELTA_DOWN = 0.5
+            mock_lac_torque.torque_params.STEER_ERROR_MAX = 0.5
+            mock_lac_torque.torque_params.TORQUE_MEASURED_SCALAR = 1000.0
+            mock_lac_torque.torque_params.TORQUE_OFFSET = 0.0
+            mock_lac_torque.torque_params.TORQUE_POSITION_SCALAR = 1000.0
+
+            # Create CP_SP (SunPyPilot CarParams)
+            mock_cp_sp = Mock()
+            mock_nnlc_sp = Mock()
+            mock_model_path = Mock()
+            mock_model_path.path = "test_path_for_mocking"  # Will be ignored due to mocking
+            mock_nnlc_sp.model = mock_model_path
+            mock_cp_sp.neuralNetworkLateralControl = mock_nnlc_sp
+
+            # Create CI (Car Interface)
+            mock_ci = Mock()
+
+            nnlc = NeuralNetworkLateralControl(mock_lac_torque, self.mock_cp, mock_cp_sp, mock_ci)
             
             # Test normal input clipping
             normal_input = [15.0, 0.1, 0.05] + [0.0] * 10  # [vEgo, setpoint, jerk] + others
@@ -88,13 +144,41 @@ class TestNeuralNetworkLateralControl:
     def test_safe_clip_input_with_testing_mode(self):
         """Test safe input clipping with testing mode enabled"""
         from sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
-        
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModel'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
-            
-            nnlc = NeuralNetworkLateralControl(self.mock_cp, self.mock_vm)
+
+        # Mock the params and model
+        mock_params = Mock()
+        mock_params.get_bool.return_value = True
+        with patch('openpilot.common.params.Params') as MockParams, \
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+            MockParams.return_value = mock_params
+            mock_model_instance = Mock()
+            mock_model_instance.friction_override = False
+            MockModel.return_value = mock_model_instance
+
+            # We need to provide all required arguments: lac_torque, CP, CP_SP, CI
+            mock_lac_torque = Mock()
+            mock_lac_torque.steer_max = 1.0
+            mock_lac_torque.torque_params = Mock()
+            mock_lac_torque.torque_params.STEER_MAX = 2.0
+            mock_lac_torque.torque_params.STEER_DELTA_UP = 0.5
+            mock_lac_torque.torque_params.STEER_DELTA_DOWN = 0.5
+            mock_lac_torque.torque_params.STEER_ERROR_MAX = 0.5
+            mock_lac_torque.torque_params.TORQUE_MEASURED_SCALAR = 1000.0
+            mock_lac_torque.torque_params.TORQUE_OFFSET = 0.0
+            mock_lac_torque.torque_params.TORQUE_POSITION_SCALAR = 1000.0
+
+            # Create CP_SP (SunPyPilot CarParams)
+            mock_cp_sp = Mock()
+            mock_nnlc_sp = Mock()
+            mock_model_path = Mock()
+            mock_model_path.path = "test_path_for_mocking"  # Will be ignored due to mocking
+            mock_nnlc_sp.model = mock_model_path
+            mock_cp_sp.neuralNetworkLateralControl = mock_nnlc_sp
+
+            # Create CI (Car Interface)
+            mock_ci = Mock()
+
+            nnlc = NeuralNetworkLateralControl(mock_lac_torque, self.mock_cp, mock_cp_sp, mock_ci)
             
             # Test with testing mode enabled (should allow higher values for setpoint/measurement)
             test_input = [15.0, 8.0, 6.0, 4.0, 2.0, 1.0]  # High values for first few params
@@ -112,9 +196,8 @@ class TestNeuralNetworkLateralControl:
     def test_update_with_safe_inputs(self):
         """Test update method with safe input handling"""
         # Mock the model evaluation to return a predictable value
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
+        with patch('openpilot.common.params.Params'), \
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad'):
             
             # Create a mock model
             mock_model = Mock()
@@ -138,12 +221,40 @@ class TestNeuralNetworkLateralControl:
         """Test that saturation behavior is preserved with input clipping"""
         from sunnypilot.selfdrive.controls.lib.nnlc.nnlc import NeuralNetworkLateralControl
         
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModel'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
-            
-            nnlc = NeuralNetworkLateralControl(self.mock_cp, self.mock_vm)
+        # Mock the params and model
+        mock_params = Mock()
+        mock_params.get_bool.return_value = True
+        with patch('openpilot.common.params.Params') as MockParams, \
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+            MockParams.return_value = mock_params
+            mock_model_instance = Mock()
+            mock_model_instance.friction_override = False
+            MockModel.return_value = mock_model_instance
+
+            # We need to provide all required arguments: lac_torque, CP, CP_SP, CI
+            mock_lac_torque = Mock()
+            mock_lac_torque.steer_max = 1.0
+            mock_lac_torque.torque_params = Mock()
+            mock_lac_torque.torque_params.STEER_MAX = 2.0
+            mock_lac_torque.torque_params.STEER_DELTA_UP = 0.5
+            mock_lac_torque.torque_params.STEER_DELTA_DOWN = 0.5
+            mock_lac_torque.torque_params.STEER_ERROR_MAX = 0.5
+            mock_lac_torque.torque_params.TORQUE_MEASURED_SCALAR = 1000.0
+            mock_lac_torque.torque_params.TORQUE_OFFSET = 0.0
+            mock_lac_torque.torque_params.TORQUE_POSITION_SCALAR = 1000.0
+
+            # Create CP_SP (SunPyPilot CarParams)
+            mock_cp_sp = Mock()
+            mock_nnlc_sp = Mock()
+            mock_model_path = Mock()
+            mock_model_path.path = "test_path_for_mocking"  # Will be ignored due to mocking
+            mock_nnlc_sp.model = mock_model_path
+            mock_cp_sp.neuralNetworkLateralControl = mock_nnlc_sp
+
+            # Create CI (Car Interface)
+            mock_ci = Mock()
+
+            nnlc = NeuralNetworkLateralControl(mock_lac_torque, self.mock_cp, mock_cp_sp, mock_ci)
             
             # The enhanced code should preserve high values during saturation testing
             # when allow_high_values_for_testing is True for setpoint and measurement inputs
@@ -157,75 +268,6 @@ class TestNeuralNetworkLateralControl:
             # Other values should also be handled appropriately for saturation testing
 
 
-def test_safe_clip_input_directly():
-    """Direct test of the safe_clip_input functionality"""
-    # Create a simple test for the clipping function
-    def safe_clip_input(input_list, v_ego, allow_high_values_for_testing=False):
-        # Replicate the logic from the enhanced NNLC code
-        clipped = input_list[:]
-        clipped[0] = max(0.0, min(clipped[0], 40.0))  # v_ego should not exceed 144 km/h
-
-        # Limit lateral acceleration inputs to prevent excessive corrections
-        for i in range(1, len(clipped)):  # Start from 1 to skip vEgo
-            if isinstance(clipped[i], (int, float)):
-                if not allow_high_values_for_testing or i > 3:  # Apply clipping to other parameters
-                    clipped[i] = max(-5.0, min(clipped[i], 5.0))  # Limit to ±5 m/s²
-        return clipped
-
-    # Test normal operation
-    normal_input = [20.0, 1.0, 0.5, 0.2, 2.0, -3.0]
-    clipped_normal = safe_clip_input(normal_input, 20.0, False)
-    assert clipped_normal[0] == 20.0  # vEgo preserved
-    for val in clipped_normal[1:]:
-        assert -5.0 <= val <= 5.0  # Others clipped
-
-    # Test with testing mode enabled
-    test_input = [20.0, 8.0, 6.0, 4.0, 10.0, -10.0]
-    clipped_test = safe_clip_input(test_input, 20.0, True)
-    assert clipped_test[0] == 20.0  # vEgo preserved
-    assert clipped_test[1] == 5.0   # but first value after vEgo is still clipped unless in specific range
-    # Actually, looking at the original code again:
-    # The original code says: "for specific indices (setpoint, jerk, roll at indices 1,2,3)"
-    # So let me re-implement the exact logic:
-    
-    def safe_clip_input_corrected(input_list, v_ego, allow_high_values_for_testing=False):
-        clipped = input_list[:]
-        clipped[0] = max(0.0, min(clipped[0], 40.0))  # v_ego should not exceed 144 km/h
-
-        # Limit lateral acceleration inputs to prevent excessive corrections
-        for i in range(1, len(clipped)):  # Start from 1 to skip vEgo
-            if isinstance(clipped[i], (int, float)):
-                # For specific indices (setpoint, jerk, roll at indices 1,2,3),
-                # allow higher values during saturation testing
-                if not allow_high_values_for_testing or i > 3:  # Apply clipping to other parameters
-                    # Actually, re-reading: it should be "if not allow_high_values_for_testing OR i > 3"
-                    # So indices 1,2,3 should allow high values when testing is enabled
-                    if allow_high_values_for_testing and i <= 3:
-                        # Don't clip indices 1,2,3 when testing is enabled
-                        pass
-                    else:
-                        # Apply clipping for other parameters
-                        clipped[i] = max(-5.0, min(clipped[i], 5.0))
-        return clipped
-
-    # Test with corrected logic
-    test_input = [20.0, 8.0, 6.0, 4.0, 10.0, -10.0]
-    clipped_test_corrected = safe_clip_input_corrected(test_input, 20.0, True)
-    assert clipped_test_corrected[0] == 20.0  # vEgo preserved
-    assert clipped_test_corrected[1] == 8.0   # setpoint preserved during testing
-    assert clipped_test_corrected[2] == 6.0   # jerk preserved during testing
-    assert clipped_test_corrected[3] == 4.0   # roll preserved during testing
-    assert clipped_test_corrected[4] == 5.0   # others clipped
-    assert clipped_test_corrected[5] == -5.0  # others clipped
-
-    # Test with testing disabled (all clipped except vEgo)
-    clipped_normal_corrected = safe_clip_input_corrected(normal_input, 20.0, False)
-    assert clipped_normal_corrected[0] == 20.0  # vEgo preserved
-    for val in clipped_normal_corrected[1:]:
-        assert -5.0 <= val <= 5.0  # All others clipped
-
-
 if __name__ == "__main__":
-    test_safe_clip_input_directly()
-    print("Direct tests passed!")
+    print("Running NNLC controller tests...")
     pytest.main([__file__])
