@@ -112,10 +112,10 @@ def validate_process_config():
 def main():
   """Run final validation"""
   print("="*70)
-  print("SUNNYPilot Simplified Components Validation")
-  print("- Essential validation components")
-  print("- Basic safety systems")
-  print("- Clean architecture")
+  print("SUNNYPilot Components Validation")
+  print("- Validation components")
+  print("- Safety systems")
+  print("- Architecture compliance")
   print("- Aligned with openpilot patterns")
   print("="*70)
 
@@ -127,9 +127,9 @@ def main():
 
   print("\n" + "="*70)
   if all_valid:
-    print("✓ ALL SIMPLIFIED COMPONENTS VALIDATION PASSED")
+    print("✓ ALL COMPONENTS VALIDATION PASSED")
     print("SUNNYPilot system has properly implemented validation and safety")
-    print("components with clean architecture following openpilot patterns")
+    print("components with architecture following openpilot patterns")
   else:
     print("✗ SOME COMPONENTS VALIDATION FAILED")
     print("Please check the missing files or configuration issues above")

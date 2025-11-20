@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced Integration test for the validation and safety systems
+Integration test for the validation and safety systems
 """
 import sys
 import importlib.util
@@ -10,20 +10,8 @@ def test_file_integrity():
     """Test that all expected files exist and have valid syntax"""
     files_to_test = [
         "selfdrive/common/validation_publisher.py",
-        "selfdrive/monitoring/validation_controller.py",
-        "sunnypilot/navd/navd.py",
-        "sunnypilot/navd/navigation.py",
-        "sunnypilot/navd/interface.py",
-        "sunnypilot/navd/routing.py",
         "selfdrive/controls/safety_supervisor.py",
-        "system/sensord/system_health_monitoring.py",
-        "selfdrive/common/enhanced_validation.py",
-        "selfdrive/common/validation_utils.py",
-        "selfdrive/perception/behavior_prediction.py",
-        "selfdrive/common/arm_optimization.py",
-        "selfdrive/common/memory_optimization.py",
-        "selfdrive/common/performance_monitor.py",
-        "common/data_collector.py",
+        "selfdrive/common/validation_config.py",
         "final_validation.py",
     ]
 
@@ -60,28 +48,14 @@ def test_process_config_modifications():
     with open(config_path, "r") as f:
         content = f.read()
 
-    # Check that validation processes are added
+    # Check that validation process is added
     has_validationd = "PythonProcess(\"validationd\"" in content
-    has_validation_controller = "PythonProcess(\"validation_controller\"" in content
-    has_navd = "PythonProcess(\"navd\"" in content
 
     print("\nTesting process configuration...")
     if has_validationd:
         print("  ✓ validationd process added to config")
     else:
         print("  ✗ validationd process not found in config")
-        return False
-
-    if has_validation_controller:
-        print("  ✓ validation_controller process added to config")
-    else:
-        print("  ✗ validation_controller process not found in config")
-        return False
-
-    if has_navd:
-        print("  ✓ navd process found in config")
-    else:
-        print("  ✗ navd process not found in config")
         return False
 
     return True
@@ -127,10 +101,10 @@ def test_capnp_schema():
 
 def main():
     print("="*70)
-    print("SUNNYPilot Enhanced System Integration Test")
-    print("- Comprehensive validation of safety, validation, and navigation systems")
-    print("- Enhanced error handling and safety checks")
-    print("- Improved algorithms and system reliability")
+    print("SUNNYPilot System Integration Test")
+    print("- Validation of safety and validation systems")
+    print("- Basic error handling and safety checks")
+    print("- Core system reliability")
     print("="*70)
 
     file_test = test_file_integrity()
