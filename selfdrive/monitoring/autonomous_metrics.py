@@ -58,64 +58,82 @@ class AutonomousMetricsCollector:
     if not self.initialized or not self.sm:
       cloudlog.warning("Metrics collector not initialized with SubMaster")
       return self
-    
+
     self.frame_count += 1
-    
-    # Update from carState
-    if 'carState' in self.sm and self.sm.updated['carState']:
-      car_state = self.sm['carState']
-      
-      # Collect steering and acceleration data
-      if hasattr(car_state, 'steeringAngleDeg'):
-        self.steering_angles.append(car_state.steeringAngleDeg)
-      
-      if hasattr(car_state, 'aEgo'):
-        self.accelerations.append(car_state.aEgo)
-      
-      if hasattr(car_state, 'vEgo'):
-        self.velocities.append(car_state.vEgo)
-      
-      # Check for driver interventions
-      if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
-        self.driver_interventions += 1
-    
-    # Update from controlsState
-    if 'controlsState' in self.sm and self.sm.updated['controlsState']:
-      controls_state = self.sm['controlsState']
-      
-      # Collect jerk-related metrics
-      if hasattr(controls_state, 'lateralJerk'):
-        self.lateral_jerk_buffer.append(abs(controls_state.lateralJerk))
-      
-      if hasattr(controls_state, 'longitudinalJerk'):
-        self.longitudinal_jerk_buffer.append(abs(controls_state.longitudinalJerk))
-      
-      # Track mode switches
-      if hasattr(controls_state, 'experimentalMode') and controls_state.experimentalMode:
-        self.mode_switches += 1
-    
-    # Update from deviceState for system metrics
-    if 'deviceState' in self.sm and self.sm.updated['deviceState']:
-      device_state = self.sm['deviceState']
-      
-      if hasattr(device_state, 'cpuUsagePercent') and device_state.cpuUsagePercent:
-        cpu_avg = sum(device_state.cpuUsagePercent) / len(device_state.cpuUsagePercent)
-        self.cpu_usage_buffer.append(cpu_avg)
-      
-      if hasattr(device_state, 'memoryUsagePercent'):
-        self.memory_usage_buffer.append(device_state.memoryUsagePercent)
-      
-      if hasattr(device_state, 'cpuTempC') and device_state.cpuTempC:
-        temp_avg = sum(device_state.cpuTempC) / len(device_state.cpuTempC)
-        self.temperature_buffer.append(temp_avg)
-    
-    # Update from radarState for FCW events
-    if 'radarState' in self.sm and self.sm.updated['radarState']:
-      radar_state = self.sm['radarState']
-      
-      if hasattr(radar_state, 'fcw') and radar_state.fcw:
-        self.fcw_events += 1
-    
+
+    try:
+      # Update from carState
+      if 'carState' in self.sm and self.sm.updated['carState']:
+        car_state = self.sm['carState']
+
+        # Collect steering and acceleration data
+        if hasattr(car_state, 'steeringAngleDeg'):
+          self.steering_angles.append(car_state.steeringAngleDeg)
+
+        if hasattr(car_state, 'aEgo'):
+          self.accelerations.append(car_state.aEgo)
+
+        if hasattr(car_state, 'vEgo'):
+          self.velocities.append(car_state.vEgo)
+
+        # Check for driver interventions
+        if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
+          self.driver_interventions += 1
+    except Exception as e:
+      cloudlog.error(f"Error collecting carState metrics: {e}")
+
+    try:
+      # Update from controlsState
+      if 'controlsState' in self.sm and self.sm.updated['controlsState']:
+        controls_state = self.sm['controlsState']
+
+        # Collect jerk-related metrics
+        if hasattr(controls_state, 'lateralJerk'):
+          self.lateral_jerk_buffer.append(abs(controls_state.lateralJerk))
+
+        if hasattr(controls_state, 'longitudinalJerk'):
+          self.longitudinal_jerk_buffer.append(abs(controls_state.longitudinalJerk))
+
+        # Track mode switches
+        if hasattr(controls_state, 'experimentalMode') and controls_state.experimentalMode:
+          self.mode_switches += 1
+    except Exception as e:
+      cloudlog.error(f"Error collecting controlsState metrics: {e}")
+
+    try:
+      # Update from deviceState for system metrics
+      if 'deviceState' in self.sm and self.sm.updated['deviceState']:
+        device_state = self.sm['deviceState']
+
+        if hasattr(device_state, 'cpuUsagePercent') and device_state.cpuUsagePercent:
+          try:
+            cpu_avg = sum(device_state.cpuUsagePercent) / len(device_state.cpuUsagePercent)
+            self.cpu_usage_buffer.append(cpu_avg)
+          except (TypeError, ZeroDivisionError):
+            cloudlog.error("Error calculating CPU usage average")
+
+        if hasattr(device_state, 'memoryUsagePercent'):
+          self.memory_usage_buffer.append(device_state.memoryUsagePercent)
+
+        if hasattr(device_state, 'cpuTempC') and device_state.cpuTempC:
+          try:
+            temp_avg = sum(device_state.cpuTempC) / len(device_state.cpuTempC)
+            self.temperature_buffer.append(temp_avg)
+          except (TypeError, ZeroDivisionError):
+            cloudlog.error("Error calculating temperature average")
+    except Exception as e:
+      cloudlog.error(f"Error collecting deviceState metrics: {e}")
+
+    try:
+      # Update from radarState for FCW events
+      if 'radarState' in self.sm and self.sm.updated['radarState']:
+        radar_state = self.sm['radarState']
+
+        if hasattr(radar_state, 'fcw') and radar_state.fcw:
+          self.fcw_events += 1
+    except Exception as e:
+      cloudlog.error(f"Error collecting radarState metrics: {e}")
+
     return self
   
   def get_performance_report(self) -> Dict[str, float]:

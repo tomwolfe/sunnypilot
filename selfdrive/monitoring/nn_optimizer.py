@@ -46,16 +46,25 @@ class NNPerformanceOptimizer:
   def initialize_model(self, model_path: str):
     """Initialize the neural network model with optimizations"""
     try:
+      # Check if model path exists first
+      if not os.path.exists(model_path):
+        cloudlog.error(f"Neural network model path does not exist: {model_path}")
+        self.is_enabled = False
+        return
+
       # Load the model with optimizations
       self.model = NNTorqueModelTinygrad(model_path)
-      
+
       # Enable optimizations based on hardware constraints
       self.is_enabled = True
       cloudlog.info(f"Neural network model loaded and optimized: {model_path}")
-      
+
       # Run initial performance benchmark
       self.benchmark_performance()
-      
+
+    except ImportError:
+      cloudlog.error("NNTorqueModelTinygrad import failed - neural network features disabled")
+      self.is_enabled = False
     except Exception as e:
       cloudlog.error(f"Failed to initialize neural network model: {e}")
       self.is_enabled = False
@@ -64,13 +73,13 @@ class NNPerformanceOptimizer:
     """Benchmark current model performance"""
     if not self.model:
       return
-      
+
     # Create a typical input for benchmarking
     test_input = [15.0, 0.1, 0.05] + [0.0] * (self.model.input_size - 3)  # v_ego=15m/s, curvature=0.1, etc.
-    
-    # Measure inference time multiple times
+
+    # Measure inference time multiple times (reduced from 10 to 5 to improve performance)
     times = []
-    for _ in range(10):
+    for _ in range(5):  # Reduced from 10 to 5 to reduce initial benchmark time
       start_time = time.perf_counter()
       try:
         result = self.model.evaluate(test_input)
@@ -79,13 +88,13 @@ class NNPerformanceOptimizer:
       except Exception as e:
         cloudlog.error(f"Benchmark error: {e}")
         break
-    
+
     if times:
       avg_time = np.mean(times)
       self.inference_times.append(avg_time)
       cloudlog.info(f"NN Benchmark - Avg inference time: {avg_time:.2f}ms, "
                    f"Std: {np.std(times):.2f}ms")
-      
+
       # If inference time is too high, we might need to apply more aggressive optimizations
       if avg_time > 25:  # More than 25ms is too slow for 20Hz operation
         cloudlog.warning(f"NN inference time too high: {avg_time:.2f}ms, applying more aggressive optimizations")
@@ -95,9 +104,9 @@ class NNPerformanceOptimizer:
     """Apply hardware-specific optimizations to neural network evaluation"""
     if not self.model or not self.is_enabled:
       return 0.0, {"optimized": False, "reason": "Model not initialized"}
-    
+
     start_time = time.perf_counter()
-    
+
     # Apply dynamic model scaling based on system load
     if self.dynamic_scaling_enabled:
       # If we have recent inference times, adjust complexity
@@ -107,33 +116,34 @@ class NNPerformanceOptimizer:
           self.model_complexity_target = max(0.4, self.model_complexity_target - 0.05)
         elif avg_inference_time < 10:  # Can afford more complexity
           self.model_complexity_target = min(1.0, self.model_complexity_target + 0.02)
-    
+
     # Prepare input with potential optimizations
     optimized_input = self._prepare_optimized_input(input_data)
-    
+
     # Evaluate the model
     try:
       result = self.model.evaluate(optimized_input)
     except Exception as e:
       cloudlog.error(f"Model evaluation error: {e}")
       return 0.0, {"error": str(e)}
-    
+
     end_time = time.perf_counter()
     inference_time = (end_time - start_time) * 1000  # Convert to ms
-    
-    # Track performance
-    self.inference_times.append(inference_time)
-    
+
+    # Track performance (add inference time only if it's reasonable)
+    if inference_time < 100:  # Only track if not excessive (e.g. >100ms)
+      self.inference_times.append(inference_time)
+
     # Apply safety limits
     result = np.clip(result, -LIMIT_STEER, LIMIT_STEER)
-    
+
     optimization_info = {
       "inference_time_ms": inference_time,
       "model_complexity": self.model_complexity_target,
       "optimized": True,
       "quantized": self.quantization_enabled
     }
-    
+
     return float(result), optimization_info
   
   def _prepare_optimized_input(self, input_data: list) -> list:
@@ -201,15 +211,23 @@ class LateralControlOptimizer:
     self.is_active = False
     self.steering_limited_count = 0
     self.last_optimization_time = 0
-    
-    # Initialize from parameters
-    self.enabled = self.params.get_bool("NeuralNetworkLateralControl")
-    
-    if self.enabled:
-      model_path = self.params.get("NeuralNetworkLateralControlModelPath", encoding="utf-8")
-      if model_path and os.path.exists(model_path):
-        self.nn_optimizer = NNPerformanceOptimizer(model_path)
-        self.is_active = True
+
+    try:
+      # Initialize from parameters
+      self.enabled = self.params.get_bool("NeuralNetworkLateralControl")
+
+      if self.enabled:
+        model_path = self.params.get("NeuralNetworkLateralControlModelPath", encoding="utf-8")
+        if model_path and os.path.exists(model_path):
+          self.nn_optimizer = NNPerformanceOptimizer(model_path)
+          self.is_active = True
+        else:
+          cloudlog.warning("NeuralNetworkLateralControlModelPath not found or invalid, disabling optimizer")
+          self.enabled = False
+    except Exception as e:
+      cloudlog.error(f"Error initializing LateralControlOptimizer: {e}")
+      self.enabled = False
+      self.is_active = False
   
   def update(self, input_data: list, v_ego: float, curvature: float) -> Tuple[float, Dict[str, Any]]:
     """Update the optimized lateral control"""
@@ -266,3 +284,13 @@ lateral_optimizer = LateralControlOptimizer()
 def get_lateral_optimizer() -> LateralControlOptimizer:
   """Get the global lateral control optimizer instance"""
   return lateral_optimizer
+
+
+def apply_neural_network_control(input_data: list, v_ego: float, curvature: float) -> Tuple[float, Dict[str, Any]]:
+  """Convenience function to apply neural network control from anywhere in the system"""
+  try:
+    return lateral_optimizer.update(input_data, v_ego, curvature)
+  except Exception as e:
+    cloudlog.error(f"Error applying neural network control: {e}")
+    # Return a safe fallback value
+    return 0.0, {"error": str(e), "fallback": True}

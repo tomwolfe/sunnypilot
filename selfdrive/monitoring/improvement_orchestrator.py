@@ -123,15 +123,23 @@ class ImprovementPlanOrchestrator:
     try:
       # Get current car state
       car_state = self.sm['carState']
-      v_ego = car_state.vEgo if hasattr(car_state, 'vEgo') else 0.0
-      curvature = car_state.steeringAngleDeg * 0.01745 / 2.5 if hasattr(car_state, 'steeringAngleDeg') else 0.0  # Convert to curvature
-      
-      # Prepare input for neural network optimizer
-      input_data = [v_ego, curvature, 0.0] + [0.0] * 20  # Fill with zeros for other required inputs
-      
+      v_ego = getattr(car_state, 'vEgo', 0.0)
+      curvature = getattr(car_state, 'steeringAngleDeg', 0.0) * 0.01745 / 2.5  # Convert to curvature
+
+      # Prepare input for neural network optimizer with better defaults
+      input_data = [v_ego, curvature, 0.0]
+      # Extend with more realistic data from messaging system if available
+      if hasattr(car_state, 'aEgo'):
+        input_data.append(getattr(car_state, 'aEgo', 0.0))
+      else:
+        input_data.append(0.0)
+
+      # Fill with zeros for other required inputs
+      input_data.extend([0.0] * max(0, 24 - len(input_data)))
+
       # Apply optimization
       optimized_steering, opt_info = self.lateral_optimizer.update(input_data, v_ego, curvature)
-      
+
       # Update progress
       self.improvement_progress['nn_lateral_optimization'] = {
         'completed': True,
@@ -139,7 +147,7 @@ class ImprovementPlanOrchestrator:
         'timestamp': time.time(),
         'details': opt_info
       }
-      
+
       return {
         'success': True,
         'optimized_steering': optimized_steering,
@@ -266,28 +274,40 @@ class ImprovementPlanOrchestrator:
   
   def execute_improvement_cycle(self) -> Dict[str, Any]:
     """Execute one cycle of improvement algorithms"""
+    # Use a non-blocking update
     self.sm.update(0)
-    
+
     results = {
       'timestamp': time.time(),
-      'frame_count': self.metrics_collector.frame_count if hasattr(self.metrics_collector, 'frame_count') else 0,
+      'frame_count': getattr(self.metrics_collector, 'frame_count', 0),
       'algorithm_results': {}
     }
-    
+
     # Execute enabled improvement algorithms based on their frequency
     for algo in self.improvement_algorithms:
-      if not algo['enabled']:
+      if not algo.get('enabled', False):
         continue
-      
+
       # Check if it's time to run this algorithm
-      if self.metrics_collector.frame_count % algo['frequency'] == 0:
+      frame_count = getattr(self.metrics_collector, 'frame_count', 0)
+      if frame_count % algo['frequency'] == 0:
         try:
           result = algo['function']()
           results['algorithm_results'][algo['name']] = result
         except Exception as e:
           cloudlog.error(f"Error in {algo['name']} algorithm: {e}")
           results['algorithm_results'][algo['name']] = {'success': False, 'error': str(e)}
-    
+
+    # Additionally, update system status for neural network optimizer
+    try:
+      device_state = self.sm['deviceState'] if 'deviceState' in self.sm else None
+      if device_state:
+        cpu_load = device_state.cpuUsagePercent[0] if device_state.cpuUsagePercent else 50.0
+        thermal_status = device_state.cpuTempC[0] if device_state.cpuTempC else 30.0
+        self.lateral_optimizer.update_system_status(cpu_load, thermal_status)
+    except Exception as e:
+      cloudlog.error(f"Error updating system status for lateral optimizer: {e}")
+
     return results
   
   def evaluate_overall_progress(self) -> Dict[str, Any]:

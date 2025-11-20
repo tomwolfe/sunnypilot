@@ -6,6 +6,7 @@ See the LICENSE.md file in the root directory for more details.
 """
 # Version = 2025-6-30
 
+from collections import deque
 from cereal import messaging
 from opendbc.car import structs
 from numpy import interp
@@ -581,37 +582,43 @@ class DynamicExperimentalController:
     self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
 
   def update(self, sm: messaging.SubMaster) -> None:
-    self._read_params()
+    try:
+      self._read_params()
 
-    self.set_mpc_fcw_crash_cnt()
+      self.set_mpc_fcw_crash_cnt()
 
-    self._update_calculations(sm)
+      self._update_calculations(sm)
 
-    # Check if we should enforce standstill mode explicitly
-    enforce_standstill = self._should_enforce_standstill(sm)
+      # Check if we should enforce standstill mode explicitly
+      enforce_standstill = self._should_enforce_standstill(sm)
 
-    if self._CP.radarUnavailable:
-      self._radarless_mode()
-    else:
-      self._radar_mode()
+      if self._CP.radarUnavailable:
+        self._radarless_mode()
+      else:
+        self._radar_mode()
 
-    # If we should enforce standstill, make sure we stay in blended mode
-    if enforce_standstill:
-      self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+      # If we should enforce standstill, make sure we stay in blended mode
+      if enforce_standstill:
+        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
 
-    self._mode_manager.update()
-    self._active = sm['selfdriveState'].experimentalMode and self._enabled
-    self._frame += 1
+      self._mode_manager.update()
+      self._active = sm['selfdriveState'].experimentalMode and self._enabled
+      self._frame += 1
 
-    # Perform monitoring
-    if self._monitoring_enabled:
-      self._monitor_modes()
-      self._monitoring_frame_counter += 1
+      # Perform monitoring
+      if self._monitoring_enabled:
+        self._monitor_modes()
+        self._monitoring_frame_counter += 1
 
-      # Send metrics every second
-      if self._monitoring_frame_counter >= self._monitoring_interval:
-        self._send_metrics(sm)
-        self._monitoring_frame_counter = 0
+        # Send metrics every second
+        if self._monitoring_frame_counter >= self._monitoring_interval:
+          self._send_metrics(sm)
+          self._monitoring_frame_counter = 0
+    except Exception as e:
+      cloudlog.error(f"Error in DEC update: {e}")
+      # Fallback to safe mode if an error occurs
+      self._mode_manager.request_mode('acc', confidence=1.0, emergency=True)
+      self._active = False
 
   def _monitor_modes(self) -> None:
     """Monitor mode changes and time spent in each mode."""
