@@ -8,7 +8,8 @@ import numpy as np
 from typing import Dict, Any, Tuple, Optional
 from openpilot.common.swaglog import cloudlog
 from cereal import log
-from .autonomous_params import LATERAL_SAFETY_PARAMS
+from .autonomous_params import LATERAL_SAFETY_PARAMS, SAFETY_PARAMETERS
+from .safety_state_manager import ERROR_HANDLING
 
 
 class ModelConfidenceValidator:
@@ -20,9 +21,9 @@ class ModelConfidenceValidator:
         self.confidence_history = []
         self.max_history = 100  # Keep last 100 confidence readings
         # Use centralized threshold from autonomous_params to ensure consistency
-        self.confidence_threshold = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_THRESHOLD']  # Minimum confidence for safe operation
+        self.confidence_threshold = SAFETY_PARAMETERS['MODEL_CONFIDENCE_THRESHOLD']  # Minimum confidence for safe operation
         self.low_confidence_count = 0
-        self.max_low_confidence = 5  # Maximum consecutive low confidence readings before safety action
+        self.max_low_confidence = ERROR_HANDLING['max_consecutive_failures']  # From standardized error handling policy
         
     def validate_model_output(self, model_output: Dict[str, Any], 
                             v_ego: float, 
@@ -67,10 +68,20 @@ class ModelConfidenceValidator:
             self.low_confidence_count += 1
         else:
             self.low_confidence_count = 0
-            
-        is_safe = enhanced_confidence >= self.confidence_threshold and self.low_confidence_count <= self.max_low_confidence
+
+        # Implement standardized error handling policy
+        is_safe = True
+        if self.low_confidence_count >= ERROR_HANDLING['max_consecutive_failures']:
+            is_safe = False  # Disengage after max failures
+        elif self.low_confidence_count >= 6:
+            # Apply 90% conservative factor after 6 failures
+            enhanced_confidence *= 0.9
+        elif self.low_confidence_count >= 3:
+            # Apply 70% conservative factor after 3 failures
+            enhanced_confidence *= 0.7
+
         validation_details['low_confidence_count'] = self.low_confidence_count
-        
+
         return enhanced_confidence, is_safe, validation_details
     
     def _get_base_confidence(self, model_output: Dict[str, Any]) -> float:

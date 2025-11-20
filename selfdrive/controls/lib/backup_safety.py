@@ -7,6 +7,7 @@ import numpy as np
 import time
 from typing import Tuple, Optional, Dict, Any
 from openpilot.common.swaglog import cloudlog
+from .autonomous_params import SAFETY_PARAMETERS
 
 
 class SafetyBackupSystem:
@@ -23,8 +24,11 @@ class SafetyBackupSystem:
         self.validation_history = []  # Track validation events
         self.max_history = 100  # Max validation events to track
 
+        # Use centralized safety parameters to ensure consistency
+        self.DEFAULT_MAX_LATERAL_ACCEL = SAFETY_PARAMETERS['MAX_LATERAL_ACCEL']
+
     def validate_curvature(self, desired_curvature: float, v_ego: float,
-                          max_lateral_accel: float = 3.0,
+                          max_lateral_accel: float = None,
                           vehicle_params: Optional[Dict[str, float]] = None) -> float:
         """
         Validate curvature against physical limits and vehicle dynamics
@@ -35,6 +39,10 @@ class SafetyBackupSystem:
         :return: Validated curvature that respects safety limits
         """
         try:
+            # Use default max lateral acceleration from centralized parameters if not provided
+            if max_lateral_accel is None:
+                max_lateral_accel = self.DEFAULT_MAX_LATERAL_ACCEL
+
             # Get vehicle-specific parameters if available
             if vehicle_params and 'lateral_accel_limit' in vehicle_params:
                 max_lateral_accel = vehicle_params['lateral_accel_limit']

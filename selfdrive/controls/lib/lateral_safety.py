@@ -7,26 +7,26 @@ import numpy as np
 import math
 from openpilot.common.constants import CV, ACCELERATION_DUE_TO_GRAVITY
 from openpilot.selfdrive.modeld.constants import ModelConstants
-from .autonomous_params import LATERAL_SAFETY_PARAMS
+from .autonomous_params import LATERAL_SAFETY_PARAMS, SAFETY_PARAMETERS
+from .safety_state_manager import get_global_safety_state_manager
 from openpilot.common.swaglog import cloudlog
 
-# Global variables for tracking error states across function calls
-_prev_curvature_for_fallback = 0.0
-_error_count = 0
-
-# Import parameters
-MAX_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']
-MAX_CURVATURE_RATE = LATERAL_SAFETY_PARAMS['MAX_CURVATURE_RATE']
+# Import parameters from centralized SAFETY_PARAMETERS to ensure consistency
+MAX_LATERAL_ACCEL = SAFETY_PARAMETERS['MAX_LATERAL_ACCEL']
+MAX_CURVATURE_RATE = SAFETY_PARAMETERS['MAX_CURVATURE_RATE']
 DEFAULT_TIME_STEP = LATERAL_SAFETY_PARAMS['DEFAULT_TIME_STEP']
 MIN_TIME_STEP = LATERAL_SAFETY_PARAMS['MIN_TIME_STEP']
 MAX_TIME_STEP = LATERAL_SAFETY_PARAMS['MAX_TIME_STEP']
-MAX_SAFE_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_SAFE_LATERAL_ACCEL']
-MIN_SAFE_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MIN_SAFE_LATERAL_ACCEL']
-CURVATURE_AHEAD_THRESHOLD = LATERAL_SAFETY_PARAMS['CURVATURE_AHEAD_THRESHOLD']
-SHARP_CURVE_THRESHOLD = LATERAL_SAFETY_PARAMS['SHARP_CURVE_THRESHOLD']
-MODEL_CONFIDENCE_THRESHOLD = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_THRESHOLD']
-MODEL_CONFIDENCE_LOW_THRESHOLD = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_LOW_THRESHOLD']
-LATERAL_JERK_LIMIT = LATERAL_SAFETY_PARAMS['LATERAL_JERK_LIMIT']
+MAX_SAFE_LATERAL_ACCEL = SAFETY_PARAMETERS['MAX_SAFE_LATERAL_ACCEL']
+MIN_SAFE_LATERAL_ACCEL = SAFETY_PARAMETERS['MIN_SAFE_LATERAL_ACCEL']
+CURVATURE_AHEAD_THRESHOLD = SAFETY_PARAMETERS['CURVATURE_AHEAD_THRESHOLD']
+SHARP_CURVE_THRESHOLD = SAFETY_PARAMETERS['SHARP_CURVE_THRESHOLD']
+MODEL_CONFIDENCE_THRESHOLD = SAFETY_PARAMETERS['MODEL_CONFIDENCE_THRESHOLD']
+MODEL_CONFIDENCE_LOW_THRESHOLD = SAFETY_PARAMETERS['MODEL_CONFIDENCE_LOW_THRESHOLD']
+LATERAL_JERK_LIMIT = SAFETY_PARAMETERS['LATERAL_JERK_LIMIT']
+
+# Get thread-safe state manager
+_safety_state = get_global_safety_state_manager()
 
 def validate_time_step(dt):
     """
@@ -270,9 +270,6 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
     Get laterally safe and adaptive curvature considering various environmental factors
     Optimized for performance while maintaining safety
     """
-    # Declare global variables at the beginning of function
-    global _error_count, _prev_curvature_for_fallback
-
     try:
         # Validate time step parameter early and return if invalid
         try:
@@ -335,26 +332,34 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
         )
 
         # Reset error counter on successful execution
-        _error_count = 0
+        _safety_state.reset_errors()
         return final_curvature
     except Exception as e:
         # Comprehensive error handling with safer fallback
         cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
 
-        # Update global variables
-        _prev_curvature_for_fallback = prev_curvature
-        _error_count += 1
+        # Update state manager with new curvature and increment error
+        _safety_state.update_error(prev_curvature)
 
-        # Implement tiered fallbacks as suggested in the review
-        if _error_count > 3:
-            # Gradual reduction when multiple consecutive errors occur
-            fallback_curvature = _prev_curvature_for_fallback * 0.8
-        elif _error_count > 1:
-            # Moderate fallback when some errors occur
-            min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(v_ego, MAX_LATERAL_ACCEL)
-            fallback_curvature = max(min_curv_safe, min(_prev_curvature_for_fallback * 1.2, max_curv_safe))
+        # Get error count for tiered fallback
+        error_count = _safety_state.get_error_count()
+
+        # Implement standardized fallback as per unified error handling policy
+        from .safety_state_manager import ERROR_HANDLING
+
+        if error_count >= 8:
+            # Disengage system after 8 consecutive errors
+            cloudlog.error("Maximum error count reached, system should disengage")
+            # For this function, return the fallback curvature
+            return _safety_state.get_fallback_curvature()
+        elif error_count >= 6:
+            # Apply 90% conservative factor after 6 errors
+            fallback_curvature = _safety_state.get_fallback_curvature()
+            return fallback_curvature * ERROR_HANDLING['degradation_factors'][6]
+        elif error_count >= 3:
+            # Apply 70% conservative factor after 3 errors
+            fallback_curvature = _safety_state.get_fallback_curvature()
+            return fallback_curvature * ERROR_HANDLING['degradation_factors'][3]
         else:
-            # Maintain current state for first error
-            fallback_curvature = _prev_curvature_for_fallback
-
-        return fallback_curvature
+            # Use historical data for first few errors
+            return _safety_state.get_fallback_curvature()

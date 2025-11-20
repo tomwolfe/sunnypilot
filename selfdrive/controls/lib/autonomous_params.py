@@ -140,7 +140,23 @@ GENERAL_SAFETY_PARAMS = {
     'SPEED_SAFETY_FACTOR': 0.9,  # Factor for safe speed calculations
     'HIGH_RISK_SPEED_REDUCTION_FACTOR': 0.7,  # Factor for speed reduction in high risk
     'MEDIUM_RISK_SPEED_REDUCTION_FACTOR': 0.85,  # Factor for speed reduction in medium risk
-    'FAILURE_COUNT_THRESHOLD': 5  # Number of consecutive failures before disengagement
+    'FAILURE_COUNT_THRESHOLD': 5,  # Number of consecutive failures before disengagement
+    'MAX_CONSECUTIVE_FAILURES': 8,  # Maximum consecutive failures before disengagement
+    'FAILURE_DEGRADATION_3': 0.7,  # Apply 70% conservative factor after 3 failures
+    'FAILURE_DEGRADATION_6': 0.9,  # Apply 90% conservative factor after 6 failures
+}
+
+# Centralized safety parameters to ensure consistency across all modules
+SAFETY_PARAMETERS = {
+    'MAX_LATERAL_ACCEL': LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL'],
+    'SHARP_CURVE_THRESHOLD': LATERAL_SAFETY_PARAMS['SHARP_CURVE_THRESHOLD'],
+    'MODEL_CONFIDENCE_THRESHOLD': LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_THRESHOLD'],
+    'MODEL_CONFIDENCE_LOW_THRESHOLD': LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_LOW_THRESHOLD'],
+    'MAX_CURVATURE_RATE': LATERAL_SAFETY_PARAMS['MAX_CURVATURE_RATE'],
+    'LATERAL_JERK_LIMIT': LATERAL_SAFETY_PARAMS['LATERAL_JERK_LIMIT'],
+    'MIN_SAFE_LATERAL_ACCEL': LATERAL_SAFETY_PARAMS['MIN_SAFE_LATERAL_ACCEL'],
+    'MAX_SAFE_LATERAL_ACCEL': LATERAL_SAFETY_PARAMS['MAX_SAFE_LATERAL_ACCEL'],
+    'CURVATURE_AHEAD_THRESHOLD': LATERAL_SAFETY_PARAMS['CURVATURE_AHEAD_THRESHOLD']
 }
 
 # All parameters combined

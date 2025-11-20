@@ -14,10 +14,10 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.drive_helpers import get_safe_speed_from_curvature, adjust_curvature_for_road_conditions
 from openpilot.selfdrive.controls.lib.lateral_safety import adjust_lateral_limits_for_conditions
-from .autonomous_params import ADAPTIVE_BEHAVIOR_PARAMS
+from .autonomous_params import ADAPTIVE_BEHAVIOR_PARAMS, SAFETY_PARAMETERS
 
 # Import adaptive behavior parameters
-BASE_LATERAL_ACCEL_LIMIT = ADAPTIVE_BEHAVIOR_PARAMS['BASE_LATERAL_ACCEL_LIMIT']
+BASE_LATERAL_ACCEL_LIMIT = SAFETY_PARAMETERS['MAX_LATERAL_ACCEL']  # Use centralized safety parameter for consistency
 BASE_LONGITUDINAL_ACCEL_LIMIT = ADAPTIVE_BEHAVIOR_PARAMS['BASE_LONGITUDINAL_ACCEL_LIMIT']
 CURVATURE_DETECTION_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['CURVATURE_DETECTION_THRESHOLD']
 GRADE_DETECTION_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['GRADE_DETECTION_THRESHOLD']

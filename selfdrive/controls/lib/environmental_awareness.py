@@ -201,79 +201,47 @@ class EnvironmentalConditionMonitor:
     
     def get_environmental_risk_score(self, v_ego, curvature_ahead):
         """
-        Calculate an overall environmental risk score
+        Calculate an overall environmental risk score using additive model with clear thresholds
         :param v_ego: Current vehicle speed
         :param curvature_ahead: Anticipated curvature ahead
         :return: Risk score from 0.0 (low risk) to 1.0 (high risk)
         """
-        # Base risk components
-        weather_risk = 0.0
-        condition_risk = 0.0
-        dynamic_risk = 0.0
+        # Initialize risk score
+        risk_score = 0.0
 
-        # Calculate weather-related risk with non-linear interactions
-        # Rain + low visibility is more dangerous than sum of individual risks
-        weather_factors = []
+        # Weather risks (additive with clear thresholds)
         if self.is_rainy:
-            weather_factors.append(RAIN_RISK_FACTOR)
+            risk_score += 0.20  # Rain risk
         if self.is_snowy:
-            weather_factors.append(SNOW_RISK_FACTOR)
+            risk_score += 0.30  # Snow risk (higher than rain)
         if self.low_visibility:
-            weather_factors.append(VISIBILITY_RISK_FACTOR)
+            risk_score += 0.25  # Low visibility risk
         if self.is_night:
-            weather_factors.append(NIGHT_RISK_FACTOR)
+            risk_score += 0.15  # Night time risk
 
-        # Use validated weighted sum based on ISO 21448 (SOTIF) principles for risk calculation
-        if len(weather_factors) > 0:
-            # Weighted sum of validated safety metrics with documented weights
-            # Based on empirical data showing risk interactions
-            # Weights sum to 1.0 to maintain normalized risk score
-            weather_risk = 0.0
-            for i, factor in enumerate(weather_factors):
-                # Apply diminishing returns for multiple factors to avoid overestimation
-                weight = 1.0 / len(weather_factors)  # Equal weight distribution
-                weather_risk += factor * weight
-            # Apply saturation function to prevent risk from exceeding 1.0
-            weather_risk = min(1.0, weather_risk)
-        else:
-            weather_risk = 0.0
+        # Road and model condition risks
+        road_quality_risk = max(0.0, (1.0 - self.model_road_quality) * 0.3)  # Up to 0.3 for poor road quality
+        surface_condition_risk = max(0.0, (1.0 - self.model_surface_condition) * 0.35)  # Up to 0.35 for poor surface
+        model_uncertainty_risk = max(0.0, (1.0 - self.weather_confidence) * 0.4)  # Up to 0.4 for model uncertainty
 
-        # Calculate condition-related risk (road quality, surface, model uncertainty)
-        # Apply non-linear interactions between road quality and surface condition
-        base_road_risk = (1.0 - self.model_road_quality) * ROAD_QUALITY_RISK_FACTOR
-        base_surface_risk = (1.0 - self.model_surface_condition) * SURFACE_CONDITION_RISK_FACTOR
+        risk_score += road_quality_risk
+        risk_score += surface_condition_risk
+        risk_score += model_uncertainty_risk
 
-        # If both road quality and surface condition are poor, risk compounds
-        if (self.model_road_quality < 0.6 and self.model_surface_condition < 0.6):
-            condition_risk = min(1.0, (base_road_risk + base_surface_risk) * 1.5)  # 50% extra risk for both being poor
-        else:
-            condition_risk = base_road_risk + base_surface_risk
+        # Speed scaling risk (additive)
+        if v_ego > 25.0:  # High speed (>55 mph)
+            risk_score += min(0.3, (v_ego / SPEED_NORMALIZATION_BASELINE) * 0.3)  # Up to 0.3 for high speed
 
-        # Model uncertainty risk
-        model_uncertainty = (1.0 - self.weather_confidence) * MODEL_UNCERTAINTY_RISK_FACTOR
-        condition_risk = max(condition_risk, model_uncertainty)
+        # Curvature risk (additive)
+        if abs(curvature_ahead) > 0.008:  # Sharp curve threshold
+            curvature_risk = min(0.25, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)  # Up to 0.25 for sharp curves
+            risk_score += curvature_risk
 
-        # Calculate dynamic risk (speed and curvature interactions)
-        # At high speeds, poor conditions become exponentially more dangerous
-        base_speed_factor = (v_ego / SPEED_NORMALIZATION_BASELINE) ** 2  # Quadratic scaling
-        speed_risk = min(0.5, RISK_SPEED_FACTOR * base_speed_factor)
-
-        # High curvature ahead is especially risky when combined with poor conditions
-        if abs(curvature_ahead) > 0.008:  # Sharp curves
-            base_curvature_risk = min(0.3, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)
-            # If poor conditions exist, increase curvature risk
-            if (weather_risk > 0.3 or condition_risk > 0.3):
-                base_curvature_risk *= 1.5  # 50% extra risk for sharp curves in poor conditions
-            dynamic_risk = base_curvature_risk
-
-        # Combine all risk components with saturation
-        # Use a formula that approaches 1.0 but never exceeds it
-        total_risk = weather_risk + condition_risk + dynamic_risk
-        # Apply saturation to prevent exceeding 1.0, with a smooth transition
-        risk_score = total_risk / (1.0 + total_risk) if total_risk < float('inf') else 1.0
+        # Clamp to valid range [0.0, 1.0]
+        risk_score = min(1.0, risk_score)
 
         # Additional safety check to ensure risk is in valid range
-        risk_score = max(0.0, min(1.0, risk_score))
+        risk_score = max(0.0, risk_score)
 
         return risk_score
     
