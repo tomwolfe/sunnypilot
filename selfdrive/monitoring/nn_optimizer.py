@@ -13,6 +13,7 @@ from tinygrad.helpers import Timing
 from cereal import log
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
+
 # Define LIMIT_STEER constant (maximum steering torque)
 LIMIT_STEER = 1.0
 
@@ -152,7 +153,7 @@ class NNPerformanceOptimizer:
     if self.model_complexity_target < 0.7:
       # For reduced complexity, zero out less important future/past values
       optimized_input = input_data.copy()
-      
+
       # Simplify future trajectory inputs (if they exist beyond essential values)
       essential_count = min(5, len(input_data))  # Keep first few values
       for i in range(essential_count, len(optimized_input)):
@@ -162,10 +163,20 @@ class NNPerformanceOptimizer:
         else:
           # Reduce precision for performance
           optimized_input[i] = round(optimized_input[i], 4)
-      
+
       return optimized_input
-    
-    return input_data
+
+    # NEW: Performance optimization - early return for unchanged data
+    if hasattr(self, '_last_input') and hasattr(self, '_last_optimized_input'):
+      if input_data == self._last_input:
+        return self._last_optimized_input  # Return cached result if input unchanged
+
+    result = input_data.copy()
+    # Cache inputs to avoid redundant processing
+    self._last_input = input_data
+    self._last_optimized_input = result
+
+    return result
   
   def get_performance_metrics(self) -> Dict[str, Any]:
     """Get current performance metrics"""

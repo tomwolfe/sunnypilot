@@ -438,11 +438,30 @@ class DynamicExperimentalController:
     predictive_value = self._predictive_stop_filter.get_value() or 0.0
     self._has_predictive_stop = predictive_value > 0.7  # Higher threshold for predictive detection
 
-    # Additional predictive factors from model
+    # Additional predictive factors from model with proper error handling
     if hasattr(md, 'temporalBatch') and len(md.temporalBatch) > 0:
+      temporal_data = md.temporalBatch[0]
       # Check for traffic light or stop sign ahead
-      traffic_light_conf = md.temporalBatch[0].trafficLightStateProba[0] if len(md.temporalBatch[0].trafficLightStateProba) > 0 else 0.0
+      traffic_light_conf = 0.0
+      if hasattr(temporal_data, 'trafficLightStateProba') and len(temporal_data.trafficLightStateProba) > 0:
+        traffic_light_conf = temporal_data.trafficLightStateProba[0]
+      elif hasattr(temporal_data, 'trafficStateProba') and len(temporal_data.trafficStateProba) > 0:
+        traffic_light_conf = temporal_data.trafficStateProba[0]
+
       self._stop_signal_confidence = max(self._stop_signal_confidence, traffic_light_conf * 0.3)
+
+    # Additional predictive factors: desire states from model
+    if hasattr(md, 'meta') and hasattr(md.meta, 'desireState') and len(md.meta.desireState) > 0:
+      from cereal import log
+      # Check for stop desire state
+      if len(md.meta.desireState) > log.Desire.stop:
+        stop_desire_confidence = md.meta.desireState[log.Desire.stop]
+        if stop_desire_confidence > 0.6:
+          # Use both filters for more accurate prediction
+          combined_confidence = max(stop_state_confidence, stop_desire_confidence)
+          self._predictive_stop_filter.add_data(combined_confidence * 0.8)  # Weighted contribution
+          predictive_value = self._predictive_stop_filter.get_value() or 0.0
+          self._has_predictive_stop = predictive_value > 0.7
 
     # Update approach confidence based on trajectory
     if self._trajectory_valid and self._endpoint_x < 50:  # Within 50m
@@ -506,8 +525,8 @@ class DynamicExperimentalController:
 
     # NEW: Enhanced model-based prediction for upcoming maneuvers (in radarless mode)
     # Use modelV2 data to predict upcoming road conditions and adjust behavior
-    if 'modelV2' in self._sm and self._sm.updated['modelV2']:
-      model_msg = self._sm['modelV2']
+    if 'modelV2' in sm and sm.updated['modelV2']:
+      model_msg = sm['modelV2']
 
       # Check for upcoming curves that might require mode adjustment
       if len(model_msg.path.x) > 0 and len(model_msg.path.y) > 0:
@@ -607,8 +626,8 @@ class DynamicExperimentalController:
 
     # NEW: Enhanced model-based prediction for upcoming maneuvers
     # Use modelV2 data to predict upcoming road conditions and adjust behavior
-    if 'modelV2' in self._sm and self._sm.updated['modelV2']:
-      model_msg = self._sm['modelV2']
+    if 'modelV2' in sm and sm.updated['modelV2']:
+      model_msg = sm['modelV2']
 
       # Check for upcoming curves that might require mode adjustment
       if len(model_msg.path.x) > 0 and len(model_msg.path.y) > 0:

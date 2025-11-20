@@ -143,7 +143,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # Additional environmental awareness for safe acceleration
       # Adjust acceleration based on road conditions from model data
-      if len(sm['modelV2'].orientationNED.x) > 0:
+      if hasattr(sm['modelV2'], 'orientationNED') and len(sm['modelV2'].orientationNED.x) > 0:
         # Get road pitch/grade from model to adjust acceleration appropriately
         road_pitch = sm['modelV2'].orientationNED.x[0]  # First element represents pitch
         # Reduce acceleration when going uphill, allow more when going downhill
@@ -152,6 +152,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         elif road_pitch < -0.05:  # Downhill
           # Be more conservative going downhill
           accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.8, -0.8))  # Be more restrictive on braking
+
+      # NEW: Additional safety check based on model-based curve anticipation
+      if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10:
+        # Look at curvature 2 seconds ahead (assuming 0.05m spacing and 10m/s average speed)
+        curve_ahead_idx = min(20, len(sm['modelV2'].path.y) - 1)  # About 2 seconds ahead at 10m/s
+        if curve_ahead_idx < len(sm['modelV2'].path.y):
+          curve_ahead = abs(sm['modelV2'].path.y[curve_ahead_idx])
+          # If upcoming curve is significant, reduce acceleration limits
+          if curve_ahead > 0.003:  # Significant curve ahead
+            accel_clip[1] = min(accel_clip[1], max(accel_clip[1] * 0.85, 0.3))  # Reduce max accel by 15%
+            # Be more conservative on braking as well
+            if curve_ahead > 0.008:  # Very sharp curve ahead
+              accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.9, -0.5))  # Reduce brake aggressiveness
     else:
       # In blended mode, still apply reasonable limits for experimental mode
       max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX
