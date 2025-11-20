@@ -23,23 +23,29 @@ from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad import NNTo
 
 class NNPerformanceOptimizer:
   """Optimizes neural network performance for lateral control on SDM845"""
-  
+
   def __init__(self, model_path: Optional[str] = None):
     self.params = Params()
     self.model_path = model_path
     self.model: Optional[NNTorqueModelTinygrad] = None
     self.is_enabled = False
-    
+
     # Performance tracking
     self.inference_times = deque(maxlen=100)
     self.power_consumption = deque(maxlen=50)
     self.thermal_load = deque(maxlen=50)
-    
+
     # Optimization parameters
     self.quantization_enabled = True
     self.model_complexity_target = 0.8  # 0.0 to 1.0, with 1.0 being full complexity
     self.dynamic_scaling_enabled = True
-    
+
+    # NEW: Performance impact tracking - measure overhead on system
+    self.monitoring_overhead_start_time = 0.0
+    self.total_monitoring_time = 0.0
+    self.monitoring_call_count = 0
+    self.max_acceptable_overhead_ms = 20.0  # Max 20ms overhead per inference allowed
+
     # Initialize if model path is provided
     if model_path:
       self.initialize_model(model_path)
@@ -135,6 +141,19 @@ class NNPerformanceOptimizer:
     if inference_time < 100:  # Only track if not excessive (e.g. >100ms)
       self.inference_times.append(inference_time)
 
+    # NEW: Track monitoring overhead and ensure it stays within limits
+    total_time = time.perf_counter() - start_time
+    monitoring_overhead = (total_time * 1000) - inference_time  # In milliseconds
+    self.total_monitoring_time += monitoring_overhead
+    self.monitoring_call_count += 1
+
+    # If monitoring overhead is too high, reduce monitoring activities
+    avg_monitoring_overhead = self.total_monitoring_time / max(1, self.monitoring_call_count)
+    if avg_monitoring_overhead > self.max_acceptable_overhead_ms:
+      cloudlog.warning(f"Monitoring overhead too high: {avg_monitoring_overhead:.2f}ms, reducing complexity")
+      # Reduce complexity to lower overhead
+      self.model_complexity_target = max(0.3, self.model_complexity_target - 0.1)
+
     # Apply safety limits
     result = np.clip(result, -LIMIT_STEER, LIMIT_STEER)
 
@@ -142,7 +161,9 @@ class NNPerformanceOptimizer:
       "inference_time_ms": inference_time,
       "model_complexity": self.model_complexity_target,
       "optimized": True,
-      "quantized": self.quantization_enabled
+      "quantized": self.quantization_enabled,
+      "monitoring_overhead_ms": monitoring_overhead,
+      "avg_monitoring_overhead_ms": avg_monitoring_overhead
     }
 
     return float(result), optimization_info

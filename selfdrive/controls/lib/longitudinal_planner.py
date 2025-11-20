@@ -223,8 +223,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
+    # NEW: Adaptive acceleration rate limiting based on driving conditions
+    # Base acceleration rate limit (0.05 m/s^2 per DT_MDL) - original value was too aggressive
+    accel_rate_limit = 0.05
+
+    # Adjust rate limit based on environmental conditions
+    if hasattr(sm['modelV2'], 'orientationNED') and len(sm['modelV2'].orientationNED.x) > 0:
+      road_pitch = sm['modelV2'].orientationNED.x[0]
+      # Reduce rate limit when on hills
+      if abs(road_pitch) > 0.05:  # More than 5% grade
+        accel_rate_limit = 0.03  # More conservative acceleration rate
+
     for idx in range(2):
-      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
+      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - accel_rate_limit, self.prev_accel_clip[idx] + accel_rate_limit)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 

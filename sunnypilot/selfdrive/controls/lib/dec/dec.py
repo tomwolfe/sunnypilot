@@ -80,7 +80,12 @@ class SmoothKalmanFilter:
 
 
 class ModeTransitionManager:
-  """Manages smooth transitions between driving modes with hysteresis."""
+  """Manages smooth transitions between driving modes with hysteresis.
+
+  When active=False, the system disengages from experimental mode but may
+  continue in standard ACC mode. Complete disengagement from longitudinal
+  control is handled by the higher-level controls system.
+  """
 
   def __init__(self):
     self.current_mode: ModeType = 'acc'
@@ -89,6 +94,9 @@ class ModeTransitionManager:
     self.min_mode_duration = 10
     self.mode_duration = 0
     self.emergency_override = False
+    # Track disengagement metrics
+    self.disengagement_count = 0
+    self.error_disengagement_count = 0
 
   def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
     # Emergency override for critical situations (stops, collisions)
@@ -677,7 +685,18 @@ class DynamicExperimentalController:
         self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
 
       self._mode_manager.update()
+
+      # Track disengagement when active=False
+      prev_active = self._active
       self._active = sm['selfdriveState'].experimentalMode and self._enabled
+
+      if prev_active and not self._active:
+        self._mode_manager.disengagement_count += 1
+        # Only count as error disengagement if it happened due to error
+        if hasattr(self, '_last_error_occurred') and self._last_error_occurred:
+          self._mode_manager.error_disengagement_count += 1
+          self._last_error_occurred = False  # Reset flag
+
       self._frame += 1
 
       # Perform monitoring
@@ -690,10 +709,45 @@ class DynamicExperimentalController:
           self._send_metrics(sm)
           self._monitoring_frame_counter = 0
     except Exception as e:
+      self._last_error_occurred = True
       cloudlog.error(f"Error in DEC update: {e}")
-      # Fallback to safe mode if an error occurs
+      # Multi-level fallback system
+      self._handle_error_fallback(e)
+
+  def _handle_error_fallback(self, error: Exception) -> None:
+    """Handle errors with a multi-level fallback system"""
+    cloudlog.error(f"Multi-level fallback triggered due to error: {error}")
+
+    # Level 1: Fallback to basic experimental mode
+    try:
       self._mode_manager.request_mode('acc', confidence=1.0, emergency=True)
-      self._active = False
+      self._active = False  # Deactivate experimental features
+      cloudlog.info("Level 1 fallback: Deactivated experimental mode, keeping ACC active")
+      return
+    except Exception as e2:
+      cloudlog.error(f"Level 1 fallback failed: {e2}")
+
+      # Level 2: Disable all experimental control
+      try:
+        self._active = False
+        # Reset to safe defaults
+        self._mode_manager.current_mode = 'acc'
+        self._mode_manager.mode_confidence = {'acc': 1.0, 'blended': 0.0}
+        cloudlog.info("Level 2 fallback: Disabled all experimental control")
+        return
+      except Exception as e3:
+        cloudlog.error(f"Level 2 fallback failed: {e3}")
+
+        # Level 3: Complete system disengagement - this is the final safety net
+        try:
+          self._active = False
+          self._enabled = False  # Completely disable the system
+          cloudlog.error("Level 3 fallback: System completely disengaged for safety")
+          return
+        except Exception as e4:
+          cloudlog.error(f"All fallback levels failed: {e4}. System in undefined state.")
+          # In the worst case, ensure the system is at least not in experimental mode
+          self._active = False
 
   def _monitor_modes(self) -> None:
     """Monitor mode changes and time spent in each mode."""
@@ -744,7 +798,7 @@ class DynamicExperimentalController:
       self._last_mode_change_time = current_time
 
       # Send metrics
-      if self._active:  # Only send when the system is actually active
+      if self._active or self._enabled:  # Send metrics even when not active but enabled
         statlog.sample('DynamicExperimentalController.mode_switches', self._mode_switch_count)
         statlog.gauge('DynamicExperimentalController.current_mode', 1.0 if current_mode == 'blended' else 0.0)
         statlog.sample('DynamicExperimentalController.time_in_acc_mode', self._mode_timer['acc'])
@@ -762,7 +816,11 @@ class DynamicExperimentalController:
         statlog.gauge('DynamicExperimentalController.enabled', float(self._enabled))
         statlog.gauge('DynamicExperimentalController.active', float(self._active))
 
-        # Reset counters for next interval
+        # NEW: Disengagement metrics
+        statlog.sample('DynamicExperimentalController.disengagement_count', self._mode_manager.disengagement_count)
+        statlog.sample('DynamicExperimentalController.error_disengagement_count', self._mode_manager.error_disengagement_count)
+
+        # Reset counters for next interval (except disengagement counters, which are lifetime)
         self._mode_switch_count = 0
 
     except Exception as e:

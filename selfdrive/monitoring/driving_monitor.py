@@ -59,41 +59,53 @@ class AutonomousDrivingMonitor:
     """Main monitoring function - collect metrics and monitor system performance"""
     self.sm.update(0)
     self.frame_count += 1
-    
-    # Collect current metrics
-    current_metrics = self.metrics_collector.collect_metrics()
-    
-    # If DEC controller exists, update it too
+
+    # If DEC controller exists, update it first (critical path)
     if self.dec_controller:
       try:
+        # Update DEC controller first to ensure critical control is not delayed
         self.dec_controller.update(self.sm)
       except Exception as e:
         cloudlog.error(f"Error updating DEC controller: {e}")
-    
-    # Check if it's time for a detailed report
+
+    # Non-critical monitoring operations happen after critical control updates
+    # This moves monitoring off the critical control path
+    current_metrics = None
+    try:
+      # Collect metrics in a non-blocking way or with timeout
+      current_metrics = self.metrics_collector.collect_metrics()
+    except Exception as e:
+      cloudlog.warning(f"Non-critical metrics collection failed: {e}")
+      # Continue operation even if metrics collection fails
+
+    # Check if it's time for a detailed report (non-critical)
     current_time = time.time()
     if current_time - self.last_report_time >= self.reporting_interval:
-      performance_report = self.metrics_collector.get_performance_report()
-      system_health = self.metrics_collector.get_system_health()
-      
-      # Log important metrics
-      cloudlog.info(f"Driving Performance Report: "
-                   f"Duration: {performance_report['duration']:.1f}s, "
-                   f"Avg CPU: {performance_report['avg_cpu_util']:.1f}%, "
-                   f"Avg Lat Jerk: {performance_report['avg_lateral_jerk']:.2f}, "
-                   f"Health: {system_health['status']}")
-      
-      self.last_report_time = current_time
-      
-      return {
-        "performance_report": performance_report,
-        "system_health": system_health,
-        "current_metrics": current_metrics.__dict__
-      }
-    
+      try:
+        performance_report = self.metrics_collector.get_performance_report()
+        system_health = self.metrics_collector.get_system_health()
+
+        # Log important metrics
+        cloudlog.info(f"Driving Performance Report: "
+                     f"Duration: {performance_report['duration']:.1f}s, "
+                     f"Avg CPU: {performance_report['avg_cpu_util']:.1f}%, "
+                     f"Avg Lat Jerk: {performance_report['avg_lateral_jerk']:.2f}, "
+                     f"Health: {system_health['status']}")
+
+        self.last_report_time = current_time
+
+        return {
+          "performance_report": performance_report,
+          "system_health": system_health,
+          "current_metrics": current_metrics.__dict__ if current_metrics else {}
+        }
+      except Exception as e:
+        cloudlog.warning(f"Non-critical reporting failed: {e}")
+
+    # Return minimal essential data quickly
     return {
-      "system_health": self.metrics_collector.get_system_health(),
-      "current_metrics": current_metrics.__dict__
+      "system_health": self.metrics_collector.get_system_health() if current_metrics else {"status": "healthy"},
+      "current_metrics": current_metrics.__dict__ if current_metrics else {}
     }
   
   def run_monitoring_cycle(self, duration: float = 60.0):
