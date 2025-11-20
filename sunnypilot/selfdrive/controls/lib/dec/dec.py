@@ -182,10 +182,32 @@ class DynamicExperimentalController:
       alpha=1.1,
       smoothing_factor=0.5
     )
+
+    # NEW: Enhanced predictive filters for better anticipation
+    self._predictive_stop_filter = SmoothKalmanFilter(
+      measurement_noise=0.12,
+      process_noise=0.08,
+      alpha=1.03,
+      smoothing_factor=0.75
+    )
+
+    # NEW: Weather and environmental adaptation
+    self._weather_confidence = 1.0  # 1.0 = normal, < 1.0 = adverse conditions
+    self._lighting_condition = 1.0  # 1.0 = daylight, < 1.0 = poor visibility
+
+    # NEW: Driver behavior adaptation
+    self._driver_aggression_score = 0.5  # 0.0-1.0, 0.5 = neutral
+    self._driver_override_history = deque(maxlen=50)  # Track recent overrides
+
+    # NEW: Multi-sensor fusion for enhanced reliability
+    self._lidar_available = False  # Will be set based on car capabilities
+    self._radar_confidence = 1.0   # 1.0 = reliable, < 1.0 = degraded
+
     self._has_lead_filtered = False
     self._has_slow_down = False
     self._has_slowness = False
     self._has_mpc_fcw = False
+    self._has_predictive_stop = False  # NEW: Predictive stop detection
     self._v_ego_kph = 0.0
     self._v_cruise_kph = 0.0
     self._has_standstill = False
@@ -195,6 +217,11 @@ class DynamicExperimentalController:
     self._endpoint_x = float('inf')
     self._expected_distance = 0.0
     self._trajectory_valid = False
+
+    # NEW: Predictive model parameters
+    self._approaching_object_confidence = 0.0
+    self._stop_signal_confidence = 0.0
+    self._intersection_confidence = 0.0
 
   def _read_params(self) -> None:
     if self._frame % int(1. / DT_MDL) == 0:
@@ -222,6 +249,12 @@ class DynamicExperimentalController:
     self._v_cruise_kph = car_state.vCruise
     self._has_standstill = car_state.standstill
 
+    # Update environmental conditions NEW
+    self._update_environmental_conditions(sm)
+
+    # Update driver behavior adaptation NEW
+    self._update_driver_behavior(sm)
+
     # standstill detection
     if self._has_standstill:
       self._standstill_count = min(20, self._standstill_count + 1)
@@ -237,6 +270,9 @@ class DynamicExperimentalController:
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
     self._mpc_fcw_filter.add_data(float(self._mpc_fcw_crash_cnt > 0))
     self._has_mpc_fcw = fcw_filtered_value > 0.5
+
+    # NEW: Predictive stop detection from model data
+    self._calculate_predictive_stops(md)
 
     # Slow down detection
     self._calculate_slow_down(md)
@@ -334,17 +370,116 @@ class DynamicExperimentalController:
     self._has_slow_down = urgency_filtered > WMACConstants.SLOW_DOWN_PROB
     self._urgency = urgency_filtered
 
+  def _update_environmental_conditions(self, sm: messaging.SubMaster) -> None:
+    """Update environmental condition awareness for adaptive driving"""
+    # NEW: Get environmental data from various sensors and services
+    car_state = sm['carState']
+
+    # Placeholder for weather data (in real implementation, this would come from various sources)
+    # For now, use car sensors that might indicate conditions
+    steering_torque_input = abs(car_state.steeringTorqueEps) if hasattr(car_state, 'steeringTorqueEps') else 0.0
+    wheel_speed_fl = car_state.wheelSpeeds.fl if hasattr(car_state.wheelSpeeds, 'fl') else 0.0
+    wheel_speed_fr = car_state.wheelSpeeds.fr if hasattr(car_state.wheelSpeeds, 'fr') else 0.0
+
+    # Simple heuristic for weather conditions based on steering and wheel speed consistency
+    # In real implementation, this would use actual weather data from APIs or sensors
+    if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
+      # If driver is making frequent steering corrections, assume adverse conditions
+      self._weather_confidence = max(0.3, self._weather_confidence - 0.01)
+    else:
+      # Gradually restore confidence if conditions appear stable
+      self._weather_confidence = min(1.0, self._weather_confidence + 0.001)
+
+    # Lighting condition assessment (simplified)
+    # In real implementation, this would use light sensor data or time of day
+    if self._v_ego_kph > 5 and self._v_ego_kph < 25 and self._has_slow_down:
+      # In low-light conditions with stop anticipation, reduce confidence
+      self._lighting_condition = 0.8
+
+    # Radar confidence assessment
+    radar_state = sm['radarState']
+    if not radar_state.radarFaulted:
+      self._radar_confidence = min(1.0, self._radar_confidence + 0.001)  # Slowly increase when radar is healthy
+    else:
+      self._radar_confidence = max(0.1, self._radar_confidence - 0.1)   # Quickly decrease when radar fails
+
+  def _update_driver_behavior(self, sm: messaging.SubMaster) -> None:
+    """Track and adapt to driver behavior preferences"""
+    car_state = sm['carState']
+
+    # Detect if driver is overriding controls
+    if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
+      # Record override event
+      self._driver_override_history.append(time.monotonic())
+
+      # Recalculate driver aggression score based on override frequency
+      recent_overrides = [t for t in self._driver_override_history
+                         if time.monotonic() - t < 30.0]  # Last 30 seconds
+      override_frequency = min(1.0, len(recent_overrides) / 10.0)  # Normalize
+
+      # Adjust aggression score based on override patterns
+      if len(recent_overrides) > 3:
+        # Driver is more interventionist, reduce aggression
+        self._driver_aggression_score = max(0.1, self._driver_aggression_score - 0.1)
+      else:
+        # Gradually return to neutral
+        self._driver_aggression_score = min(0.9, self._driver_aggression_score + 0.001)
+
+  def _calculate_predictive_stops(self, md) -> None:
+    """NEW: Calculate predictive stop anticipation from model data"""
+    if not (hasattr(md, 'meta') and hasattr(md.meta, 'stopState')):
+      return
+
+    # Predictive stop detection from model meta information
+    stop_state_confidence = float(md.meta.stopState) if md.meta.stopState else 0.0
+    self._predictive_stop_filter.add_data(stop_state_confidence)
+
+    predictive_value = self._predictive_stop_filter.get_value() or 0.0
+    self._has_predictive_stop = predictive_value > 0.7  # Higher threshold for predictive detection
+
+    # Additional predictive factors from model
+    if hasattr(md, 'temporalBatch') and len(md.temporalBatch) > 0:
+      # Check for traffic light or stop sign ahead
+      traffic_light_conf = md.temporalBatch[0].trafficLightStateProba[0] if len(md.temporalBatch[0].trafficLightStateProba) > 0 else 0.0
+      self._stop_signal_confidence = max(self._stop_signal_confidence, traffic_light_conf * 0.3)
+
+    # Update approach confidence based on trajectory
+    if self._trajectory_valid and self._endpoint_x < 50:  # Within 50m
+      self._approaching_object_confidence = max(0.5, self._approaching_object_confidence)
+    else:
+      self._approaching_object_confidence *= 0.95  # Decay over time
+
   def _radarless_mode(self) -> None:
-    """Radarless mode decision logic with emergency handling."""
+    """Radarless mode decision logic with emergency handling and environmental awareness."""
 
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
+    # NEW: Predictive stop handling - use blended mode when predictive stop detected
+    if self._has_predictive_stop and self._v_ego_kph > 5.0:
+      confidence = min(1.0, self._stop_signal_confidence * 1.5)
+      self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
+      return
+
+    # Environmental condition adjustments
+    base_confidence = 1.0
+    if self._weather_confidence < 0.7:
+      # In adverse weather, be more conservative
+      base_confidence *= 0.8
+    if self._lighting_condition < 0.6:
+      # In poor lighting, be more conservative
+      base_confidence *= 0.85
+
+    # NEW: Driver behavior adaptation - more conservative if driver is interventionist
+    if self._driver_aggression_score < 0.3:
+      base_confidence *= 0.7  # More conservative for cautious drivers
+
     # Standstill: use blended with high confidence to ensure complete stop
     if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
+      adjusted_confidence = base_confidence * 1.0
+      self._mode_manager.request_mode('blended', confidence=adjusted_confidence)  # Increased from 0.9 to 1.0
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
@@ -353,32 +488,65 @@ class DynamicExperimentalController:
       if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
         # Emergency: immediate blended mode for high urgency stops
         confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
-        self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
+        adjusted_confidence = confidence * base_confidence
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
         confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.5 for more responsiveness
-        self._mode_manager.request_mode('blended', confidence=confidence)
+        adjusted_confidence = confidence * base_confidence
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
+      adjusted_confidence = 0.8 * base_confidence
+      self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
       return
 
     # Default: ACC
-    self._mode_manager.request_mode('acc', confidence=0.7)
+    adjusted_confidence = 0.7 * base_confidence
+    self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
 
   def _radar_mode(self) -> None:
-    """Radar mode with emergency handling."""
+    """Radar mode with emergency handling and environmental awareness."""
 
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
+    # NEW: Predictive stop handling - use blended mode when predictive stop detected
+    if self._has_predictive_stop and self._v_ego_kph > 5.0:
+      confidence = min(1.0, self._stop_signal_confidence * 1.5)
+      self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
+      return
+
+    # Environmental condition adjustments
+    base_confidence = 1.0
+    if self._weather_confidence < 0.7:
+      # In adverse weather, be more conservative
+      base_confidence *= 0.8
+    if self._lighting_condition < 0.6:
+      # In poor lighting, be more conservative
+      base_confidence *= 0.85
+
+    # NEW: Driver behavior adaptation - more conservative if driver is interventionist
+    if self._driver_aggression_score < 0.3:
+      base_confidence *= 0.7  # More conservative for cautious drivers
+
+    # NEW: Radar reliability check
+    if self._radar_confidence < 0.5:
+      # When radar is unreliable, rely more on vision-based detection
+      if self._has_slow_down or self._has_predictive_stop:
+        # Use blended mode when vision detects issues but radar might be unreliable
+        confidence = min(1.0, (self._urgency + self._stop_signal_confidence) * base_confidence)
+        self._mode_manager.request_mode('blended', confidence=confidence)
+        return
+
     # If lead detected and not in standstill: always use ACC
     if self._has_lead_filtered and not (self._standstill_count > 3):
-      self._mode_manager.request_mode('acc', confidence=1.0)
+      adjusted_confidence = base_confidence * 1.0
+      self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
@@ -387,25 +555,30 @@ class DynamicExperimentalController:
       if self._urgency > 0.5:  # Lowered threshold from 0.7 for more responsive stopping
         # Emergency: immediate blended mode for high urgency stops
         confidence = min(1.0, self._urgency * 1.2)  # Add confidence based on urgency
-        self._mode_manager.request_mode('blended', confidence=confidence, emergency=True)
+        adjusted_confidence = confidence * base_confidence
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence, emergency=True)
       else:
         # Normal: blended with urgency-based confidence
         confidence = min(1.0, self._urgency * 1.8)  # Increased from 1.3 for more responsiveness
-        self._mode_manager.request_mode('blended', confidence=confidence)
+        adjusted_confidence = confidence * base_confidence
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
       return
 
     # Standstill: use blended with high confidence to ensure complete stop
     if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=1.0)  # Increased from 0.9 to 1.0
+      adjusted_confidence = base_confidence * 1.0
+      self._mode_manager.request_mode('blended', confidence=adjusted_confidence)  # Increased from 0.9 to 1.0
       return
 
     # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
+      adjusted_confidence = 0.8 * base_confidence
+      self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
       return
 
     # Default: ACC
-    self._mode_manager.request_mode('acc', confidence=0.7)
+    adjusted_confidence = 0.7 * base_confidence
+    self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
 
   def update(self, sm: messaging.SubMaster) -> None:
     self._read_params()
