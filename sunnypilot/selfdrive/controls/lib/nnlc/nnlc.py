@@ -130,6 +130,24 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     nnff_measurement_input = [CS.vEgo, self._measurement, self.lateral_jerk_measurement, roll] \
                              + [self._measurement] * self.past_future_len \
                              + past_rolls + future_rolls
+
+    # Enhanced safety checks for NN inputs
+    # Clip inputs to prevent model from receiving out-of-range values that could cause erratic behavior
+    def safe_clip_input(input_list, v_ego):
+        # Ensure speed is within reasonable bounds
+        clipped = input_list[:]
+        clipped[0] = max(0.0, min(clipped[0], 40.0))  # v_ego should not exceed 144 km/h
+
+        # Limit lateral acceleration inputs to prevent excessive corrections
+        for i in range(1, len(clipped)):  # Start from 1 to skip v_ego
+            if isinstance(clipped[i], (int, float)):
+                # Reasonable limits for lateral acceleration and related parameters
+                clipped[i] = max(-5.0, min(clipped[i], 5.0))  # Limit to ±5 m/s²
+        return clipped
+
+    nnff_setpoint_input = safe_clip_input(nnff_setpoint_input, CS.vEgo)
+    nnff_measurement_input = safe_clip_input(nnff_measurement_input, CS.vEgo)
+
     torque_from_setpoint = self.model.evaluate(nnff_setpoint_input)
     torque_from_measurement = self.model.evaluate(nnff_measurement_input)
     self._pid_log.error = torque_from_setpoint - torque_from_measurement

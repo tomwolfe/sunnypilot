@@ -72,6 +72,21 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     else:
       desired_curvature = prev_action.desiredCurvature
 
+    # Enhanced safety checks and predictive adjustments
+    # Limit acceleration and curvature changes to prevent sudden maneuvers
+    max_accel_change = 0.5  # m/s^3 limit for smooth acceleration changes
+    max_curvature_change = 0.01 if v_ego > 5.0 else 0.005  # reduce at low speeds
+
+    if abs(v_ego) > 0.5:  # Only apply when moving
+        desired_accel = np.clip(desired_accel,
+                                prev_action.desiredAcceleration - max_accel_change * DT_MDL,
+                                prev_action.desiredAcceleration + max_accel_change * DT_MDL)
+
+    if v_ego > MIN_LAT_CONTROL_SPEED:
+        desired_curvature = np.clip(desired_curvature,
+                                   prev_action.desiredCurvature - max_curvature_change,
+                                   prev_action.desiredCurvature + max_curvature_change)
+
     return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
                                   shouldStop=bool(should_stop))

@@ -504,6 +504,34 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
       return
 
+    # NEW: Enhanced model-based prediction for upcoming maneuvers (in radarless mode)
+    # Use modelV2 data to predict upcoming road conditions and adjust behavior
+    if 'modelV2' in self._sm and self._sm.updated['modelV2']:
+      model_msg = self._sm['modelV2']
+
+      # Check for upcoming curves that might require mode adjustment
+      if len(model_msg.path.x) > 0 and len(model_msg.path.y) > 0:
+        # Look at the curvature 2-3 seconds ahead
+        future_idx = min(int(2.0 / 0.05), len(model_msg.path.y) - 1)  # 2 seconds ahead (assuming 0.05s spacing)
+        if future_idx < len(model_msg.path.y):
+          future_curvature = abs(model_msg.path.y[future_idx]) if future_idx < len(model_msg.path.y) else 0.0
+
+          # If upcoming curvature is significant, be more conservative
+          if future_curvature > 0.003:  # Significant curve ahead
+            adjusted_confidence = 0.6 * base_confidence  # Reduce confidence for experimental mode
+            if future_curvature > 0.008:  # Very sharp curve ahead
+              self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
+              return
+
+    # NEW: Check for upcoming traffic lights or stops in model predictions
+    if hasattr(model_msg, 'meta') and len(model_msg.meta.desireState) > 0:
+      from cereal import log
+      # High probability of upcoming stop or traffic light
+      if model_msg.meta.desireState[log.Desire.stop] > 0.7:
+        adjusted_confidence = 0.5 * base_confidence  # Be more conservative
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
+        return
+
     # Default: ACC
     adjusted_confidence = 0.7 * base_confidence
     self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
@@ -576,6 +604,34 @@ class DynamicExperimentalController:
       adjusted_confidence = 0.8 * base_confidence
       self._mode_manager.request_mode('acc', confidence=adjusted_confidence)
       return
+
+    # NEW: Enhanced model-based prediction for upcoming maneuvers
+    # Use modelV2 data to predict upcoming road conditions and adjust behavior
+    if 'modelV2' in self._sm and self._sm.updated['modelV2']:
+      model_msg = self._sm['modelV2']
+
+      # Check for upcoming curves that might require mode adjustment
+      if len(model_msg.path.x) > 0 and len(model_msg.path.y) > 0:
+        # Look at the curvature 2-3 seconds ahead
+        future_idx = min(int(2.0 / 0.05), len(model_msg.path.y) - 1)  # 2 seconds ahead (assuming 0.05s spacing)
+        if future_idx < len(model_msg.path.y):
+          future_curvature = abs(model_msg.path.y[future_idx]) if future_idx < len(model_msg.path.y) else 0.0
+
+          # If upcoming curvature is significant, be more conservative
+          if future_curvature > 0.003:  # Significant curve ahead
+            adjusted_confidence = 0.6 * base_confidence  # Reduce confidence for experimental mode
+            if future_curvature > 0.008:  # Very sharp curve ahead
+              self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
+              return
+
+    # NEW: Check for upcoming traffic lights or stops in model predictions
+    if hasattr(model_msg, 'meta') and len(model_msg.meta.desireState) > 0:
+      from cereal import log
+      # High probability of upcoming stop or traffic light
+      if model_msg.meta.desireState[log.Desire.stop] > 0.7:
+        adjusted_confidence = 0.5 * base_confidence  # Be more conservative
+        self._mode_manager.request_mode('blended', confidence=adjusted_confidence)
+        return
 
     # Default: ACC
     adjusted_confidence = 0.7 * base_confidence

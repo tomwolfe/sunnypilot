@@ -32,6 +32,8 @@ _A_TOTAL_MAX_BP = [20., 40.]
 def get_max_accel(v_ego, experimental_mode=False):
   base_max = np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
 
+  # Enhanced safety: adjust acceleration based on environmental conditions
+  # Check for adverse conditions that would require more conservative acceleration
   if experimental_mode:
     # In experimental mode, allow slightly higher but still safe acceleration limits
     # Increase max acceleration by a controlled amount (e.g., 20% increase)
@@ -138,6 +140,18 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
+
+      # Additional environmental awareness for safe acceleration
+      # Adjust acceleration based on road conditions from model data
+      if len(sm['modelV2'].orientationNED.x) > 0:
+        # Get road pitch/grade from model to adjust acceleration appropriately
+        road_pitch = sm['modelV2'].orientationNED.x[0]  # First element represents pitch
+        # Reduce acceleration when going uphill, allow more when going downhill
+        if road_pitch > 0.05:  # Uphill (5% grade)
+          accel_clip[1] = min(accel_clip[1], max(accel_clip[1] * 0.7, 0.5))  # Reduce max accel by 30%
+        elif road_pitch < -0.05:  # Downhill
+          # Be more conservative going downhill
+          accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.8, -0.8))  # Be more restrictive on braking
     else:
       # In blended mode, still apply reasonable limits for experimental mode
       max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX

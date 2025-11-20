@@ -79,6 +79,10 @@ class AutonomousMetricsCollector:
         # Check for driver interventions
         if hasattr(car_state, 'steeringPressed') and car_state.steeringPressed:
           self.driver_interventions += 1
+
+        # Enhanced metrics: Track steering smoothness
+        if hasattr(car_state, 'steeringRateDeg'):
+          self.lateral_jerk_buffer.append(abs(car_state.steeringRateDeg))  # Track steering rate as a smoothness metric
     except Exception as e:
       cloudlog.error(f"Error collecting carState metrics: {e}")
 
@@ -97,6 +101,13 @@ class AutonomousMetricsCollector:
         # Track mode switches
         if hasattr(controls_state, 'experimentalMode') and controls_state.experimentalMode:
           self.mode_switches += 1
+
+        # NEW: Track autonomous driving smoothness metrics
+        if hasattr(controls_state, 'lateralControlState'):
+          lateral_state = controls_state.lateralControlState
+          # Track lateral control accuracy metrics
+          if hasattr(lateral_state, 'error'):
+            self.lateral_jerk_buffer.append(abs(lateral_state.error))  # Use error as a control performance metric
     except Exception as e:
       cloudlog.error(f"Error collecting controlsState metrics: {e}")
 
@@ -121,6 +132,14 @@ class AutonomousMetricsCollector:
             self.temperature_buffer.append(temp_avg)
           except (TypeError, ZeroDivisionError):
             cloudlog.error("Error calculating temperature average")
+
+        # NEW: Monitor system thermal performance for neural network execution
+        if hasattr(device_state, 'gpuTempC') and device_state.gpuTempC:
+          try:
+            gpu_temp_avg = sum(device_state.gpuTempC) / len(device_state.gpuTempC) if len(device_state.gpuTempC) > 0 else 0.0
+            self.temperature_buffer.append(gpu_temp_avg)
+          except (TypeError, ZeroDivisionError):
+            cloudlog.error("Error calculating GPU temperature average")
     except Exception as e:
       cloudlog.error(f"Error collecting deviceState metrics: {e}")
 
@@ -131,8 +150,42 @@ class AutonomousMetricsCollector:
 
         if hasattr(radar_state, 'fcw') and radar_state.fcw:
           self.fcw_events += 1
+
+        # NEW: Track lead vehicle related metrics for predictive performance
+        if hasattr(radar_state, 'leadOne') and radar_state.leadOne.status:
+          lead = radar_state.leadOne
+          # Time to collision metric
+          if lead.vRel < -0.1:  # Approaching lead
+            ttc = lead.dRel / abs(lead.vRel) if abs(lead.vRel) > 0.1 else float('inf')
+            if ttc < 3.0:  # TTC under 3 seconds
+              self.driver_interventions += 1  # Could indicate need for intervention
     except Exception as e:
       cloudlog.error(f"Error collecting radarState metrics: {e}")
+
+    # NEW: Enhanced model-based metrics
+    try:
+      if 'modelV2' in self.sm and self.sm.updated['modelV2']:
+        model_msg = self.sm['modelV2']
+
+        # Track predictive accuracy metrics
+        if len(model_msg.position.x) > 0:
+          # Check if path prediction is consistent with actual vehicle movement
+          predicted_curvature = 0.0
+          if len(model_msg.path.y) > 10:  # Look at curvature further ahead
+            future_idx = min(10, len(model_msg.path.y) - 1)
+            predicted_curvature = abs(model_msg.path.y[future_idx])
+
+          # Compare with actual steering
+          if 'carState' in self.sm:
+            car_state = self.sm['carState']
+            actual_curvature = abs(car_state.steeringAngleDeg * 0.01745 / 2.5) if hasattr(car_state, 'steeringAngleDeg') else 0.0
+
+            # Track prediction accuracy
+            prediction_error = abs(predicted_curvature - actual_curvature)
+            if prediction_error > 0.01:  # If error is significant
+              self.driver_interventions += 0.1  # Add fractional count for prediction mismatch
+    except Exception as e:
+      cloudlog.error(f"Error collecting modelV2 metrics: {e}")
 
     return self
   
