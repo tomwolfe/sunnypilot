@@ -5,6 +5,7 @@ Implements context-aware adjustments to control parameters
 """
 import numpy as np
 import math
+import threading
 from enum import Enum
 from typing import Dict, Tuple, Optional
 from cereal import log
@@ -13,6 +14,33 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.drive_helpers import get_safe_speed_from_curvature, adjust_curvature_for_road_conditions
 from openpilot.selfdrive.controls.lib.lateral_safety import adjust_lateral_limits_for_conditions
+from .autonomous_params import ADAPTIVE_BEHAVIOR_PARAMS
+
+# Import adaptive behavior parameters
+BASE_LATERAL_ACCEL_LIMIT = ADAPTIVE_BEHAVIOR_PARAMS['BASE_LATERAL_ACCEL_LIMIT']
+BASE_LONGITUDINAL_ACCEL_LIMIT = ADAPTIVE_BEHAVIOR_PARAMS['BASE_LONGITUDINAL_ACCEL_LIMIT']
+CURVATURE_DETECTION_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['CURVATURE_DETECTION_THRESHOLD']
+GRADE_DETECTION_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['GRADE_DETECTION_THRESHOLD']
+MODEL_CONFIDENCE_LOW_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['MODEL_CONFIDENCE_LOW_THRESHOLD']
+VISIBILITY_POOR_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['VISIBILITY_POOR_THRESHOLD']
+HIGH_SPEED_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['HIGH_SPEED_THRESHOLD']
+VERY_HIGH_SPEED_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['VERY_HIGH_SPEED_THRESHOLD']
+CONSERVATIVE_PERSONALITY_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_PERSONALITY_FACTOR']
+AGGRESSIVE_PERSONALITY_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['AGGRESSIVE_PERSONALITY_FACTOR']
+CONSERVATIVE_CURVE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_CURVE_FACTOR']
+CONSERVATIVE_GRADE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_GRADE_FACTOR']
+CONSERVATIVE_LOW_CONFIDENCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_LOW_CONFIDENCE_FACTOR']
+CONSERVATIVE_VISIBILITY_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_VISIBILITY_FACTOR']
+CURVE_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CURVE_FOLLOWING_DISTANCE_FACTOR']
+GRADE_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['GRADE_FOLLOWING_DISTANCE_FACTOR']
+LOW_CONF_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['LOW_CONF_FOLLOWING_DISTANCE_FACTOR']
+VISIBILITY_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['VISIBILITY_FOLLOWING_DISTANCE_FACTOR']
+HIGH_SPEED_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['HIGH_SPEED_FOLLOWING_DISTANCE_FACTOR']
+CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR']
+AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR = ADAPTIVE_BEHAVIOR_PARAMS['AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR']
+SHARP_CURVE_THRESHOLD = ADAPTIVE_BEHAVIOR_PARAMS['SHARP_CURVE_THRESHOLD']
+BASE_FOLLOW_TIME = ADAPTIVE_BEHAVIOR_PARAMS['BASE_FOLLOW_TIME']
+MIN_FOLLOW_DISTANCE = ADAPTIVE_BEHAVIOR_PARAMS['MIN_FOLLOW_DISTANCE']
 
 
 class DrivingPersonality(Enum):
@@ -33,13 +61,13 @@ class AdaptiveController:
         self.current_road_curvature = 0.0
         self.current_speed = 0.0
         self.environmental_risk = 0.0
-        
+
         # Adaptive parameters
-        self.lateral_accel_limit = 3.0  # Base lateral acceleration limit (m/s^2)
-        self.longitudinal_accel_limit = 2.0  # Base longitudinal acceleration limit (m/s^2)
+        self.lateral_accel_limit = BASE_LATERAL_ACCEL_LIMIT  # Base lateral acceleration limit (m/s^2)
+        self.longitudinal_accel_limit = BASE_LONGITUDINAL_ACCEL_LIMIT  # Base longitudinal acceleration limit (m/s^2)
         self.steer_ratio_factor = 1.0  # Factor to adjust steering response
         self.curvature_rate_limit = 0.1  # Maximum rate of curvature change
-        
+
         # Condition tracking
         self.is_curving = False
         self.is_on_grade = False
@@ -63,10 +91,10 @@ class AdaptiveController:
         self.environmental_risk = 1.0 - model_confidence
         
         # Update condition flags
-        self.is_curving = abs(curvature) > 0.002  # Detect if we're in a curve
-        self.is_on_grade = abs(road_pitch) > 0.02  # Detect if on grade > 2%
-        self.model_confidence_low = model_confidence < 0.6
-        self.visibility_poor = visibility_factor < 0.5
+        self.is_curving = abs(curvature) > CURVATURE_DETECTION_THRESHOLD  # Detect if we're in a curve
+        self.is_on_grade = abs(road_pitch) > GRADE_DETECTION_THRESHOLD  # Detect if on grade > 2%
+        self.model_confidence_low = model_confidence < MODEL_CONFIDENCE_LOW_THRESHOLD
+        self.visibility_poor = visibility_factor < VISIBILITY_POOR_THRESHOLD
         
     def get_adaptive_lateral_limits(self) -> Tuple[float, float]:
         """
@@ -83,23 +111,23 @@ class AdaptiveController:
         if self.is_on_grade:
             adjustment *= 0.9   # More conservative on grades
         if self.model_confidence_low:
-            adjustment *= 0.75  # More conservative with low model confidence
+            adjustment *= CONSERVATIVE_LOW_CONFIDENCE_FACTOR  # More conservative with low model confidence
         if self.visibility_poor:
-            adjustment *= 0.8   # More conservative with poor visibility
-        if self.current_speed > 25.0:  # ~55 mph
+            adjustment *= CONSERVATIVE_VISIBILITY_FACTOR   # More conservative with poor visibility
+        if self.current_speed > HIGH_SPEED_THRESHOLD:  # ~55 mph
             adjustment *= 0.95  # More conservative at high speeds
-            
+
         # Apply personality-based adjustment
         if self.personality == DrivingPersonality.CONSERVATIVE:
-            adjustment *= 0.8
+            adjustment *= CONSERVATIVE_PERSONALITY_FACTOR
         elif self.personality == DrivingPersonality.AGGRESSIVE and not any([
             self.is_curving, self.model_confidence_low, self.visibility_poor
         ]):
-            adjustment *= 1.1  # Slightly more aggressive when conditions allow
+            adjustment *= AGGRESSIVE_PERSONALITY_FACTOR  # Slightly more aggressive when conditions allow
         elif self.personality == DrivingPersonality.ADAPTIVE:
             # For adaptive mode, use calculated adjustments
             pass
-            
+
         adjusted_limit = base_limit * adjustment
         return -adjusted_limit, adjusted_limit
     
@@ -129,9 +157,9 @@ class AdaptiveController:
             adjustment *= 0.7   # Be much more conservative with low model confidence
         if self.visibility_poor:
             adjustment *= 0.75  # Be more conservative with poor visibility
-        if self.current_speed > 30.0:  # ~65 mph
+        if self.current_speed > VERY_HIGH_SPEED_THRESHOLD:  # ~65 mph
             adjustment *= 0.8   # Be more conservative at very high speeds
-            
+
         # Apply personality-based adjustment
         if self.personality == DrivingPersonality.CONSERVATIVE:
             adjustment *= 0.85
@@ -139,7 +167,7 @@ class AdaptiveController:
             self.is_curving, self.model_confidence_low, self.visibility_poor
         ]):
             adjustment *= 1.05  # Slightly more aggressive when conditions allow
-            
+
         return min_accel * adjustment, max_accel * adjustment
     
     def get_adaptive_curvature_rate_limit(self) -> float:
@@ -205,30 +233,30 @@ class AdaptiveController:
         :return: Adaptive following distance
         """
         # Base safe distance calculation
-        base_distance = max(30.0, self.current_speed * 1.5)  # 1.5 second follow time as base, minimum 30m
-        
+        base_distance = max(MIN_FOLLOW_DISTANCE, self.current_speed * BASE_FOLLOW_TIME)  # Use parameterized values
+
         # Adjust based on conditions
         adjustment = 1.0
-        
+
         if self.is_curving:
-            adjustment *= 1.5  # Increase distance in curves
+            adjustment *= CURVE_FOLLOWING_DISTANCE_FACTOR  # Increase distance in curves
         if self.is_on_grade:
-            adjustment *= 1.2  # Increase distance on grades
+            adjustment *= GRADE_FOLLOWING_DISTANCE_FACTOR  # Increase distance on grades
         if self.model_confidence_low:
-            adjustment *= 1.4  # Much more distance with low confidence
+            adjustment *= LOW_CONF_FOLLOWING_DISTANCE_FACTOR  # Much more distance with low confidence
         if self.visibility_poor:
-            adjustment *= 1.3  # More distance with poor visibility
-        if self.current_speed > 25.0:  # ~55 mph
-            adjustment *= 1.2  # More distance at high speeds
-            
+            adjustment *= VISIBILITY_FOLLOWING_DISTANCE_FACTOR  # More distance with poor visibility
+        if self.current_speed > HIGH_SPEED_THRESHOLD:  # ~55 mph
+            adjustment *= HIGH_SPEED_FOLLOWING_DISTANCE_FACTOR  # More distance at high speeds
+
         # Apply personality-based adjustment
         if self.personality == DrivingPersonality.CONSERVATIVE:
-            adjustment *= 1.4
+            adjustment *= CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR
         elif self.personality == DrivingPersonality.AGGRESSIVE and not any([
             self.is_curving, self.model_confidence_low, self.visibility_poor
         ]):
-            adjustment *= 0.85  # Closer following when conditions allow
-            
+            adjustment *= AGGRESSIVE_FOLLOWING_DISTANCE_FACTOR  # Closer following when conditions allow
+
         return base_distance * adjustment
 
     def get_adaptive_personality_from_conditions(self) -> DrivingPersonality:
@@ -237,9 +265,9 @@ class AdaptiveController:
         :return: Appropriate DrivingPersonality enum
         """
         # Check for hazardous conditions that require conservative behavior
-        if (self.model_confidence_low or self.visibility_poor or 
-            abs(self.current_road_curvature) > 0.01 or  # Sharp curve
-            self.current_speed > 30.0):  # Very high speed
+        if (self.model_confidence_low or self.visibility_poor or
+            abs(self.current_road_curvature) > SHARP_CURVE_THRESHOLD or  # Sharp curve
+            self.current_speed > VERY_HIGH_SPEED_THRESHOLD):  # Very high speed
             return DrivingPersonality.CONSERVATIVE
             
         # Check for clear conditions where more aggressive driving is OK
@@ -337,6 +365,8 @@ class AdaptiveBehaviorManager:
     def __init__(self):
         self.condition_tuner = ConditionBasedParameterTuner()
         self.active_adjustments = {}
+        # Add thread lock for safe access to shared state
+        self._lock = threading.Lock()
         
     def update(self, sm, CP) -> Dict[str, float]:
         """
@@ -345,10 +375,11 @@ class AdaptiveBehaviorManager:
         :param CP: CarParams
         :return: Dictionary of all adaptive adjustments
         """
-        # Get updated parameters based on conditions
-        self.active_adjustments = self.condition_tuner.update_with_conditions(sm, CP)
-        
-        return self.active_adjustments
+        with self._lock:  # Use lock to protect shared state access
+            # Get updated parameters based on conditions
+            self.active_adjustments = self.condition_tuner.update_with_conditions(sm, CP)
+
+            return self.active_adjustments
     
     def apply_adjustments(self, original_action, sm, CP):
         """
@@ -359,29 +390,31 @@ class AdaptiveBehaviorManager:
         :return: Adjusted action considering current conditions
         """
         try:
-            # Update adaptive parameters
+            # Update adaptive parameters - this already uses the lock internally
             adjustments = self.update(sm, CP)
 
             # Apply curvature adjustments
-            adjusted_curvature = self.condition_tuner.adaptive_controller.adjust_curvature_for_conditions(
-                original_action.desiredCurvature,
-                sm['controlsState'].curvature if 'controlsState' in sm else 0.0
-            )
+            # Note: The condition_tuner.adaptive_controller may need to be updated separately for thread safety
+            with self._lock:  # Protect access to active_adjustments for consistency
+                adjusted_curvature = self.condition_tuner.adaptive_controller.adjust_curvature_for_conditions(
+                    original_action.desiredCurvature,
+                    sm['controlsState'].curvature if 'controlsState' in sm else 0.0
+                )
 
-            # Apply acceleration adjustments based on conditions
-            desired_accel = original_action.desiredAcceleration
-            max_accel = adjustments.get('max_long_accel', desired_accel)
-            min_accel = adjustments.get('max_decel', -3.0)
+                # Apply acceleration adjustments based on conditions
+                desired_accel = original_action.desiredAcceleration
+                max_accel = adjustments.get('max_long_accel', desired_accel)
+                min_accel = adjustments.get('max_decel', -3.0)
 
-            # Limit acceleration based on adaptive limits
-            adjusted_accel = np.clip(desired_accel, min_accel, max_accel)
+                # Limit acceleration based on adaptive limits
+                adjusted_accel = np.clip(desired_accel, min_accel, max_accel)
 
-            # Create new action with adjustments
-            adjusted_action = log.ModelDataV2.Action(
-                desiredCurvature=float(adjusted_curvature),
-                desiredAcceleration=float(adjusted_accel),
-                shouldStop=original_action.shouldStop
-            )
+                # Create new action with adjustments
+                adjusted_action = log.ModelDataV2.Action(
+                    desiredCurvature=float(adjusted_curvature),
+                    desiredAcceleration=float(adjusted_accel),
+                    shouldStop=original_action.shouldStop
+                )
 
             return adjusted_action
         except Exception as e:
@@ -393,5 +426,6 @@ class AdaptiveBehaviorManager:
         """
         Get adaptive following distance adjustment
         """
-        current_adj = self.condition_tuner.adaptive_controller
-        return current_adj.get_adaptive_following_distance(lead_distance, lead_velocity)
+        with self._lock:  # Use lock to protect shared state access
+            current_adj = self.condition_tuner.adaptive_controller
+            return current_adj.get_adaptive_following_distance(lead_distance, lead_velocity)

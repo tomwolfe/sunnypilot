@@ -2,6 +2,7 @@ import math
 import numpy as np
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.realtime import DT_CTRL, DT_MDL
+from .autonomous_params import LATERAL_SAFETY_PARAMS
 
 MIN_SPEED = 1.0
 CONTROL_N = 17
@@ -11,8 +12,8 @@ MAX_CURVATURE = 0.2
 MAX_VEL_ERR = 5.0  # m/s
 
 # EU guidelines
-MAX_LATERAL_JERK = 5.0  # m/s^3
-MAX_LATERAL_ACCEL_NO_ROLL = 3.0  # m/s^2
+MAX_LATERAL_JERK = LATERAL_SAFETY_PARAMS['LATERAL_JERK_LIMIT']  # m/s^3
+MAX_LATERAL_ACCEL_NO_ROLL = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']  # m/s^2
 
 
 def clamp(val, min_val, max_val):
@@ -96,13 +97,16 @@ def get_curvature_from_plan(yaws, yaw_rates, t_idxs, vego, action_t):
   return curv_from_psis(psi_target, psi_rate, vego, action_t)
 
 
-def get_safe_speed_from_curvature(curvature, max_lat_accel=3.0):
+def get_safe_speed_from_curvature(curvature, max_lat_accel=None):
   """
   Calculate the maximum safe speed given a curvature and maximum lateral acceleration
   :param curvature: Road curvature (1/m)
-  :param max_lat_accel: Maximum allowed lateral acceleration (m/s^2)
+  :param max_lat_accel: Maximum allowed lateral acceleration (m/s^2), if not provided uses default
   :return: Maximum safe speed (m/s)
   """
+  if max_lat_accel is None:
+    max_lat_accel = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']  # Use parameterized default
+
   abs_curvature = abs(curvature)
   if abs_curvature < 0.0001:  # Nearly straight
     return float('inf')  # No speed limit for straight roads

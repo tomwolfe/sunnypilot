@@ -7,15 +7,21 @@ import numpy as np
 import math
 from openpilot.common.constants import CV, ACCELERATION_DUE_TO_GRAVITY
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from .autonomous_params import LATERAL_SAFETY_PARAMS
 
-# Pre-computed constants for optimization with documentation
-MAX_LATERAL_ACCEL = 3.0  # m/s^2 - Maximum lateral acceleration allowed (validated for safety)
-MAX_CURVATURE_RATE = 0.1  # Maximum rate of curvature change - prevents sudden steering inputs
-
-# Time step validation - for use in rate limiting calculations
-DEFAULT_TIME_STEP = 0.01  # seconds - Default time step for rate calculations (validated range: 0.005-0.05)
-MIN_TIME_STEP = 0.005     # Minimum acceptable time step (5ms)
-MAX_TIME_STEP = 0.05      # Maximum acceptable time step (50ms)
+# Import parameters
+MAX_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL']
+MAX_CURVATURE_RATE = LATERAL_SAFETY_PARAMS['MAX_CURVATURE_RATE']
+DEFAULT_TIME_STEP = LATERAL_SAFETY_PARAMS['DEFAULT_TIME_STEP']
+MIN_TIME_STEP = LATERAL_SAFETY_PARAMS['MIN_TIME_STEP']
+MAX_TIME_STEP = LATERAL_SAFETY_PARAMS['MAX_TIME_STEP']
+MAX_SAFE_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MAX_SAFE_LATERAL_ACCEL']
+MIN_SAFE_LATERAL_ACCEL = LATERAL_SAFETY_PARAMS['MIN_SAFE_LATERAL_ACCEL']
+CURVATURE_AHEAD_THRESHOLD = LATERAL_SAFETY_PARAMS['CURVATURE_AHEAD_THRESHOLD']
+SHARP_CURVE_THRESHOLD = LATERAL_SAFETY_PARAMS['SHARP_CURVE_THRESHOLD']
+MODEL_CONFIDENCE_THRESHOLD = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_THRESHOLD']
+MODEL_CONFIDENCE_LOW_THRESHOLD = LATERAL_SAFETY_PARAMS['MODEL_CONFIDENCE_LOW_THRESHOLD']
+LATERAL_JERK_LIMIT = LATERAL_SAFETY_PARAMS['LATERAL_JERK_LIMIT']
 
 def validate_time_step(dt):
     """
@@ -35,31 +41,40 @@ def validate_lateral_acceleration(max_lat_accel):
     :return: Validated lateral acceleration
     :raises ValueError: If max_lat_accel is outside safe range
     """
-    MAX_SAFE_LATERAL_ACCEL = 5.0  # m/s^2 - absolute maximum for safety
-    MIN_SAFE_LATERAL_ACCEL = 1.0  # m/s^2 - minimum for any meaningful control
-
     if max_lat_accel < MIN_SAFE_LATERAL_ACCEL or max_lat_accel > MAX_SAFE_LATERAL_ACCEL:
         raise ValueError(f"Lateral acceleration {max_lat_accel} m/s^2 is outside safe range [{MIN_SAFE_LATERAL_ACCEL}, {MAX_SAFE_LATERAL_ACCEL}]")
 
     return max_lat_accel
 
 
-def calculate_safe_curvature_limits(v_ego, max_lat_accel=MAX_LATERAL_ACCEL, roll_compensation=0.0):
+def calculate_safe_curvature_limits(v_ego, max_lat_accel=MAX_LATERAL_ACCEL, roll_compensation=0.0, CP=None):
   """
   Calculate safe curvature limits based on current speed and lateral acceleration constraints
   :param v_ego: Current vehicle speed in m/s
   :param max_lat_accel: Maximum allowed lateral acceleration
   :param roll_compensation: Compensation for road roll angle
+  :param CP: CarParams for vehicle-specific parameters, if available
   :return: Tuple of (min_curvature, max_curvature) allowed
   """
   if v_ego < 0.1:  # At very low speeds, allow any curvature (essentially no limit)
     return -0.2, 0.2
 
+  # Use vehicle-specific parameters if available, otherwise use defaults
+  if CP is not None and hasattr(CP, 'lateralParams') and hasattr(CP.lateralParams, 'maxLateralAccel'):
+    vehicle_max_lat_accel = CP.lateralParams.maxLateralAccel
+    # Use the minimum of provided max_lat_accel and vehicle capability
+    max_lat_accel = min(max_lat_accel, vehicle_max_lat_accel)
+
   v_ego_sq = v_ego ** 2
   max_lat_accel_adjusted = max_lat_accel + roll_compensation
 
-  max_curvature = max_lat_accel_adjusted / v_ego_sq if v_ego_sq > 0.01 else 0.2
-  min_curvature = -max_lat_accel_adjusted / v_ego_sq if v_ego_sq > 0.01 else -0.2
+  # Handle case where v_ego_sq is 0 or very close to avoid division by zero
+  if v_ego_sq <= 0.001:  # Very low speed, use conservative limits
+      max_curvature = 0.2
+      min_curvature = -0.2
+  else:
+      max_curvature = max_lat_accel_adjusted / v_ego_sq
+      min_curvature = -max_lat_accel_adjusted / v_ego_sq
 
   # Clamp to reasonable bounds
   max_curvature = min(max_curvature, 0.2)
@@ -78,29 +93,31 @@ def anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=50.0):
   """
   try:
     path_y = getattr(model_v2.path, 'y', [])
-    if not hasattr(path_y, '__len__') or len(path_y) < 10:
+    path_x = getattr(model_v2.path, 'x', [])
+    if not hasattr(path_y, '__len__') or not hasattr(path_x, '__len__') or len(path_y) < 10 or len(path_x) < 10:
       return 0.0, 0.0
   except (TypeError, AttributeError):
     return 0.0, 0.0
 
   # Calculate how many points correspond to our lookahead distance
   # Model typically outputs 0.1s spaced points, and v_ego is in m/s
-  points_per_meter = 10.0 / max(v_ego, 1.0)  # Approximate points per meter
-  points_ahead = min(int(lookahead_distance * points_per_meter), len(model_v2.path.y))
+  effective_v_ego = max(v_ego, 1.0)  # Avoid division by zero
+  points_per_meter = 10.0 / effective_v_ego  # Approximate points per meter
+  points_ahead = min(int(lookahead_distance * points_per_meter), len(path_y), len(path_x))
 
   if points_ahead < 2:
     return 0.0, 0.0
 
   curvatures_ahead = []
   for i in range(1, points_ahead):  # Start from 1 to compute curvature from path points
-    if i < len(model_v2.path.y) and i < len(model_v2.path.x):
+    if i < len(path_y) and i < len(path_x):
       # Simple curvature approximation from path points
-      if i + 1 < len(model_v2.path.y):
+      if i + 1 < len(path_y) and i + 1 < len(path_x):
         # Calculate curvature from three consecutive points (if available)
-        dx1 = model_v2.path.x[i] - model_v2.path.x[i-1] if i > 0 else 0.0
-        dy1 = model_v2.path.y[i] - model_v2.path.y[i-1] if i > 0 else 0.0
-        dx2 = model_v2.path.x[i+1] - model_v2.path.x[i] if i+1 < len(model_v2.path.x) else dx1
-        dy2 = model_v2.path.y[i+1] - model_v2.path.y[i] if i+1 < len(model_v2.path.y) else dy1
+        dx1 = path_x[i] - path_x[i-1] if i > 0 else 0.0
+        dy1 = path_y[i] - path_y[i-1] if i > 0 else 0.0
+        dx2 = path_x[i+1] - path_x[i] if i+1 < len(path_x) else dx1
+        dy2 = path_y[i+1] - path_y[i] if i+1 < len(path_y) else dy1
 
         if abs(dx1) > 0.001 or abs(dy1) > 0.001:
           # Approximate curvature as the rate of heading change
@@ -137,16 +154,16 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
   :return: Tuple of (max_lat_accel, rate_limit_multiplier) adjusted for conditions
   """
   # Base lateral acceleration limit
-  max_lat_accel = 3.0
+  max_lat_accel = MAX_LATERAL_ACCEL
 
   # Reduce for low model confidence
-  if model_confidence < 0.8:
-    confidence_factor = max(model_confidence / 0.8, 0.5)  # Reduce by up to 50% if confidence is very low
+  if model_confidence < MODEL_CONFIDENCE_THRESHOLD:
+    confidence_factor = max(model_confidence / MODEL_CONFIDENCE_THRESHOLD, 0.5)  # Reduce by up to 50% if confidence is very low
     max_lat_accel *= confidence_factor
 
   # Reduce for high curvature ahead
-  if curvature_ahead > 0.005:  # Significant curve ahead
-    curve_factor = max(0.5, 1.0 - (curvature_ahead - 0.005) * 100.0)  # More significant reduction for sharp curves
+  if curvature_ahead > CURVATURE_AHEAD_THRESHOLD:  # Significant curve ahead
+    curve_factor = max(0.5, 1.0 - (curvature_ahead - CURVATURE_AHEAD_THRESHOLD) * 100.0)  # More significant reduction for sharp curves
     max_lat_accel *= curve_factor
 
   # Reduce for adverse weather conditions
@@ -166,7 +183,7 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
   rate_limit_multiplier = 1.0
 
   # Be more conservative when approaching curves
-  if curvature_ahead > 0.008:  # Sharp curve ahead
+  if curvature_ahead > SHARP_CURVE_THRESHOLD:  # Sharp curve ahead
     rate_limit_multiplier = 0.6  # Reduce rate of change by 40%
 
   # Be more conservative at high speeds
@@ -174,7 +191,7 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
     rate_limit_multiplier *= 0.8
 
   # Be more conservative with low model confidence
-  if model_confidence < 0.6:
+  if model_confidence < MODEL_CONFIDENCE_LOW_THRESHOLD:
     rate_limit_multiplier *= 0.7
 
   # Further reduce rate when on hills
@@ -184,7 +201,7 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
   return max_lat_accel, rate_limit_multiplier
 
 
-def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params,
+def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params, CP=None,
                                    is_rainy=False, is_night=False, dt=0.01):
   """
   Get laterally safe and adaptive curvature considering various environmental factors
@@ -193,46 +210,68 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
   :param prev_curvature: Previous curvature for rate limiting
   :param model_v2: Model output message
   :param params: Live parameters
+  :param CP: CarParams for vehicle-specific parameters, if available
   :param is_rainy: Rain condition flag
   :param is_night: Night condition flag
   :param dt: Time step
   :return: Laterally safe and adaptive curvature
   """
-  # Validate time step parameter
-  dt = validate_time_step(dt)
+  try:
+    # Validate time step parameter
+    dt = validate_time_step(dt)
 
-  # Get model confidence and road pitch information
-  model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
-  road_pitch = 0.0
-  if hasattr(model_v2, 'orientationNED') and len(model_v2.orientationNED.x) > 0:
-    road_pitch = model_v2.orientationNED.x[0]  # First element represents pitch
+    # Get model confidence and road pitch information
+    # Handle case where model_v2.meta doesn't exist
+    model_confidence = 1.0
+    try:
+        if hasattr(model_v2, 'meta') and model_v2.meta is not None:
+            model_confidence = getattr(model_v2.meta, 'confidence', 1.0)
+    except AttributeError:
+        pass  # Use default confidence of 1.0
 
-  # Anticipate upcoming curvature
-  max_curv_ahead, avg_curv_ahead = anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=40.0)
+    road_pitch = 0.0
+    try:
+        if (hasattr(model_v2, 'orientationNED') and
+            hasattr(model_v2.orientationNED, 'x') and
+            model_v2.orientationNED.x is not None and
+            len(model_v2.orientationNED.x) > 0):
+            road_pitch = model_v2.orientationNED.x[0]  # First element represents pitch
+    except (AttributeError, IndexError, TypeError):
+        pass  # Use default road pitch of 0.0
 
-  # Adjust limits based on conditions
-  adjusted_max_lat_accel, rate_mult = adjust_lateral_limits_for_conditions(
-    v_ego, max_curv_ahead, model_confidence, road_pitch, is_rainy, is_night
-  )
+    # Anticipate upcoming curvature
+    max_curv_ahead, avg_curv_ahead = anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=40.0)
 
-  # Validate the adjusted lateral acceleration
-  adjusted_max_lat_accel = validate_lateral_acceleration(adjusted_max_lat_accel)
+    # Adjust limits based on conditions
+    adjusted_max_lat_accel, rate_mult = adjust_lateral_limits_for_conditions(
+      v_ego, max_curv_ahead, model_confidence, road_pitch, is_rainy, is_night
+    )
 
-  # Calculate safe limits
-  roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
-  min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(v_ego, adjusted_max_lat_accel, roll_compensation)
+    # Validate the adjusted lateral acceleration
+    adjusted_max_lat_accel = validate_lateral_acceleration(adjusted_max_lat_accel)
 
-  # Apply rate limiting to prevent excessive curvature changes
-  v_ego_sq = max(v_ego**2, 1.0)
-  max_curvature_rate = 5.0 / v_ego_sq  # Lateral jerk limit of 5 m/s^3 divided by v_ego^2
-  max_delta = max_curvature_rate * dt * rate_mult  # Apply rate limit multiplier
+    # Calculate safe limits
+    roll_compensation = 0.0
+    if hasattr(params, 'roll'):
+        roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
+    min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(v_ego, adjusted_max_lat_accel, roll_compensation, CP)
 
-  # Limit the desired curvature based on rate changes and safe bounds
-  curvature_after_rate_limit = np.clip(desired_curvature,
-                                       prev_curvature - max_delta,
-                                       prev_curvature + max_delta)
+    # Apply rate limiting to prevent excessive curvature changes
+    v_ego_sq = max(v_ego**2, 1.0)
+    max_curvature_rate = LATERAL_JERK_LIMIT / v_ego_sq  # Lateral jerk limit divided by v_ego^2
+    max_delta = max_curvature_rate * dt * rate_mult  # Apply rate limit multiplier
 
-  # Finally limit to safe bounds
-  final_curvature = np.clip(curvature_after_rate_limit, min_curv_safe, max_curv_safe)
+    # Limit the desired curvature based on rate changes and safe bounds
+    curvature_after_rate_limit = np.clip(desired_curvature,
+                                         prev_curvature - max_delta,
+                                         prev_curvature + max_delta)
 
-  return final_curvature
+    # Finally limit to safe bounds
+    final_curvature = np.clip(curvature_after_rate_limit, min_curv_safe, max_curv_safe)
+
+    return final_curvature
+  except Exception as e:
+    # If anything goes wrong, return a safe default
+    cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
+    # Return the previous curvature as a safe fallback
+    return prev_curvature

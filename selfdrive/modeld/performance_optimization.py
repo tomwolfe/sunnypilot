@@ -301,38 +301,70 @@ class ModelQuantizationOptimizer:
     """
     Optimizes model inference through quantization and precision adjustments
     """
-    
+
     def __init__(self):
         self.quantization_enabled = True
         self.quantization_scale = 1.0  # Controls quantization aggressiveness
         self.min_precision = 8  # Minimum bit precision allowed
-        
-    def apply_quantization(self, model_output: Dict[str, np.ndarray], 
-                          complexity_factor: float = 1.0) -> Dict[str, np.ndarray]:
+        self.safety_critical_keys = ['desiredCurvature', 'curvature', 'path', 'laneLine', 'roadEdge', 'leadOne']  # Safety-critical outputs that should not be quantized aggressively
+
+    def apply_quantization(self, model_output: Dict[str, np.ndarray],
+                          complexity_factor: float = 1.0,
+                          safety_critical_keys: list = None) -> Dict[str, np.ndarray]:
         """
         Apply quantization to model output based on system constraints
+        Prioritizes safety-critical components by reducing quantization impact on them
         :param model_output: Raw model output
         :param complexity_factor: Current complexity factor (0.0-1.0)
+        :param safety_critical_keys: List of safety-critical keys to protect from aggressive quantization
         :return: Quantized model output
         """
         if not self.quantization_enabled:
             return model_output
-            
+
+        # Use provided safety critical keys or default ones
+        if safety_critical_keys is None:
+            safety_critical_keys = self.safety_critical_keys
+
         # Adjust quantization based on complexity factor
-        effective_precision = max(self.min_precision, 
+        effective_precision = max(self.min_precision,
                                  int(8 * complexity_factor))  # Scale from 8-bit to 16-bit
-        
+
         quantized_output = {}
         for key, value in model_output.items():
             if np.issubdtype(value.dtype, np.floating):
+                # Check if this is a safety-critical output
+                is_safety_critical = any(safety_key in key for safety_key in safety_critical_keys)
+
+                # Apply less aggressive quantization to safety-critical outputs
+                if is_safety_critical:
+                    # Use higher precision for safety-critical outputs - never go below 12-bit
+                    effective_precision_safe = max(12, effective_precision)  # Safety-critical get minimum 12-bit
+                else:
+                    # Use standard precision for non-critical outputs
+                    effective_precision_safe = effective_precision
+
                 # Apply quantization to floating point outputs
-                if effective_precision <= 8:
-                    # 8-bit quantization
-                    scale = 255.0
-                    quantized_value = np.clip(value * scale, -128, 127)
+                if effective_precision_safe <= 8:
+                    # 8-bit quantization (least aggressive - for non-critical)
+                    if is_safety_critical:
+                        # For safety critical, we don't allow <= 8-bit, so this shouldn't happen
+                        # Default to 12-bit minimum for safety-critical
+                        scale = 4095.0  # 12-bit
+                        quantized_value = np.clip(value * scale, -2048, 2047)
+                        quantized_output[key] = (quantized_value / scale).astype(np.float32)
+                    else:
+                        # 8-bit quantization for non-critical
+                        scale = 255.0
+                        quantized_value = np.clip(value * scale, -128, 127)
+                        quantized_output[key] = (quantized_value / scale).astype(np.float32)
+                elif effective_precision_safe <= 12:
+                    # 12-bit quantization - good for safety-critical
+                    scale = 4095.0
+                    quantized_value = np.clip(value * scale, -2048, 2047)
                     quantized_output[key] = (quantized_value / scale).astype(np.float32)
-                elif effective_precision <= 16:
-                    # 16-bit quantization
+                elif effective_precision_safe <= 16:
+                    # 16-bit quantization - standard
                     scale = 65535.0
                     quantized_value = np.clip(value * scale, -32768, 32767)
                     quantized_output[key] = (quantized_value / scale).astype(np.float32)
@@ -341,7 +373,7 @@ class ModelQuantizationOptimizer:
                     quantized_output[key] = value.astype(np.float32)
             else:
                 quantized_output[key] = value
-                
+
         return quantized_output
 
 
@@ -388,8 +420,10 @@ class PerformanceOptimizer:
         # Apply any necessary quantization based on complexity factor
         complexity_factor = self.inference_optimizer.model_complexity_factor
         if complexity_factor < 0.7:  # Only apply quantization under high load
+            # Define safety-critical keys that should have less aggressive quantization
+            safety_critical_keys = ['desiredCurvature', 'curvature', 'path', 'laneLine', 'roadEdge', 'leadOne', 'modelCurvature']
             optimized_inputs = self.quantization_optimizer.apply_quantization(
-                optimized_inputs, complexity_factor
+                optimized_inputs, complexity_factor, safety_critical_keys
             )
 
         return {

@@ -165,9 +165,29 @@ class Controls(ControlsExt, ModelStateBase):
         self._environmental_flags.update(self.environmental_processor.environmental_conditions)
     except Exception as e:
         cloudlog.error(f"Environmental processor error: {e}")
-        # Trigger immediate disengagement on environmental processor failure
-        CC.enabled = False
-        return CC, lac_log  # Return early to disengage
+        # Graceful degradation: log error and fall back to conservative defaults
+        # Rather than immediate disengagement, use safe defaults and count failures
+        if not hasattr(self, '_env_processor_failures'):
+            self._env_processor_failures = 0
+        self._env_processor_failures += 1
+
+        # Use conservative defaults if processor fails
+        self._environmental_flags.update({
+            'is_rainy': True,  # Default to worst case
+            'is_night': True,
+            'low_visibility': True,
+            'road_quality': 0.3,  # Poor road quality
+            'surface_condition': 0.4  # Poor surface condition
+        })
+
+        # Only disengage after multiple consecutive failures
+        if self._env_processor_failures >= 5:
+            cloudlog.error("Environmental processor failed 5 times consecutively, disengaging")
+            CC.enabled = False
+            return CC, lac_log
+        else:
+            cloudlog.warning(f"Environmental processor failed {self._env_processor_failures} times, using conservative defaults")
+            # Continue with conservative defaults instead of disengaging immediately
 
     # Get adaptive adjustments for current conditions
     try:
@@ -185,15 +205,44 @@ class Controls(ControlsExt, ModelStateBase):
                 self.desired_curvature,  # previous curvature
                 model_v2,
                 lp,
+                CP=self.CP,
                 is_rainy=self._environmental_flags['is_rainy'],
                 is_night=self._environmental_flags['is_night'],
                 dt=0.01  # approximate time step
             )
     except Exception as e:
         cloudlog.error(f"Adaptive behavior adjustment error: {e}")
-        # Trigger immediate disengagement on adaptive system failure
-        CC.enabled = False
-        return CC, lac_log  # Return early to disengage
+        # Graceful degradation: log error and fall back to conservative defaults
+        # Rather than immediate disengagement, use original model values and count failures
+        if not hasattr(self, '_adaptive_behavior_failures'):
+            self._adaptive_behavior_failures = 0
+        self._adaptive_behavior_failures += 1
+
+        # Use original model values instead of adjusted values
+        new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+
+        # Additional safety check with conservative parameters
+        if CC.latActive:
+            new_desired_curvature = get_adaptive_lateral_curvature(
+                CS.vEgo,
+                new_desired_curvature,
+                self.desired_curvature,  # previous curvature
+                model_v2,
+                lp,
+                CP=self.CP,
+                is_rainy=True,  # Assume worst conditions
+                is_night=True,
+                dt=0.01  # approximate time step
+            )
+
+        # Only disengage after multiple consecutive failures
+        if self._adaptive_behavior_failures >= 5:
+            cloudlog.error("Adaptive behavior failed 5 times consecutively, disengaging")
+            CC.enabled = False
+            return CC, lac_log
+        else:
+            cloudlog.warning(f"Adaptive behavior failed {self._adaptive_behavior_failures} times, using conservative defaults")
+            # Continue with conservative defaults instead of disengaging immediately
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

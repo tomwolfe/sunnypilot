@@ -4,11 +4,32 @@ Environmental awareness module for sunnypilot
 Detects and responds to environmental conditions like weather, lighting, etc.
 """
 import numpy as np
+import threading
 from cereal import log
 import cereal.messaging as messaging
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from .autonomous_params import ENVIRONMENTAL_PARAMS
+
+# Import environmental parameters
+VISIBILITY_THRESHOLD = ENVIRONMENTAL_PARAMS['VISIBILITY_THRESHOLD']
+WEATHER_CONFIDENCE_BASELINE = ENVIRONMENTAL_PARAMS['WEATHER_CONFIDENCE_BASELINE']
+MODEL_UNCERTAINTY_FACTOR = ENVIRONMENTAL_PARAMS['MODEL_UNCERTAINTY_FACTOR']
+ROAD_QUALITY_FACTOR = ENVIRONMENTAL_PARAMS['ROAD_QUALITY_FACTOR']
+SURFACE_CONDITION_FACTOR = ENVIRONMENTAL_PARAMS['SURFACE_CONDITION_FACTOR']
+SPEED_NORMALIZATION_BASELINE = ENVIRONMENTAL_PARAMS['SPEED_NORMALIZATION_BASELINE']
+RISK_SPEED_FACTOR = ENVIRONMENTAL_PARAMS['RISK_SPEED_FACTOR']
+HIGH_RISK_THRESHOLD = ENVIRONMENTAL_PARAMS['HIGH_RISK_THRESHOLD']
+MEDIUM_RISK_THRESHOLD = ENVIRONMENTAL_PARAMS['MEDIUM_RISK_THRESHOLD']
+RISK_CURVATURE_FACTOR = ENVIRONMENTAL_PARAMS['RISK_CURVATURE_FACTOR']
+RAIN_RISK_FACTOR = ENVIRONMENTAL_PARAMS['RAIN_RISK_FACTOR']
+SNOW_RISK_FACTOR = ENVIRONMENTAL_PARAMS['SNOW_RISK_FACTOR']
+VISIBILITY_RISK_FACTOR = ENVIRONMENTAL_PARAMS['VISIBILITY_RISK_FACTOR']
+NIGHT_RISK_FACTOR = ENVIRONMENTAL_PARAMS['NIGHT_RISK_FACTOR']
+MODEL_UNCERTAINTY_RISK_FACTOR = ENVIRONMENTAL_PARAMS['MODEL_UNCERTAINTY_RISK_FACTOR']
+ROAD_QUALITY_RISK_FACTOR = ENVIRONMENTAL_PARAMS['ROAD_QUALITY_RISK_FACTOR']
+SURFACE_CONDITION_RISK_FACTOR = ENVIRONMENTAL_PARAMS['SURFACE_CONDITION_RISK_FACTOR']
 
 
 class EnvironmentalConditionMonitor:
@@ -112,9 +133,9 @@ class EnvironmentalConditionMonitor:
             # Higher exposure typically indicates darker conditions
             normalized_exposure = min(1.0, road_camera_state.exposure / 100.0)
             self.lighting_condition = max(0.1, 1.0 - normalized_exposure)
-            
+
         # Visibility assessment based on camera data
-        self.low_visibility = self.lighting_condition < 0.3 or not self.weather_confidence > 0.6
+        self.low_visibility = self.lighting_condition < VISIBILITY_THRESHOLD or not self.weather_confidence > (1.0 - MODEL_UNCERTAINTY_FACTOR)
     
     def detect_weather_conditions(self, model_v2_msg, car_state):
         """
@@ -160,37 +181,37 @@ class EnvironmentalConditionMonitor:
 
         # Weather condition risk
         if self.is_rainy:
-            risk_score += 0.3
+            risk_score += RAIN_RISK_FACTOR
         if self.is_snowy:
-            risk_score += 0.4
+            risk_score += SNOW_RISK_FACTOR
         if self.low_visibility:
-            risk_score += 0.25
+            risk_score += VISIBILITY_RISK_FACTOR
 
         # Time of day risk
         if self.is_night:
-            risk_score += 0.15
+            risk_score += NIGHT_RISK_FACTOR
 
         # Model uncertainty risk
-        model_uncertainty = (1.0 - self.weather_confidence) * 0.4
+        model_uncertainty = (1.0 - self.weather_confidence) * MODEL_UNCERTAINTY_RISK_FACTOR
         risk_score = max(risk_score, model_uncertainty)
 
         # Road condition risk
-        road_quality_factor = (1.0 - self.model_road_quality) * 0.3
+        road_quality_factor = (1.0 - self.model_road_quality) * ROAD_QUALITY_RISK_FACTOR
         risk_score = max(risk_score, road_quality_factor)
 
         # Surface condition risk
-        surface_factor = (1.0 - self.model_surface_condition) * 0.35
+        surface_factor = (1.0 - self.model_surface_condition) * SURFACE_CONDITION_RISK_FACTOR
         risk_score = max(risk_score, surface_factor)
 
         # Combine with speed and curvature for dynamic risk
         # Quadratic scaling for speed: risk ∝ v² to reflect kinetic energy relationship
-        speed_factor = (v_ego / 25.0) ** 2  # Normalize to baseline of 25 m/s
+        speed_factor = (v_ego / SPEED_NORMALIZATION_BASELINE) ** 2  # Normalize to baseline
         # Apply speed factor with saturation to prevent excessive risk scores
-        risk_score = min(1.0, risk_score * (1.0 + 0.5 * speed_factor))
+        risk_score = min(1.0, risk_score * (1.0 + RISK_SPEED_FACTOR * speed_factor))
 
         # High curvature ahead increases risk in poor conditions
         if curvature_ahead > 0.008:  # Sharp curves
-            risk_score = min(1.0, risk_score * 1.3)
+            risk_score = min(1.0, risk_score * RISK_CURVATURE_FACTOR)
 
         return min(1.0, risk_score)
     
@@ -234,69 +255,75 @@ class EnvironmentalConditionProcessor:
     """
     Processes environmental data and provides inputs to the control system
     """
-    
+
     def __init__(self):
         self.monitor = EnvironmentalConditionMonitor()
         self.environmental_conditions = {
             'is_rainy': False,
-            'is_snowy': False, 
+            'is_snowy': False,
             'is_night': False,
             'low_visibility': False,
             'weather_confidence': 0.8,
             'road_quality': 1.0,
             'surface_condition': 1.0
         }
+        # Add thread lock for safe access to shared state
+        self._lock = threading.Lock()
     
     def update(self, sm):
         """
         Update environmental conditions from various sources
         :param sm: SubMaster with messages from different services
         """
-        # Update from model
-        if sm.updated.get('modelV2', False):
-            self.monitor.update_from_model(sm['modelV2'])
+        with self._lock:  # Use lock to protect shared state access
+            # Update from model
+            if sm.updated.get('modelV2', False):
+                self.monitor.update_from_model(sm['modelV2'])
 
-        # Update from sensors if available - add proper checks
-        if (sm.updated.get('carState', False) and
-            sm.updated.get('deviceState', False) and
-            sm.updated.get('roadCameraState', False)):
-            self.monitor.update_from_sensors(
-                sm['carState'],
-                sm['deviceState'],
-                sm['roadCameraState']
-            )
-        elif not sm.updated.get('carState', False):
-            cloudlog.warning("EnvironmentalConditionProcessor: carState not available in sm.updated")
-        elif not sm.updated.get('deviceState', False):
-            cloudlog.warning("EnvironmentalConditionProcessor: deviceState not available in sm.updated")
-        elif not sm.updated.get('roadCameraState', False):
-            cloudlog.warning("EnvironmentalConditionProcessor: roadCameraState not available in sm.updated")
+            # Update from sensors if available - add proper checks
+            if (sm.updated.get('carState', False) and
+                sm.updated.get('deviceState', False) and
+                sm.updated.get('roadCameraState', False)):
+                self.monitor.update_from_sensors(
+                    sm['carState'],
+                    sm['deviceState'],
+                    sm['roadCameraState']
+                )
+            elif not sm.updated.get('carState', False):
+                cloudlog.warning("EnvironmentalConditionProcessor: carState not available in sm.updated")
+            elif not sm.updated.get('deviceState', False):
+                cloudlog.warning("EnvironmentalConditionProcessor: deviceState not available in sm.updated")
+            elif not sm.updated.get('roadCameraState', False):
+                cloudlog.warning("EnvironmentalConditionProcessor: roadCameraState not available in sm.updated")
 
-        # Detect and update weather conditions
-        weather_data = self.monitor.detect_weather_conditions(sm['modelV2'], sm['carState'])
-        self.environmental_conditions.update(weather_data)
+            # Detect and update weather conditions
+            weather_data = self.monitor.detect_weather_conditions(sm['modelV2'], sm['carState'])
+            self.environmental_conditions.update(weather_data)
     
     def get_environmental_limits(self, original_limits, v_ego, curvature_ahead):
         """
         Get acceleration limits adjusted for environmental conditions
         """
-        return self.monitor.get_adjusted_limits(original_limits, v_ego, curvature_ahead)
-    
+        with self._lock:  # Use lock to protect shared state access
+            return self.monitor.get_adjusted_limits(original_limits, v_ego, curvature_ahead)
+
     def get_risk_score(self, v_ego, curvature_ahead):
         """
         Get overall environmental risk score
         """
-        return self.monitor.get_environmental_risk_score(v_ego, curvature_ahead)
-    
+        with self._lock:  # Use lock to protect shared state access
+            return self.monitor.get_environmental_risk_score(v_ego, curvature_ahead)
+
     def should_reduce_speed(self, v_ego, desired_v_cruise):
         """
         Determine if speed should be reduced based on environmental conditions
         """
-        risk_score = self.get_risk_score(v_ego, 0.0)  # Current curvature not critical for speed reduction
-        
-        if risk_score > 0.7:  # High risk
-            return desired_v_cruise * 0.7  # Reduce speed by 30%
-        elif risk_score > 0.5:  # Medium risk
-            return desired_v_cruise * 0.85  # Reduce speed by 15%
-        else:
-            return desired_v_cruise  # No reduction needed
+        with self._lock:  # Use lock to protect shared state access
+            risk_score = self.get_risk_score(v_ego, 0.0)  # Current curvature not critical for speed reduction
+
+            if risk_score > HIGH_RISK_THRESHOLD:  # High risk
+                return desired_v_cruise * 0.7  # Reduce speed by 30%
+            elif risk_score > MEDIUM_RISK_THRESHOLD:  # Medium risk
+                return desired_v_cruise * 0.85  # Reduce speed by 15%
+            else:
+                return desired_v_cruise  # No reduction needed
