@@ -276,6 +276,16 @@ class EnvironmentalConditionProcessor:
         :param sm: SubMaster with messages from different services
         """
         with self._lock:  # Use lock to protect shared state access
+            # Validate that required messages are available before processing
+            required_messages = ['modelV2', 'carState', 'deviceState', 'roadCameraState']
+            available_messages = [msg for msg in required_messages if sm.updated.get(msg, False)]
+
+            if len(available_messages) < 3:  # At least 3 out of 4 required
+                cloudlog.warning(f"EnvironmentalConditionProcessor: Insufficient data: {available_messages}")
+                # Use conservative defaults when data is insufficient
+                self._use_conservative_defaults()
+                return
+
             # Update from model
             if sm.updated.get('modelV2', False):
                 self.monitor.update_from_model(sm['modelV2'])
@@ -289,16 +299,62 @@ class EnvironmentalConditionProcessor:
                     sm['deviceState'],
                     sm['roadCameraState']
                 )
-            elif not sm.updated.get('carState', False):
-                cloudlog.warning("EnvironmentalConditionProcessor: carState not available in sm.updated")
-            elif not sm.updated.get('deviceState', False):
-                cloudlog.warning("EnvironmentalConditionProcessor: deviceState not available in sm.updated")
-            elif not sm.updated.get('roadCameraState', False):
-                cloudlog.warning("EnvironmentalConditionProcessor: roadCameraState not available in sm.updated")
+            else:
+                cloudlog.warning("EnvironmentalConditionProcessor: Missing required sensor data")
+                # Use conservative defaults when sensor data is missing
+                self._use_conservative_defaults()
+                return
 
             # Detect and update weather conditions
             weather_data = self.monitor.detect_weather_conditions(sm['modelV2'], sm['carState'])
-            self.environmental_conditions.update(weather_data)
+
+            # Validate the detected weather data before applying
+            validated_weather_data = self._validate_weather_data(weather_data)
+            self.environmental_conditions.update(validated_weather_data)
+
+    def _use_conservative_defaults(self):
+        """Set conservative defaults when sensor data is insufficient"""
+        self.environmental_conditions.update({
+            'is_rainy': True,  # Default to worst case
+            'is_snowy': True,
+            'is_night': True,
+            'low_visibility': True,
+            'weather_confidence': 0.5,  # Lower confidence
+            'road_quality': 0.5,  # Medium quality
+            'surface_condition': 0.6  # Slightly poor
+        })
+
+    def _validate_weather_data(self, weather_data):
+        """Validate weather data before applying to ensure it's within reasonable ranges"""
+        validated_data = {}
+
+        # Validate boolean flags
+        for key in ['is_rainy', 'is_snowy', 'is_night', 'low_visibility']:
+            if key in weather_data:
+                validated_data[key] = bool(weather_data[key])  # Ensure boolean type
+            else:
+                validated_data[key] = False  # Default to False if not provided
+
+        # Validate floating point values with ranges
+        if 'weather_confidence' in weather_data:
+            confidence = float(weather_data['weather_confidence'])
+            validated_data['weather_confidence'] = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
+        else:
+            validated_data['weather_confidence'] = 0.8  # Default confidence
+
+        if 'road_quality' in weather_data:
+            road_quality = float(weather_data['road_quality'])
+            validated_data['road_quality'] = max(0.0, min(1.0, road_quality))  # Clamp to [0, 1]
+        else:
+            validated_data['road_quality'] = 1.0  # Default to good quality
+
+        if 'surface_condition' in weather_data:
+            surface_condition = float(weather_data['surface_condition'])
+            validated_data['surface_condition'] = max(0.0, min(1.0, surface_condition))  # Clamp to [0, 1]
+        else:
+            validated_data['surface_condition'] = 1.0  # Default to good condition
+
+        return validated_data
     
     def get_environmental_limits(self, original_limits, v_ego, curvature_ahead):
         """

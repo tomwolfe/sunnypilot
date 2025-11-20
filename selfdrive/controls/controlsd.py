@@ -163,6 +163,22 @@ class Controls(ControlsExt, ModelStateBase):
     try:
         self.environmental_processor.update(self.sm)
         self._environmental_flags.update(self.environmental_processor.environmental_conditions)
+
+        # Add validation that environmental processor is providing reasonable data
+        env_flags = self._environmental_flags
+        if ('weather_confidence' in env_flags and
+            (env_flags['weather_confidence'] < 0 or env_flags['weather_confidence'] > 1.5)):
+            cloudlog.warning(f"Environmental processor returned invalid confidence: {env_flags['weather_confidence']}")
+            # Use conservative defaults
+            self._environmental_flags.update({
+                'is_rainy': True,
+                'is_night': True,
+                'low_visibility': True,
+                'weather_confidence': 0.7,
+                'road_quality': 0.6,
+                'surface_condition': 0.6
+            })
+
     except Exception as e:
         cloudlog.error(f"Environmental processor error: {e}")
         # Graceful degradation: log error and fall back to conservative defaults
@@ -197,8 +213,13 @@ class Controls(ControlsExt, ModelStateBase):
         # Use adaptive lateral curvature based on conditions
         new_desired_curvature = adjusted_action.desiredCurvature if CC.latActive else self.curvature
 
-        # Additional safety check using lateral_safety functions
+        # Additional safety check using lateral_safety functions and environmental validation
         if CC.latActive:
+            # Ensure new_desired_curvature is a valid number before applying safety checks
+            if not isinstance(new_desired_curvature, (int, float)) or not (-0.5 <= new_desired_curvature <= 0.5):
+                cloudlog.warning(f"Adaptive behavior returned invalid curvature: {new_desired_curvature}, using fallback")
+                new_desired_curvature = model_v2.action.desiredCurvature
+
             new_desired_curvature = get_adaptive_lateral_curvature(
                 CS.vEgo,
                 new_desired_curvature,

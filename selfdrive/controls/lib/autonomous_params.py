@@ -109,3 +109,55 @@ ALL_PARAMS = {
     **PERFORMANCE_PARAMS,
     **GENERAL_SAFETY_PARAMS
 }
+
+
+def validate_parameter_ranges():
+    """Validate that all parameters are within safe and tested ranges"""
+    # Validate lateral safety parameters
+    assert 1.0 <= LATERAL_SAFETY_PARAMS['MAX_LATERAL_ACCEL'] <= 5.0, \
+        "MAX_LATERAL_ACCEL must be between 1.0 and 5.0 m/s^2"
+    assert 0.005 <= LATERAL_SAFETY_PARAMS['MIN_TIME_STEP'] <= 0.05, \
+        "MIN_TIME_STEP must be between 0.005s and 0.05s"
+    assert LATERAL_SAFETY_PARAMS['MIN_SAFE_LATERAL_ACCEL'] < LATERAL_SAFETY_PARAMS['MAX_SAFE_LATERAL_ACCEL'], \
+        "MIN_SAFE_LATERAL_ACCEL must be less than MAX_SAFE_LATERAL_ACCEL"
+
+    # Validate environmental parameters
+    assert 0.0 <= ENVIRONMENTAL_PARAMS['VISIBILITY_THRESHOLD'] <= 1.0, \
+        "VISIBILITY_THRESHOLD must be between 0.0 and 1.0"
+    assert 0.0 <= ENVIRONMENTAL_PARAMS['HIGH_RISK_THRESHOLD'] <= 1.0, \
+        "HIGH_RISK_THRESHOLD must be between 0.0 and 1.0"
+    assert ENVIRONMENTAL_PARAMS['MEDIUM_RISK_THRESHOLD'] < ENVIRONMENTAL_PARAMS['HIGH_RISK_THRESHOLD'], \
+        "MEDIUM_RISK_THRESHOLD must be less than HIGH_RISK_THRESHOLD"
+
+    # Validate adaptive behavior parameters
+    assert 1.0 <= ADAPTIVE_BEHAVIOR_PARAMS['BASE_LATERAL_ACCEL_LIMIT'] <= 5.0, \
+        "BASE_LATERAL_ACCEL_LIMIT must be between 1.0 and 5.0 m/s^2"
+    assert 0.5 <= ADAPTIVE_BEHAVIOR_PARAMS['CONSERVATIVE_PERSONALITY_FACTOR'] <= 1.0, \
+        "CONSERVATIVE_PERSONALITY_FACTOR must be between 0.5 and 1.0"
+    assert 1.0 <= ADAPTIVE_BEHAVIOR_PARAMS['AGGRESSIVE_PERSONALITY_FACTOR'] <= 1.5, \
+        "AGGRESSIVE_PERSONALITY_FACTOR must be between 1.0 and 1.5"
+
+    # Validate performance parameters
+    assert 10 <= PERFORMANCE_PARAMS['TARGET_FPS'] <= 30, \
+        "TARGET_FPS must be between 10 and 30"
+    assert 50.0 <= PERFORMANCE_PARAMS['CPU_UTIL_THRESHOLD'] <= 95.0, \
+        "CPU_UTIL_THRESHOLD must be between 50.0% and 95.0%"
+
+    # Validate general safety parameters
+    assert 0.0 <= GENERAL_SAFETY_PARAMS['MAX_CURVATURE_FOR_ZERO_SPEED'] <= 0.5, \
+        "MAX_CURVATURE_FOR_ZERO_SPEED must be between 0.0 and 0.5"
+    assert GENERAL_SAFETY_PARAMS['FAILURE_COUNT_THRESHOLD'] >= 1, \
+        "FAILURE_COUNT_THRESHOLD must be at least 1"
+
+    return True
+
+
+def get_param_info():
+    """Return information about all parameters for debugging and monitoring"""
+    return {
+        'lateral_safety': dict(LATERAL_SAFETY_PARAMS),
+        'environmental': dict(ENVIRONMENTAL_PARAMS),
+        'adaptive_behavior': dict(ADAPTIVE_BEHAVIOR_PARAMS),
+        'performance': dict(PERFORMANCE_PARAMS),
+        'general_safety': dict(GENERAL_SAFETY_PARAMS)
+    }

@@ -203,75 +203,74 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
 
 def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params, CP=None,
                                    is_rainy=False, is_night=False, dt=0.01):
-  """
-  Get laterally safe and adaptive curvature considering various environmental factors
-  :param v_ego: Current vehicle speed in m/s
-  :param desired_curvature: Raw desired curvature from model
-  :param prev_curvature: Previous curvature for rate limiting
-  :param model_v2: Model output message
-  :param params: Live parameters
-  :param CP: CarParams for vehicle-specific parameters, if available
-  :param is_rainy: Rain condition flag
-  :param is_night: Night condition flag
-  :param dt: Time step
-  :return: Laterally safe and adaptive curvature
-  """
-  try:
-    # Validate time step parameter
-    dt = validate_time_step(dt)
-
-    # Get model confidence and road pitch information
-    # Handle case where model_v2.meta doesn't exist
-    model_confidence = 1.0
+    """
+    Get laterally safe and adaptive curvature considering various environmental factors
+    Optimized for performance while maintaining safety
+    """
     try:
-        if hasattr(model_v2, 'meta') and model_v2.meta is not None:
-            model_confidence = getattr(model_v2.meta, 'confidence', 1.0)
-    except AttributeError:
-        pass  # Use default confidence of 1.0
+        # Validate time step parameter early and return if invalid
+        try:
+            dt = validate_time_step(dt)
+        except ValueError as e:
+            cloudlog.error(f"Invalid time step in get_adaptive_lateral_curvature: {e}")
+            # Use default time step if validation fails
+            dt = DEFAULT_TIME_STEP
 
-    road_pitch = 0.0
-    try:
-        if (hasattr(model_v2, 'orientationNED') and
-            hasattr(model_v2.orientationNED, 'x') and
-            model_v2.orientationNED.x is not None and
-            len(model_v2.orientationNED.x) > 0):
-            road_pitch = model_v2.orientationNED.x[0]  # First element represents pitch
-    except (AttributeError, IndexError, TypeError):
-        pass  # Use default road pitch of 0.0
+        # Get model confidence efficiently
+        model_confidence = getattr(getattr(model_v2, 'meta', None), 'confidence', 1.0)
 
-    # Anticipate upcoming curvature
-    max_curv_ahead, avg_curv_ahead = anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=40.0)
+        # Get road pitch safely with minimal attribute access
+        road_pitch = 0.0
+        try:
+            orientation_ned = getattr(model_v2, 'orientationNED', None)
+            if orientation_ned and hasattr(orientation_ned, 'x') and orientation_ned.x:
+                road_pitch = orientation_ned.x[0] if len(orientation_ned.x) > 0 else 0.0
+        except (AttributeError, IndexError, TypeError):
+            pass  # Use default road pitch
 
-    # Adjust limits based on conditions
-    adjusted_max_lat_accel, rate_mult = adjust_lateral_limits_for_conditions(
-      v_ego, max_curv_ahead, model_confidence, road_pitch, is_rainy, is_night
-    )
+        # Anticipate upcoming curvature (this is already optimized)
+        max_curv_ahead, avg_curv_ahead = anticipate_curvature_ahead(model_v2, v_ego, lookahead_distance=40.0)
 
-    # Validate the adjusted lateral acceleration
-    adjusted_max_lat_accel = validate_lateral_acceleration(adjusted_max_lat_accel)
+        # Adjust limits based on conditions using pre-defined functions
+        adjusted_max_lat_accel, rate_mult = adjust_lateral_limits_for_conditions(
+          v_ego, max_curv_ahead, model_confidence, road_pitch, is_rainy, is_night
+        )
 
-    # Calculate safe limits
-    roll_compensation = 0.0
-    if hasattr(params, 'roll'):
-        roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
-    min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(v_ego, adjusted_max_lat_accel, roll_compensation, CP)
+        # Validate the adjusted lateral acceleration
+        try:
+            adjusted_max_lat_accel = validate_lateral_acceleration(adjusted_max_lat_accel)
+        except ValueError as e:
+            cloudlog.error(f"Invalid lateral acceleration in get_adaptive_lateral_curvature: {e}")
+            # Use safe default
+            adjusted_max_lat_accel = MAX_LATERAL_ACCEL * 0.5  # Conservative default
 
-    # Apply rate limiting to prevent excessive curvature changes
-    v_ego_sq = max(v_ego**2, 1.0)
-    max_curvature_rate = LATERAL_JERK_LIMIT / v_ego_sq  # Lateral jerk limit divided by v_ego^2
-    max_delta = max_curvature_rate * dt * rate_mult  # Apply rate limit multiplier
+        # Calculate safe limits (optimized)
+        roll_compensation = getattr(params, 'roll', 0.0) * ACCELERATION_DUE_TO_GRAVITY
+        min_curv_safe, max_curv_safe = calculate_safe_curvature_limits(
+            v_ego, adjusted_max_lat_accel, roll_compensation, CP
+        )
 
-    # Limit the desired curvature based on rate changes and safe bounds
-    curvature_after_rate_limit = np.clip(desired_curvature,
-                                         prev_curvature - max_delta,
-                                         prev_curvature + max_delta)
+        # Apply rate limiting efficiently
+        v_ego_sq = max(v_ego**2, 1.0)
+        max_curvature_rate = LATERAL_JERK_LIMIT / v_ego_sq
+        max_delta = max_curvature_rate * dt * rate_mult
 
-    # Finally limit to safe bounds
-    final_curvature = np.clip(curvature_after_rate_limit, min_curv_safe, max_curv_safe)
+        # Apply rate limiting and safety bounds in one step
+        curvature_after_rate_limit = np.clip(
+            desired_curvature,
+            prev_curvature - max_delta,
+            prev_curvature + max_delta
+        )
 
-    return final_curvature
-  except Exception as e:
-    # If anything goes wrong, return a safe default
-    cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
-    # Return the previous curvature as a safe fallback
-    return prev_curvature
+        final_curvature = np.clip(
+            curvature_after_rate_limit,
+            min_curv_safe,
+            max_curv_safe
+        )
+
+        return final_curvature
+    except Exception as e:
+        # Comprehensive error handling with fallback
+        cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
+        # Return the previous curvature as a safe fallback
+        return prev_curvature

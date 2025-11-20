@@ -269,12 +269,12 @@ class SafetyValidator:
         self.safety_violations = []
         self.safety_warnings = []
         
-    def validate_lateral_safety(self, car_state, metrics_collector: DrivingMetricsCollector) -> bool:
+    def validate_lateral_safety(self, car_state, model_v2, controls_state, metrics_collector: DrivingMetricsCollector) -> bool:
         """
-        Validate lateral control safety
+        Enhanced lateral control safety validation with better model confidence checking
         """
         is_safe = True
-        
+
         # Check steering rate limits
         if abs(car_state.steeringRateDeg) > self.max_steering_rate:
             self.safety_violations.append({
@@ -284,7 +284,7 @@ class SafetyValidator:
                 'timestamp': time.time()
             })
             is_safe = False
-        
+
         # Check lateral jerk from metrics if available
         if metrics_collector.lateral_jerk_buffer:
             current_jerk = metrics_collector.lateral_jerk_buffer[-1] if metrics_collector.lateral_jerk_buffer else 0.0
@@ -296,7 +296,32 @@ class SafetyValidator:
                     'timestamp': time.time()
                 })
                 is_safe = False
-        
+
+        # Additional check: Validate that model confidence is sufficient for current maneuver
+        model_confidence = getattr(getattr(model_v2, 'meta', None), 'confidence', 1.0)
+        desired_curvature = getattr(getattr(model_v2, 'action', None), 'desiredCurvature', 0.0)
+
+        if abs(desired_curvature) > 0.005 and model_confidence < 0.5:  # Sharp turn with low confidence
+            self.safety_violations.append({
+                'type': 'low_confidence_sharp_turn',
+                'model_confidence': model_confidence,
+                'desired_curvature': desired_curvature,
+                'timestamp': time.time()
+            })
+            is_safe = False
+
+        # Check if environmental risk is too high for the current curvature demand
+        if hasattr(controls_state, 'environmentalRisk'):
+            environmental_risk = controls_state.environmentalRisk
+            if environmental_risk > 0.7 and abs(desired_curvature) > 0.006:  # High risk + sharp curve
+                self.safety_violations.append({
+                    'type': 'high_risk_sharp_curve',
+                    'environmental_risk': environmental_risk,
+                    'desired_curvature': desired_curvature,
+                    'timestamp': time.time()
+                })
+                is_safe = False
+
         return is_safe
     
     def validate_longitudinal_safety(self, car_state, metrics_collector: DrivingMetricsCollector) -> bool:
