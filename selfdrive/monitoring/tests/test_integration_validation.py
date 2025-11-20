@@ -201,7 +201,7 @@ def test_safety_constraint_validation():
     desired_curvature = 0.2  # Would be too much of a change
     
     # Apply the same logic as in modeld.py
-    max_accel_change = 0.5  # from modeld.py
+    max_accel_change = 0.3  # from modeld.py (improved passenger comfort)
     max_curvature_change = 0.01 if v_ego > 5.0 else 0.005  # from modeld.py
     
     # Simulate the clipping logic
