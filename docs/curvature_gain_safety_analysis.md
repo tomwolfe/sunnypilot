@@ -73,6 +73,9 @@ This document provides a formal safety analysis for the curvature gain feature i
 | Filter malfunction | FirstOrderFilter failure | Noisy steering commands | No specific detection | Manual testing, logging |
 | Excessive gain | Misconfigured parameters | Oscillations, instability | `maxCurvatureGainMultiplier` limit | Gain clamping in PID controller |
 | Invalid curvature values | Modeld output errors | Erratic steering | Clamping in `helpers.py` | Dynamic limit based on vehicle characteristics |
+| Multiple safety mechanism failure | Simultaneous failure of curvature gain validation, gain limiting, and oscillation detection | Potential for unsafe steering behavior | Safe mode activation with `safe_mode_active` flag and monitoring | Comprehensive safe mode that reverts to standard PID control |
+| High safety limit trigger frequency | Continuous hitting of safety limits (e.g., due to aggressive tuning or challenging driving scenarios) | Reduced steering responsiveness, potential for degraded control | Runtime monitoring via `safety_limit_trigger_count` | Logging of warning messages when trigger count exceeds threshold, enabling identification of problematic configurations |
+| Safe mode activation | Multiple failures or invalid states detected | Reverts to standard PID control without curvature gain modification | `safe_mode_active` flag and `safe_mode_trigger_count` | Maintains basic PID control functionality while disabling potentially problematic curvature gain features |
 
 ## Safety Requirements
 
@@ -113,6 +116,16 @@ This document provides a formal safety analysis for the curvature gain feature i
 3. **Configurable Oscillation Window**: Allow performance optimization of oscillation detection (implemented)
 4. **Adaptive Filtering**: Implementation of condition-based filtering (implemented)
 5. **Safety Case Update**: Periodic review and update of safety analysis based on field experience
+6. **Failure Mode Documentation**: Comprehensive documentation of system failure modes and system response (implemented)
+
+### Failure Mode Considerations
+
+The system has been designed to handle several critical failure modes:
+
+- **Single Point Failures**: Each safety mechanism operates independently to prevent single point of failure
+- **Multiple Simultaneous Failures**: Safe mode activation prevents dangerous behavior when multiple issues occur simultaneously
+- **Graceful Degradation**: System progressively degrades functionality while maintaining basic control when issues are detected
+- **Field Monitoring**: Runtime monitoring enables detection of safety limit violations and safe mode activations in real-world use
 
 ## Conclusion
 

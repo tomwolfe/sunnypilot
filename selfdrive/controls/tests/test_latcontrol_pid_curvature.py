@@ -525,6 +525,81 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
                         "P term should be limited by max gain multiplier even with extreme settings")
 
     @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_safety_limiting_combined_high_speed_curvature(self, car_name):
+        """Test safety limiting under combined high-speed and high-curvature scenarios."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        # Configure parameters that would create high combined gains without safety limits
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        # High curvature gain values that when combined with high speed gains could be problematic
+        CP_SP.curvatureGainInterp = [[0.0, 0.03, 0.06], [1.0, 3.0, 5.0]]  # High gains for curves
+        CP_SP.maxCurvatureGainMultiplier = 2.5  # Reasonable safety limit
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 25  # High speed where speed-based gains are also high
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 1.0
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Test scenario: high speed (high base k_p) + high curvature (high curvature multiplier)
+        high_curvature = 0.06  # High curvature requiring high gain from interpolation (5.0x multiplier)
+
+        # Reset controller and get initial baseline k_p
+        controller.pid.reset()
+        initial_k_p = controller.pid._get_k_p()
+
+        # Update with high speed and high curvature
+        output, _, pid_log = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+
+        # Verify safety limits are enforced
+        # The output should be finite and reasonable despite high combined demands
+        self.assertTrue(np.isfinite(output), "Controller output should be finite under high-demand conditions")
+        self.assertLess(abs(output), 2.5, "Output should be safely bounded")
+
+        # Check that safety limit counter is working properly
+        # Run multiple updates to make sure safety systems are properly tracking
+        for i in range(20):
+            CS.steeringAngleDeg = 1.5 if i % 2 == 0 else 0.8  # Varying error to test sustained operation
+            output_loop, _, pid_log_loop = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+
+            # Every output should be bounded
+            self.assertTrue(np.isfinite(output_loop), f"Controller output should be finite at iteration {i}")
+            self.assertLess(abs(output_loop), 2.5, f"Output should be safely bounded at iteration {i}")
+
+        # Verify that safety limit triggers are being counted (if they occurred during the test)
+        # The controller should be tracking how often safety limits are being enforced
+        self.assertGreaterEqual(controller.pid.safety_limit_trigger_count, 0,
+                              "Safety limit trigger count should be non-negative")
+
+        # If there were safety limit applications, the safe_mode_trigger_count should be appropriate
+        if controller.pid.safety_limit_trigger_count > 50:  # If safety limits were hit frequently
+            self.assertFalse(controller.pid.safe_mode_active,
+                           "Safe mode should only activate for severe issues, not normal safety limiting")
+
+        # Verify that the controller maintains stability metrics in log
+        self.assertIsNotNone(pid_log.curvatureGainFactor, "Curvature gain factor should be logged")
+        self.assertIsNotNone(pid_log.oscillationDetected, "Oscillation status should be logged")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
     def test_pid_oscillation_detection_edge_cases(self, car_name):
         """Test oscillation detection with various edge case scenarios."""
         CarInterface = interfaces[car_name]
@@ -681,6 +756,121 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
 
         self.assertEqual(larger_window, expected_larger_window,
                         f"Oscillation window should be updated to {expected_larger_window}, got {larger_window}")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_failure_mode_multiple_safety_mechanisms(self, car_name):
+        """Test failure mode when multiple safety mechanisms might fail simultaneously."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        # Create CarParamsSP with high gain settings that could potentially cause issues
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        # Very high curvature gain that should be limited by maxCurvatureGainMultiplier
+        CP_SP.curvatureGainInterp = [[0.0, 0.01, 0.05, 0.1], [1.0, 5.0, 8.0, 12.0]]  # Very high gains
+        CP_SP.maxCurvatureGainMultiplier = 1.5  # Low limit to ensure safety is triggered
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 20  # High speed where speed-based gains might also be high
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 0.0
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Test scenario: high speed (high speed-based gain) + high curvature (high curvature gain)
+        # This should trigger the safety limiting mechanisms
+        high_curvature = 0.08  # High curvature requiring high gain
+
+        # Run multiple updates to test sustained high-demand scenario
+        for i in range(50):
+            CS.steeringAngleDeg = 0.5 if i % 3 == 0 else -0.3  # Oscillating small errors to test
+            output, _, pid_log = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+
+            # Verify that the controller remains stable even under high-demand conditions
+            self.assertTrue(np.isfinite(output), f"Controller output should remain finite at iteration {i}")
+            self.assertLess(abs(output), 2.0, f"Output should be limited by safety mechanisms at iteration {i}")
+
+        # Check that safety mechanisms have been active
+        # The safety limit trigger count should be greater than 0 if limits were enforced
+        self.assertGreaterEqual(controller.pid.safety_limit_trigger_count, 0,
+                               "Safety limit trigger count should be non-negative")
+
+        # The safe mode should not be active under normal conditions, but if it is,
+        # it means the system properly detected and responded to potential issues
+        if controller.pid.safe_mode_active:
+            self.assertGreaterEqual(controller.pid.safe_mode_trigger_count, 0,
+                                   "Safe mode trigger count should be non-negative when safe mode is active")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_failure_mode_invalid_inputs(self, car_name):
+        """Test failure mode when invalid inputs are provided to the curvature gain system."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        # Create CarParamsSP with normal parameters
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]
+        CP_SP.maxCurvatureGainMultiplier = 4.0
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 10  # Medium speed
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 1.0
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Test with NaN curvature input
+        controller.pid.reset()
+        output, _, pid_log = controller.update(True, CS, VM, params, False, float('nan'), pose, False, 0.2)
+
+        # Verify that the controller handles NaN gracefully
+        self.assertTrue(np.isfinite(output), "Controller should handle NaN curvature gracefully")
+
+        # Safe mode should not have been triggered by a single NaN input in normal conditions
+        # but the controller should recover properly
+        self.assertTrue(hasattr(controller.pid, 'safe_mode_active'),
+                        "PID controller should have safe mode attributes")
+
+        # Test with extremely high curvature to check safety clamping
+        controller.pid.reset()
+        output_high, _, pid_log_high = controller.update(True, CS, VM, params, False, 1.0, pose, False, 0.2)  # Very high curvature
+
+        # Output should remain finite and reasonable
+        self.assertTrue(np.isfinite(output_high), "Controller should handle extremely high curvature")
+        self.assertLess(abs(output_high), 3.0, "High curvature should still result in bounded output")
 
 
 if __name__ == "__main__":

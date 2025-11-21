@@ -90,6 +90,16 @@ class LatControlPID(LatControl):
       pid_log.oscillationDampingActive = oscillation_damping_active
       pid_log.oscillationDetectionCount = oscillation_detection_count
       pid_log.oscillationRecoveryCount = oscillation_recovery_count
+      # Add safe mode indicators to PID log
+      try:
+        pid_log.safeModeActive = getattr(self.pid, 'safe_mode_active', False)
+        pid_log.safeModeTriggerCount = getattr(self.pid, 'safe_mode_trigger_count', 0)
+        pid_log.safetyLimitTriggerCount = getattr(self.pid, 'safety_limit_trigger_count', 0)
+      except Exception:
+        # If getting safe mode data fails, continue with normal operation
+        pid_log.safeModeActive = False
+        pid_log.safeModeTriggerCount = 0
+        pid_log.safetyLimitTriggerCount = 0
 
     except Exception:
       # If getting monitoring data fails, continue with normal operation
@@ -136,10 +146,27 @@ class LatControlPID(LatControl):
                       oscillation_damping_active=oscillation_damping_active,
                       oscillation_detection_count=oscillation_detection_count,
                       oscillation_recovery_count=oscillation_recovery_count,
+                      safe_mode_active=getattr(self.pid, 'safe_mode_active', False),
+                      safe_mode_trigger_count=getattr(self.pid, 'safe_mode_trigger_count', 0),
+                      safety_limit_trigger_count=getattr(self.pid, 'safety_limit_trigger_count', 0),
                       desired_curvature=desired_curvature,
                       vEgo=CS.vEgo,
                       error=error,
                       output=output_torque)
+        # If safety limits are being hit frequently, log a warning
+        if getattr(self.pid, 'safety_limit_trigger_count', 0) > 50:
+          cloudlog.warning(f"Safety limits triggered frequently: {getattr(self.pid, 'safety_limit_trigger_count', 0)} times",
+                          curvature_gain_factor=curvature_gain_factor,
+                          desired_curvature=desired_curvature,
+                          vEgo=CS.vEgo,
+                          error=error,
+                          output=output_torque)
+        # If safe mode is active, log an info message
+        if getattr(self.pid, 'safe_mode_active', False):
+          cloudlog.info(f"Curvature gain safe mode activated: {getattr(self.pid, 'safe_mode_trigger_count', 0)} triggers",
+                       desired_curvature=desired_curvature,
+                       vEgo=CS.vEgo,
+                       curvature_gain_interp=getattr(CP_SP, 'curvatureGainInterp', None))
         self.last_monitoring_log_time = current_time
       except Exception as e:
         cloudlog.error(f"Error in curvature gain monitoring log: {e}")

@@ -909,6 +909,9 @@ struct ControlsState @0x97ff69c53601abf1 {
     oscillationDampingActive @12 :Bool = false;
     oscillationDetectionCount @13 :UInt32 = 0;
     oscillationRecoveryCount @14 :UInt32 = 0;
+    safeModeActive @15 :Bool = false;
+    safeModeTriggerCount @16 :UInt32 = 0;
+    safetyLimitTriggerCount @17 :UInt32 = 0;
    }
 
   struct LateralTorqueState {
