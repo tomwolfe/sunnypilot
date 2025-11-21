@@ -401,13 +401,13 @@ class Controls(ControlsExt, ModelStateBase):
       try:
         with open("/data/openpilot/metrics/lateral_control_metrics.csv", "a") as f:
           if f.tell() == 0:
-            f.write("timestamp,desired_curvature,output_torque,p_gain,v_ego\n")
+            f.write("timestamp,desired_curvature,actual_curvature,output_torque,p_gain,v_ego\n")
           
           p_gain = 0
           if lac_log.error != 0:
             p_gain = self.LaC.pid.p / lac_log.error
 
-          f.write(f"{time.time()},{self.desired_curvature},{CC.actuators.torque},{p_gain},{CS.vEgo}\n")
+          f.write(f"{time.time()},{self.desired_curvature},{self.curvature},{CC.actuators.torque},{p_gain},{CS.vEgo}\n")
       except Exception as e:
         cloudlog.error(f"Error logging lateral control metrics: {e}")
 

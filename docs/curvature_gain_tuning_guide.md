@@ -99,3 +99,28 @@ python scripts/plot_lateral_metrics.py
 
 ### Symptom: Unstable at high curvature
 **Solution**: Ensure gain multipliers don't exceed safe limits and verify the curve is within physical limits
+
+## Balancing Speed-Based and Curvature-Based Gains
+
+Tuning curvature gain and speed-based proportional gain (`kpV`) together is crucial for achieving optimal steering behavior across different driving scenarios. While curvature gain adapts steering stiffness to the sharpness of a turn, speed-based gain adjusts the overall steering response based on vehicle speed.
+
+### Key Interactions
+
+-   **High Speeds, Gentle Curves (e.g., Highway Driving):** At high speeds, `kpV` is typically lower to ensure stability and prevent overly aggressive steering. In gentle curves, `curvatureGain` will be low (or 1.0), so the steering feel is primarily determined by the speed-based gain. The goal is smooth, subtle corrections.
+-   **Low Speeds, Sharp Turns (e.g., Urban Driving):** At low speeds, `kpV` is higher to provide more responsive steering. When entering a sharp turn, `curvatureGain` increases significantly, multiplying the already high proportional gain to provide the necessary torque to navigate the corner without understeering.
+
+### Tuning Strategy Example
+
+Consider a vehicle that feels sluggish in sharp turns but unstable at high speeds.
+
+1.  **Address High-Speed Instability First:** Before touching curvature gain, tune the speed-based PID gains (`kpBP` and `kpV`) to be stable and comfortable for highway driving. This might involve lowering `kpV` at higher speeds.
+2.  **Tune for Sharp Corners:** Once high-speed driving is satisfactory, focus on low-speed corners. If the car feels like it's understeering or not turning aggressively enough, increase the `curvatureGainInterp` multipliers for higher curvature values.
+
+**Example Scenario: SUV Tuning**
+
+An SUV might require a less aggressive setup.
+
+-   **`kpV`:** `[1.2, 1.0, 0.8]` for `kpBP` at `[15, 25, 35]` m/s. This provides a stable response at highway speeds (35 m/s ≈ 78 mph).
+-   **`curvatureGainInterp`:** `[[0.0, 0.02, 0.04, 0.06], [1.0, 1.1, 1.3, 1.6]]`. This provides a modest increase in gain for sharper turns, preventing the sluggish feel without making the steering feel overly artificial.
+
+By tuning these two parameters iteratively, you can achieve a balanced steering response that is both stable on straightaways and responsive in turns. Always test changes in a safe environment.

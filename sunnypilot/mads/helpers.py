@@ -132,6 +132,9 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       CP_SP.curvatureGainInterp = curvature_gain_interp
     except (json.JSONDecodeError, ValueError) as e:
       cloudlog.error(f"Failed to decode or validate CurvatureGainInterp from Params: {e}")
+      CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default on error
+  else:
+    CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default if param is not set
 
   # Use the new validation system
   validator = ParamsValidator(params)

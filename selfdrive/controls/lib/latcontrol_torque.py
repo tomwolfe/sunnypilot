@@ -92,6 +92,7 @@ class LatControlTorque(LatControl):
       delay_frames = int(np.clip(lat_delay / self.dt, 1, self.lat_accel_request_buffer_len))
       expected_lateral_accel = self.lat_accel_request_buffer[-delay_frames]
       # TODO factor out lateral jerk from error to later replace it with delay independent alternative
+      # desired_curvature is the desired curvature from the path planner (e.g., modeld)
       future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
       self.lat_accel_request_buffer.append(future_desired_lateral_accel)
       gravity_adjusted_future_lateral_accel = future_desired_lateral_accel - roll_compensation
