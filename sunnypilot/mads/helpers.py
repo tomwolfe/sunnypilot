@@ -105,8 +105,8 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
 
       if not all(curvatures >= 0):
         raise ValueError("Curvature values must be non-negative")
-      if not all(np.diff(curvatures) > 0):  # Changed from >= to > to ensure strictly increasing values
-        raise ValueError("Curvature values must be in strictly increasing order to prevent interpolation issues")
+      if not all(np.diff(curvatures) >= 0):  # Changed from > to >= to allow non-decreasing (equal values are acceptable)
+        raise ValueError("Curvature values must be in non-decreasing order to prevent interpolation issues")
       if not all(gains >= 1.0):
         raise ValueError("Gain multipliers must be at least 1.0 (reducing gain for curves is counterproductive)")
       if len(curvatures) != len(gains):

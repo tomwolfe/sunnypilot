@@ -18,7 +18,8 @@ class LatControlPID(LatControl):
                              (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
                              k_curvature=curvature_gain_interp,
                              max_curvature_gain_multiplier=max_curvature_gain_multiplier,
-                             pos_limit=self.steer_max, neg_limit=-self.steer_max)
+                             pos_limit=self.steer_max, neg_limit=-self.steer_max,
+                             vehicle_mass=CP.mass)  # Pass vehicle mass for adaptive oscillation thresholds
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
     # Initialize FirstOrderFilter with base time constant and consider adaptive filtering

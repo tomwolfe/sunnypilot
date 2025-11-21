@@ -5,12 +5,41 @@ from openpilot.common.performance_monitor import PerfTrack
 class PIDController:
   def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0, pos_limit=1e308, neg_limit=-1e308, rate=100,
                oscillation_threshold=0.5, oscillation_window_size_seconds=0.5, oscillation_gain_reduction=0.9,
-               oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0):
+               oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0,
+               vehicle_mass=1500.0):  # Added vehicle mass to enable adaptive oscillation thresholds
     self._k_p = k_p
     self._k_i = k_i
     self._k_d = k_d
     self._k_curvature = k_curvature
-    self.max_curvature_gain_multiplier = max_curvature_gain_multiplier  # Configurable maximum gain multiplier
+    self.max_curvature_gain_multiplier = max_curvature_gain_multiplier  # Configurable maximum gain multiplier relative to base
+    # Calculate reference values for safety limiting to prevent explosive behavior when both speed and curvature gains are high
+    if isinstance(k_p, (list, tuple)) and len(k_p) == 2:
+      # k_p is in format (breakpoints, values) like the car params
+      self._max_k_p_possible = max(k_p[1]) if len(k_p[1]) > 0 else 1.0
+      # Use the baseline (typically at speed 0) as a reference point for safety limits
+      if len(k_p[1]) > 0:
+        # If there's a value at speed 0, use it; otherwise interpolate or use first value
+        if len(k_p[0]) > 0 and k_p[0][0] == 0:
+          self._baseline_k_p = k_p[1][0]
+        else:
+          # Interpolate at speed 0, or use first value if speed 0 not available
+          self._baseline_k_p = np.interp(0.0, k_p[0], k_p[1]) if len(k_p[0]) > 0 else k_p[1][0]
+      else:
+        self._baseline_k_p = 1.0
+    elif isinstance(k_p, list) and len(k_p) == 2:
+      # k_p is in format [[breakpoints], [values]]
+      self._max_k_p_possible = max(k_p[1]) if len(k_p[1]) > 0 else 1.0
+      if len(k_p[1]) > 0:
+        if len(k_p[0]) > 0 and k_p[0][0] == 0:
+          self._baseline_k_p = k_p[1][0]
+        else:
+          self._baseline_k_p = np.interp(0.0, k_p[0], k_p[1]) if len(k_p[0]) > 0 else k_p[1][0]
+      else:
+        self._baseline_k_p = 1.0
+    else:
+      self._max_k_p_possible = abs(float(k_p)) if isinstance(k_p, (int, float)) else 1.0  # Safe default
+      self._baseline_k_p = self._max_k_p_possible  # For fixed k_p values
+
     self.k_f = k_f   # feedforward gain
     if isinstance(self._k_p, Number):
       self._k_p = [[0], [self._k_p]]
@@ -37,6 +66,13 @@ class PIDController:
     self.oscillation_recovery_rate = oscillation_recovery_rate  # Configurable rate to gradually restore gain when no oscillations
     self.min_oscillation_gain_factor = min_oscillation_gain_factor  # Configurable minimum gain factor (50% of computed gain)
     self.max_oscillation_gain_factor = max_oscillation_gain_factor  # Configurable maximum gain factor (100% of computed gain)
+    # Store vehicle mass for adaptive oscillation detection
+    self.vehicle_mass = vehicle_mass
+
+    # Calculate adaptive oscillation thresholds based on vehicle characteristics
+    # Heavier vehicles may need different thresholds than lighter vehicles
+    self.oscillation_threshold = self._calculate_adaptive_threshold(oscillation_threshold)
+
     self.oscillation_gain_factor = 1.0  # Current gain factor
     # Enhanced oscillation detection metrics for monitoring
     self.oscillation_detected = False
@@ -68,10 +104,10 @@ class PIDController:
     Configure the oscillation detection window size for performance optimization.
 
     Args:
-        window_size_seconds: Size of the oscillation detection window in seconds
+        window_size_seconds: Base size of the oscillation detection window in seconds
         rate: Control rate in Hz used to convert seconds to samples
     """
-    new_window = int(rate * window_size_seconds)
+    new_window = self._calculate_adaptive_window_size(window_size_seconds, rate)
     # Ensure we have enough samples for reliable oscillation detection
     new_window = max(10, new_window)  # At least 10 samples for detection
     self.oscillation_window = new_window
@@ -92,10 +128,15 @@ class PIDController:
       combined_gain = k_p * curvature_gain  # Compute the combined gain first
 
       # Implement safety bounds to prevent excessive gain growth when both factors are high
-      # This is particularly important for corner cases where both speed and curvature
-      # require high gains simultaneously
-      max_allowable_gain = original_k_p * self.max_curvature_gain_multiplier  # Allow configurable max gain
-      k_p = min(combined_gain, max_allowable_gain)  # Apply the minimum of combined gain or max allowable
+      # This addresses the critical concern that when both speed-based and curvature-based
+      # gains are high simultaneously, the combined effect could be dangerous
+      # First apply the original relative multiplier limit (relative to current speed-adjusted k_p)
+      max_relative_gain = original_k_p * self.max_curvature_gain_multiplier
+      # Then apply an additional safety limit relative to baseline (speed 0) k_p to prevent
+      # explosive behavior when both speed and curvature gains are high simultaneously
+      baseline_limit = self._baseline_k_p * self.max_curvature_gain_multiplier * 3.0  # Allow up to 3x the baseline effect
+      # Take the minimum of combined gain, original relative limit, and additional safety limit
+      k_p = min(combined_gain, max_relative_gain, baseline_limit)
 
     # Apply adaptive damping based on oscillation detection
     k_p = k_p * self.oscillation_gain_factor
@@ -250,6 +291,33 @@ class PIDController:
       self.oscillation_detected = False
       self.oscillation_damping_active = False
       self.oscillation_recovery_count += 1
+
+  def _calculate_adaptive_threshold(self, base_threshold):
+    """
+    Calculate an adaptive oscillation threshold based on vehicle mass.
+    Heavier vehicles might need higher thresholds due to different dynamics.
+    """
+    # Adjust threshold based on vehicle mass
+    # Heavier vehicles (trucks/SUVs) might have different oscillation characteristics
+    if self.vehicle_mass > 2000:  # Heavy vehicles
+      return base_threshold * 1.2  # Slightly higher threshold
+    elif self.vehicle_mass < 1200:  # Light vehicles
+      return base_threshold * 0.8  # Slightly lower threshold
+    else:  # Standard vehicles
+      return base_threshold
+
+  def _calculate_adaptive_window_size(self, base_window_size, rate):
+    """
+    Calculate an adaptive oscillation detection window size based on vehicle mass.
+    Heavier vehicles might need different time windows for oscillation detection.
+    """
+    # Adjust window size based on vehicle mass and dynamics
+    if self.vehicle_mass > 2000:  # Heavy vehicles
+      return int(rate * (base_window_size * 1.2))  # Slightly larger window
+    elif self.vehicle_mass < 1200:  # Light vehicles
+      return int(rate * (base_window_size * 0.8))  # Slightly smaller window
+    else:  # Standard vehicles
+      return int(rate * base_window_size)
 
   def reset(self):
     self.p = 0.0
