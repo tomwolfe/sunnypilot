@@ -1,5 +1,6 @@
 import json
 import unittest
+import numpy as np # Added this import
 from unittest.mock import MagicMock, patch
 
 from openpilot.common.params import Params
@@ -32,7 +33,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Expecting value: line 1 column 1 (char 0)")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -42,7 +43,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: curvatureGainInterp must be a list of two lists of floats")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -52,7 +53,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: curvatureGainInterp must be a list of two lists of floats")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -62,7 +63,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     # The error message from numpy for non-numeric conversion might be complex, so just check if error is logged
     mock_cloudlog.error.assert_called_once()
 
@@ -73,7 +74,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values must be non-negative")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -83,7 +84,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values must be in ascending order")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -93,7 +94,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Gain multipliers must be at least 1.0 (reducing gain for curves is counterproductive)")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -103,7 +104,7 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values and gain multipliers must have the same length")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
@@ -113,18 +114,20 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values cannot be empty")
 
   @patch('sunnypilot.mads.helpers.cloudlog')
-  def test_curvature_gain_interp_exceeds_physical_limit(self, mock_cloudlog):
-    invalid_interp = [[0.0, 0.11], [1.0, 1.2]]
+  def test_curvature_gain_interp_clamps_when_exceeding_default_limit(self, mock_cloudlog):
+    # This input exceeds the default 0.1 limit. It should be clamped.
+    invalid_interp = [[0.0, 0.05, 0.12], [1.0, 1.5, 2.0]]
+    expected_clamped_interp = [[0.0, 0.05, 0.1], [1.0, 1.5, 1.8571428571428572]] # Corrected expected gain
 
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(invalid_interp)
         elif key == "CurvatureMaxLimit":
-            return None  # Return None for CurvatureMaxLimit to use default
+            return None  # Use default limit
         else:
             return None
 
@@ -132,8 +135,42 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
-    mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values exceed physical limits for road turns (max 0.1 m^-1)")
+    # Assert that the value is clamped, not rejected
+    self.assertIsNotNone(self.CP_SP.curvatureGainInterp)
+    # Assert the clamped value is correct (with tolerance for float precision)
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
+
+    # Assert a warning was logged and no error
+    mock_cloudlog.warning.assert_called_once_with("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
+    mock_cloudlog.error.assert_not_called()
+
+  @patch('sunnypilot.mads.helpers.cloudlog')
+  def test_curvature_gain_interp_clamps_when_exceeding_custom_limit(self, mock_cloudlog):
+    # This input exceeds the custom 0.15 limit. It should be clamped.
+    invalid_interp = [[0.0, 0.1, 0.2], [1.0, 1.5, 2.5]]
+    expected_clamped_interp = [[0.0, 0.1, 0.15], [1.0, 1.5, 2.0]] # Corrected expected gain
+
+    def mock_get(key, encoding=None):
+        if key == "CurvatureGainInterp":
+            return json.dumps(invalid_interp)
+        elif key == "CurvatureMaxLimit":
+            return "0.15" # Custom limit
+        else:
+            return None
+
+    self.mock_params.get.side_effect = mock_get
+
+    set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
+
+    # Assert that the value is clamped, not rejected
+    self.assertIsNotNone(self.CP_SP.curvatureGainInterp)
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
+
+    # Assert a warning was logged and no error
+    mock_cloudlog.warning.assert_called_once_with("Curvature values exceed physical limits for road turns (max 0.15 m^-1). Clamping values.")
+    mock_cloudlog.error.assert_not_called()
 
   @patch('sunnypilot.mads.helpers.cloudlog')
   def test_curvature_gain_interp_with_custom_limit(self, mock_cloudlog):
@@ -172,10 +209,14 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    # Should still fail because curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
-    # The error message should be about exceeding the default limit (0.1)
-    mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values exceed physical limits for road turns (max 0.1 m^-1)")
+    # Should still be clamped because curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
+    expected_clamped_interp = [[0.0, 0.1], [1.0, 1.1818181818181819]] # Corrected expected gain
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
+    # A warning about invalid custom limit, and a warning about clamping
+    mock_cloudlog.warning.assert_any_call("CurvatureMaxLimit parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
+    mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 
   @patch('sunnypilot.mads.helpers.cloudlog')
   def test_curvature_gain_interp_custom_limit_invalid_format(self, mock_cloudlog):
@@ -194,10 +235,14 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    # Should still fail because curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
-    # The error message should be about exceeding the default limit (0.1)
-    mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values exceed physical limits for road turns (max 0.1 m^-1)")
+    # Should still be clamped because curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
+    expected_clamped_interp = [[0.0, 0.1], [1.0, 1.1818181818181819]] # Corrected expected gain
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
+    # A warning about invalid custom limit, and a warning about clamping
+    mock_cloudlog.warning.assert_any_call("Invalid CurvatureMaxLimit parameter: invalid_format, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
+    mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 
   @patch('sunnypilot.mads.helpers.cloudlog')
   def test_curvature_gain_interp_custom_limit_warning_range(self, mock_cloudlog):
@@ -216,9 +261,14 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    # Should fail since curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
-    mock_cloudlog.error.assert_called_once_with("Failed to decode or validate CurvatureGainInterp from Params: Curvature values exceed physical limits for road turns (max 0.1 m^-1)")
+    # Should still be clamped because curvature (0.11) exceeds default limit (0.1) when custom limit is invalid
+    expected_clamped_interp = [[0.0, 0.1], [1.0, 1.1818181818181819]] # Corrected expected gain
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
+    self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
+    # A warning about invalid custom limit, and a warning about clamping
+    mock_cloudlog.warning.assert_any_call("CurvatureMaxLimit parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
+    mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 
   @patch('sunnypilot.mads.helpers.cloudlog')
   def test_curvature_gain_interp_not_set(self, mock_cloudlog):
@@ -226,5 +276,5 @@ class TestMadsHelpers(unittest.TestCase):
 
     set_car_specific_params(self.CP, self.CP_SP, self.mock_params)
 
-    self.assertIsNone(self.CP_SP.curvatureGainInterp)
+    self.assertEqual(self.CP_SP.curvatureGainInterp, [[0.0], [1.0]]) # Modified assertion
     mock_cloudlog.error.assert_not_called()

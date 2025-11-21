@@ -34,6 +34,10 @@ Curvature values correspond to turn radii as follows:
 - 0.05 m<sup>-1</sup> = 20m radius turn (sharp curve) 
 - 0.10 m<sup>-1</sup> = 10m radius turn (very sharp curve)
 
+## Desired Curvature Source
+
+The `desired_curvature` value, which is used by the lateral controller to determine the target steering angle, originates from openpilot's path planner (e.g., `modeld`). It represents the predicted curvature of the road ahead and is expressed in units of meters<sup>-1</sup>. This value is continuously updated based on sensor data and the vehicle's dynamics.
+
 ## Tuning Guidelines
 
 ### For Different Vehicle Types
@@ -70,7 +74,7 @@ The system enforces these validation rules:
 - Curvature values must be in ascending order
 - Gain multipliers must be ≥ 1.0 (never reduce gain in curves)
 - Both arrays must have matching lengths
-- Curvature values must not exceed 0.1 m<sup>-1</sup> (default limit)
+- Curvature values are clamped to a maximum of 0.1 m<sup>-1</sup> (default) or a user-defined `CurvatureMaxLimit` (between 0.05 m<sup>-1</sup> and 0.2 m<sup>-1</sup>) if they exceed these limits. This prevents invalid input from causing system errors while allowing for reasonable adjustments.
 
 ## Setting the Parameter
 
@@ -112,6 +116,16 @@ Tuning curvature gain and speed-based proportional gain (`kpV`) together is cruc
 ### Tuning Strategy Example
 
 Consider a vehicle that feels sluggish in sharp turns but unstable at high speeds.
+
+#### Desired Qualitative Outcomes:
+-   **Smooth Turn-In**: The vehicle should initiate turns smoothly without abrupt steering inputs.
+-   **Precise Path Following**: The vehicle should follow the desired path accurately without understeering or oversteering.
+-   **No Oscillations**: The steering should remain stable, avoiding any back-and-forth oscillations, especially in curves.
+
+#### Suggested Quantitative Metrics (from `lateral_control_metrics.csv`):
+-   **Lateral Acceleration Error**: Aim for lateral acceleration error consistently below 0.1 m/s<sup>2</sup>.
+-   **Steering Angle Error**: Keep the average steering angle error under 1-2 degrees in sustained curves.
+-   **Oscillation Frequency/Amplitude**: Monitor for high-frequency, low-amplitude oscillations in steering angle, which indicate instability. Lower frequencies and amplitudes are generally preferred.
 
 1.  **Address High-Speed Instability First:** Before touching curvature gain, tune the speed-based PID gains (`kpBP` and `kpV`) to be stable and comfortable for highway driving. This might involve lowering `kpV` at higher speeds.
 2.  **Tune for Sharp Corners:** Once high-speed driving is satisfactory, focus on low-speed corners. If the car feels like it's understeering or not turning aggressively enough, increase the `curvatureGainInterp` multipliers for higher curvature values.

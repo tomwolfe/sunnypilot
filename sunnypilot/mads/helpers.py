@@ -100,6 +100,9 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       curvatures = np.array(curvature_gain_interp[0])
       gains = np.array(curvature_gain_interp[1])
 
+      original_curvatures = curvatures.copy()
+      original_gains = gains.copy()
+
       if not all(curvatures >= 0):
         raise ValueError("Curvature values must be non-negative")
       if not all(np.diff(curvatures) > 0):
@@ -127,7 +130,37 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
           cloudlog.warning(f"Invalid CurvatureMaxLimit parameter: {custom_curvature_limit_str}, using default 0.1")
 
       if max(curvatures) > max_curvature_limit:
-        raise ValueError(f"Curvature values exceed physical limits for road turns (max {max_curvature_limit} m^-1)")
+        cloudlog.warning(f"Curvature values exceed physical limits for road turns (max {max_curvature_limit} m^-1). Clamping values.")
+
+        # Find the index of the first curvature value that exceeds the limit
+        # np.searchsorted returns the index where max_curvature_limit would be inserted to maintain order
+        clamp_idx = np.searchsorted(curvatures, max_curvature_limit, side='right')
+
+        # Truncate curvatures and gains where curvature > max_curvature_limit
+        new_curvatures = curvatures[:clamp_idx].tolist()
+        new_gains = gains[:clamp_idx].tolist()
+
+        # If the truncated list's last element is less than max_curvature_limit,
+        # we need to add max_curvature_limit and its interpolated gain.
+        if not new_curvatures or new_curvatures[-1] < max_curvature_limit:
+            # Interpolate the gain at max_curvature_limit from the ORIGINAL arrays
+            clamped_gain = np.interp(max_curvature_limit, curvatures, gains)
+            new_curvatures.append(max_curvature_limit)
+            new_gains.append(clamped_gain)
+        
+        # Ensure that after clamping, the arrays are not empty. Revert to safe defaults if they are.
+        if len(new_curvatures) == 0:
+            cloudlog.warning("Clamping resulted in empty curvature gain points. Reverting to default.")
+            new_curvatures = [0.0]
+            new_gains = [1.0]
+
+        curvature_gain_interp = [new_curvatures, new_gains]
+        curvatures = np.array(new_curvatures) # Update for subsequent checks if needed
+        gains = np.array(new_gains) # Update for subsequent checks if needed
+
+      # All other validations remain as rejections, as they indicate malformed parameters
+      # (e.g., non-negative, ascending order, gain multipliers >= 1.0, matching lengths, non-empty)
+      # These checks are implicitly handled by the prior logic or are fundamental to the interp structure.
 
       CP_SP.curvatureGainInterp = curvature_gain_interp
     except (json.JSONDecodeError, ValueError) as e:
