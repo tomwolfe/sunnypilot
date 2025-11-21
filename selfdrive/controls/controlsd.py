@@ -397,6 +397,20 @@ class Controls(ControlsExt, ModelStateBase):
       else:
         self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
 
+      # Log lateral control metrics
+      try:
+        with open("/data/openpilot/metrics/lateral_control_metrics.csv", "a") as f:
+          if f.tell() == 0:
+            f.write("timestamp,desired_curvature,output_torque,p_gain,v_ego\n")
+          
+          p_gain = 0
+          if lac_log.error != 0:
+            p_gain = self.LaC.pid.p / lac_log.error
+
+          f.write(f"{time.time()},{self.desired_curvature},{CC.actuators.torque},{p_gain},{CS.vEgo}\n")
+      except Exception as e:
+        cloudlog.error(f"Error logging lateral control metrics: {e}")
+
     # TODO: both controlsState and carControl valids should be set by
     #       sm.all_checks(), but this creates a circular dependency
 

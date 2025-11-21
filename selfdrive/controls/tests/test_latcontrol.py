@@ -53,3 +53,35 @@ class TestLatControl:
     for _ in range(1000):
       _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2)
     assert lac_log.saturated
+
+  @parameterized.expand([(TOYOTA.TOYOTA_RAV4, LatControlTorque), (GM.CHEVROLET_BOLT_EUV, LatControlTorque)])
+  def test_high_curvature_response(self, car_name, controller):
+    CarInterface = interfaces[car_name]
+    CP = CarInterface.get_non_essential_params(car_name)
+    CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+    CI = CarInterface(CP, CP_SP)
+    sunnypilot_interfaces.setup_interfaces(CI)
+    CP_SP = convert_to_capnp(CP_SP)
+    VM = VehicleModel(CP)
+
+    controller = controller(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+    CS = car.CarState.new_message()
+    CS.vEgo = 15  # 15 m/s, a moderate speed
+    CS.steeringPressed = False
+
+    params = log.LiveParametersData.new_message()
+
+    lp = generate_livePose()
+    pose = Pose.from_live_pose(lp.livePose)
+
+    # High curvature scenario
+    high_curvature = 0.04
+    output_torque_high, _, _ = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+
+    # Low curvature scenario
+    low_curvature = 0.005
+    output_torque_low, _, _ = controller.update(True, CS, VM, params, False, low_curvature, pose, False, 0.2)
+
+    # Assert that the torque output is higher for high curvature
+    assert abs(output_torque_high) > abs(output_torque_low)
