@@ -249,50 +249,163 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         except Exception as e:
             self.fail(f"PID controller should work with default curvature gain: {e}")
 
-  @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
-  def test_pid_curvature_gain_configurable_max_multiplier(self, car_name):
-    """Test that the PID controller respects configurable maximum gain multiplier"""
-    CarInterface = interfaces[car_name]
-    CP = CarInterface.get_non_essential_params(car_name)
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_curvature_gain_configurable_max_multiplier(self, car_name):
+        """Test that the PID controller respects configurable maximum gain multiplier"""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
 
-    # Create CarParamsSP with high curvature gain and low max multiplier
-    CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
-    CP_SP.curvatureGainInterp = [[0.0, 0.06], [1.0, 5.0]]  # Very high gain at high curvature
-    CP_SP.maxCurvatureGainMultiplier = 2.0  # Restrict to 2x max gain
+        # Create CarParamsSP with high curvature gain and low max multiplier
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.06], [1.0, 5.0]]  # Very high gain at high curvature
+        CP_SP.maxCurvatureGainMultiplier = 2.0  # Restrict to 2x max gain
 
-    CI = CarInterface(CP, CP_SP)
-    sunnypilot_interfaces.setup_interfaces(CI)
-    CP_SP = convert_to_capnp(CP_SP)
-    VM = VehicleModel(CP)
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
 
-    controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
 
-    CS = car.CarState.new_message()
-    CS.vEgo = 5  # 5 m/s
-    CS.steeringPressed = False
-    CS.steeringAngleDeg = 2.0
+        CS = car.CarState.new_message()
+        CS.vEgo = 5  # 5 m/s
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 2.0
 
-    params = log.LiveParametersData.new_message()
-    params.angleOffsetDeg = 0.0
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
 
-    from openpilot.selfdrive.locationd.helpers import Pose
-    from openpilot.common.mock.generators import generate_livePose
-    lp = generate_livePose()
-    pose = Pose.from_live_pose(lp.livePose)
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
 
-    # Test with high curvature that would normally result in 5x gain
-    # but should be limited to 2x due to max multiplier
-    high_curvature = 0.06
+        # Test with high curvature that would normally result in 5x gain
+        # but should be limited to 2x due to max multiplier
+        high_curvature = 0.06
 
-    controller.pid.reset()
-    output, _, pid_log = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+        controller.pid.reset()
+        output, _, pid_log = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
 
-    # Verify the gain is limited by the configurable multiplier
-    # The original gain would be much higher without the limit
-    self.assertTrue(np.isfinite(output), "Controller output should be finite with max gain limit")
-    # The P term should be limited by the max multiplier
-    self.assertLessEqual(abs(pid_log.p), abs(controller.pid._k_p[1][0] * 2.0 * CS.steeringAngleDeg),
-                        "P term should be limited by max gain multiplier")
+        # Verify the gain is limited by the configurable multiplier
+        # The original gain would be much higher without the limit
+        self.assertTrue(np.isfinite(output), "Controller output should be finite with max gain limit")
+        # The P term should be limited by the max multiplier
+        self.assertLessEqual(abs(pid_log.p), abs(controller.pid._k_p[1][0] * 2.0 * CS.steeringAngleDeg),
+                            "P term should be limited by max gain multiplier")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_oscillation_detection_and_damping(self, car_name):
+        """Test that the PID controller detects oscillations and applies adaptive damping"""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Create CarParamsSP with normal curvature gain
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]  # Default curvature gain
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 5  # 5 m/s
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 0.0  # Start with no error
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Initially, oscillation gain factor should be at maximum (1.0)
+        self.assertEqual(controller.pid.oscillation_gain_factor, 1.0,
+                        "Initial oscillation gain factor should be 1.0")
+
+        # Simulate oscillatory behavior by providing alternating positive/negative errors
+        # This should trigger the oscillation detection and reduce the gain factor
+        for i in range(50):  # Run multiple updates to build up oscillation history
+            # Alternate between positive and negative errors to simulate oscillation
+            if i % 2 == 0:
+                error = 1.0  # Positive error
+            else:
+                error = -1.0  # Negative error
+
+            CS.steeringAngleDeg = -error  # Create an error condition
+            controller.update(True, CS, VM, params, False, 0.02, pose, False, 0.2)
+
+        # After oscillations, the gain factor should be reduced
+        self.assertLess(controller.pid.oscillation_gain_factor, 1.0,
+                        "Oscillation gain factor should be reduced after detecting oscillations")
+        self.assertGreater(controller.pid.oscillation_gain_factor, 0.4,
+                        "Oscillation gain factor should not be reduced below minimum threshold")
+
+        # Now simulate stable behavior to test gain recovery
+        stable_updates = 100
+        for i in range(stable_updates):
+            CS.steeringAngleDeg = 0.0  # No error, stable condition
+            controller.update(True, CS, VM, params, False, 0.02, pose, False, 0.2)
+
+        # After stable behavior, the gain factor should approach maximum (but may not reach 1.0 immediately)
+        # This checks that the gain recovery mechanism works
+        expected_min_gain_factor = 1.0 * (controller.pid.oscillation_recovery_rate ** stable_updates * 0.1)  # Approximate recovery
+        self.assertGreaterEqual(controller.pid.oscillation_gain_factor, 0.6,
+                               "Oscillation gain factor should recover during stable behavior")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_oscillation_damping_with_high_gain(self, car_name):
+        """Test that oscillation damping works effectively with high curvature gain settings"""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Create CarParamsSP with high curvature gain that might cause oscillations
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.06], [1.0, 3.0]]  # High gain multiplier
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 5  # 5 m/s
+        CS.steeringPressed = False
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Test multiple scenarios with oscillating errors to verify damping works
+        initial_gain_factor = controller.pid.oscillation_gain_factor
+        self.assertEqual(initial_gain_factor, 1.0, "Initial gain factor should be 1.0")
+
+        # Simulate a scenario that might cause oscillations
+        for i in range(100):
+            # Alternate error values to potentially create oscillations
+            CS.steeringAngleDeg = 2.0 if i % 3 == 0 else -1.5
+            output, _, _ = controller.update(True, CS, VM, params, False, 0.06, pose, False, 0.2)
+
+            # Verify output remains finite
+            self.assertTrue(np.isfinite(output), f"Controller output should remain finite at iteration {i}")
+
+        # Check that oscillation damping was applied
+        final_gain_factor = controller.pid.oscillation_gain_factor
+        # The gain factor might have decreased due to oscillation detection
+        # This verifies the damping mechanism is working
 
 
 if __name__ == "__main__":

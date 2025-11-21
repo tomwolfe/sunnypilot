@@ -38,7 +38,28 @@ Curvature values correspond to turn radii as follows:
 
 The `desired_curvature` value, which is used by the lateral controller to determine the target steering angle, originates from openpilot's path planner (`modeld`). It represents the predicted curvature of the road ahead and is expressed in units of meters<sup>-1</sup>. This value is continuously updated based on sensor data and the vehicle's dynamics.
 
-**Important Note**: The `desired_curvature` from `modeld` can sometimes be noisy, especially in challenging environments or with less stable sensor inputs. For optimal stability and smoother control, consider applying a low-pass filter to the `desired_curvature` before it is used in the PID controller. This can help mitigate rapid fluctuations and prevent jerky steering adjustments.
+**Important Note**: The `desired_curvature` from `modeld` can sometimes be noisy, especially in challenging environments or with less stable sensor inputs. For optimal stability and smoother control, a low-pass filter is applied to the `desired_curvature` before it is used in the PID controller. This helps mitigate rapid fluctuations and prevent jerky steering adjustments.
+
+### Filter Configuration
+
+The system currently applies a `FirstOrderFilter` with a time constant of 0.1 seconds to smooth the `desired_curvature` signal:
+
+```python
+self.curvature_filter = FirstOrderFilter(0., 0.1, dt)
+```
+
+#### Filter Time Constant Rationale
+
+The 0.1-second time constant was selected as a balance between:
+- **Noise reduction**: Sufficient smoothing to reduce high-frequency noise from modeld
+- **Responsiveness**: Maintaining adequate responsiveness to actual steering needs
+- **Stability**: Preventing excessive lag that could cause instability
+
+#### Adjusting the Filter
+
+For vehicles with particularly noisy `modeld` outputs, users may consider increasing the time constant (e.g., to 0.2s or 0.3s) to provide more aggressive filtering. However, be aware that longer time constants will introduce more lag, potentially making the system feel sluggish during rapid transitions (e.g., quick transitions from straight to curve).
+
+Conversely, for vehicles with very clean model predictions, a shorter time constant (e.g., 0.05s) might provide better responsiveness while still maintaining filtering benefits.
 
 ## Tuning Guidelines
 
@@ -97,7 +118,7 @@ Where:
 - `speed`: Current vehicle speed.
 - `kpBP`, `kpV`: Breakpoints and values for the speed-based proportional gain lookup table.
 - `desired_curvature`: The absolute value of the desired road curvature.
-- `curvatures`, `gains`: The configured arrays from `CurvatureGainInterp` (now `MaxCurvatureForGainInterp`).
+- `curvatures`, `gains`: The configured arrays from `CurvatureGainInterp`.
 - `maxCurvatureGainMultiplier`: Configurable maximum gain multiplier from `MaxCurvatureGainMultiplier` parameter.
 
 This shows that the curvature gain acts as a multiplier on top of the already speed-adjusted base proportional gain, with an additional configurable safety limit to prevent excessive gain growth.
@@ -111,6 +132,17 @@ The `MaxCurvatureGainMultiplier` parameter allows for configurable maximum gain 
 - **Light vehicles (mass < 1200kg)**: Default 5.0 (more responsive when appropriate)
 
 This parameter can be overridden via the `MaxCurvatureGainMultiplier` parameter (1.0 to 10.0 range) to suit specific vehicle capabilities or application requirements.
+
+### MaxCurvatureForGainInterp Parameter
+
+The `MaxCurvatureForGainInterp` parameter sets the maximum curvature value considered for gain interpolation. The **effective default** is dynamically calculated based on vehicle characteristics including wheelbase, steering ratio, center of gravity, and mass, rather than a fixed value. The system computes a base curvature limit which is then customizable via the parameter within safe bounds specific to each vehicle.
+
+Default base limits based on vehicle characteristics:
+- **Large vehicles (wheelbase > 3.0m)**: 0.08 m⁻¹ (12.5m radius)
+- **Compact vehicles (wheelbase < 2.4m)**: 0.15 m⁻¹ (6.7m radius)
+- **Standard vehicles**: 0.1 m⁻¹ (10m radius)
+
+These defaults are then adjusted based on additional factors such as steering ratio and center of gravity for optimal safety and performance.
 
 
 ## Setting the Parameter

@@ -25,8 +25,18 @@ class PIDController:
     self.speed = 0.0
     self._last_desired_curvature = 0.0
 
+    # Adaptive damping mechanism for oscillation detection
+    self.oscillation_history = []  # Store error values for oscillation detection
+    self.oscillation_threshold = 0.5  # Threshold for considering an error significant
+    self.oscillation_window = int(rate * 0.5)  # Look at last 0.5 seconds of errors (in samples)
+    self.oscillation_gain_reduction = 0.9  # Reduce gain by 10% when oscillation detected
+    self.oscillation_recovery_rate = 1.005  # Gradually restore gain when no oscillations
+    self.min_oscillation_gain_factor = 0.5  # Minimum gain factor (50% of computed gain)
+    self.max_oscillation_gain_factor = 1.0  # Maximum gain factor (100% of computed gain)
+    self.oscillation_gain_factor = 1.0  # Current gain factor
+
     # Pre-compute interpolation if using fixed arrays (for optimization)
-    if not isinstance(self._k_p, Number) and len(self._k_p[0]) > 1:
+    if len(self._k_p[0]) > 1:
       self._use_interp = True
       self._k_p_array = np.array(self._k_p)
       self._k_i_array = np.array(self._k_i)
@@ -60,6 +70,9 @@ class PIDController:
       # require high gains simultaneously
       max_allowable_gain = original_k_p * self.max_curvature_gain_multiplier  # Allow configurable max gain
       k_p = min(k_p, max_allowable_gain)
+
+    # Apply adaptive damping based on oscillation detection
+    k_p = k_p * self.oscillation_gain_factor
 
     return k_p
 
@@ -102,6 +115,16 @@ class PIDController:
     with PerfTrack("pid_update"):
       self.speed = speed
       self._last_desired_curvature = curvature
+
+      # Store current error for oscillation detection
+      self.oscillation_history.append(error)
+      # Keep only the most recent errors within the oscillation window
+      if len(self.oscillation_history) > self.oscillation_window:
+        self.oscillation_history.pop(0)
+
+      # Detect oscillations and adjust gain accordingly
+      self._update_oscillation_damping()
+
       self.p = error * self._get_k_p()
       self.f = feedforward * self.k_f
       self.d = error_rate * self._get_k_d()
@@ -118,3 +141,49 @@ class PIDController:
       control = self.p + self.i + self.d + self.f
       self.control = np.clip(control, self.neg_limit, self.pos_limit)
       return self.control
+
+  def _update_oscillation_damping(self):
+    """Update the oscillation damping based on recent error history."""
+    if len(self.oscillation_history) < 10:  # Need minimum history to detect oscillations
+      # Gradually restore gain when there's sufficient stability
+      self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
+                                         self.max_oscillation_gain_factor)
+      return
+
+    # Detect oscillations by checking for alternating positive/negative errors
+    significant_errors = [err for err in self.oscillation_history if abs(err) > self.oscillation_threshold]
+
+    if len(significant_errors) < 4:  # Need sufficient significant errors to detect oscillation
+      # Gradually restore gain when there's sufficient stability
+      self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
+                                         self.max_oscillation_gain_factor)
+      return
+
+    # Count sign changes to detect oscillation pattern
+    sign_changes = 0
+    for i in range(1, len(significant_errors)):
+      if (significant_errors[i-1] > 0 and significant_errors[i] < 0) or \
+         (significant_errors[i-1] < 0 and significant_errors[i] > 0):
+        sign_changes += 1
+
+    # If we have significant oscillation (frequent sign changes), reduce gain
+    oscillation_ratio = sign_changes / len(significant_errors) if len(significant_errors) > 0 else 0
+
+    if oscillation_ratio > 0.6:  # If more than 60% of significant errors change signs
+      # Apply gain reduction for oscillation damping
+      self.oscillation_gain_factor = max(self.oscillation_gain_factor * self.oscillation_gain_reduction,
+                                         self.min_oscillation_gain_factor)
+    else:
+      # Gradually restore gain when no significant oscillations detected
+      self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
+                                         self.max_oscillation_gain_factor)
+
+  def reset(self):
+    self.p = 0.0
+    self.i = 0.0
+    self.d = 0.0
+    self.f = 0.0
+    self.control = 0
+    # Reset oscillation detection state
+    self.oscillation_history = []
+    self.oscillation_gain_factor = 1.0
