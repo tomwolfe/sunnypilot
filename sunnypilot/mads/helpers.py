@@ -117,7 +117,7 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       # Check if there's a custom maximum curvature limit parameter
       # Default to 0.1 m^-1 (10m radius) for safety, but allow customization for urban driving
       max_curvature_limit = 0.1  # Default to 0.1 m^-1 (10m radius turn)
-      custom_curvature_limit_str = params.get("CurvatureMaxLimit", encoding='utf8')
+      custom_curvature_limit_str = params.get("MaxCurvatureForGainInterp", encoding='utf8')
       if custom_curvature_limit_str:
         try:
           custom_limit = float(custom_curvature_limit_str)
@@ -125,9 +125,9 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
           if 0.05 <= custom_limit <= 0.2:  # Range from 20m to 5m radius turns
             max_curvature_limit = custom_limit
           else:
-            cloudlog.warning(f"CurvatureMaxLimit parameter outside safe range [0.05, 0.2]: {custom_limit}, using default 0.1")
+            cloudlog.warning(f"MaxCurvatureForGainInterp parameter outside safe range [0.05, 0.2]: {custom_limit}, using default 0.1")
         except (ValueError, TypeError):
-          cloudlog.warning(f"Invalid CurvatureMaxLimit parameter: {custom_curvature_limit_str}, using default 0.1")
+          cloudlog.warning(f"Invalid MaxCurvatureForGainInterp parameter: {custom_curvature_limit_str}, using default 0.1")
 
       if max(curvatures) > max_curvature_limit:
         cloudlog.warning(f"Curvature values exceed physical limits for road turns (max {max_curvature_limit} m^-1). Clamping values.")

@@ -11,7 +11,7 @@ Format: `[[curvatures], [gain_multipliers]]`
 
 Example: `[[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]`
 
-### CurvatureMaxLimit (Optional)
+### MaxCurvatureForGainInterp (Optional)
 Float value defining the maximum allowed curvature value in m^-1. 
 Used to customize the physical limits for different driving environments.
 Range: 0.05 to 0.2 m^-1 (5m to 20m radius turns)

@@ -126,7 +126,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(invalid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return None  # Use default limit
         else:
             return None
@@ -154,7 +154,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(invalid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return "0.15" # Custom limit
         else:
             return None
@@ -180,7 +180,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(valid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return "0.16"  # Custom limit that allows 0.15
         else:
             return None
@@ -200,7 +200,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(valid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return "0.25"  # Outside safe range [0.05, 0.2], should trigger warning and default to 0.1
         else:
             return None
@@ -214,7 +214,7 @@ class TestMadsHelpers(unittest.TestCase):
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
     # A warning about invalid custom limit, and a warning about clamping
-    mock_cloudlog.warning.assert_any_call("CurvatureMaxLimit parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("MaxCurvatureForGainInterp parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
     mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
     mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 
@@ -226,7 +226,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(valid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return "invalid_format"  # Invalid float format
         else:
             return None
@@ -240,7 +240,7 @@ class TestMadsHelpers(unittest.TestCase):
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
     # A warning about invalid custom limit, and a warning about clamping
-    mock_cloudlog.warning.assert_any_call("Invalid CurvatureMaxLimit parameter: invalid_format, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("Invalid MaxCurvatureForGainInterp parameter: invalid_format, using default 0.1")
     mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
     mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 
@@ -252,7 +252,7 @@ class TestMadsHelpers(unittest.TestCase):
     def mock_get(key, encoding=None):
         if key == "CurvatureGainInterp":
             return json.dumps(valid_interp)
-        elif key == "CurvatureMaxLimit":
+        elif key == "MaxCurvatureForGainInterp":
             return "0.25"  # Outside safe range [0.05, 0.2], should trigger warning but default back to 0.1
         else:
             return None
@@ -266,7 +266,7 @@ class TestMadsHelpers(unittest.TestCase):
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[0], expected_clamped_interp[0]))
     self.assertTrue(np.allclose(self.CP_SP.curvatureGainInterp[1], expected_clamped_interp[1], atol=1e-8))
     # A warning about invalid custom limit, and a warning about clamping
-    mock_cloudlog.warning.assert_any_call("CurvatureMaxLimit parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
+    mock_cloudlog.warning.assert_any_call("MaxCurvatureForGainInterp parameter outside safe range [0.05, 0.2]: 0.25, using default 0.1")
     mock_cloudlog.warning.assert_any_call("Curvature values exceed physical limits for road turns (max 0.1 m^-1). Clamping values.")
     mock_cloudlog.error.assert_not_called() # Ensure no error is logged
 

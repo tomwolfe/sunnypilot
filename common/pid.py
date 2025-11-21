@@ -22,7 +22,7 @@ class PIDController:
 
     self.i_rate = 1.0 / rate
     self.speed = 0.0
-    self.curvature = 0.0
+    self._last_desired_curvature = 0.0
 
     # Pre-compute interpolation if using fixed arrays (for optimization)
     if not isinstance(self._k_p, Number) and len(self._k_p[0]) > 1:
@@ -46,7 +46,7 @@ class PIDController:
     k_p = self._k_p[1][0] if not self._use_interp else np.interp(self.speed, self._k_p[0], self._k_p[1])
     
     if self._k_curvature is not None:
-      curvature_gain = np.interp(abs(self.curvature), self._k_curvature[0], self._k_curvature[1])
+      curvature_gain = np.interp(abs(self._last_desired_curvature), self._k_curvature[0], self._k_curvature[1])
       # Increase proportional gain with curvature to enhance path tracking during
       # high-curvature maneuvers, providing a more aggressive response where needed.
       k_p *= curvature_gain
@@ -91,7 +91,7 @@ class PIDController:
   def update(self, error, error_rate=0.0, speed=0.0, curvature=0.0, feedforward=0., freeze_integrator=False):
     with PerfTrack("pid_update"):
       self.speed = speed
-      self.curvature = curvature
+      self._last_desired_curvature = curvature
       self.p = error * self._get_k_p()
       self.f = feedforward * self.k_f
       self.d = error_rate * self._get_k_d()

@@ -36,7 +36,9 @@ Curvature values correspond to turn radii as follows:
 
 ## Desired Curvature Source
 
-The `desired_curvature` value, which is used by the lateral controller to determine the target steering angle, originates from openpilot's path planner (e.g., `modeld`). It represents the predicted curvature of the road ahead and is expressed in units of meters<sup>-1</sup>. This value is continuously updated based on sensor data and the vehicle's dynamics.
+The `desired_curvature` value, which is used by the lateral controller to determine the target steering angle, originates from openpilot's path planner (`modeld`). It represents the predicted curvature of the road ahead and is expressed in units of meters<sup>-1</sup>. This value is continuously updated based on sensor data and the vehicle's dynamics.
+
+**Important Note**: The `desired_curvature` from `modeld` can sometimes be noisy, especially in challenging environments or with less stable sensor inputs. For optimal stability and smoother control, consider applying a low-pass filter to the `desired_curvature` before it is used in the PID controller. This can help mitigate rapid fluctuations and prevent jerky steering adjustments.
 
 ## Tuning Guidelines
 
@@ -74,7 +76,27 @@ The system enforces these validation rules:
 - Curvature values must be in ascending order
 - Gain multipliers must be ≥ 1.0 (never reduce gain in curves)
 - Both arrays must have matching lengths
-- Curvature values are clamped to a maximum of 0.1 m<sup>-1</sup> (default) or a user-defined `CurvatureMaxLimit` (between 0.05 m<sup>-1</sup> and 0.2 m<sup>-1</sup>) if they exceed these limits. This prevents invalid input from causing system errors while allowing for reasonable adjustments.
+- Curvature values are clamped to a maximum of 0.1 m<sup>-1</sup> (default) or a user-defined `MaxCurvatureForGainInterp` (between 0.05 m<sup>-1</sup> and 0.2 m<sup>-1</sup>) if they exceed these limits. This prevents invalid input from causing system errors while allowing for reasonable adjustments.
+
+### Effective Proportional Gain (k_p) Calculation
+
+The effective proportional gain (`k_p_effective`) used by the PID controller is calculated by combining the speed-based proportional gain and the curvature-based gain multiplier:
+
+```python
+# Pseudocode representation
+base_k_p = np.interp(speed, kpBP, kpV)  # Speed-based proportional gain
+curvature_gain_multiplier = np.interp(abs(desired_curvature), curvatures, gains)
+k_p_effective = base_k_p * curvature_gain_multiplier
+```
+
+Where:
+- `speed`: Current vehicle speed.
+- `kpBP`, `kpV`: Breakpoints and values for the speed-based proportional gain lookup table.
+- `desired_curvature`: The absolute value of the desired road curvature.
+- `curvatures`, `gains`: The configured arrays from `CurvatureGainInterp` (now `MaxCurvatureForGainInterp`).
+
+This shows that the curvature gain acts as a multiplier on top of the already speed-adjusted base proportional gain.
+
 
 ## Setting the Parameter
 
