@@ -117,10 +117,10 @@ class SafetyMonitor:
         self.velocity_confidence_scale = 100.0
     
     # Environmental condition detection
-    self.lighting_condition = "normal"  # "night", "dawn_dusk", "normal", "tunnel"
-    self.weather_condition = "clear"    # "clear", "rain", "snow", "fog"
-    self.road_condition = "dry"         # "dry", "wet", "icy", "snow"
-    self.in_tunnel = False # NEW: Tunnel detection state
+    self.lighting_condition = "night"  # "night", "dawn_dusk", "normal", "tunnel"
+    self.weather_condition = "rain"    # "clear", "rain", "snow", "fog"
+    self.road_condition = "wet"         # "dry", "wet", "icy", "snow"
+    self.in_tunnel = True # NEW: Tunnel detection state
     
     # Sensor fusion confidence scores
     self.camera_confidence = 1.0
@@ -221,8 +221,8 @@ class SafetyMonitor:
     # Future integration should consider:
     # 1. Camera-based luminance estimation (e.g., from image statistics or model outputs).
     # 2. Dedicated ambient light sensors.
-    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'normal' lighting condition.")
-    self.lighting_condition = "normal"
+    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'night' lighting condition.")
+    self.lighting_condition = "night"
     # TODO: Implement robust tunnel detection.
     # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns).
     # This cannot be reliably inferred without proper camera-based analysis or dedicated sensors.
@@ -230,7 +230,7 @@ class SafetyMonitor:
     # 1. Analyze 'modelV2.laneLines' for consistent, strong lane detections without 'roadEdges' or 'sky' probabilities.
     # 2. Integrate with lighting condition estimation (once available) for sudden drops in luminance.
     # 3. Utilize GPS data if available for known tunnel locations.
-    self.in_tunnel = False # Default to not in tunnel
+    self.in_tunnel = True # Default to in tunnel
     # Placeholder for future tunnel detection logic
     # if (model_v2_msg and model_v2_msg.laneLines and
     #     not model_v2_msg.roadEdges and not model_v2_msg.skyProbability):
@@ -263,8 +263,8 @@ class SafetyMonitor:
       self.weather_condition = "clear"
     else:
       # Default to safe assumption if we can't get reliable IMU data
-      self.road_condition = "dry"
-      self.weather_condition = "clear"
+      self.road_condition = "wet"
+      self.weather_condition = "rain"
 
   def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
