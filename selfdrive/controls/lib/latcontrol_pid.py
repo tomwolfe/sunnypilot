@@ -1,8 +1,10 @@
 import math
 
-from cereal import log
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
+from openpilot.common.filter_simple import FirstOrderFilter # Import FirstOrderFilter
+from openpilot.common.swaglog import cloudlog # Import cloudlog
+from cereal import log
 
 
 class LatControlPID(LatControl):
@@ -13,8 +15,13 @@ class LatControlPID(LatControl):
                              pos_limit=self.steer_max, neg_limit=-self.steer_max)
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
+    self.curvature_filter = FirstOrderFilter(0., 0.1, dt) # Initialize FirstOrderFilter
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+    # Apply low-pass filter to desired_curvature
+    desired_curvature = self.curvature_filter.update(desired_curvature)
+    cloudlog.debug(f"Desired Curvature: {desired_curvature:.4f}") # Log desired curvature
+
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
     pid_log.steeringRateDeg = float(CS.steeringRateDeg)

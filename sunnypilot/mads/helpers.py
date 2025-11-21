@@ -132,31 +132,28 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       if max(curvatures) > max_curvature_limit:
         cloudlog.warning(f"Curvature values exceed physical limits for road turns (max {max_curvature_limit} m^-1). Clamping values.")
 
-        # Find the index of the first curvature value that exceeds the limit
-        # np.searchsorted returns the index where max_curvature_limit would be inserted to maintain order
-        clamp_idx = np.searchsorted(curvatures, max_curvature_limit, side='right')
+        # Find points that are within the limit
+        valid_indices = np.where(curvatures <= max_curvature_limit)[0]
 
-        # Truncate curvatures and gains where curvature > max_curvature_limit
-        new_curvatures = curvatures[:clamp_idx].tolist()
-        new_gains = gains[:clamp_idx].tolist()
+        new_curvatures = curvatures[valid_indices]
+        new_gains = gains[valid_indices]
 
-        # If the truncated list's last element is less than max_curvature_limit,
-        # we need to add max_curvature_limit and its interpolated gain.
-        if not new_curvatures or new_curvatures[-1] < max_curvature_limit:
-            # Interpolate the gain at max_curvature_limit from the ORIGINAL arrays
-            clamped_gain = np.interp(max_curvature_limit, curvatures, gains)
-            new_curvatures.append(max_curvature_limit)
-            new_gains.append(clamped_gain)
-        
-        # Ensure that after clamping, the arrays are not empty. Revert to safe defaults if they are.
-        if len(new_curvatures) == 0:
-            cloudlog.warning("Clamping resulted in empty curvature gain points. Reverting to default.")
-            new_curvatures = [0.0]
-            new_gains = [1.0]
+        # If the curve was truncated, add the limit point with an interpolated gain
+        if len(new_curvatures) < len(curvatures):
+          if not new_curvatures.size or new_curvatures[-1] < max_curvature_limit:
+            interp_gain = np.interp(max_curvature_limit, curvatures, gains)
+            new_curvatures = np.append(new_curvatures, max_curvature_limit)
+            new_gains = np.append(new_gains, interp_gain)
 
-        curvature_gain_interp = [new_curvatures, new_gains]
-        curvatures = np.array(new_curvatures) # Update for subsequent checks if needed
-        gains = np.array(new_gains) # Update for subsequent checks if needed
+        # Ensure that after clamping, the arrays are not empty.
+        if new_curvatures.size == 0:
+          cloudlog.warning("Clamping resulted in empty curvature gain points. Reverting to default.")
+          new_curvatures = np.array([0.0])
+          new_gains = np.array([1.0])
+
+        curvature_gain_interp = [new_curvatures.tolist(), new_gains.tolist()]
+        curvatures = new_curvatures  # Update for subsequent checks if needed
+        gains = new_gains  # Update for subsequent checks if needed
 
       # All other validations remain as rejections, as they indicate malformed parameters
       # (e.g., non-negative, ascending order, gain multipliers >= 1.0, matching lengths, non-empty)
