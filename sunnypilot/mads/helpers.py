@@ -105,14 +105,25 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
 
       if not all(curvatures >= 0):
         raise ValueError("Curvature values must be non-negative")
-      if not all(np.diff(curvatures) > 0):
-        raise ValueError("Curvature values must be in ascending order")
+      if not all(np.diff(curvatures) >= 0):  # Changed from > to >= to allow equal values
+        raise ValueError("Curvature values must be in non-decreasing order")
       if not all(gains >= 1.0):
         raise ValueError("Gain multipliers must be at least 1.0 (reducing gain for curves is counterproductive)")
       if len(curvatures) != len(gains):
         raise ValueError("Curvature values and gain multipliers must have the same length")
       if len(curvatures) == 0:
         raise ValueError("Curvature values cannot be empty")
+
+      # Additional validation for array size to prevent performance issues
+      if len(curvatures) > 50:  # Reasonable upper limit
+        cloudlog.warning(f"Curvature gain interpolation has {len(curvatures)} points, which is excessive. Limiting to 50 points.")
+        # Take evenly spaced points to preserve the curve shape
+        indices = np.round(np.linspace(0, len(curvatures) - 1, 50)).astype(int)
+        reduced_curvatures = curvatures[indices]
+        reduced_gains = gains[indices]
+        curvature_gain_interp = [reduced_curvatures.tolist(), reduced_gains.tolist()]
+        curvatures = reduced_curvatures
+        gains = reduced_gains
 
       # Determine maximum curvature limit based on comprehensive vehicle characteristics for better safety
       # Default to 0.1 m^-1 (10m radius) for standard vehicles, but allow customization for urban driving
@@ -209,11 +220,15 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       # These checks are implicitly handled by the prior logic or are fundamental to the interp structure.
 
       CP_SP.curvatureGainInterp = curvature_gain_interp
+      # Log successful configuration for monitoring
+      cloudlog.info(f"Curvature gain interpolation configured successfully with {len(curvatures)} points, max curvature {max(curvatures):.3f} m^-1, max gain {max(gains):.2f}x")
     except (json.JSONDecodeError, ValueError) as e:
       cloudlog.error(f"Failed to decode or validate CurvatureGainInterp from Params: {e}")
       CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default on error
+      cloudlog.warning("Curvature gain interpolation reverted to safe default due to validation error.")
   else:
     CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default if param is not set
+    cloudlog.debug("Curvature gain interpolation using default values.")
 
   # Set configurable maximum curvature gain multiplier with vehicle-specific defaults
   max_curvature_gain_multiplier_str = params.get("MaxCurvatureGainMultiplier", encoding='utf8')
@@ -223,6 +238,7 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       # Validate the multiplier is reasonable - minimum 1.0 (no gain limiting), maximum 10.0 (very aggressive)
       if 1.0 <= max_curvature_gain_multiplier <= 10.0:
         CP_SP.maxCurvatureGainMultiplier = max_curvature_gain_multiplier
+        cloudlog.debug(f"Max curvature gain multiplier set to {max_curvature_gain_multiplier}x from parameter")
       else:
         cloudlog.warning(f"MaxCurvatureGainMultiplier parameter {max_curvature_gain_multiplier} outside safe range [1.0, 10.0], using default 4.0")
         CP_SP.maxCurvatureGainMultiplier = 4.0
@@ -233,10 +249,13 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
     # Set default based on vehicle characteristics
     if CP.mass > 2000:  # Large/heavy vehicles get more conservative default
       CP_SP.maxCurvatureGainMultiplier = 3.0
+      cloudlog.debug("Max curvature gain multiplier set to 3.0x (conservative default for heavy vehicles)")
     elif CP.mass < 1200:  # Lighter vehicles can be more aggressive if needed
       CP_SP.maxCurvatureGainMultiplier = 5.0
+      cloudlog.debug("Max curvature gain multiplier set to 5.0x (aggressive default for light vehicles)")
     else:  # Standard vehicles
       CP_SP.maxCurvatureGainMultiplier = 4.0
+      cloudlog.debug("Max curvature gain multiplier set to 4.0x (standard default)")
 
   # Use the new validation system
   validator = ParamsValidator(params)

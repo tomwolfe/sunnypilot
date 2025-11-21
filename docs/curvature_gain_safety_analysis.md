@@ -13,7 +13,7 @@ This document provides a formal safety analysis for the curvature gain feature i
 | Noise amplification causing jerky steering | Noisy `modeld` curvature estimates | 0.1s `FirstOrderFilter` applied to smooth desired curvature |
 | Parameter misconfiguration causing unsafe behavior | Malformed or invalid `CurvatureGainInterp` values | Comprehensive validation in `helpers.py` |
 | Physical limit violation | Curvature values exceeding safe turning capability | Dynamic `MaxCurvatureForGainInterp` based on vehicle characteristics |
-| Oscillation detection and damping | No real-time oscillation detection | (To be implemented - future enhancement) |
+| Oscillation detection and damping | No real-time oscillation detection | Implemented with multiple detection methods |
 
 ### Risk Assessment
 
@@ -22,7 +22,7 @@ This document provides a formal safety analysis for the curvature gain feature i
 | System instability due to excessive gain | Low | High | Medium | Implemented |
 | Jerky steering due to noisy inputs | Medium | Medium | Medium | Implemented |
 | Invalid configuration causing erratic behavior | Low | High | Medium | Implemented |
-| Oscillations not detected in real-time | Medium | Medium | Medium | Planned |
+| Oscillations not detected in real-time | Low | Medium | Low | Implemented |
 
 ## Safety Mechanisms
 
@@ -58,6 +58,12 @@ This document provides a formal safety analysis for the curvature gain feature i
 2. **Runtime Gain Limiting**
    - Maximum allowable gain calculated as `original_k_p * maxCurvatureGainMultiplier`
    - Effective gain clamped to prevent exceeding safety limits
+
+3. **Enhanced Oscillation Detection and Damping**
+   - Multi-method oscillation detection combining sign-change analysis, variance-based detection, and zero-crossing detection
+   - Adaptive gain reduction when oscillations are detected (gain factor reduced to minimum 50%)
+   - Gradual gain recovery when system stabilizes
+   - Comprehensive monitoring with logging and metrics tracking
 
 ## Failure Modes and Effects Analysis (FMEA)
 
@@ -108,6 +114,6 @@ This document provides a formal safety analysis for the curvature gain feature i
 
 ## Conclusion
 
-The curvature gain feature implements multiple layers of safety mechanisms to prevent unsafe behavior while enabling improved steering performance. The primary safety mechanisms (gain limiting, input validation, signal filtering) have been implemented and tested. The secondary mechanisms (default fallbacks, runtime limiting) provide additional safety margins. The identified risk of lacking real-time oscillation detection is planned for future implementation.
+The curvature gain feature implements multiple layers of safety mechanisms to prevent unsafe behavior while enabling improved steering performance. The primary safety mechanisms (gain limiting, input validation, signal filtering) have been implemented and tested. The secondary mechanisms (default fallbacks, runtime limiting, enhanced oscillation detection) provide additional safety margins. The previously identified risk of lacking real-time oscillation detection has been addressed with robust multi-method detection and damping.
 
 The safety analysis demonstrates that the feature is appropriately designed for safe operation when configured correctly, with multiple fail-safe mechanisms in place.

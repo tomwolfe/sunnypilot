@@ -22,6 +22,9 @@ class LatControlPID(LatControl):
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
     self.curvature_filter = FirstOrderFilter(0., 0.1, dt) # Initialize FirstOrderFilter
+    # Add monitoring variables for field validation
+    self.monitoring_initialized = False
+    self.last_monitoring_log_time = 0
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
     # Apply low-pass filter to desired_curvature
@@ -38,6 +41,32 @@ class LatControlPID(LatControl):
 
     pid_log.steeringAngleDesiredDeg = angle_steers_des
     pid_log.angleError = error
+
+    # Add curvature gain specific monitoring
+    current_time = CS.aEgo  # Use a consistent time source, or implement proper time tracking
+    try:
+      # Get current curvature gain factor if available
+      curvature_gain_factor = getattr(self.pid, 'oscillation_gain_factor', 1.0)
+      oscillation_detected = getattr(self.pid, 'oscillation_detected', False)
+      oscillation_damping_active = getattr(self.pid, 'oscillation_damping_active', False)
+      oscillation_detection_count = getattr(self.pid, 'oscillation_detection_count', 0)
+      oscillation_recovery_count = getattr(self.pid, 'oscillation_recovery_count', 0)
+
+      # Add monitoring data to PID log
+      pid_log.curvatureGainFactor = curvature_gain_factor
+      pid_log.oscillationDetected = oscillation_detected
+      pid_log.oscillationDampingActive = oscillation_damping_active
+      pid_log.oscillationDetectionCount = oscillation_detection_count
+      pid_log.oscillationRecoveryCount = oscillation_recovery_count
+
+    except Exception:
+      # If getting monitoring data fails, continue with normal operation
+      pid_log.curvatureGainFactor = 1.0
+      pid_log.oscillationDetected = False
+      pid_log.oscillationDampingActive = False
+      pid_log.oscillationDetectionCount = 0
+      pid_log.oscillationRecoveryCount = 0
+
     if not active:
       output_torque = 0.0
       pid_log.active = False
@@ -59,5 +88,28 @@ class LatControlPID(LatControl):
       pid_log.f = float(self.pid.f)
       pid_log.output = float(output_torque)
       pid_log.saturated = bool(self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited_by_safety, curvature_limited))
+
+    # Add periodic monitoring logging for field validation
+    import time
+    current_time = time.time()
+    if not hasattr(self, 'last_monitoring_log_time'):
+        self.last_monitoring_log_time = 0
+
+    # Log monitoring data every 30 seconds
+    if current_time - self.last_monitoring_log_time > 30.0:
+      try:
+        cloudlog.event("Curvature Gain Monitoring",
+                      curvature_gain_factor=curvature_gain_factor,
+                      oscillation_detected=oscillation_detected,
+                      oscillation_damping_active=oscillation_damping_active,
+                      oscillation_detection_count=oscillation_detection_count,
+                      oscillation_recovery_count=oscillation_recovery_count,
+                      desired_curvature=desired_curvature,
+                      vEgo=CS.vEgo,
+                      error=error,
+                      output=output_torque)
+        self.last_monitoring_log_time = current_time
+      except Exception as e:
+        cloudlog.error(f"Error in curvature gain monitoring log: {e}")
 
     return output_torque, angle_steers_des, pid_log

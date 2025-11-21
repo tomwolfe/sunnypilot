@@ -904,6 +904,11 @@ struct ControlsState @0x97ff69c53601abf1 {
     output @7 :Float32;
     saturated @8 :Bool;
     steeringAngleDesiredDeg @9 :Float32;
+    curvatureGainFactor @10 :Float32 = 1.0;
+    oscillationDetected @11 :Bool = false;
+    oscillationDampingActive @12 :Bool = false;
+    oscillationDetectionCount @13 :UInt32 = 0;
+    oscillationRecoveryCount @14 :UInt32 = 0;
    }
 
   struct LateralTorqueState {

@@ -34,6 +34,11 @@ class PIDController:
     self.min_oscillation_gain_factor = 0.5  # Minimum gain factor (50% of computed gain)
     self.max_oscillation_gain_factor = 1.0  # Maximum gain factor (100% of computed gain)
     self.oscillation_gain_factor = 1.0  # Current gain factor
+    # Enhanced oscillation detection metrics for monitoring
+    self.oscillation_detected = False
+    self.oscillation_damping_active = False
+    self.oscillation_detection_count = 0
+    self.oscillation_recovery_count = 0
 
     # Pre-compute interpolation if using fixed arrays (for optimization)
     if len(self._k_p[0]) > 1:
@@ -114,7 +119,8 @@ class PIDController:
   def update(self, error, error_rate=0.0, speed=0.0, curvature=0.0, feedforward=0., freeze_integrator=False):
     with PerfTrack("pid_update"):
       self.speed = speed
-      self._last_desired_curvature = curvature
+      # Handle NaN curvature values by setting to 0 to prevent NaN propagation
+      self._last_desired_curvature = curvature if not np.isnan(curvature) else 0.0
 
       # Store current error for oscillation detection
       self.oscillation_history.append(error)
@@ -145,18 +151,23 @@ class PIDController:
   def _update_oscillation_damping(self):
     """Update the oscillation damping based on recent error history."""
     if len(self.oscillation_history) < 10:  # Need minimum history to detect oscillations
-      # Gradually restore gain when there's sufficient stability
+      # Gradually restore gain when there's insufficient history
       self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
                                          self.max_oscillation_gain_factor)
+      self.oscillation_detected = False
+      self.oscillation_damping_active = False
       return
 
-    # Detect oscillations by checking for alternating positive/negative errors
+    # Detect oscillations using multiple methods for more robust detection
+    # Method 1: Sign changes in significant errors (original method)
     significant_errors = [err for err in self.oscillation_history if abs(err) > self.oscillation_threshold]
 
     if len(significant_errors) < 4:  # Need sufficient significant errors to detect oscillation
-      # Gradually restore gain when there's sufficient stability
+      # Gradually restore gain when there's insufficient significant errors
       self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
                                          self.max_oscillation_gain_factor)
+      self.oscillation_detected = False
+      self.oscillation_damping_active = False
       return
 
     # Count sign changes to detect oscillation pattern
@@ -166,17 +177,49 @@ class PIDController:
          (significant_errors[i-1] < 0 and significant_errors[i] > 0):
         sign_changes += 1
 
-    # If we have significant oscillation (frequent sign changes), reduce gain
-    oscillation_ratio = sign_changes / len(significant_errors) if len(significant_errors) > 0 else 0
+    # Method 2: Variance-based oscillation detection
+    # Calculate variance of recent errors to detect oscillation patterns
+    recent_errors = self.oscillation_history[-20:]  # Use last 20 errors for variance calculation
+    if len(recent_errors) > 1:
+      error_variance = np.var(recent_errors)
+      error_mean = np.mean(np.abs(recent_errors))
+      # If variance is high relative to mean, it indicates oscillation
+      relative_variance = error_variance / (error_mean + 1e-6)  # Add small value to prevent division by zero
+    else:
+      relative_variance = 0
 
-    if oscillation_ratio > 0.6:  # If more than 60% of significant errors change signs
+    # Method 3: Zero-crossing detection (more sophisticated sign change detection)
+    zero_crossings = 0
+    for i in range(1, len(recent_errors)):
+      if (recent_errors[i-1] >= 0 and recent_errors[i] < 0) or \
+         (recent_errors[i-1] < 0 and recent_errors[i] >= 0):
+        zero_crossings += 1
+
+    # Combine multiple detection methods
+    oscillation_ratio = sign_changes / len(significant_errors) if len(significant_errors) > 0 else 0
+    zero_crossing_ratio = zero_crossings / len(recent_errors) if len(recent_errors) > 0 else 0
+
+    # Determine if oscillation is occurring based on combined criteria
+    oscillation_detected = (
+      oscillation_ratio > 0.6 or  # Original sign change criteria
+      relative_variance > 0.8 or  # High variance relative to mean
+      zero_crossing_ratio > 0.5   # High zero crossing rate
+    )
+
+    if oscillation_detected:
       # Apply gain reduction for oscillation damping
       self.oscillation_gain_factor = max(self.oscillation_gain_factor * self.oscillation_gain_reduction,
                                          self.min_oscillation_gain_factor)
+      self.oscillation_detected = True
+      self.oscillation_damping_active = True
+      self.oscillation_detection_count += 1
     else:
       # Gradually restore gain when no significant oscillations detected
       self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
                                          self.max_oscillation_gain_factor)
+      self.oscillation_detected = False
+      self.oscillation_damping_active = False
+      self.oscillation_recovery_count += 1
 
   def reset(self):
     self.p = 0.0
@@ -187,3 +230,7 @@ class PIDController:
     # Reset oscillation detection state
     self.oscillation_history = []
     self.oscillation_gain_factor = 1.0
+    self.oscillation_detected = False
+    self.oscillation_damping_active = False
+    self.oscillation_detection_count = 0
+    self.oscillation_recovery_count = 0
