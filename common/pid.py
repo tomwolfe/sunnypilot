@@ -260,13 +260,6 @@ class PIDController:
       # If _k_d[1] is a list/array, get the first element; otherwise return _k_d directly
       return self._k_d[1][0] if hasattr(self._k_d[1], '__len__') and len(self._k_d[1]) > 0 else self._k_d
 
-  def reset(self):
-    self.p = 0.0
-    self.i = 0.0
-    self.d = 0.0
-    self.f = 0.0
-    self.control = 0
-
   def set_limits(self, pos_limit, neg_limit):
     self.pos_limit = pos_limit
     self.neg_limit = neg_limit

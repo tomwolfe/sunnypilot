@@ -1,4 +1,5 @@
 import math
+import time
 
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
@@ -90,7 +91,7 @@ class LatControlPID(LatControl):
     pid_log.angleError = error
 
     # Add curvature gain specific monitoring
-    current_time = CS.aEgo  # Use a consistent time source, or implement proper time tracking
+    current_time = time.time()  # Use proper time source instead of CS.aEgo which is acceleration
     try:
       # Get current curvature gain factor if available
       curvature_gain_factor = getattr(self.pid, 'oscillation_gain_factor', 1.0)
@@ -133,10 +134,20 @@ class LatControlPID(LatControl):
       ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
+      # Handle invalid curvature values before passing to PID controller
+      # Check for NaN and infinity using standard Python math functions
+      safe_curvature = abs(desired_curvature)
+      if math.isnan(desired_curvature) or math.isinf(desired_curvature):
+        # Log error and use safe default when curvature is invalid
+        cloudlog.error(f"Invalid desired curvature detected: {desired_curvature}, using 0.0")
+        safe_curvature = 0.0
+        # Increment safe mode trigger count in PID
+        self.pid.safe_mode_trigger_count += 1
+
       output_torque = self.pid.update(error,
                                 feedforward=ff,
                                 speed=CS.vEgo,
-                                curvature=abs(desired_curvature),
+                                curvature=safe_curvature,
                                 freeze_integrator=freeze_integrator)
 
       pid_log.active = True
@@ -147,13 +158,12 @@ class LatControlPID(LatControl):
       pid_log.saturated = bool(self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited_by_safety, curvature_limited))
 
     # Add periodic monitoring logging for field validation
-    import time
-    current_time = time.time()
+    current_time_monitoring = time.time()
     if not hasattr(self, 'last_monitoring_log_time'):
         self.last_monitoring_log_time = 0
 
     # Log monitoring data every 30 seconds
-    if current_time - self.last_monitoring_log_time > 30.0:
+    if current_time_monitoring - self.last_monitoring_log_time > 30.0:
       try:
         cloudlog.event("Curvature Gain Monitoring",
                       curvature_gain_factor=curvature_gain_factor,
