@@ -3,6 +3,7 @@ import math
 import threading
 import time
 from numbers import Number
+import numpy as np
 
 from cereal import car, log
 import cereal.messaging as messaging
@@ -24,6 +25,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+from openpilot.sunnypilot.selfdrive.monitoring.safety_monitor import SafetyMonitor
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 
 State = log.SelfdriveState.OpenpilotState
@@ -48,7 +50,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
+                                   'radarState'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -73,6 +76,10 @@ class Controls(ControlsExt, ModelStateBase):
     self._angle_array = np.zeros(3, dtype=np.float32)  # For orientation/angle data
     self._angular_velocity_array = np.zeros(3, dtype=np.float32)  # For angular velocity data
 
+    # Initialize safety monitor for enhanced safety checks
+    self.safety_monitor = SafetyMonitor()
+    self.safety_degraded_mode = False
+
   def update(self):
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
@@ -83,6 +90,10 @@ class Controls(ControlsExt, ModelStateBase):
 
   def state_control(self):
     CS = self.sm['carState']
+
+    # Initialize safety report to default values
+    safety_report = {}
+    requires_intervention = False
 
     # Update VehicleModel
     lp = self.sm['liveParameters']
@@ -106,6 +117,29 @@ class Controls(ControlsExt, ModelStateBase):
       self.LaC.extension.update_model_v2(self.sm['modelV2'])
 
       self.LaC.extension.update_lateral_lag(self.lat_delay)
+
+    # Enhanced safety monitoring - perform safety checks using multi-sensor fusion
+    if self.sm.all_checks(['modelV2', 'radarState', 'carState', 'carControl']):
+      try:
+        safety_score, requires_intervention, safety_report = self.safety_monitor.update(
+          self.sm['modelV2'],
+          self.sm['radarState'],
+          self.sm['carState'],
+          self.sm['carControl']
+        )
+
+        # Update safety degraded mode based on safety monitor
+        self.safety_degraded_mode = safety_report.get('confidence_degraded', False)
+
+        # If intervention is required, apply safety measures
+        if requires_intervention:
+          # Reduce acceleration limits for safer deceleration
+          cloudlog.warning("Safety intervention required - applying conservative driving")
+      except Exception as e:
+        cloudlog.error(f"Safety monitor update failed: {e}")
+        # Default to safe state if monitoring fails
+        self.safety_degraded_mode = True
+        safety_report = {'overall_safety_score': 0.5, 'confidence_degraded': True}
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
@@ -141,6 +175,13 @@ class Controls(ControlsExt, ModelStateBase):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+
+    # Apply safety-based acceleration limits if in degraded mode
+    if self.safety_degraded_mode:
+      # Reduce acceleration and braking limits for safer operation
+      safety_factor = 0.7 if safety_report.get('overall_safety_score', 1.0) < 0.5 else 0.85
+      pid_accel_limits = (pid_accel_limits[0] * safety_factor, pid_accel_limits[1] * safety_factor)
+
     actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)  # removed float() wrapper
 
     # Steering PID loop and lateral MPC
