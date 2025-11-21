@@ -10,8 +10,11 @@ from cereal import log
 class LatControlPID(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
+    # Use curvature gain interpolation from car params if available, otherwise use default
+    curvature_gain_interp = CP_SP.curvatureGainInterp if CP_SP.curvatureGainInterp else [[0.0], [1.0]]
     self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
                              (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
+                             k_curvature=curvature_gain_interp,
                              pos_limit=self.steer_max, neg_limit=-self.steer_max)
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
@@ -44,6 +47,7 @@ class LatControlPID(LatControl):
       output_torque = self.pid.update(error,
                                 feedforward=ff,
                                 speed=CS.vEgo,
+                                curvature=abs(desired_curvature),
                                 freeze_integrator=freeze_integrator)
 
       pid_log.active = True

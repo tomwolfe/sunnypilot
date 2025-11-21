@@ -44,13 +44,22 @@ class PIDController:
 
   def _get_k_p(self):
     k_p = self._k_p[1][0] if not self._use_interp else np.interp(self.speed, self._k_p[0], self._k_p[1])
-    
+
     if self._k_curvature is not None:
       curvature_gain = np.interp(abs(self._last_desired_curvature), self._k_curvature[0], self._k_curvature[1])
-      # Increase proportional gain with curvature to enhance path tracking during
-      # high-curvature maneuvers, providing a more aggressive response where needed.
-      k_p *= curvature_gain
-      
+      # Address the potential issue of excessive gain multiplication when both
+      # speed-based and curvature-based gains are high by implementing a more
+      # controlled gain application that prevents explosive behavior while maintaining
+      # the essential curvature-based responsiveness
+      original_k_p = k_p  # Store original for safety limiting
+      k_p *= curvature_gain  # Apply the basic curvature gain
+
+      # Implement safety bounds to prevent excessive gain growth when both factors are high
+      # This is particularly important for corner cases where both speed and curvature
+      # require high gains simultaneously
+      max_allowable_gain = original_k_p * 4.0  # Allow up to 4x total gain
+      k_p = min(k_p, max_allowable_gain)
+
     return k_p
 
   def _get_k_i(self):
