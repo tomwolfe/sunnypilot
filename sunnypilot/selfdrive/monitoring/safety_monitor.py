@@ -8,10 +8,11 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 import logging
 from typing import Dict, Tuple, Optional
+import time # Import time for performance measurements
 from cereal import log
 import cereal.messaging as messaging
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.common.realtime import DT_MDL
+from openpilot.common.realtime import DT_MDL, monotonic_time
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.params import Params, UnknownKeyName
 
@@ -129,7 +130,8 @@ class SafetyMonitor:
 
     # Justification: This scale (30.0) is used to calculate confidence based on the relative velocity of lead vehicles.
     # A larger scale makes the confidence decay slower with increasing relative velocity, implying that even higher relative velocities
-    # can be considered with some confidence. This value needs careful tuning to match real-world radar performance and safety requirements.
+    # can be considered with some confidence. This value needs careful empirical tuning to match real-world radar performance and
+    # safety requirements across various vehicle types and driving scenarios.
     try:
         velocity_confidence_scale_param = self.params.get("VelocityConfidenceScale")
         self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 30.0
@@ -137,6 +139,17 @@ class SafetyMonitor:
         self.velocity_confidence_scale = 30.0
     except (TypeError, ValueError):
         self.velocity_confidence_scale = 30.0
+
+    # Justification: This factor (1.0) determines how much the `max_radar_distance_for_confidence` scales with vehicle speed.
+    # A higher factor means the system expects to track objects further away at higher speeds.
+    # This value needs empirical tuning to reflect safe braking distances and radar capabilities at various speeds.
+    try:
+        speed_scaling_factor_param = self.params.get("SpeedScalingFactorForRadarDistance")
+        self.speed_scaling_factor_for_radar_distance = float(speed_scaling_factor_param) if speed_scaling_factor_param else 1.0
+    except UnknownKeyName:
+        self.speed_scaling_factor_for_radar_distance = 1.0
+    except (TypeError, ValueError):
+        self.speed_scaling_factor_for_radar_distance = 1.0
 
     # Radar confidence parameters for acceleration
     # Justification: This threshold (5.0 m/s^2) determines the maximum acceleration difference considered 'safe' for radar confidence.
@@ -152,8 +165,8 @@ class SafetyMonitor:
 
     # Environmental condition detection
     self.lighting_condition = "night"  # "night", "dawn_dusk", "normal", "tunnel"
-    self.weather_condition = "rain"    # "clear", "rain", "snow", "fog"
-    self.road_condition = "wet"         # "dry", "wet", "icy", "snow"
+    self.weather_condition = "unknown"    # "clear", "rain", "snow", "fog", "unknown"
+    self.road_condition = "unknown"         # "dry", "wet", "icy", "snow", "unknown"
     self.in_tunnel = True # NEW: Tunnel detection state
     
     # Sensor fusion confidence scores
@@ -164,6 +177,13 @@ class SafetyMonitor:
     # Raw confidence scores for immediate safety assessments (unfiltered)
     self.raw_model_confidence = 1.0
     
+    # Sensor health flags - True if healthy, False if failed or degraded
+    self.model_healthy = True
+    self.radar_healthy = True
+    self.camera_healthy = True
+    self.imu_healthy = True # For livePose data used in environmental detection
+    self.driver_monitoring_healthy = True # New: for driver monitoring health
+
     # Environmental condition filters
     self.lighting_change_filter = FirstOrderFilter(0.0, 1.0, DT_MDL)
     self.weather_change_filter = FirstOrderFilter(0.0, 2.0, DT_MDL)
@@ -181,6 +201,21 @@ class SafetyMonitor:
     # Performance metrics
     self.monitoring_cycles = 0
 
+    # Sensor staleness threshold - if data is older than this, it's considered stale
+    # Justification: 0.5 seconds is a reasonable threshold for real-time autonomous driving systems.
+    # Older data significantly reduces the reliability and safety of decisions.
+    try:
+        staleness_threshold_param = self.params.get("SensorStalenessThreshold")
+        self.STALENESS_THRESHOLD_SECONDS = float(staleness_threshold_param) if staleness_threshold_param else 0.5
+    except (UnknownKeyName, ValueError):
+        self.STALENESS_THRESHOLD_SECONDS = 0.5 # Default to 0.5 seconds
+    
+    # Store last update times for staleness checks
+    self.last_model_time = 0
+    self.last_radar_time = 0
+    self.last_camera_time = 0
+    self.last_imu_time = 0
+
   def update_model_confidence(self, model_v2_msg) -> None:
     """Update model confidence based on neural network outputs"""
     if hasattr(model_v2_msg, 'meta') and hasattr(model_v2_msg.meta, 'confidence'):
@@ -193,27 +228,26 @@ class SafetyMonitor:
       self.model_confidence = 0.1  # Fallback to conservative confidence
       self.raw_model_confidence = 0.1  # Fallback to conservative confidence
 
-  def update_radar_confidence(self, radar_state_msg) -> None:
+  def update_radar_confidence(self, radar_state_msg, car_state_msg) -> None:
     """Update radar confidence based on lead detection reliability"""
     if hasattr(radar_state_msg, 'leadOne') and radar_state_msg.leadOne.status:
       # Calculate confidence based on lead tracking quality with a continuous decay
       lead = radar_state_msg.leadOne
-      # Use configurable maximum radar distance for confidence calculation
-      distance_confidence = max(0.0, 1.0 - (abs(lead.dRel) / self.max_radar_distance_for_confidence))
+      # Use configurable maximum radar distance, dynamically adjusted by vehicle speed
+      max_radar_distance_for_confidence_scaled = self.max_radar_distance_for_confidence + \
+                                                  (car_state_msg.vEgo * self.speed_scaling_factor_for_radar_distance)
+      distance_confidence = max(0.0, 1.0 - (abs(lead.dRel) / max_radar_distance_for_confidence_scaled))
       # Use configurable velocity confidence scale
       velocity_confidence = min(1.0, max(0.0, (self.velocity_confidence_scale - abs(lead.vRel)) / self.velocity_confidence_scale))
       # Add acceleration-based confidence component
       # Assuming lead.aRel exists and is populated in radar_state_msg.leadOne
       # Add acceleration-based confidence component
       # The critical review suggests a fallback of 0.7 if aRel is not available.
-      acceleration_confidence = 0.5 # Conservative default if aRel is not available
+      acceleration_confidence = 0.7 # Fallback to a moderate confidence as suggested by critical review if aRel is not available or None.
       if hasattr(lead, 'aRel') and lead.aRel is not None:
         acceleration_confidence = min(1.0, max(0.0, (self.acceleration_confidence_threshold - abs(lead.aRel)) / self.acceleration_confidence_threshold))
       else:
-        # Use alternative metrics like lead position stability or a default value
-        # if actual acceleration is not available.
-        logging.warning("aRel not available for radar acceleration confidence. Defaulting to a conservative 0.5.")
-        acceleration_confidence = 0.5
+        logging.warning("aRel not available for radar acceleration confidence. Defaulting to a moderate 0.7.")
       self.radar_confidence = self.radar_confidence_filter.update(
         (distance_confidence * 0.5 + velocity_confidence * 0.3 + acceleration_confidence * 0.2)
       )
@@ -221,7 +255,14 @@ class SafetyMonitor:
       self.radar_confidence = 0.3  # Lower confidence when no lead detected
 
   def update_camera_confidence(self, model_v2_msg, car_state_msg) -> None:
-    """Update camera confidence based on lane detection and visual clarity"""
+    """Update camera confidence based on lane detection, visual clarity, and basic car state plausibility"""
+    # Plausibility check for vEgo
+    if not (0.0 <= car_state_msg.vEgo <= 45.0): # Assuming plausible speed range 0-162 km/h (0-45 m/s)
+      logging.warning(f"CarState vEgo ({car_state_msg.vEgo:.2f} m/s) out of plausible range. Reducing camera confidence.")
+      self.camera_confidence = 0.1
+      self.camera_healthy = False
+      return # Skip further processing if vEgo is implausible
+    
     if hasattr(model_v2_msg, 'lateralPlan') and hasattr(model_v2_msg.lateralPlan, 'laneWidth'):
       # Calculate lane keeping confidence
       lane_width = model_v2_msg.lateralPlan.laneWidth
@@ -257,8 +298,8 @@ class SafetyMonitor:
     # Future integration should consider:
     # 1. Camera-based luminance estimation (e.g., from image statistics or model outputs).
     # 2. Dedicated ambient light sensors.
-    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'normal' lighting condition.")
-    self.lighting_condition = "normal"
+    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'unknown' lighting condition for conservative safety.")
+    self.lighting_condition = "unknown" # Default to 'unknown' for conservative safety when luminance data is not available.
     # TODO: Implement robust tunnel detection.
     # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns).
     # This cannot be reliably inferred without proper camera-based analysis or dedicated sensors.
@@ -266,11 +307,14 @@ class SafetyMonitor:
     # 1. Analyze 'modelV2.laneLines' for consistent, strong lane detections without 'roadEdges' or 'sky' probabilities.
     # 2. Integrate with lighting condition estimation (once available) for sudden drops in luminance.
     # 3. Utilize GPS data if available for known tunnel locations.
-    self.in_tunnel = False # Default to not in tunnel
-    # Placeholder for future tunnel detection logic
-    # if (model_v2_msg and model_v2_msg.laneLines and
-    #     not model_v2_msg.roadEdges and not model_v2_msg.skyProbability):
-    #   self.in_tunnel = True
+    # Tunnel detection is not yet reliably implemented.
+    # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns)
+    # or dedicated sensors, which are not currently available.
+    # Potential approaches for future integration:
+    # 1. Analyze 'modelV2.laneLines' for consistent, strong lane detections without 'roadEdges' or 'sky' probabilities.
+    # 2. Integrate with lighting condition estimation (once available) for sudden drops in luminance.
+    # 3. Utilize GPS data if available for known tunnel locations.
+    self.in_tunnel = False # Explicitly set to False as tunnel detection is not yet functional.
 
     # Weather condition detection based on IMU and car dynamics (improved approach)
     # Use livePose orientation instead of carControl (carControl doesn't have orientation data)
@@ -288,19 +332,18 @@ class SafetyMonitor:
       orientation_available = True
 
             if orientation_available:
-              # TODO: Implement robust weather and road condition detection using multiple sensor inputs.
+              # Robust weather and road condition detection using multiple sensor inputs is not yet implemented.
               # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
-              # Future integration should consider:
-              # - Rain: Wiper status (from carState if available), dedicated precipitation sensors, camera visibility metrics.
-              # - Snow: Ambient temperature (from external sensor or refined thermal model), wheel slip detection.
-              # - Fog: Camera visibility metrics, radar attenuation (if available).
-              # For now, default to dry and clear conditions, as accurate multi-sensor fusion is not yet implemented for weather/road.
-              self.road_condition = "dry"
-              self.weather_condition = "clear"
+              # To ensure conservative safety, defaulting to "unknown" for now and logging a warning.
+              logging.warning("Comprehensive multi-sensor fusion for weather/road condition detection is not yet implemented. Defaulting to 'unknown'.")
+              self.road_condition = "unknown"
+              self.weather_condition = "unknown"
+              self.imu_confidence = 1.0 # IMU data available, so confidence is high
             else:
-              # If IMU data is not available, log a warning but maintain the previous state of
-              # road and weather conditions instead of defaulting to a potentially incorrect "worst-case".
-              logging.warning("IMU data for weather/road condition detection is not available. Maintaining previous environmental conditions.")
+              # If IMU data is not available, log a warning and maintain "unknown" state.
+              logging.warning("IMU data for weather/road condition detection is not available. Maintaining 'unknown' environmental conditions.")
+              self.imu_confidence = 0.1 # Set IMU confidence to a low value due to missing data.
+
   def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
     if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
@@ -308,11 +351,13 @@ class SafetyMonitor:
       max_curvature_ahead = 0.0
       x_coords = model_v2_msg.path.x
       y_coords = model_v2_msg.path.y
+      z_coords = model_v2_msg.path.z # Assuming z-coordinates are available similarly
 
-      if len(x_coords) > 2 and len(y_coords) > 2:
+      if len(x_coords) > 2 and len(y_coords) > 2 and len(z_coords) > 2:
         # Convert lists to numpy arrays for efficient computation
         x_coords_np = np.array(x_coords)
         y_coords_np = np.array(y_coords)
+        z_coords_np = np.array(z_coords)
 
         # Assuming path points are equally spaced (0.5m)
         path_interval = 0.5 # Typically 0.5 meters between path points
@@ -321,42 +366,72 @@ class SafetyMonitor:
         min_points_needed = int(self.max_anticipation_distance / path_interval)
         current_max_anticipation_distance = self.max_anticipation_distance
         if len(x_coords_np) < min_points_needed:
-            logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {min_points_needed} points.")
+            logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {min_points_needed} points. Using available path length.")
             # Fall back to shorter distance for calculation
             current_max_anticipation_distance = len(x_coords_np) * path_interval
 
-        # Calculate first derivatives (dx/ds, dy/ds) using numpy.gradient
+        # Calculate first derivatives (dx/ds, dy/ds) and second derivatives
         dx_ds = np.gradient(x_coords_np, path_interval)
         dy_ds = np.gradient(y_coords_np, path_interval)
-
-        # Calculate second derivatives (d2x/ds2, d2y/ds2)
         d2x_ds2 = np.gradient(dx_ds, path_interval)
         d2y_ds2 = np.gradient(dy_ds, path_interval)
 
-        # Iterate up to the effective maximum anticipation distance
-        # Ensure that we don't go out of bounds
-        for i in range(min(len(x_coords_np), int(current_max_anticipation_distance / path_interval))): # Loop over path points up to max_anticipation_distance
-            if i >= len(dx_ds) or i >= len(d2x_ds2): # Check array bounds
-                continue
+        # Calculate dz/ds (slope along the path)
+        dz_ds = np.gradient(z_coords_np, path_interval)
+        # Approximate road grade (angle in radians)
+        # Assuming ds is roughly constant and small enough for tan(angle) approx angle
+        # grade_angle = np.arctan(dz_ds)
+        # For a simplified approach, use a smoothed version of dz_ds or an average over a segment
+        # Here, we will just use the dz_ds directly as a proxy for grade.
 
-            # Calculate curvature using the formula:
-            # curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
-            # where ' means derivative with respect to path parameter
-            numerator = abs(dx_ds[i] * d2y_ds2[i] - dy_ds[i] * d2x_ds2[i])
-            denominator_squared = dx_ds[i]**2 + dy_ds[i]**2
+        # Calculate curvature using the vectorized formula: curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+        numerator = np.abs(dx_ds * d2y_ds2 - dy_ds * d2x_ds2)
+        denominator_squared = dx_ds**2 + dy_ds**2
+        
+        # Avoid division by zero: set curvature to 0 where denominator is too small
+        valid_indices = denominator_squared > 1e-6
+        
+        local_curvatures = np.zeros_like(numerator)
+        local_curvatures[valid_indices] = numerator[valid_indices] / (denominator_squared[valid_indices]**1.5)
+        
+        effective_path_length = min(len(x_coords_np), int(current_max_anticipation_distance / path_interval))
+        
+        if effective_path_length > 0:
+            max_curvature_ahead = np.max(np.abs(local_curvatures[:effective_path_length]))
+            # Get the grade at the point of max curvature for simplicity
+            # This is a simplification; a more robust solution would consider grade over the entire curve
+            max_curve_idx = np.argmax(np.abs(local_curvatures[:effective_path_length]))
+            
+            # Simple approximation of grade at max curvature point
+            # Avoid division by zero for small dx_ds and dy_ds (flat path)
+            if np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]]) > 1e-6:
+                grade_at_max_curvature = dz_ds[max_curve_idx] / np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]])
+            else:
+                grade_at_max_curvature = 0.0
+        else:
+            max_curvature_ahead = 0.0
+            grade_at_max_curvature = 0.0
 
-            if denominator_squared > 1e-6:  # Avoid division by zero
-              denominator = denominator_squared ** 1.5
-              local_curvature = numerator / denominator
-              max_curvature_ahead = max(max_curvature_ahead, abs(local_curvature))
 
-              # Early exit condition: if curvature is already very high, no need to check further
-              if max_curvature_ahead > self.curve_detection_threshold: # Use configurable curve detection threshold
-                break
-
-      # Calculate safe speed based on curvature
+      # Calculate safe speed based on curvature and now, road grade
       if max_curvature_ahead > 0.001:  # Significant curve
-        safe_speed = (self.max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
+        # Adjust max_lat_accel based on road grade for safety
+        # On a downhill grade, the effective lateral friction available might be reduced.
+        # On an uphill grade, it might be increased.
+        # A conservative approach for now: reduce safe speed on downhill grades.
+        grade_factor = 1.0
+        if grade_at_max_curvature < 0: # Downhill
+            # Reduce safe speed for downhill curves. For example, a 5% grade (approx 0.05 rad)
+            # might reduce the effective lateral acceleration by a small percentage.
+            # This is a placeholder and needs empirical tuning.
+            grade_factor = max(0.8, 1.0 + grade_at_max_curvature * 5.0) # Reduce by up to 20% for steep downhill
+        elif grade_at_max_curvature > 0: # Uphill
+            # For uphill, we might slightly increase the safe speed, or keep it neutral for conservatism.
+            # For now, let's keep it neutral to prioritize safety.
+            grade_factor = 1.0
+
+        effective_max_lat_accel = self.max_lat_accel * grade_factor
+        safe_speed = (effective_max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
 
         # Calculate anticipation score based on speed vs safe speed
         if car_state_msg.vEgo > 5.0:  # Only for meaningful speeds
@@ -373,7 +448,7 @@ class SafetyMonitor:
       self.curve_anticipation_score = 0.0
       self.curve_anticipation_active = False
 
-  def calculate_overall_safety_score(self, car_state_msg) -> float:
+  def calculate_overall_safety_score(self, car_state_msg, driver_monitoring_state_msg) -> float:
     """Calculate overall safety score based on all inputs"""
     # Weighted combination of all confidence measures
     # Adjust weights based on environmental conditions
@@ -396,22 +471,28 @@ class SafetyMonitor:
       'imu': 0.1
     }
 
+    # Apply sensor health status to confidence values
+    model_conf = self.model_confidence if self.model_healthy else 0.1
+    radar_conf = self.radar_confidence if self.radar_healthy else 0.1
+    camera_conf = self.camera_confidence if self.camera_healthy else 0.1
+    imu_conf = self.imu_confidence if self.imu_healthy else 0.1 # Currently IMU confidence is always 1.0 but this prepares for future degradation
+
     # Adjust weights based on environmental conditions
-    if self.lighting_condition in ["night", "dawn_dusk", "tunnel"]:
+    if self.lighting_condition in ["night", "dawn_dusk"]: # Removed 'tunnel' as detection is not yet reliable.
       base_weights['model'] *= 0.8  # Reduce camera-based confidence in poor lighting
       base_weights['radar'] *= 1.1  # Increase radar confidence
 
-    if self.weather_condition in ["rain", "snow", "fog"]:
+    if self.weather_condition in ["rain", "snow", "fog", "unknown"]: # Apply conservative weights if weather is unknown
       base_weights['model'] *= 0.7
       base_weights['camera'] *= 0.6
       base_weights['radar'] *= 1.2  # Radar more reliable in poor weather
 
     # Calculate base safety score
     safety_score = (
-      self.model_confidence * base_weights['model'] +
-      self.camera_confidence * base_weights['camera'] +
-      self.radar_confidence * base_weights['radar'] +
-      self.imu_confidence * base_weights['imu']
+      model_conf * base_weights['model'] +
+      camera_conf * base_weights['camera'] +
+      radar_conf * base_weights['radar'] +
+      imu_conf * base_weights['imu']
     )
 
     # Apply critical safety penalties for values significantly below thresholds
@@ -434,9 +515,22 @@ class SafetyMonitor:
       deviation_penalty = max(0.1, 1.0 - (self.lane_deviation_filter.x / self.lane_deviation_threshold))
       safety_score *= deviation_penalty
 
+    # Apply driver monitoring penalty
+    if not self.driver_monitoring_healthy:
+      logging.warning("Driver monitoring system unhealthy. Applying significant safety score penalty.")
+      safety_score *= 0.5 # Significant penalty if system is not working
+    elif driver_monitoring_state_msg is not None and hasattr(driver_monitoring_state_msg, 'awarenessStatus') and driver_monitoring_state_msg.awarenessStatus is not None:
+      # Assuming awarenessStatus is 0-1, where low is bad
+      if driver_monitoring_state_msg.awarenessStatus < 0.3: # Critically low awareness
+        logging.warning(f"Critically low driver awareness ({driver_monitoring_state_msg.awarenessStatus:.2f}). Applying significant safety score penalty.")
+        safety_score *= 0.6
+      elif driver_monitoring_state_msg.awarenessStatus < 0.5: # Moderate low awareness
+        logging.warning(f"Low driver awareness ({driver_monitoring_state_msg.awarenessStatus:.2f}). Applying moderate safety score penalty.")
+        safety_score *= 0.8
+    
     return max(0.0, min(1.0, safety_score))
 
-  def evaluate_safety_intervention_needed(self, safety_score: float, car_state_msg) -> bool:
+  def evaluate_safety_intervention_needed(self, safety_score: float, car_state_msg, driver_monitoring_state_msg) -> bool:
     """Determine if safety intervention is required"""
     # Check multiple conditions for intervention
     intervention_needed = False
@@ -444,6 +538,20 @@ class SafetyMonitor:
     # Model confidence too low
     if self.model_confidence < self.model_confidence_threshold * self.model_confidence_threshold_multiplier:
       intervention_needed = True
+    
+    # If any critical sensor is unhealthy, intervention is more likely
+    if not self.model_healthy or not self.radar_healthy or not self.camera_healthy:
+        logging.warning("Critical sensor unhealthy, increasing likelihood of intervention.")
+        intervention_needed = True # Even if other scores are good, sensor failure is critical
+    
+    # Driver monitoring: critical awareness or unhealthy system leads to intervention
+    if not self.driver_monitoring_healthy:
+      logging.warning("Driver monitoring system unhealthy. Intervention needed.")
+      intervention_needed = True
+    elif driver_monitoring_state_msg is not None and hasattr(driver_monitoring_state_msg, 'awarenessStatus') and driver_monitoring_state_msg.awarenessStatus is not None:
+      if driver_monitoring_state_msg.awarenessStatus < 0.2: # Very low awareness, immediate intervention
+        logging.warning(f"Very low driver awareness ({driver_monitoring_state_msg.awarenessStatus:.2f}). Intervention needed.")
+        intervention_needed = True
     
     # Lane deviation too high
     if self.lane_deviation_filter.x > self.lane_deviation_threshold * 1.2:
@@ -463,49 +571,122 @@ class SafetyMonitor:
     
     return intervention_needed
 
-  def update(self, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> Tuple[float, bool, Dict]:
+  def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None) -> Tuple[float, bool, Dict]:
     """Main update function - processes all inputs and returns safety assessment"""
+    current_time = monotonic_time() # Get current time once in nanoseconds
+    start_time_update = time.monotonic() # Start timing for the entire update method
+
+    # --- Initialize healthy flags to True at the start of each update cycle ---
+    # They will be set to False if data is stale or an exception occurs during processing
+    self.model_healthy = True
+    self.radar_healthy = True
+    self.camera_healthy = True
+    self.imu_healthy = True
+
+    # --- Staleness Checks ---
+    # Convert mono_time to seconds for comparison
+    # Model Staleness
+    if (current_time * 1e-9 - model_v2_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      self.model_healthy = False
+      logging.warning(f"Model data is stale. Last update: {(current_time - model_v2_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+    
+    # Radar Staleness
+    if (current_time * 1e-9 - radar_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      self.radar_healthy = False
+      logging.warning(f"Radar data is stale. Last update: {(current_time - radar_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+
+    # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
+    if (current_time * 1e-9 - car_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      self.camera_healthy = False
+      logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {(current_time - car_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+
+        # IMU Staleness (livePose)
+
+        if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+
+          self.imu_healthy = False
+
+          logging.warning(f"IMU data (livePose) is stale. Last update: {(current_time - live_pose_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+
+        elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
+
+          self.imu_healthy = False
+
+          logging.warning("LivePose message is not available. IMU data confidence reduced.")
+
+        
+
+        # Driver Monitoring Staleness
+
+        if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+
+          self.driver_monitoring_healthy = False
+
+          logging.warning(f"Driver Monitoring data is stale. Last update: {(current_time - driver_monitoring_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+
+        elif driver_monitoring_state_mono_time is None:
+
+          self.driver_monitoring_healthy = False
+
+          logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
+
+    
+
+        # --- Update Confidence Measures with Error Handling ---
     try:
-      # Update all confidence measures with error handling
-      try:
+      # If already marked unhealthy due to staleness, no need to update confidence values explicitly,
+      # as `calculate_overall_safety_score` will handle it.
+      # Only update if the sensor is still considered healthy at this point (not stale).
+      if self.model_healthy:
         self.update_model_confidence(model_v2_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in update_model_confidence: {e}")
-        self.model_confidence = 0.5  # Default to moderate confidence on error
+      else:
+        self.model_confidence = 0.1 # Set low confidence if stale
+    except Exception as e:
+      logging.error(f"Error in update_model_confidence: {e}")
+      self.model_confidence = 0.5  # Default to moderate confidence on error
+      self.model_healthy = False
+    
+    try:
+      if self.radar_healthy:
+        self.update_radar_confidence(radar_state_msg, car_state_msg)
+      else:
+        self.radar_confidence = 0.1 # Set low confidence if stale
+    except Exception as e:
+      logging.error(f"Error in update_radar_confidence: {e}")
+      self.radar_confidence = 0.5
+      self.radar_healthy = False
 
-      try:
-        self.update_radar_confidence(radar_state_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in update_radar_confidence: {e}")
-        self.radar_confidence = 0.5
-
-      try:
+    try:
+      if self.camera_healthy:
         self.update_camera_confidence(model_v2_msg, car_state_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in update_camera_confidence: {e}")
-        self.camera_confidence = 0.5
+      else:
+        self.camera_confidence = 0.1 # Set low confidence if stale
+    except Exception as e:
+      logging.error(f"Error in update_camera_confidence: {e}")
+      self.camera_confidence = 0.5
+      self.camera_healthy = False
 
-      try:
+    try:
+      if self.imu_healthy: # Only update environmental conditions if IMU is healthy
         self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in detect_environmental_conditions: {e}")
-        # Keep existing values if detection fails
+      else: # If IMU is unhealthy, set environmental conditions to unknown and confidence low
+        self.lighting_condition = "unknown"
+        self.weather_condition = "unknown"
+        self.road_condition = "unknown"
+        self.imu_confidence = 0.1 # Already set if stale, but ensure if an error occurs here
+    except Exception as e:
+      logging.error(f"Error in detect_environmental_conditions: {e}")
+      self.imu_healthy = False
+      self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
+      # Also set environmental conditions to unknown on error
+      self.lighting_condition = "unknown"
+      self.weather_condition = "unknown"
+      self.road_condition = "unknown"
 
-      try:
-        self.detect_curve_anticipation(model_v2_msg, car_state_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in detect_curve_anticipation: {e}")
-        self.curve_anticipation_active = False
-        self.curve_anticipation_score = 0.0
 
       # Calculate overall safety with error handling
       try:
-        self.overall_safety_score = self.calculate_overall_safety_score(car_state_msg)
+        self.overall_safety_score = self.calculate_overall_safety_score(car_state_msg, driver_monitoring_state_msg)
       except Exception as e:
         import logging
         logging.error(f"Error in calculate_overall_safety_score: {e}")
@@ -513,7 +694,7 @@ class SafetyMonitor:
 
       try:
         self.requires_intervention = self.evaluate_safety_intervention_needed(
-          self.overall_safety_score, car_state_msg
+          self.overall_safety_score, car_state_msg, driver_monitoring_state_msg
         )
       except Exception as e:
         import logging
@@ -524,22 +705,26 @@ class SafetyMonitor:
       self.confidence_degraded = self.overall_safety_score < 0.6
 
       # Prepare safety report with error information
-      safety_report = {
-        'model_confidence': getattr(self, 'model_confidence', 0.5),
-        'radar_confidence': getattr(self, 'radar_confidence', 0.5),
-        'camera_confidence': getattr(self, 'camera_confidence', 0.5),
-        'imu_confidence': getattr(self, 'imu_confidence', 0.5),
-        'lighting_condition': self.lighting_condition,
-        'weather_condition': self.weather_condition,
-        'road_condition': self.road_condition,
-        'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
-        'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
-        'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
-        'overall_safety_score': self.overall_safety_score,
-        'confidence_degraded': self.confidence_degraded,
-        'monitoring_cycles': self.monitoring_cycles
-      }
-
+              safety_report = {
+                'model_confidence': getattr(self, 'model_confidence', 0.5),
+                'radar_confidence': getattr(self, 'radar_confidence', 0.5),
+                'camera_confidence': getattr(self, 'camera_confidence', 0.5),
+                'imu_confidence': getattr(self, 'imu_confidence', 0.5),
+                'model_healthy': self.model_healthy,
+                'radar_healthy': self.radar_healthy,
+                'camera_healthy': self.camera_healthy,
+                'imu_healthy': self.imu_healthy,
+          'driver_monitoring_healthy': self.driver_monitoring_healthy,
+                'lighting_condition': self.lighting_condition,
+                'weather_condition': self.weather_condition,
+                'road_condition': self.road_condition,
+                'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
+                'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
+                'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
+                'overall_safety_score': self.overall_safety_score,
+                'confidence_degraded': self.confidence_degraded,
+                'monitoring_cycles': self.monitoring_cycles
+              }
       self.monitoring_cycles += 1
 
       # Add error flag if any sub-component failed

@@ -8,7 +8,7 @@ import numpy as np
 from cereal import car, log
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper
 from openpilot.common.swaglog import cloudlog
 
@@ -42,6 +42,31 @@ class Controls(ControlsExt, ModelStateBase):
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
 
+    # Load safety thresholds from params, with defaults if not found
+    try:
+      min_braking_param = self.params.get("SafeMinBrakingThreshold", encoding='utf8')
+      self.SAFE_MIN_BRAKING_THRESHOLD = float(min_braking_param) if min_braking_param else -4.0
+    except (UnknownKeyName, ValueError):
+      cloudlog.warning("SafeMinBrakingThreshold not found or invalid, defaulting to -4.0 m/s^2.")
+      self.SAFE_MIN_BRAKING_THRESHOLD = -4.0  # Default value
+    
+    try:
+      max_acceleration_param = self.params.get("SafeMaxAccelerationThreshold", encoding='utf8')
+      self.SAFE_MAX_ACCELERATION_THRESHOLD = float(max_acceleration_param) if max_acceleration_param else 2.0
+    except (UnknownKeyName, ValueError):
+      cloudlog.warning("SafeMaxAccelerationThreshold not found or invalid, defaulting to 2.0 m/s^2.")
+      self.SAFE_MAX_ACCELERATION_THRESHOLD = 2.0  # Default value
+
+    # Justification for default thresholds:
+    # - SAFE_MIN_BRAKING_THRESHOLD (-4.0 m/s^2): This value represents a typical aggressive braking deceleration
+    #   for passenger vehicles under good conditions. It's a balance between safety (ensuring the system can
+    #   decelerate sufficiently) and comfort/drivability (avoiding excessively harsh braking).
+    #   This threshold should be calibrated per vehicle type, as braking capabilities vary significantly.
+    # - SAFE_MAX_ACCELERATION_THRESHOLD (2.0 m/s^2): This value represents a comfortable yet responsive acceleration.
+    #   Exceeding this value can lead to uncomfortable driving or reduced safety margins if not carefully controlled.
+    #   This threshold also requires vehicle-specific tuning to match powertrain characteristics.
+    # These defaults are for general applicability and should be overridden with vehicle-specific values when possible.
+
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)
     ModelStateBase.__init__(self)
@@ -49,12 +74,16 @@ class Controls(ControlsExt, ModelStateBase):
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
     # Safety Threshold Definitions for overall_safety_score:
-    # 0.0-0.2: Immediate disengagement - System is in a critical state, immediate human intervention is required.
-    # 0.2-0.4: Strong intervention (reduced speed, conservative control) - System detects high risk, takes strong
-    #          measures to mitigate, but may not fully disengage.
-    # 0.4-0.6: Degraded mode (reduced acceleration, enhanced caution) - System is operating with reduced confidence,
-    #          applies more cautious driving behaviors.
-    # 0.6+: Normal operation - System is functioning as expected with high confidence.
+    # These thresholds define the severity levels for safety intervention based on the `overall_safety_score`.
+    # While default values are provided, they are conceptual and require rigorous empirical testing and
+    # vehicle-specific calibration to ensure optimal performance and safety in diverse driving scenarios.
+    #
+    # 0.0-0.3 (Critical): Immediate disengagement - System is in a critical state, immediate human intervention is required.
+    # 0.3-0.4 (High Risk): Strong intervention (reduced speed, conservative control) - System detects high risk,
+    #           takes strong measures to mitigate, but may not fully disengage.
+    # 0.4-0.6 (Moderate Risk): Degraded mode (reduced acceleration, enhanced caution) - System is operating with
+    #            reduced confidence, applies more cautious driving behaviors.
+    # 0.6+ (Normal): Normal operation - System is functioning as expected with high confidence.
     #
     # Initialize configurable safety thresholds
     try:
@@ -168,10 +197,16 @@ class Controls(ControlsExt, ModelStateBase):
       try:
         safety_score, requires_intervention, safety_report = self.safety_monitor.update(
           self.sm['modelV2'],
+          self.sm.logMonoTime['modelV2'],
           self.sm['radarState'],
+          self.sm.logMonoTime['radarState'],
           self.sm['carState'],
+          self.sm.logMonoTime['carState'],
           self.sm['carControl'],
-          self.sm['livePose']
+          self.sm['livePose'],
+          self.sm.logMonoTime['livePose'] if 'livePose' in self.sm.logMonoTime else None,
+          self.sm['driverMonitoringState'],
+          self.sm.logMonoTime['driverMonitoringState'] if 'driverMonitoringState' in self.sm.logMonoTime else None
         )
 
         # Update safety degraded mode based on safety monitor
@@ -279,19 +314,19 @@ class Controls(ControlsExt, ModelStateBase):
       # Ensure min_accel_limit is sufficiently negative (strong braking)
       # Assuming -4.0 m/s^2 is a reasonable minimum braking threshold for safety
       # This value should ideally be derived from vehicle capabilities or safety requirements
-      SAFE_MIN_BRAKING_THRESHOLD = -4.0 # m/s^2
-      if adjusted_min_limit > SAFE_MIN_BRAKING_THRESHOLD:
+            # SAFE_MIN_BRAKING_THRESHOLD is now configurable via Params.
+      if adjusted_min_limit > self.SAFE_MIN_BRAKING_THRESHOLD:
         cloudlog.warning(f"Safety Validation: adjusted_min_limit {adjusted_min_limit:.2f} m/s^2 "
-                         f"is weaker than safe threshold {SAFE_MIN_BRAKING_THRESHOLD:.2f} m/s^2.")
+                         f"is weaker than safe threshold {self.SAFE_MIN_BRAKING_THRESHOLD:.2f} m/s^2.")
         # Optionally, force a safer, more negative limit if validation fails
         # adjusted_min_limit = min(adjusted_min_limit, SAFE_MIN_BRAKING_THRESHOLD)
 
       # Ensure max_accel_limit does not exceed a reasonable acceleration threshold
       # Assuming 2.0 m/s^2 is a reasonable maximum acceleration threshold for safety
-      SAFE_MAX_ACCELERATION_THRESHOLD = 2.0 # m/s^2
-      if adjusted_max_limit > SAFE_MAX_ACCELERATION_THRESHOLD:
+            # SAFE_MAX_ACCELERATION_THRESHOLD is now configurable via Params.
+      if adjusted_max_limit > self.SAFE_MAX_ACCELERATION_THRESHOLD:
         cloudlog.warning(f"Safety Validation: adjusted_max_limit {adjusted_max_limit:.2f} m/s^2 "
-                         f"is stronger than safe threshold {SAFE_MAX_ACCELERATION_THRESHOLD:.2f} m/s^2.")
+                         f"is stronger than safe threshold {self.SAFE_MAX_ACCELERATION_THRESHOLD:.2f} m/s^2.")
         # Optionally, force a safer, less positive limit if validation fails
         # adjusted_max_limit = min(adjusted_max_limit, SAFE_MAX_ACCELERATION_THRESHOLD)
       # --- End Safety Validation for Accel Limits ---
