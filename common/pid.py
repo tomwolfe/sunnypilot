@@ -115,6 +115,10 @@ class PIDController:
     self.safe_mode_active = False
     self.safe_mode_trigger_count = 0
     self.safety_limit_trigger_count = 0  # Track how often safety limits are being hit
+    # Initialize safe mode tracking variables
+    self.safe_mode_activated_count = 0
+    self.safe_mode_start_time = None
+    self.safe_mode_recovery_start_time = None
 
     # Pre-compute interpolation if using fixed arrays (for optimization)
     if len(self._k_p[0]) > 1:
@@ -197,8 +201,17 @@ class PIDController:
         # This addresses the concern that baseline limit (speed 0) might be too conservative at high speeds
         baseline_limit = original_k_p * self.max_curvature_gain_multiplier
 
-        # Take the minimum of combined gain, original relative limit, and additional safety limit
-        k_p = min(combined_gain, max_relative_gain, baseline_limit)
+        # Apply the original safety limiting logic to prevent excessive combined gains
+        preliminary_limited_gain = min(combined_gain, original_k_p * self.max_curvature_gain_multiplier)
+
+        # Apply oscillation gain factor
+        oscillation_adjusted_gain = preliminary_limited_gain * self.oscillation_gain_factor
+
+        # Ensure final gain doesn't exceed the maximum allowed by the multiplier
+        # This addresses the oscillation gain factor safety issue
+        final_gain = min(oscillation_adjusted_gain, original_k_p * self.max_curvature_gain_multiplier)
+
+        k_p = final_gain
 
         # Check if we hit any of the safety limits (meaning the gain was reduced)
         if k_p < combined_gain:
