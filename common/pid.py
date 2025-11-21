@@ -11,12 +11,14 @@ class PIDController:
                oscillation_threshold=0.5, oscillation_window_size_seconds=0.5, oscillation_gain_reduction=0.9,
                oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0,
                oscillation_sign_change_threshold=0.6, oscillation_variance_threshold=0.8, oscillation_zero_crossing_threshold=0.5,  # Vehicle-specific oscillation thresholds
+               safe_mode_recovery_time=5.0,  # Configurable safe mode recovery time in seconds
                vehicle_mass=1500.0, vehicle_wheelbase=2.7):  # Added vehicle mass and wheelbase to enable adaptive thresholds
     self._k_p = k_p
     self._k_i = k_i
     self._k_d = k_d
     self._k_curvature = k_curvature
     self.max_curvature_gain_multiplier = max_curvature_gain_multiplier  # Configurable maximum gain multiplier relative to base
+    self.safe_mode_recovery_time = safe_mode_recovery_time  # Configurable safe mode recovery time in seconds
     # Calculate reference values for safety limiting to prevent explosive behavior when both speed and curvature gains are high
     if isinstance(k_p, (list, tuple)) and len(k_p) == 2:
       # k_p is in format (breakpoints, values) like the car params
@@ -227,16 +229,18 @@ class PIDController:
           ]
 
           # If safety limits are being hit too frequently (both count and time-based), enter safe mode
-          if (self.safety_limit_trigger_count > self.safety_limit_threshold or
-              len(self.safety_limit_trigger_times) > self.safety_limit_threshold):
+          count_based_exceeded = self.safety_limit_trigger_count > self.safety_limit_threshold
+          time_based_exceeded = len(self.safety_limit_trigger_times) > self.safety_limit_threshold
+
+          if count_based_exceeded or time_based_exceeded:
             if not self.safe_mode_active:
               # Only increment activation count and log when entering safe mode (not when already in safe mode)
               self.safe_mode_activated_count += 1
               self.safe_mode_start_time = time.time()
               cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
                              f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
-                             f"Trigger count: {self.safety_limit_trigger_count}, "
-                             f"Time-based count: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s, "
+                             f"Count-based: {self.safety_limit_trigger_count} > {self.safety_limit_threshold} ({'EXCEEDED' if count_based_exceeded else 'OK'}), "
+                             f"Time-based: {len(self.safety_limit_trigger_times)} > {self.safety_limit_threshold} ({'EXCEEDED' if time_based_exceeded else 'OK'}) in {self.safety_limit_time_window}s, "
                              f"Safety threshold: {self.safety_limit_threshold}, "
                              f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
                              f"Safe mode activation count: {self.safe_mode_activated_count}")
@@ -398,11 +402,12 @@ class PIDController:
 
     # Determine if oscillation is occurring based on combined criteria using vehicle-specific thresholds
     # Using OR logic allows detection when any method indicates oscillations (for robustness)
-    oscillation_detected = (
-      oscillation_ratio > self.oscillation_sign_change_threshold or
-      relative_variance > self.oscillation_variance_threshold or
-      zero_crossing_ratio > self.oscillation_zero_crossing_threshold
-    )
+    # Track individual detection results for logging and debugging
+    sign_change_detected = oscillation_ratio > self.oscillation_sign_change_threshold
+    variance_detected = relative_variance > self.oscillation_variance_threshold
+    zero_crossing_detected = zero_crossing_ratio > self.oscillation_zero_crossing_threshold
+
+    oscillation_detected = sign_change_detected or variance_detected or zero_crossing_detected
 
     if oscillation_detected:
       # Apply gain reduction for oscillation damping
@@ -411,6 +416,15 @@ class PIDController:
       self.oscillation_detected = True
       self.oscillation_damping_active = True
       self.oscillation_detection_count += 1
+      # Log detailed information when oscillations are first detected to help with debugging
+      if self.oscillation_detection_count == 1 or (self.oscillation_detection_count % 100 == 0):  # Log first detection and every 100th
+        cloudlog.debug(f"Oscillation detected and damping activated. "
+                      f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
+                      f"Sign change ratio: {oscillation_ratio:.3f} (threshold: {self.oscillation_sign_change_threshold:.3f}, detected: {sign_change_detected}), "
+                      f"Variance ratio: {relative_variance:.3f} (threshold: {self.oscillation_variance_threshold:.3f}, detected: {variance_detected}), "
+                      f"Zero crossing ratio: {zero_crossing_ratio:.3f} (threshold: {self.oscillation_zero_crossing_threshold:.3f}, detected: {zero_crossing_detected}), "
+                      f"Current gain factor: {self.oscillation_gain_factor:.3f}, "
+                      f"Total detections: {self.oscillation_detection_count}")
     else:
       # Gradually restore gain when no significant oscillations detected
       self.oscillation_gain_factor = min(self.oscillation_gain_factor * self.oscillation_recovery_rate,
@@ -418,6 +432,9 @@ class PIDController:
       self.oscillation_detected = False
       self.oscillation_damping_active = False
       self.oscillation_recovery_count += 1
+      # Gradually reduce detection count when conditions stabilize to improve recovery
+      if self.oscillation_detection_count > 0:
+        self.oscillation_detection_count = max(0, self.oscillation_detection_count - 1)
 
   def _calculate_adaptive_threshold(self, base_threshold):
     """
@@ -566,7 +583,7 @@ class PIDController:
       if self.safe_mode_recovery_start_time is None:
         # Start recovery timer
         self.safe_mode_recovery_start_time = current_time
-      elif current_time - self.safe_mode_recovery_start_time >= 5.0:  # 5 seconds of stable operation
+      elif current_time - self.safe_mode_recovery_start_time >= self.safe_mode_recovery_time:  # Configurable seconds of stable operation
         # Safe mode recovery conditions met
         self.safe_mode_active = False
         self.safe_mode_recovery_start_time = None
@@ -576,7 +593,8 @@ class PIDController:
                       f"Safety limit triggers: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s window, "
                       f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
                       f"Safe mode activation count: {self.safe_mode_activated_count}, "
-                      f"Time in safe mode: {current_time - self.safe_mode_start_time:.2f}s")
+                      f"Time in safe mode: {current_time - self.safe_mode_start_time:.2f}s, "
+                      f"Recovery time: {self.safe_mode_recovery_time}s")
     else:
       # Conditions are still unstable, reset recovery timer
       self.safe_mode_recovery_start_time = None

@@ -19,6 +19,8 @@ class LatControlPID(LatControl):
     safety_limit_threshold = getattr(CP_SP, 'safetyLimitThreshold', 100)
     # Use configurable safety limit time window from car params
     safety_limit_time_window = getattr(CP_SP, 'safetyLimitTimeWindow', 60.0)
+    # Use configurable safe mode recovery time from car params
+    safe_mode_recovery_time = getattr(CP_SP, 'safeModeRecoveryTime', 5.0)  # Default to 5 seconds
     # Vehicle-specific oscillation thresholds
     oscillation_sign_change_threshold = getattr(CP_SP, 'oscillationSignChangeThreshold', 0.6)
     oscillation_variance_threshold = getattr(CP_SP, 'oscillationVarianceThreshold', 0.8)
@@ -30,6 +32,7 @@ class LatControlPID(LatControl):
                              max_curvature_gain_multiplier=max_curvature_gain_multiplier,
                              safety_limit_threshold=safety_limit_threshold,
                              safety_limit_time_window=safety_limit_time_window,
+                             safe_mode_recovery_time=safe_mode_recovery_time,
                              pos_limit=self.steer_max, neg_limit=-self.steer_max,
                              oscillation_sign_change_threshold=oscillation_sign_change_threshold,
                              oscillation_variance_threshold=oscillation_variance_threshold,

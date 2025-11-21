@@ -23,6 +23,8 @@ This document provides a formal safety analysis for the curvature gain feature i
 | Jerky steering due to noisy inputs | Medium | Medium | Medium | Implemented |
 | Invalid configuration causing erratic behavior | Low | High | Medium | Implemented |
 | Oscillations not detected in real-time | Low | Medium | Low | Implemented |
+| Safe mode recovery too aggressive | Low | Medium | Low | Implemented |
+| Safety threshold inappropriately configured | Low | High | Medium | Implemented |
 
 ## Safety Mechanisms
 
@@ -64,6 +66,17 @@ This document provides a formal safety analysis for the curvature gain feature i
    - Adaptive gain reduction when oscillations are detected (gain factor reduced to minimum 50%)
    - Gradual gain recovery when system stabilizes
    - Comprehensive monitoring with logging and metrics tracking
+   - Individual detection method logging for debugging and analysis
+
+4. **Configurable Safety Thresholds**
+   - Adjustable safety limit thresholds with explicit units (count-based and time-based)
+   - Configurable safe mode recovery time (default: 5.0 seconds)
+   - Separate recovery thresholds to enable graceful mode transitions
+
+5. **Detailed Safety Monitoring and Logging**
+   - Explicit logging of which safety limits are exceeded during safe mode activation
+   - Detailed oscillation detection logging for debugging purposes
+   - Comprehensive safe mode recovery logging including configurable parameters
 
 ## Failure Modes and Effects Analysis (FMEA)
 
@@ -76,6 +89,8 @@ This document provides a formal safety analysis for the curvature gain feature i
 | Multiple safety mechanism failure | Simultaneous failure of curvature gain validation, gain limiting, and oscillation detection | Potential for unsafe steering behavior | Safe mode activation with `safe_mode_active` flag and monitoring | Comprehensive safe mode that reverts to standard PID control |
 | High safety limit trigger frequency | Continuous hitting of safety limits (e.g., due to aggressive tuning or challenging driving scenarios) | Reduced steering responsiveness, potential for degraded control | Runtime monitoring via `safety_limit_trigger_count` | Logging of warning messages when trigger count exceeds threshold, enabling identification of problematic configurations |
 | Safe mode activation | Multiple failures or invalid states detected | Reverts to standard PID control without curvature gain modification | `safe_mode_active` flag and `safe_mode_trigger_count` | Maintains basic PID control functionality while disabling potentially problematic curvature gain features |
+| Inappropriate safe mode recovery | Aggressive or conservative recovery time configuration | Either premature exit from safe mode or excessively long safe mode duration | Runtime monitoring and logs | Configurable `safe_mode_recovery_time` parameter with default of 5.0 seconds for balanced recovery |
+| Misconfigured safety thresholds | Improper safety limit threshold configuration | Either excessive safe mode activation or insufficient protection | Detailed logging of safety limit violations | Configurable parameters with appropriate default values and range validation |
 
 ## Safety Requirements
 

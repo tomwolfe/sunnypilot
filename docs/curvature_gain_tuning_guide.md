@@ -144,6 +144,25 @@ Default base limits based on vehicle characteristics:
 
 These defaults are then adjusted based on additional factors such as steering ratio and center of gravity for optimal safety and performance.
 
+### Safety Threshold Configuration
+
+The curvature gain system includes configurable safety thresholds that can be tuned for specific vehicle characteristics:
+
+- **Safety Limit Threshold**: Controls how frequently safety limits can be triggered before activating safe mode (default: 100)
+- **Safety Limit Time Window**: Time window in seconds for evaluating safety limit triggers (default: 60.0s)
+- **Safety Limit Recovery Threshold**: Threshold for safe mode recovery (default: half of safety limit threshold)
+- **Safe Mode Recovery Time**: Time in seconds required for stable operation before deactivating safe mode (default: 5.0s)
+
+These can be configured in the PID controller initialization to better suit specific vehicle dynamics and driving conditions.
+
+### Safe Mode Recovery Configuration
+
+The safe mode recovery process is now configurable with a `safe_mode_recovery_time` parameter (default: 5.0 seconds). This allows users to adjust how long the system must remain stable before automatically exiting safe mode:
+
+- **Shorter times (2.0-3.0s)**: Faster recovery for vehicles that tend to experience brief instability
+- **Standard times (5.0s)**: Balanced recovery time for most vehicles
+- **Longer times (8.0-10.0s)**: More conservative recovery for vehicles requiring extended stability verification
+
 
 ## Setting the Parameter
 

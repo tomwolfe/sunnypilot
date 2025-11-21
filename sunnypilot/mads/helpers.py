@@ -131,13 +131,14 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       base_curvature_limit = 0.1  # Default: 10m radius turn
 
       # Adjust based on vehicle's turning capability and safety characteristics
-      if CP.wheelbase > 3.0:  # Larger vehicles (trucks, SUVs) have larger turning radius
-        base_curvature_limit = 0.08  # 12.5m radius
-      elif CP.wheelbase < 2.4:  # Smaller vehicles (compact cars)
-        base_curvature_limit = 0.15  # 6.7m radius
+      if hasattr(CP, 'wheelbase') and CP.wheelbase > 0:
+        if CP.wheelbase > 3.0:  # Larger vehicles (trucks, SUVs) have larger turning radius
+          base_curvature_limit = 0.08  # 12.5m radius
+        elif CP.wheelbase < 2.4:  # Smaller vehicles (compact cars)
+          base_curvature_limit = 0.15  # 6.7m radius
 
       # Consider vehicle's steering ratio for sharper turns
-      if hasattr(CP, 'steerRatio') and CP.steerRatio is not None:
+      if hasattr(CP, 'steerRatio') and CP.steerRatio is not None and CP.steerRatio > 0:
         if CP.steerRatio > 16:  # Higher steering ratio = more responsive steering
           base_curvature_limit = min(base_curvature_limit * 1.2, 0.2)
         elif CP.steerRatio < 12:  # Lower steering ratio = less responsive steering
@@ -145,7 +146,8 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
 
       # Consider vehicle's center of gravity and stability characteristics
       # Higher center of gravity vehicles should have more conservative limits
-      if hasattr(CP, 'centerToFront') and CP.centerToFront is not None:
+      if (hasattr(CP, 'centerToFront') and CP.centerToFront is not None and
+          hasattr(CP, 'wheelbase') and CP.wheelbase > 0):  # Avoid division by zero
         # If the center is further towards the rear (more weight on rear),
         # adjust for possible oversteering characteristics
         front_weight_ratio = CP.centerToFront / CP.wheelbase
@@ -155,10 +157,14 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
           base_curvature_limit = max(base_curvature_limit * 0.9, 0.03)
 
       # Consider vehicle track width for stability (if available)
-      if hasattr(CP, 'wheelStrutOffset') and CP.wheelStrutOffset is not None:
-        # Wider track = more stability = can handle higher curvatures
-        if CP.wheelStrutOffset > 0.2:  # Wider track vehicles
-          base_curvature_limit = min(base_curvature_limit * 1.05, 0.2)
+      if hasattr(CP, 'wheelStrutOffset'):
+        try:
+          # Wider track = more stability = can handle higher curvatures
+          if CP.wheelStrutOffset > 0.2:  # Wider track vehicles
+            base_curvature_limit = min(base_curvature_limit * 1.05, 0.2)
+        except (AttributeError, TypeError):
+          # Some CarParams may not have wheelStrutOffset defined
+          pass
 
       # Consider vehicle mass distribution and overall mass
       if CP.mass > 2200:  # Heavy vehicles (SUVs, trucks) - reduce limits for safety
