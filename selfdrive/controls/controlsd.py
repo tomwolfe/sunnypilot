@@ -49,12 +49,12 @@ class Controls(ControlsExt, ModelStateBase):
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
     # Safety Threshold Definitions for overall_safety_score:
-    # 0.0-0.3: Immediate disengagement - System is in a critical state, immediate human intervention is required.
-    # 0.3-0.5: Strong intervention (reduced speed, conservative control) - System detects high risk, takes strong
+    # 0.0-0.2: Immediate disengagement - System is in a critical state, immediate human intervention is required.
+    # 0.2-0.4: Strong intervention (reduced speed, conservative control) - System detects high risk, takes strong
     #          measures to mitigate, but may not fully disengage.
-    # 0.5-0.7: Degraded mode (reduced acceleration, enhanced caution) - System is operating with reduced confidence,
+    # 0.4-0.6: Degraded mode (reduced acceleration, enhanced caution) - System is operating with reduced confidence,
     #          applies more cautious driving behaviors.
-    # 0.7+: Normal operation - System is functioning as expected with high confidence.
+    # 0.6+: Normal operation - System is functioning as expected with high confidence.
     #
     # Initialize configurable safety thresholds
     try:

@@ -73,15 +73,54 @@ class SafetyMonitor:
     try:
         model_confidence_multiplier_param = self.params.get("ModelConfidenceThresholdMultiplier")
         self.model_confidence_threshold_multiplier = float(model_confidence_multiplier_param) if model_confidence_multiplier_param else 0.8
+        # Add validation for multiplier to ensure it is within a valid range [0.5, 1.0]
+        if not (0.5 <= self.model_confidence_threshold_multiplier <= 1.0):
+            logging.warning(f"ModelConfidenceThresholdMultiplier {self.model_confidence_threshold_multiplier} out of valid range [0.5, 1.0]. Using default 0.8")
+            self.model_confidence_threshold_multiplier = 0.8
     except UnknownKeyName:
         self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter not found
     except (TypeError, ValueError):
         self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter is invalid type
     
+    # Curve anticipation parameters
+    try:
+        max_lat_accel_param = self.params.get("MaxLateralAcceleration")
+        self.max_lat_accel = float(max_lat_accel_param) if max_lat_accel_param else 2.0
+    except UnknownKeyName:
+        self.max_lat_accel = 2.0
+    except (TypeError, ValueError):
+        self.max_lat_accel = 2.0
+
+    try:
+        curve_threshold_param = self.params.get("CurveDetectionThreshold")
+        self.curve_detection_threshold = float(curve_threshold_param) if curve_threshold_param else 0.5
+    except UnknownKeyName:
+        self.curve_detection_threshold = 0.5
+    except (TypeError, ValueError):
+        self.curve_detection_threshold = 0.5
+
+    # Radar confidence parameters
+    try:
+        max_radar_distance_param = self.params.get("MaxRadarDistanceForConfidence")
+        self.max_radar_distance_for_confidence = float(max_radar_distance_param) if max_radar_distance_param else 150.0
+    except UnknownKeyName:
+        self.max_radar_distance_for_confidence = 150.0
+    except (TypeError, ValueError):
+        self.max_radar_distance_for_confidence = 150.0
+
+    try:
+        velocity_confidence_scale_param = self.params.get("VelocityConfidenceScale")
+        self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 100.0
+    except UnknownKeyName:
+        self.velocity_confidence_scale = 100.0
+    except (TypeError, ValueError):
+        self.velocity_confidence_scale = 100.0
+    
     # Environmental condition detection
     self.lighting_condition = "normal"  # "night", "dawn_dusk", "normal", "tunnel"
     self.weather_condition = "clear"    # "clear", "rain", "snow", "fog"
     self.road_condition = "dry"         # "dry", "wet", "icy", "snow"
+    self.in_tunnel = False # NEW: Tunnel detection state
     
     # Sensor fusion confidence scores
     self.camera_confidence = 1.0
@@ -124,14 +163,21 @@ class SafetyMonitor:
     if hasattr(radar_state_msg, 'leadOne') and radar_state_msg.leadOne.status:
       # Calculate confidence based on lead tracking quality with a continuous decay
       lead = radar_state_msg.leadOne
-      MAX_RADAR_DISTANCE_FOR_CONFIDENCE = 150.0  # Modern radar can detect leads at 150m+
-      distance_confidence = max(0.0, 1.0 - (abs(lead.dRel) / MAX_RADAR_DISTANCE_FOR_CONFIDENCE))
-      velocity_confidence = min(1.0, max(0.0, (100.0 - abs(lead.vRel)) / 100.0))
+      # Use configurable maximum radar distance for confidence calculation
+      distance_confidence = max(0.0, 1.0 - (abs(lead.dRel) / self.max_radar_distance_for_confidence))
+      # Use configurable velocity confidence scale
+      velocity_confidence = min(1.0, max(0.0, (self.velocity_confidence_scale - abs(lead.vRel)) / self.velocity_confidence_scale))
       # Add acceleration-based confidence component
       # Assuming lead.aRel exists and is populated in radar_state_msg.leadOne
-      acceleration_confidence = 1.0 # Default if aRel is not available
+      # Add acceleration-based confidence component
+      # The critical review suggests a fallback of 0.7 if aRel is not available.
+      acceleration_confidence = 0.7 # Default if aRel is not available
       if hasattr(lead, 'aRel') and lead.aRel is not None:
         acceleration_confidence = min(1.0, max(0.0, (5.0 - abs(lead.aRel)) / 5.0))
+      else:
+        # Use alternative metrics like lead position stability or a default value
+        # if actual acceleration is not available.
+        acceleration_confidence = 0.7
       self.radar_confidence = self.radar_confidence_filter.update(
         (distance_confidence * 0.5 + velocity_confidence * 0.3 + acceleration_confidence * 0.2)
       )
@@ -167,15 +213,28 @@ class SafetyMonitor:
     # Lighting condition detection - use a more sophisticated approach based on actual lighting data
     # Instead of just using model confidence, look for signs of tunnel lighting based on other indicators
 
-    # Lighting condition detection: Model confidence is not a reliable proxy for lighting.
-    # Without dedicated lighting sensors or camera-based luminance measurements,
+    # TODO: Enhance lighting detection by integrating camera luminance measurements from modelV2
+    # or dedicated lighting sensors.
+    # Current limitation: Model confidence from modelV2 does not provide direct luminance data.
+    # Without dedicated sensor inputs or advanced camera-based luminance analysis,
     # we default to 'normal' and log a warning.
-    # Future enhancement: Integrate actual lighting data when available.
-    logging.warning("Dedicated lighting detection data is not available. Defaulting to 'normal' lighting condition.")
+    # Future integration should consider:
+    # 1. Camera-based luminance estimation (e.g., from image statistics or model outputs).
+    # 2. Dedicated ambient light sensors.
+    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'normal' lighting condition.")
     self.lighting_condition = "normal"
+    # TODO: Implement robust tunnel detection.
     # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns).
     # This cannot be reliably inferred without proper camera-based analysis or dedicated sensors.
-    # For now, tunnel detection is not implemented until appropriate data sources are integrated.
+    # Potential approaches for future integration:
+    # 1. Analyze 'modelV2.laneLines' for consistent, strong lane detections without 'roadEdges' or 'sky' probabilities.
+    # 2. Integrate with lighting condition estimation (once available) for sudden drops in luminance.
+    # 3. Utilize GPS data if available for known tunnel locations.
+    self.in_tunnel = False # Default to not in tunnel
+    # Placeholder for future tunnel detection logic
+    # if (model_v2_msg and model_v2_msg.laneLines and
+    #     not model_v2_msg.roadEdges and not model_v2_msg.skyProbability):
+    #   self.in_tunnel = True
 
     # Weather condition detection based on IMU and car dynamics (improved approach)
     # Use livePose orientation instead of carControl (carControl doesn't have orientation data)
@@ -193,11 +252,13 @@ class SafetyMonitor:
       orientation_available = True
 
     if orientation_available:
-      # More sophisticated approach than just raw IMU values could use IMU data
-      # to detect sustained unusual angles that might indicate weather or road conditions.
-      # However, `acceleration_jerk_indicators` is not defined.
-      # For now, default to dry and clear conditions if orientation is available,
-      # until specific logic for road/weather condition detection from IMU is implemented.
+      # TODO: Implement robust weather and road condition detection using multiple sensor inputs.
+      # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
+      # Future integration should consider:
+      # - Rain: Wiper status (from carState if available), dedicated precipitation sensors, camera visibility metrics.
+      # - Snow: Ambient temperature (from external sensor or refined thermal model), wheel slip detection.
+      # - Fog: Camera visibility metrics, radar attenuation (if available).
+      # For now, default to dry and clear conditions, as accurate multi-sensor fusion is not yet implemented for weather/road.
       self.road_condition = "dry"
       self.weather_condition = "clear"
     else:
@@ -255,13 +316,12 @@ class SafetyMonitor:
               max_curvature_ahead = max(max_curvature_ahead, abs(local_curvature))
 
               # Early exit condition: if curvature is already very high, no need to check further
-              if max_curvature_ahead > 0.5: # Arbitrary high curvature threshold, needs tuning based on system behavior
+              if max_curvature_ahead > self.curve_detection_threshold: # Use configurable curve detection threshold
                 break
 
       # Calculate safe speed based on curvature
       if max_curvature_ahead > 0.001:  # Significant curve
-        max_lat_accel = 2.0  # Maximum lateral acceleration considered safe (reduced for safety/comfort)
-        safe_speed = (max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
+        safe_speed = (self.max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
 
         # Calculate anticipation score based on speed vs safe speed
         if car_state_msg.vEgo > 5.0:  # Only for meaningful speeds
