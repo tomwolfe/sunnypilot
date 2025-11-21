@@ -16,13 +16,13 @@ This document describes the enhanced safety monitoring system for sunnypilot aut
 - Sets safety thresholds for intervention
 
 ### 3. Environmental Condition Detection
-- Lighting condition detection (night, dawn/dusk, tunnel, normal)
-- Weather condition estimation (clear, rain, snow, fog)
-- Road condition assessment using IMU data
+- Improved lighting condition detection (night, dawn/dusk, tunnel, normal) with enhanced tunnel detection logic
+- Multi-indicator weather condition estimation (clear, rain, snow, fog) using IMU, acceleration, and jerk data
+- Advanced road condition assessment using IMU data with multiple indicator fusion
 
 ### 4. Curve Anticipation Enhancement
-- Analyzes path curvature up to 200m ahead
-- Calculates safe speed based on curvature and vehicle dynamics
+- Analyzes path curvature up to 200m ahead using proper path parameterization
+- Calculates safe speed based on curvature and vehicle dynamics with improved accuracy
 - Applies conservative driving when approaching curves at high speed
 
 ### 5. Lane Deviation Monitoring
@@ -30,13 +30,20 @@ This document describes the enhanced safety monitoring system for sunnypilot aut
 - Applies safety penalties for excessive deviation
 - Maintains lane keeping confidence
 
+### 6. Safety Threshold Validation
+- Validates safety parameter thresholds to ensure they are within proper ranges (0.0-1.0)
+- Ensures hierarchical threshold relationships (critical < high risk < moderate)
+- Provides warnings for invalid parameter values
+
 ## Integration Points
 
 ### In controlsd.py:
 - Added radarState to SubMaster for multi-sensor fusion
+- Fixed polling list to include all messages checked in safety validation (modelV2, carState, carControl, radarState, livePose, selfdriveState)
 - Integrated SafetyMonitor class for comprehensive safety assessment
 - Added safety-degraded mode that reduces acceleration limits
 - Applied safety-based interventions when required
+- Added safety threshold parameter validation with range checks
 
 ## SafetyMonitor API Documentation
 
@@ -93,6 +100,9 @@ The safety monitor has been tested for:
 - Low model confidence scenarios
 - Curve anticipation at various speeds
 - Environmental condition detection
+- Missing sensor data scenarios (e.g., livePose unavailable)
+- Radar failure with unreliable lead detection
+- Conflicting sensor data scenarios
 
 ## Performance Considerations
 

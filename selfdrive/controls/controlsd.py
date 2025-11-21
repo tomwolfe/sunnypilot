@@ -52,18 +52,34 @@ class Controls(ControlsExt, ModelStateBase):
     try:
         critical_threshold_param = self.params.get("SafetyCriticalThreshold")
         self.safety_critical_threshold = float(critical_threshold_param) if critical_threshold_param else 0.2
+        # Add range validation: critical threshold should be between 0 and 1
+        if self.safety_critical_threshold < 0.0 or self.safety_critical_threshold > 1.0:
+            cloudlog.warning(f"Invalid SafetyCriticalThreshold: {self.safety_critical_threshold}, using default 0.2")
+            self.safety_critical_threshold = 0.2
     except (TypeError, ValueError):
         self.safety_critical_threshold = 0.2  # Default value if parameter is invalid type
 
     try:
         high_risk_threshold_param = self.params.get("SafetyHighRiskThreshold")
         self.safety_high_risk_threshold = float(high_risk_threshold_param) if high_risk_threshold_param else 0.4
+        # Add range validation: high risk threshold should be between 0 and 1 and greater than critical
+        if (self.safety_high_risk_threshold < 0.0 or
+            self.safety_high_risk_threshold > 1.0 or
+            self.safety_high_risk_threshold <= self.safety_critical_threshold):
+            cloudlog.warning(f"Invalid SafetyHighRiskThreshold: {self.safety_high_risk_threshold}, using default 0.4")
+            self.safety_high_risk_threshold = 0.4
     except (TypeError, ValueError):
         self.safety_high_risk_threshold = 0.4  # Default value if parameter is invalid type
 
     try:
         moderate_risk_threshold_param = self.params.get("SafetyModerateRiskThreshold")
         self.safety_moderate_risk_threshold = float(moderate_risk_threshold_param) if moderate_risk_threshold_param else 0.6
+        # Add range validation: moderate threshold should be between 0 and 1 and greater than high risk
+        if (self.safety_moderate_risk_threshold < 0.0 or
+            self.safety_moderate_risk_threshold > 1.0 or
+            self.safety_moderate_risk_threshold <= self.safety_high_risk_threshold):
+            cloudlog.warning(f"Invalid SafetyModerateRiskThreshold: {self.safety_moderate_risk_threshold}, using default 0.6")
+            self.safety_moderate_risk_threshold = 0.6
     except (TypeError, ValueError):
         self.safety_moderate_risk_threshold = 0.6  # Default value if parameter is invalid type
 
@@ -71,7 +87,7 @@ class Controls(ControlsExt, ModelStateBase):
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
                                    'radarState'] + self.sm_services_ext,
-                                  poll=['selfdriveState', 'radarState', 'livePose'])
+                                  poll=['selfdriveState', 'radarState', 'livePose', 'modelV2', 'carState', 'carControl'])
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
     self.steer_limited_by_safety = False

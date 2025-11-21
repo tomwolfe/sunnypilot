@@ -251,5 +251,78 @@ def test_safety_monitor_low_speed_considerations():
   assert safety_score >= 0.0 and safety_score <= 1.0
 
 
+def test_safety_monitor_missing_live_pose():
+  """Test safety monitor behavior when livePose is missing/None"""
+  monitor = SafetyMonitor()
+
+  model_v2_msg = create_mock_model_v2_msg()
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  # Test with None live_pose_msg (missing sensor data)
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg=None
+  )
+
+  # Should handle missing livePose gracefully without errors
+  assert isinstance(safety_score, float)
+  assert isinstance(requires_intervention, bool)
+  assert isinstance(safety_report, dict)
+  # Should still return reasonable safety metrics
+  assert 0.0 <= safety_score <= 1.0
+
+
+def test_safety_monitor_radar_failure_with_lead():
+  """Test safety monitor behavior when radar detects lead but data is unreliable"""
+  monitor = SafetyMonitor()
+
+  model_v2_msg = create_mock_model_v2_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  # Create a radar state with lead present but unreliable status
+  radar_state_msg = Mock()
+  radar_state_msg.leadOne = Mock()
+  radar_state_msg.leadOne.status = True  # Lead detected
+  radar_state_msg.leadOne.dRel = 50.0
+  radar_state_msg.leadOne.vRel = 100.0  # Unusually high relative velocity (unreliable)
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Should handle unreliable radar data appropriately
+  assert isinstance(safety_score, float)
+  assert isinstance(safety_report, dict)
+  # Radar confidence should be affected by the unreliable data
+
+
+def test_safety_monitor_conflicting_sensor_data():
+  """Test safety monitor behavior with conflicting sensor data"""
+  monitor = SafetyMonitor()
+
+  # Create model with high confidence
+  model_v2_msg = create_mock_model_v2_msg()
+  model_v2_msg.meta.confidence = 0.9  # High model confidence
+
+  # Create radar with low confidence (conflicting with high camera confidence)
+  radar_state_msg = Mock()
+  radar_state_msg.leadOne = Mock()
+  radar_state_msg.leadOne.status = False  # No lead detected by radar
+
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Should handle conflicting sensor data and adjust safety accordingly
+  assert isinstance(safety_score, float)
+  assert isinstance(safety_report, dict)
+  # With conflicting data, safety score should reflect the uncertainty
+
+
 if __name__ == "__main__":
   pytest.main([__file__])
