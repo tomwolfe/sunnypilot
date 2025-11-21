@@ -3,102 +3,82 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include <map>
 
+#include "tools/cabana/streams/abstractstream.h"
+#include "tools/cabana/dbc/dbcmanager.h"
+#include "tools/cabana/utils/eventmanager.h"
 // Define OPENPILOT_RAYLIB before including raylib to prevent enum conflicts
 #define OPENPILOT_RAYLIB
 #include "third_party/raylib/include/raylib.h"
 
-#include "tools/cabana/dbc/dbcmanager.h"
-
-// Data structure for chart points
-struct ChartPoint {
-    double x;  // Time or index
-    double y;  // Value
-    MessageId msg_id;  // Associated message ID
-    std::string signal_name;  // Associated signal name
+// Data point for signal visualization
+struct SignalDataPoint {
+  double time;    // time in seconds
+  double value;   // signal value
+  SignalDataPoint(double t, double v) : time(t), value(v) {}
 };
 
-// Chart configuration
-struct ChartConfig {
-    std::string title = "Chart";
-    std::string x_label = "Time";
-    std::string y_label = "Value";
-    bool auto_scale = true;
-    double min_y = 0.0;
-    double max_y = 100.0;
-    Color line_color = {0, 121, 241, 255}; // BLUE in RGB format
-    bool show_grid = true;
-    bool show_legend = true;
-};
-
-// Raylib-based ChartsWidget
+// Signal visualization chart widget
 class ChartsWidget {
 public:
-    ChartsWidget(void* parent = nullptr);
-    ~ChartsWidget();
+  ChartsWidget(void* parent = nullptr);  // parent is just for API compatibility
+  ~ChartsWidget();
 
-    void update();
-    void render(const Rectangle& bounds);
-    void handleInput();
+  void update();
+  void render(const Rectangle& bounds);
+  void handleInput();
 
-    // Chart management
-    void addSignalToChart(const MessageId& msg_id, const std::string& signal_name);
-    void removeSignalFromChart(const MessageId& msg_id, const std::string& signal_name);
-    void clearChart();
-    void setChartConfig(const ChartConfig& config);
+  // Set the signal to visualize
+  void setSignal(const MessageId& msg_id, const std::string& signal_name);
+  void setStream(AbstractStream* stream);
+  
+  // Add data point to the chart
+  void addDataPoint(double time, double value);
+  
+  // Clear all data
+  void clear();
 
-    // Data management
-    void addDataPoint(const ChartPoint& point);
-    void addDataPoints(const std::vector<ChartPoint>& points);
-
-    // UI state management
-    void setIsDocked(bool docked) { is_docked_ = docked; }
-    bool getIsDocked() const { return is_docked_; }
-
-    // Signals equivalent
-    std::function<void()> onToggleChartsDocking;
-    std::function<void(double)> onShowTip;
+  // Accessor methods for UI state
+  void setTitle(const std::string& title);
 
 private:
-    void drawChartGrid(const Rectangle& chart_area);
-    void drawChartData(const Rectangle& chart_area);
-    void drawChartAxes(const Rectangle& chart_area);
-    void drawLegend(const Rectangle& bounds);
+  void drawChart(const Rectangle& bounds);
+  void drawAxes(const Rectangle& bounds);
+  void drawGrid(const Rectangle& bounds);
+  void drawSignal(const Rectangle& bounds);
+  void updateDataRange();
+  void handleMouseInteraction();
 
-    std::vector<ChartPoint> data_points_;
-    std::map<std::string, std::vector<ChartPoint>> signal_data_;  // Group data by signal
-    ChartConfig chart_config_;
-
-    Rectangle bounds_;
-    bool is_visible_ = true;
-    bool is_docked_ = true;
-
-    // UI interaction state
-    Vector2 last_mouse_pos_ = {0, 0};
-    bool is_dragging_ = false;
-    bool is_zooming_ = false;
-
-    // Chart view state
-    double x_min_ = 0.0;
-    double x_max_ = 100.0;
-    double y_min_ = 0.0;
-    double y_max_ = 100.0;
-    double x_offset_ = 0.0;
-    double y_offset_ = 0.0;
-    double zoom_factor_ = 1.0;
-
-    // Colors for different signals
-    std::vector<Color> signal_colors_ = {
-        {0, 121, 241, 255},    // BLUE
-        {230, 41, 55, 255},    // RED
-        {0, 158, 47, 255},     // GREEN
-        {253, 249, 0, 255},    // YELLOW
-        {191, 140, 242, 255},  // PURPLE
-        {255, 161, 0, 255},    // ORANGE
-        {255, 109, 194, 255},  // PINK
-        {0, 82, 172, 255},     // DARKBLUE
-        {0, 104, 92, 255},     // DARKGREEN
-        {190, 96, 75, 255}     // MAROON
-    };
+  std::string title = "SIGNAL CHART";
+  std::vector<SignalDataPoint> data_points_;
+  
+  // Range of data
+  double min_time_ = 0.0;
+  double max_time_ = 10.0;
+  double min_value_ = -1.0;
+  double max_value_ = 1.0;
+  
+  // Viewport settings
+  double time_offset_ = 0.0;
+  double value_offset_ = 0.0;
+  double time_scale_ = 1.0;
+  double value_scale_ = 1.0;
+  
+  // UI state
+  Rectangle bounds_;
+  bool is_visible = true;
+  
+  // Interaction state
+  Vector2 last_mouse_pos = {0, 0};
+  bool is_panning = false;
+  bool is_zooming = false;
+  
+  // Current signal being visualized
+  MessageId current_msg_id_{0, 0};
+  std::string current_signal_name_;
+  AbstractStream* stream_ = nullptr;
+  
+  // For tracking stream data
+  uint64_t event_subscription_id_ = 0;
+  bool connected_to_stream_ = false;
 };

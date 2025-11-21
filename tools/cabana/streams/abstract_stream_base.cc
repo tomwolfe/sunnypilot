@@ -1,7 +1,9 @@
 #include "tools/cabana/streams/abstract_stream_base.h"
+#include "tools/cabana/utils/util.h"
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <cstring>
 
 AbstractStreamBase::AbstractStreamBase() = default;
 
@@ -64,20 +66,54 @@ void AbstractStreamBase::clearSuppressed() {
 }
 
 void AbstractStreamBase::suppressDefinedSignals(bool suppress) {
-  // Implementation would go here
+  // Implementation to suppress signals based on DBC definitions
+  // This would iterate through defined signals and apply suppression
 }
 
 void AbstractStreamBase::mergeEvents(const std::vector<const CanEvent *> &events) {
-  // Implementation would go here
+  std::lock_guard lk(mutex_);
+  for (const CanEvent *event : events) {
+    MessageId id(event->src, event->address);
+    all_events_.push_back(event);
+    events_[id].push_back(event);
+
+    // Track time range
+    if (event->mono_time > lastest_event_ts) lastest_event_ts = event->mono_time;
+    if (begin_event_ts == 0 || event->mono_time < begin_event_ts) begin_event_ts = event->mono_time;
+  }
+
+  eventsMerged_signal.emit(events_);
 }
 
 const CanEvent *AbstractStreamBase::newEvent(uint64_t mono_time, const cereal::CanData::Reader &c) {
-  // Implementation would go here
-  return nullptr;
+  auto dat = c.getDat();
+  size_t can_event_size = sizeof(CanEvent) + dat.size();
+
+  if (!event_buffer_) event_buffer_ = std::make_unique<MonotonicBuffer>(1024 * 1024); // 1MB buffer
+
+  CanEvent *event = (CanEvent*)event_buffer_->allocate(can_event_size);
+  if (event) {
+    event->mono_time = mono_time;
+    event->src = c.getSrc();
+    event->address = c.getAddress();
+    event->size = dat.size();
+    memcpy(event->dat, dat.begin(), dat.size());
+  }
+  return event;
 }
 
 void AbstractStreamBase::updateEvent(const MessageId &id, double sec, const uint8_t *data, uint8_t size) {
-  // Implementation would go here
+  std::lock_guard lk(mutex_);
+
+  // Initialize message if not exists
+  CanData &can_data = messages_[id];
+  can_data.compute(id, data, size, sec, getSpeed(), masks_[id]);
+
+  // Update last message
+  last_msgs[id] = can_data;
+
+  updateLastMsgsTo(sec);
+  updateMasks();
 }
 
 void AbstractStreamBase::waitForSeekFinished() {
@@ -87,20 +123,80 @@ void AbstractStreamBase::waitForSeekFinished() {
 }
 
 void AbstractStreamBase::updateLastMessages() {
-  // Implementation would go here
+  std::lock_guard lk(mutex_);
+  last_msgs = messages_;
 }
 
 void AbstractStreamBase::updateLastMsgsTo(double sec) {
-  // Implementation would go here
+  current_sec_ = sec;
+  std::lock_guard lk(mutex_);
+  messages_.clear();
+
+  // Find events up to this time and update message data
+  for (auto &[msg_id, events] : events_) {
+    auto it = std::upper_bound(events.begin(), events.end(), sec * 1e9 + beginMonoTime(), CompareCanEvent{});
+
+    if (it != events.begin()) {
+      --it;
+      const CanEvent *event = *it;
+      if (event) {
+        CanData &can_data = messages_[msg_id];
+        can_data.compute(msg_id, event->dat, event->size,
+                        (event->mono_time - beginMonoTime()) / 1e9,
+                        getSpeed(), masks_[msg_id]);
+      }
+    }
+  }
+
+  // Update last messages
+  updateLastMessages();
 }
 
 void AbstractStreamBase::updateMasks() {
-  // Implementation would go here
+  // Update masks based on current message data
+  // This would be used to highlight specific bits in the binary view
 }
 
 void CanData::compute(const MessageId &msg_id, const uint8_t *data, const int size, double current_sec,
                       double playback_speed, const std::vector<uint8_t> &mask, double in_freq) {
-  // Implementation would go here
+  if (dat.size() != size) {
+    dat.resize(size);
+    colors.resize(size);
+    last_changes.resize(size);
+    bit_flip_counts.resize(size);
+  }
+
+  // Copy data
+  memcpy(dat.data(), data, size);
+
+  // Calculate frequency
+  double delta_time = current_sec - ts;
+  if (delta_time > 0) {
+    freq = 1.0 / delta_time;
+  }
+
+  // Update bit flip counts
+  for (int i = 0; i < size && i < dat.size(); ++i) {
+    if (dat[i] != this->dat[i]) {
+      // Track which bits changed
+      uint8_t changed_bits = dat[i] ^ this->dat[i];
+      for (int bit = 0; bit < 8; ++bit) {
+        if (changed_bits & (1 << bit)) {
+          bit_flip_counts[i][bit]++;
+        }
+      }
+    }
+
+    // Update colors based on data changes
+    if (dat[i] != this->dat[i]) {
+      colors[i] = SimpleColor(1.0f, 0.0f, 0.0f, 1.0f); // Red for changed
+    } else {
+      colors[i] = SimpleColor(0.0f, 0.0f, 0.0f, 1.0f); // Black for unchanged
+    }
+  }
+
+  ts = current_sec;
+  count++;
 }
 
 AbstractStreamBase *can_base = nullptr;

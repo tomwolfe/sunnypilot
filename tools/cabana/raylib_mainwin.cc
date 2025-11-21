@@ -3,23 +3,48 @@
 #include "tools/cabana/raylib_messageswidget.h"
 #include "tools/cabana/raylib_chartswidget.h"
 #include "tools/cabana/raylib_centerwidget.h"
+#include "tools/cabana/streams/abstractstream.h"
+#include "tools/cabana/utils/logger.h"
 
 #include <iostream>
 
+extern AbstractStream *can; // Global stream pointer
+
 CabanaMainWindow::CabanaMainWindow() {
+  Logger::instance().info("MAIN_WINDOW", "Initializing CabanaMainWindow");
   // Initialize Raylib window components
   InitWindow(1200, 800, "Cabana - Raylib Version");
   SetTargetFPS(60);
 
   // Initialize UI components
   createUIComponents();
+
+  // Connect UI components to stream if available
+  if (can) {
+    Logger::instance().info("MAIN_WINDOW", "Connecting UI components to stream");
+    if (messages_widget) {
+      messages_widget->connectToStream(can);
+    }
+    // Connect other widgets to stream as needed
+  } else {
+    Logger::instance().warning("MAIN_WINDOW", "No stream available to connect to");
+  }
+  Logger::instance().info("MAIN_WINDOW", "CabanaMainWindow initialized successfully");
 }
 
 CabanaMainWindow::~CabanaMainWindow() {
+  Logger::instance().info("MAIN_WINDOW", "Destroying CabanaMainWindow");
+  // Disconnect widgets from stream
+  if (messages_widget) {
+    messages_widget->disconnectFromStream();
+  }
+  // Disconnect other widgets
+
   // Cleanup UI components
   if (IsWindowReady()) {
     CloseWindow();
   }
+  Logger::instance().info("MAIN_WINDOW", "CabanaMainWindow destroyed");
 }
 
 void CabanaMainWindow::createUIComponents() {
@@ -42,7 +67,7 @@ void CabanaMainWindow::run() {
   while (!WindowShouldClose() && running) {
     // Update the application
     update();
-    
+
     // Render the UI
     render();
   }
@@ -51,23 +76,23 @@ void CabanaMainWindow::run() {
 void CabanaMainWindow::update() {
   // Update UI components
   handleInput();
-  
+
   if (messages_widget) {
     messages_widget->update();
   }
-  
+
   if (video_widget) {
     video_widget->update();
   }
-  
+
   if (charts_widget) {
     charts_widget->update();
   }
-  
+
   if (center_widget) {
     center_widget->update();
   }
-  
+
   // Update status timeout
   if (status_timeout > 0) {
     double current_time = GetTime();
@@ -122,7 +147,7 @@ void CabanaMainWindow::handleInput() {
     is_fullscreen = !is_fullscreen;
     ToggleFullscreen();
   }
-  
+
   if (IsKeyPressed(KEY_ESCAPE)) {
     running = false;
   }
@@ -148,6 +173,6 @@ void CabanaUIElement::setSize(float width, float height) {
   bounds.height = height;
 }
 
-CabanaUIElement::CabanaUIElement(float x, float y, float width, float height) 
+CabanaUIElement::CabanaUIElement(float x, float y, float width, float height)
   : bounds({x, y, width, height}), isVisible(true) {
 }

@@ -1,5 +1,6 @@
 #include "raylib_settings_dialog.h"
 #include "utils/util.h"
+#include "tools/cabana/utils/filebrowserdialog.h"
 #include <iostream>
 
 // Global instance
@@ -62,8 +63,15 @@ void SettingsDlg::update() {
     }
     // Check browse button
     else if (CheckCollisionPointRec(mousePoint, browseButtonBounds)) {
-      // For now, simulate a path selection (in a real implementation, this would use a file dialog)
-      logPath = "/home/user/cabana_logs";  // Placeholder - would be actual file dialog result
+      // Show directory browser dialog
+      if (fileBrowserDialog == nullptr) {
+        fileBrowserDialog = new FileBrowserDialog();
+      }
+
+      std::string selected_path = fileBrowserDialog->browseDirectory("Select Log Directory", logPath);
+      if (!selected_path.empty()) {
+        logPath = selected_path;
+      }
     }
     // Check OK button
     else if (CheckCollisionPointRec(mousePoint, okButtonBounds)) {

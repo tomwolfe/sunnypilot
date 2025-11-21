@@ -1,313 +1,316 @@
 #include "raylib_chartswidget.h"
-#include <cmath>  // for sin function
+#include <algorithm>
+#include <cmath>
 
 ChartsWidget::ChartsWidget(void* parent) {
-    // Initialize with default chart configuration
-    chart_config_.title = "CAN Signal Charts";
-    chart_config_.x_label = "Time (s)";
-    chart_config_.y_label = "Value";
-    chart_config_.auto_scale = true;
-    chart_config_.line_color = RAYLIB_BLUE;
-    chart_config_.show_grid = true;
-    chart_config_.show_legend = true;
-    
-    // Add some sample data for demonstration
-    for (int i = 0; i < 100; ++i) {
-        ChartPoint point;
-        point.x = i * 0.1;  // 0.1 second intervals
-        point.y = std::sin(i * 0.1) * 50 + 50;  // Sine wave
-        point.msg_id = {0, 0x100};  // Example message ID
-        point.signal_name = "STEERING_ANGLE";
-        data_points_.push_back(point);
-        
-        // Add to signal-specific data
-        signal_data_["STEERING_ANGLE"].push_back(point);
-    }
+  // Initialize with some sample data
+  clear();
 }
 
-ChartsWidget::~ChartsWidget() = default;
+ChartsWidget::~ChartsWidget() {
+  if (connected_to_stream_) {
+    if (stream_ && event_subscription_id_ != 0) {
+      // Note: We don't have a direct way to unsubscribe from all events in the current setup
+      // This would need to be handled by the event system design
+    }
+  }
+}
 
 void ChartsWidget::update() {
-    // Update chart state
-    if (chart_config_.auto_scale) {
-        // Auto-scale y-axis based on data
-        if (!data_points_.empty()) {
-            y_min_ = data_points_[0].y;
-            y_max_ = data_points_[0].y;
-            
-            for (const auto& point : data_points_) {
-                if (point.y < y_min_) y_min_ = point.y;
-                if (point.y > y_max_) y_max_ = point.y;
-            }
-            
-            // Add some padding
-            double range = y_max_ - y_min_;
-            if (range > 0) {
-                y_min_ -= range * 0.05;
-                y_max_ += range * 0.05;
-            } else {
-                y_min_ -= 1.0;
-                y_max_ += 1.0;
-            }
-        }
-    }
+  handleMouseInteraction();
+  updateDataRange();
 }
 
 void ChartsWidget::render(const Rectangle& bounds) {
-    if (!is_visible_) return;
-    
-    bounds_ = bounds;
-    
-    // Draw panel background
-    DrawRectangleRec(bounds, Color{250, 250, 250, 255}); // Light background
-    DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
+  if (!is_visible) return;
 
-    // Draw title
-    DrawText(chart_config_.title.c_str(), bounds.x + 10, bounds.y + 5, 16, RAYLIB_DARKGRAY);
+  bounds_ = bounds;
 
-    // Calculate chart area (leaving space for labels and legend)
-    Rectangle chart_area = {bounds.x + 60, bounds.y + 30, bounds.width - 80, bounds.height - 70};
-    if (chart_config_.show_legend) {
-        chart_area.height -= 40;  // Make room for legend
-    }
+  // Draw panel background
+  DrawRectangleRec(bounds, Color{240, 240, 240, 255}); // Light gray
+  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
-    // Draw chart background
-    DrawRectangleRec(chart_area, RAYLIB_RAYWHITE);
-    DrawRectangleLines(chart_area.x, chart_area.y, chart_area.width, chart_area.height, RAYLIB_GRAY);
+  // Draw title
+  DrawText(title.c_str(), bounds.x + 10, bounds.y + 5, 14, (Color){64, 64, 64, 255}); // DARKGRAY in RGB
 
-    // Draw grid if enabled
-    if (chart_config_.show_grid) {
-        drawChartGrid(chart_area);
-    }
+  // Draw chart area
+  Rectangle chart_bounds = {
+    bounds.x + 60,  // Leave space for Y-axis labels
+    bounds.y + 20,  // Below title
+    bounds.width - 60 - 20, // Leave space for Y-axis and scrollbar
+    bounds.height - 40      // Leave space for X-axis and bottom
+  };
+  
+  // Draw chart background
+  DrawRectangleRec(chart_bounds, WHITE);
+  DrawRectangleLines(chart_bounds.x, chart_bounds.y, chart_bounds.width, chart_bounds.height, (Color){200, 200, 200, 255});
 
-    // Draw axes
-    drawChartAxes(chart_area);
+  // Draw grid and axes
+  drawGrid(chart_bounds);
+  drawAxes(chart_bounds);
 
-    // Draw chart data
-    drawChartData(chart_area);
-
-    // Draw legend if enabled
-    if (chart_config_.show_legend) {
-        drawLegend(bounds);
-    }
-
-    // Draw axis labels
-    DrawText(chart_config_.x_label.c_str(),
-             bounds.x + bounds.width / 2 - MeasureText(chart_config_.x_label.c_str(), 10) / 2,
-             bounds.y + bounds.height - 20, 10, RAYLIB_DARKGRAY);
-             
-    // Rotate and draw Y label
-    // For simplicity, we'll just draw it normally; in a full implementation we'd rotate it
-    DrawText(chart_config_.y_label.c_str(), bounds.x + 5, bounds.y + bounds.height / 2, 10, RAYLIB_DARKGRAY);
+  // Draw the signal data
+  if (!data_points_.empty()) {
+    drawSignal(chart_bounds);
+  }
 }
 
-void ChartsWidget::drawChartGrid(const Rectangle& chart_area) {
-    // Draw horizontal grid lines
-    int grid_lines = 10;
-    for (int i = 1; i < grid_lines; ++i) {
-        float y = chart_area.y + (chart_area.height * i) / grid_lines;
-        DrawLine(chart_area.x, y, chart_area.x + chart_area.width, y, RAYLIB_LIGHTGRAY);
-    }
-
-    // Draw vertical grid lines
-    for (int i = 1; i < grid_lines; ++i) {
-        float x = chart_area.x + (chart_area.width * i) / grid_lines;
-        DrawLine(x, chart_area.y, x, chart_area.y + chart_area.height, RAYLIB_LIGHTGRAY);
-    }
+void ChartsWidget::drawGrid(const Rectangle& bounds) {
+  // Draw grid lines
+  const int num_vertical_lines = 10;
+  const int num_horizontal_lines = 5;
+  
+  // Vertical grid lines (time)
+  for (int i = 1; i < num_vertical_lines; i++) {
+    float x = bounds.x + (bounds.width * i / num_vertical_lines);
+    DrawLine(x, bounds.y, x, bounds.y + bounds.height, (Color){230, 230, 230, 255});
+  }
+  
+  // Horizontal grid lines (value)
+  for (int i = 1; i < num_horizontal_lines; i++) {
+    float y = bounds.y + (bounds.height * i / num_horizontal_lines);
+    DrawLine(bounds.x, y, bounds.x + bounds.width, y, (Color){230, 230, 230, 255});
+  }
 }
 
-void ChartsWidget::drawChartAxes(const Rectangle& chart_area) {
-    // Draw X and Y axes
-    DrawLine(chart_area.x, chart_area.y + chart_area.height,
-             chart_area.x + chart_area.width, chart_area.y + chart_area.height, RAYLIB_BLACK);  // X-axis
-    DrawLine(chart_area.x, chart_area.y,
-             chart_area.x, chart_area.y + chart_area.height, RAYLIB_BLACK);  // Y-axis
-
-    // Draw axis ticks and labels
-    // X-axis labels
-    for (int i = 0; i <= 5; ++i) {
-        float x = chart_area.x + (chart_area.width * i) / 5;
-        DrawLine(x, chart_area.y + chart_area.height, x, chart_area.y + chart_area.height + 5, RAYLIB_BLACK);
-
-        double value = x_min_ + (x_max_ - x_min_) * i / 5;
-        char label[32];
-        snprintf(label, sizeof(label), "%.1f", value);
-        DrawText(label, x - 10, chart_area.y + chart_area.height + 8, 8, RAYLIB_DARKGRAY);
+void ChartsWidget::drawAxes(const Rectangle& bounds) {
+  // Draw X and Y axes
+  DrawLine(bounds.x, bounds.y + bounds.height, bounds.x + bounds.width, bounds.y + bounds.height, BLACK); // X-axis
+  DrawLine(bounds.x, bounds.y, bounds.x, bounds.y + bounds.height, BLACK); // Y-axis
+  
+  // Draw axis labels if we have data
+  if (!data_points_.empty()) {
+    char label_buffer[50];
+    
+    // X-axis labels (time)
+    float time_step = (max_time_ - min_time_) / 5;
+    for (int i = 0; i <= 5; i++) {
+      float time_val = min_time_ + time_step * i;
+      snprintf(label_buffer, sizeof(label_buffer), "%.1fs", time_val);
+      float x_pos = bounds.x + (bounds.width * i / 5);
+      DrawText(label_buffer, x_pos - 15, bounds.y + bounds.height + 5, 8, BLACK);
     }
-
-    // Y-axis labels
-    for (int i = 0; i <= 5; ++i) {
-        float y = chart_area.y + chart_area.height - (chart_area.height * i) / 5;
-        DrawLine(chart_area.x - 5, y, chart_area.x, y, RAYLIB_BLACK);
-
-        double value = y_min_ + (y_max_ - y_min_) * i / 5;
-        char label[32];
-        snprintf(label, sizeof(label), "%.1f", value);
-        int label_width = MeasureText(label, 8);
-        DrawText(label, chart_area.x - label_width - 8, y - 5, 8, RAYLIB_DARKGRAY);
+    
+    // Y-axis labels (value)
+    float value_step = (max_value_ - min_value_) / 5;
+    for (int i = 0; i <= 5; i++) {
+      float value_val = min_value_ + value_step * i;
+      snprintf(label_buffer, sizeof(label_buffer), "%.2f", value_val);
+      float y_pos = bounds.y + bounds.height - (bounds.height * i / 5);
+      DrawText(label_buffer, bounds.x - 35, y_pos - 5, 8, BLACK);
     }
+  }
 }
 
-void ChartsWidget::drawChartData(const Rectangle& chart_area) {
-    if (data_points_.empty()) return;
+void ChartsWidget::drawSignal(const Rectangle& bounds) {
+  if (data_points_.size() < 2) return;
+  
+  // Draw the signal as a line
+  for (size_t i = 1; i < data_points_.size(); i++) {
+    const auto& pt1 = data_points_[i-1];
+    const auto& pt2 = data_points_[i];
     
-    // Determine the range of data to display based on current view
-    double data_x_min = data_points_.front().x;
-    double data_x_max = data_points_.back().x;
+    // Convert data coordinates to screen coordinates
+    float x1 = bounds.x + ((pt1.time - min_time_) / (max_time_ - min_time_)) * bounds.width;
+    float y1 = bounds.y + bounds.height - ((pt1.value - min_value_) / (max_value_ - min_value_)) * bounds.height;
+    float x2 = bounds.x + ((pt2.time - min_time_) / (max_time_ - min_time_)) * bounds.width;
+    float y2 = bounds.y + bounds.height - ((pt2.value - min_value_) / (max_value_ - min_value_)) * bounds.height;
     
-    // Map data values to screen coordinates
-    auto mapX = [&](double value) -> float {
-        return chart_area.x + ((value - data_x_min) / (data_x_max - data_x_min)) * chart_area.width;
-    };
-    
-    auto mapY = [&](double value) -> float {
-        return chart_area.y + chart_area.height - ((value - y_min_) / (y_max_ - y_min_)) * chart_area.height;
-    };
-    
-    // Draw each signal's data
-    int signal_index = 0;
-    for (const auto& [signal_name, points] : signal_data_) {
-        Color color = signal_colors_[signal_index % signal_colors_.size()];
-        
-        // Draw the line connecting points
-        if (points.size() > 1) {
-            for (size_t i = 1; i < points.size(); ++i) {
-                Vector2 start = {mapX(points[i-1].x), mapY(points[i-1].y)};
-                Vector2 end = {mapX(points[i].x), mapY(points[i].y)};
-                
-                // Only draw if both points are within chart area
-                if (start.x >= chart_area.x && start.x <= chart_area.x + chart_area.width &&
-                    end.x >= chart_area.x && end.x <= chart_area.x + chart_area.width) {
-                    DrawLineV(start, end, color);
-                }
-            }
-        }
-        
-        // Draw data points
-        for (const auto& point : points) {
-            Vector2 pos = {mapX(point.x), mapY(point.y)};
-            if (pos.x >= chart_area.x && pos.x <= chart_area.x + chart_area.width &&
-                pos.y >= chart_area.y && pos.y <= chart_area.y + chart_area.height) {
-                DrawCircleV(pos, 2, color);
-            }
-        }
-        
-        signal_index++;
+    // Only draw if points are within bounds
+    if (x1 >= bounds.x && x1 <= bounds.x + bounds.width &&
+        x2 >= bounds.x && x2 <= bounds.x + bounds.width) {
+      DrawLine(x1, y1, x2, y2, BLUE);
     }
-}
-
-void ChartsWidget::drawLegend(const Rectangle& bounds) {
-    // Draw legend at the bottom of the chart
-    Rectangle legend_area = {bounds.x + 10, bounds.y + bounds.height - 35, bounds.width - 20, 30};
-    
-    // Background for legend
-    DrawRectangleRec(legend_area, Color{240, 240, 240, 255});
-    DrawRectangleLines(legend_area.x, legend_area.y, legend_area.width, legend_area.height, RAYLIB_LIGHTGRAY);
-
-    int signal_index = 0;
-    int current_x = legend_area.x + 5;
-
-    for (const auto& [signal_name, points] : signal_data_) {
-        if (signal_index >= 5) break;  // Limit number of items in legend for space
-
-        Color color = signal_colors_[signal_index % signal_colors_.size()];
-
-        // Draw color indicator
-        DrawRectangle(current_x, legend_area.y + 10, 10, 10, color);
-
-        // Draw signal name
-        DrawText(signal_name.c_str(), current_x + 15, legend_area.y + 8, 10, RAYLIB_DARKGRAY);
-        
-        current_x += 15 + MeasureText(signal_name.c_str(), 10) + 10;
-        signal_index++;
-    }
+  }
+  
+  // Highlight the last point
+  if (!data_points_.empty()) {
+    const auto& last_pt = data_points_.back();
+    float x = bounds.x + ((last_pt.time - min_time_) / (max_time_ - min_time_)) * bounds.width;
+    float y = bounds.y + bounds.height - ((last_pt.value - min_value_) / (max_value_ - min_value_)) * bounds.height;
+    DrawCircle(x, y, 3, RED);
+  }
 }
 
 void ChartsWidget::handleInput() {
+  // Handle mouse input for interaction
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
     Vector2 mouse_pos = GetMousePosition();
-    
-    // Handle zooming with mouse wheel
-    float wheel_move = GetMouseWheelMove();
-    if (wheel_move != 0 && CheckCollisionPointRec(mouse_pos, bounds_)) {
-        is_zooming_ = true;
-        float zoom_factor = wheel_move > 0 ? 1.1f : 0.9f;
-        zoom_factor_ *= zoom_factor;
-        
-        // Limit zoom
-        if (zoom_factor_ < 0.1f) zoom_factor_ = 0.1f;
-        if (zoom_factor_ > 10.0f) zoom_factor_ = 10.0f;
-    } else {
-        is_zooming_ = false;
-    }
-    
-    // Handle panning with mouse drag
-    if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-        if (CheckCollisionPointRec(mouse_pos, bounds_)) {
-            if (!is_dragging_) {
-                last_mouse_pos_ = mouse_pos;
-                is_dragging_ = true;
-            } else {
-                Vector2 delta = {mouse_pos.x - last_mouse_pos_.x, mouse_pos.y - last_mouse_pos_.y};
-                
-                // Adjust offsets based on panning
-                x_offset_ += delta.x;
-                y_offset_ += delta.y;
-                
-                last_mouse_pos_ = mouse_pos;
-            }
-        }
-    } else {
-        is_dragging_ = false;
-    }
-    
-    // Handle tooltip showing on hover
     if (CheckCollisionPointRec(mouse_pos, bounds_)) {
-        // Calculate the time at mouse position
-        double data_x_min = !data_points_.empty() ? data_points_.front().x : 0;
-        double data_x_max = !data_points_.empty() ? data_points_.back().x : 100;
-        
-        float chart_x = mouse_pos.x - (bounds_.x + 60); // Account for left padding
-        if (chart_x >= 0 && chart_x <= bounds_.width - 80) { // Account for right padding
-            double time_at_mouse = data_x_min + (data_x_max - data_x_min) * (chart_x / (bounds_.width - 80));
-            
-            if (onShowTip) {
-                onShowTip(time_at_mouse);
-            }
-        }
+      // Check if click is in chart area
+      Rectangle chart_area = {
+        bounds_.x + 60,
+        bounds_.y + 20,
+        bounds_.width - 80,
+        bounds_.height - 40
+      };
+      
+      if (CheckCollisionPointRec(mouse_pos, chart_area)) {
+        // Start potential pan operation
+        last_mouse_pos = mouse_pos;
+        is_panning = true;
+      }
     }
-}
-
-void ChartsWidget::addSignalToChart(const MessageId& msg_id, const std::string& signal_name) {
-    // In a full implementation, this would start tracking the signal
-    // For now, we'll just add it to a list of tracked signals
-    if (signal_data_.find(signal_name) == signal_data_.end()) {
-        signal_data_[signal_name] = std::vector<ChartPoint>();
-    }
-}
-
-void ChartsWidget::removeSignalFromChart(const MessageId& msg_id, const std::string& signal_name) {
-    signal_data_.erase(signal_name);
-}
-
-void ChartsWidget::clearChart() {
-    data_points_.clear();
-    signal_data_.clear();
-}
-
-void ChartsWidget::setChartConfig(const ChartConfig& config) {
-    chart_config_ = config;
-}
-
-void ChartsWidget::addDataPoint(const ChartPoint& point) {
-    data_points_.push_back(point);
+  }
+  
+  if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && is_panning) {
+    Vector2 current_pos = GetMousePosition();
+    // Calculate drag delta
+    float dx = current_pos.x - last_mouse_pos.x;
+    float dy = current_pos.y - last_mouse_pos.y;
     
-    // Add to signal-specific data
-    signal_data_[point.signal_name].push_back(point);
+    // Update offsets based on drag
+    time_offset_ += dx * (max_time_ - min_time_) / chart_area.width;
+    value_offset_ -= dy * (max_value_ - min_value_) / chart_area.height;
+    
+    last_mouse_pos = current_pos;
+  } else if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+    is_panning = false;
+  }
+  
+  // Handle zoom with mouse wheel
+  float wheel = GetMouseWheelMove();
+  if (wheel != 0) {
+    Vector2 mouse_pos = GetMousePosition();
+    Rectangle chart_area = {
+      bounds_.x + 60,
+      bounds_.y + 20,
+      bounds_.width - 80,
+      bounds_.height - 40
+    };
+    
+    if (CheckCollisionPointRec(mouse_pos, chart_area)) {
+      // Zoom in/out based on wheel movement
+      float zoom_factor = wheel > 0 ? 0.9f : 1.1f;
+      time_scale_ *= zoom_factor;
+      value_scale_ *= zoom_factor;
+    }
+  }
 }
 
-void ChartsWidget::addDataPoints(const std::vector<ChartPoint>& points) {
-    for (const auto& point : points) {
-        data_points_.push_back(point);
-        signal_data_[point.signal_name].push_back(point);
-    }
+void ChartsWidget::handleMouseInteraction() {
+  // Process mouse interactions
+  handleInput();
+}
+
+void ChartsWidget::setSignal(const MessageId& msg_id, const std::string& signal_name) {
+  current_msg_id_ = msg_id;
+  current_signal_name_ = signal_name;
+  
+  // Update the title to reflect the signal
+  title = signal_name + " - CHART (" + std::to_string(msg_id.address) + ")";
+  
+  // Clear previous data
+  clear();
+}
+
+void ChartsWidget::setStream(AbstractStream* stream) {
+  if (stream_ && connected_to_stream_) {
+    // Disconnect from previous stream
+    // In this implementation, we're not directly unsubscribing from the stream events
+    // as the stream doesn't have a direct signal for individual CAN data values
+  }
+
+  stream_ = stream;
+  connected_to_stream_ = (stream != nullptr);
+
+  if (stream_) {
+    // Connect to stream events to receive real-time data
+    // We'll use the eventsMerged signal to get new data
+    stream_->eventsMerged_signal.connect([this](const MessageEventsMap& events_map) {
+      // Process all new events and extract signal values if we're monitoring a signal
+      if (!current_signal_name_.empty()) {
+        auto it = events_map.find(current_msg_id_);
+        if (it != events_map.end()) {
+          const auto& events = it->second;
+          for (const auto* event : events) {
+            // Get the DBC signal definition to properly decode the data
+            auto* msg = DBCManager::instance()->msg(current_msg_id_);
+            if (msg) {
+              auto* sig = msg->sig(current_signal_name_);
+              if (sig) {
+                // Decode the signal value from the raw CAN data
+                double raw_value = get_raw_value(event->dat, event->size, *sig);
+                double scaled_value = raw_value * sig->factor + sig->offset;
+
+                // Add data point with the timestamp
+                double timestamp = (event->mono_time - can->beginMonoTime()) / 1e9;
+                addDataPoint(timestamp, scaled_value);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+}
+
+void ChartsWidget::addDataPoint(double time, double value) {
+  // Add the data point
+  data_points_.emplace_back(time, value);
+  
+  // Limit the number of data points to prevent memory issues
+  const size_t max_points = 10000;  // Adjust as needed
+  if (data_points_.size() > max_points) {
+    // Remove old points (first 10% of the buffer)
+    size_t remove_count = max_points / 10;
+    data_points_.erase(data_points_.begin(), data_points_.begin() + remove_count);
+  }
+}
+
+void ChartsWidget::clear() {
+  data_points_.clear();
+  
+  // Default range
+  min_time_ = 0.0;
+  max_time_ = 10.0;
+  min_value_ = -1.0;
+  max_value_ = 1.0;
+  
+  // Reset view settings
+  time_offset_ = 0.0;
+  value_offset_ = 0.0;
+  time_scale_ = 1.0;
+  value_scale_ = 1.0;
+}
+
+void ChartsWidget::setTitle(const std::string& new_title) {
+  title = new_title;
+}
+
+void ChartsWidget::updateDataRange() {
+  if (data_points_.empty()) return;
+  
+  // Calculate min/max values for auto-scaling
+  min_time_ = data_points_.front().time;
+  max_time_ = data_points_.back().time;
+  min_value_ = data_points_[0].value;
+  max_value_ = data_points_[0].value;
+  
+  for (const auto& pt : data_points_) {
+    if (pt.time < min_time_) min_time_ = pt.time;
+    if (pt.time > max_time_) max_time_ = pt.time;
+    if (pt.value < min_value_) min_value_ = pt.value;
+    if (pt.value > max_value_) max_value_ = pt.value;
+  }
+  
+  // Add some padding
+  double time_padding = (max_time_ - min_time_) * 0.05;
+  double value_padding = (max_value_ - min_value_) * 0.05;
+  
+  if (time_padding == 0) time_padding = 0.1;  // Prevent division by zero
+  if (value_padding == 0) value_padding = 0.1;
+  
+  min_time_ -= time_padding;
+  max_time_ += time_padding;
+  min_value_ -= value_padding;
+  max_value_ += value_padding;
+  
+  // Ensure non-zero ranges
+  if (max_time_ == min_time_) {
+    max_time_ = min_time_ + 1.0;
+  }
+  if (max_value_ == min_value_) {
+    max_value_ = min_value_ + 1.0;
+  }
 }

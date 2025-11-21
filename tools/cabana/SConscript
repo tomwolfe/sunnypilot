@@ -44,6 +44,7 @@ cabana_src = [
     'streams/socketcanstream.cc',
     'streams/livestream.cc',
     'streams/routes.cc',
+    'streams/replaystream.cc',
 
     # DBC management
     'dbc/dbc.cc',
@@ -54,6 +55,9 @@ cabana_src = [
     'utils/export.cc',
     'utils/util.cc',
     'utils/elidedlabel.cc',
+    'utils/eventmanager.cc',
+    'utils/logger.cc',
+    'utils/filebrowserdialog.cc',
 
 ]
 
