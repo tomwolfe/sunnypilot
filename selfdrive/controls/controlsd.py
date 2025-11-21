@@ -62,11 +62,12 @@ class Controls(ControlsExt, ModelStateBase):
     try:
         high_risk_threshold_param = self.params.get("SafetyHighRiskThreshold")
         self.safety_high_risk_threshold = float(high_risk_threshold_param) if high_risk_threshold_param else 0.4
-        # Add range validation: high risk threshold should be between 0 and 1 and greater than critical
-        if (self.safety_high_risk_threshold < 0.0 or
-            self.safety_high_risk_threshold > 1.0 or
-            self.safety_high_risk_threshold <= self.safety_critical_threshold):
-            cloudlog.warning(f"Invalid SafetyHighRiskThreshold: {self.safety_high_risk_threshold}, using default 0.4")
+        # Add range validation: high risk threshold should be between 0 and 1 and strictly greater than critical
+        if not (0.0 <= self.safety_high_risk_threshold <= 1.0):
+            cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} is out of range [0, 1]. Using default 0.4")
+            self.safety_high_risk_threshold = 0.4
+        elif self.safety_high_risk_threshold <= self.safety_critical_threshold:
+            cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} is not strictly greater than SafetyCriticalThreshold {self.safety_critical_threshold}. Using default 0.4")
             self.safety_high_risk_threshold = 0.4
     except (TypeError, ValueError):
         self.safety_high_risk_threshold = 0.4  # Default value if parameter is invalid type
@@ -74,11 +75,12 @@ class Controls(ControlsExt, ModelStateBase):
     try:
         moderate_risk_threshold_param = self.params.get("SafetyModerateRiskThreshold")
         self.safety_moderate_risk_threshold = float(moderate_risk_threshold_param) if moderate_risk_threshold_param else 0.6
-        # Add range validation: moderate threshold should be between 0 and 1 and greater than high risk
-        if (self.safety_moderate_risk_threshold < 0.0 or
-            self.safety_moderate_risk_threshold > 1.0 or
-            self.safety_moderate_risk_threshold <= self.safety_high_risk_threshold):
-            cloudlog.warning(f"Invalid SafetyModerateRiskThreshold: {self.safety_moderate_risk_threshold}, using default 0.6")
+        # Add range validation: moderate threshold should be between 0 and 1 and strictly greater than high risk
+        if not (0.0 <= self.safety_moderate_risk_threshold <= 1.0):
+            cloudlog.warning(f"SafetyModerateRiskThreshold {self.safety_moderate_risk_threshold} is out of range [0, 1]. Using default 0.6")
+            self.safety_moderate_risk_threshold = 0.6
+        elif self.safety_moderate_risk_threshold <= self.safety_high_risk_threshold:
+            cloudlog.warning(f"SafetyModerateRiskThreshold {self.safety_moderate_risk_threshold} is not strictly greater than SafetyHighRiskThreshold {self.safety_high_risk_threshold}. Using default 0.6")
             self.safety_moderate_risk_threshold = 0.6
     except (TypeError, ValueError):
         self.safety_moderate_risk_threshold = 0.6  # Default value if parameter is invalid type
