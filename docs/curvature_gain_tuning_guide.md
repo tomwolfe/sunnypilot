@@ -206,4 +206,28 @@ An SUV might require a less aggressive setup.
 -   **`kpV`:** `[1.2, 1.0, 0.8]` for `kpBP` at `[15, 25, 35]` m/s. This provides a stable response at highway speeds (35 m/s ≈ 78 mph).
 -   **`curvatureGainInterp`:** `[[0.0, 0.02, 0.04, 0.06], [1.0, 1.1, 1.3, 1.6]]`. This provides a modest increase in gain for sharper turns, preventing the sluggish feel without making the steering feel overly artificial.
 
+### Oscillation Detection Window Configuration
+
+The system includes advanced oscillation detection that monitors the controller's error history to automatically detect and dampen oscillations. By default, the system analyzes the most recent 0.5 seconds of error history, but this can be configured for performance optimization.
+
+#### Window Size Tuning Guidelines
+
+- **Larger Windows (0.7-1.0 seconds)**:
+  - More stable oscillation detection with fewer false positives
+  - Better for vehicles that may have naturally oscillatory behavior
+  - Slightly higher computational cost
+
+- **Smaller Windows (0.3-0.4 seconds)**:
+  - Faster detection response to actual oscillations
+  - Lower computational overhead
+  - May have more false positives in noisy conditions
+
+The window can be configured programmatically using `set_oscillation_window_size(window_size_seconds, rate)` if needed.
+
+### Performance Optimization Tips
+
+1. **Monitor CPU Usage**: Use the logging output to monitor how the oscillation detection impacts performance
+2. **Validate with Data**: Collect real-world driving data to validate that your oscillation detection window provides adequate protection without excessive computational overhead
+3. **Balance Responsiveness vs Performance**: If your vehicle doesn't typically experience oscillations, you can optimize for performance with a smaller window
+
 By tuning these two parameters iteratively, you can achieve a balanced steering response that is both stable on straightaways and responsive in turns. Always test changes in a safe environment.

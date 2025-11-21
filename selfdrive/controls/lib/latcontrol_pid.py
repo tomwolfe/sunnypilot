@@ -21,15 +21,46 @@ class LatControlPID(LatControl):
                              pos_limit=self.steer_max, neg_limit=-self.steer_max)
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
-    self.curvature_filter = FirstOrderFilter(0., 0.1, dt) # Initialize FirstOrderFilter
+    # Initialize FirstOrderFilter with base time constant and consider adaptive filtering
+    self.base_time_constant = 0.1  # Base filter time constant (100ms)
+    self.curvature_filter = FirstOrderFilter(0., self.base_time_constant, dt)
     # Add monitoring variables for field validation
     self.monitoring_initialized = False
     self.last_monitoring_log_time = 0
 
+  def _get_adaptive_time_constant(self, v_ego, curvature):
+    """
+    Calculate adaptive time constant based on vehicle speed and curvature
+    Lower time constant for high curvature at high speed (faster response)
+    Higher time constant for low curvature at low speed (smoother response)
+    """
+    # Base time constant
+    time_constant = self.base_time_constant
+
+    # Adjust based on speed: at higher speeds, we may want slightly faster response
+    if v_ego > 25.0:  # Above ~55 mph
+        time_constant *= 0.8  # Slightly faster response
+    elif v_ego < 5.0:  # At very low speeds
+        time_constant *= 1.5  # More smoothing at low speeds
+
+    # Adjust based on curvature: at higher curvature, maintain more smoothing to reduce noise impact
+    if curvature > 0.05:  # High curvature turn
+        time_constant = max(time_constant, 0.05)  # Maintain minimum smoothing
+    elif curvature < 0.005:  # Nearly straight
+        time_constant = min(time_constant, 0.15)  # Allow more responsiveness
+
+    # Ensure time constant stays within reasonable bounds
+    return max(0.02, min(0.2, time_constant))  # Clamp between 20ms and 200ms
+
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
-    # Apply low-pass filter to desired_curvature
+    # Apply adaptive low-pass filter to desired_curvature based on driving conditions
+    # Use different time constants based on vehicle speed and curvature for optimal response
+    adaptive_time_constant = self._get_adaptive_time_constant(CS.vEgo, abs(desired_curvature))
+    # Update filter time constant if it has changed significantly
+    if abs(self.curvature_filter.rc - adaptive_time_constant) > 0.001:
+      self.curvature_filter.update_alpha(adaptive_time_constant)  # Update filter time constant if needed
     desired_curvature = self.curvature_filter.update(desired_curvature)
-    cloudlog.debug(f"Desired Curvature: {desired_curvature:.4f}") # Log desired curvature
+    cloudlog.debug(f"Desired Curvature: {desired_curvature:.4f}, Adaptive Time Constant: {adaptive_time_constant:.3f}") # Log desired curvature and time constant
 
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)

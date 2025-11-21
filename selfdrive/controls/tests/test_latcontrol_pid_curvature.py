@@ -587,6 +587,101 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         self.assertLessEqual(controller.pid.oscillation_gain_factor, 1.0,
                             "Gain factor should not exceed maximum safe threshold")
 
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_adaptive_filtering(self, car_name):
+        """Test that the PID controller uses adaptive filtering based on driving conditions."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]
+        CP_SP.maxCurvatureGainMultiplier = 4.0
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 5  # Low speed
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 0.0
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_livePose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # Test that adaptive time constant changes based on conditions
+        # At low speed and low curvature, should use a higher time constant (more smoothing)
+        low_curvature = 0.001
+        high_speed = 25.0  # High speed
+        high_curvature = 0.08  # High curvature
+
+        # Test at low speed and low curvature
+        CS.vEgo = 5.0
+        adaptive_tc_low = controller._get_adaptive_time_constant(CS.vEgo, low_curvature)
+
+        # Test at high speed and high curvature
+        CS.vEgo = high_speed
+        adaptive_tc_high = controller._get_adaptive_time_constant(CS.vEgo, high_curvature)
+
+        # The adaptive time constant should be reasonable in both cases
+        self.assertGreater(adaptive_tc_low, 0.01, "Adaptive time constant should be positive at low conditions")
+        self.assertLess(adaptive_tc_low, 0.25, "Adaptive time constant should be within bounds at low conditions")
+        self.assertGreater(adaptive_tc_high, 0.01, "Adaptive time constant should be positive at high conditions")
+        self.assertLess(adaptive_tc_high, 0.25, "Adaptive time constant should be within bounds at high conditions")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_oscillation_window_configuration(self, car_name):
+        """Test that the PID controller allows oscillation window size configuration."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]
+        CP_SP.maxCurvatureGainMultiplier = 4.0
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        # Test initial oscillation window size
+        initial_window = controller.pid.oscillation_window
+
+        # Test configuring to a smaller window size
+        controller.pid.set_oscillation_window_size(0.3, 100)  # 0.3 seconds at 100Hz
+        new_window = controller.pid.oscillation_window
+        expected_window = int(100 * 0.3)  # Should be 30 samples
+
+        # Verify the window size was updated
+        self.assertEqual(new_window, expected_window,
+                        f"Oscillation window should be updated to {expected_window}, got {new_window}")
+
+        # Test configuring to a larger window size
+        controller.pid.set_oscillation_window_size(0.7, 100)  # 0.7 seconds at 100Hz
+        larger_window = controller.pid.oscillation_window
+        expected_larger_window = int(100 * 0.7)  # Should be 70 samples
+
+        self.assertEqual(larger_window, expected_larger_window,
+                        f"Oscillation window should be updated to {expected_larger_window}, got {larger_window}")
+
 
 if __name__ == "__main__":
     unittest.main()

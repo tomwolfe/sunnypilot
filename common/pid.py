@@ -28,6 +28,8 @@ class PIDController:
     # Adaptive damping mechanism for oscillation detection
     self.oscillation_history = []  # Store error values for oscillation detection
     self.oscillation_threshold = 0.5  # Threshold for considering an error significant
+    # Use configurable oscillation window size with a default of 0.5 seconds
+    # This allows for performance optimization while maintaining safety
     self.oscillation_window = int(rate * 0.5)  # Look at last 0.5 seconds of errors (in samples)
     self.oscillation_gain_reduction = 0.9  # Reduce gain by 10% when oscillation detected
     self.oscillation_recovery_rate = 1.005  # Gradually restore gain when no oscillations
@@ -56,7 +58,21 @@ class PIDController:
     else:
       self._use_interp = False
 
-    self.reset()
+  def set_oscillation_window_size(self, window_size_seconds, rate):
+    """
+    Configure the oscillation detection window size for performance optimization.
+
+    Args:
+        window_size_seconds: Size of the oscillation detection window in seconds
+        rate: Control rate in Hz used to convert seconds to samples
+    """
+    new_window = int(rate * window_size_seconds)
+    # Ensure we have enough samples for reliable oscillation detection
+    new_window = max(10, new_window)  # At least 10 samples for detection
+    self.oscillation_window = new_window
+    # Trim history if new window is smaller than current history
+    if len(self.oscillation_history) > self.oscillation_window:
+      self.oscillation_history = self.oscillation_history[-self.oscillation_window:]
 
   def _get_k_p(self):
     k_p = self._k_p[1][0] if not self._use_interp else np.interp(self.speed, self._k_p[0], self._k_p[1])
