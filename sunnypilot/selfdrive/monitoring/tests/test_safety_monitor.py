@@ -5,6 +5,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import os
 import pytest
 import numpy as np
 from unittest.mock import Mock
@@ -411,16 +412,71 @@ def test_safety_monitor_default_environmental_conditions():
   car_state_msg = create_mock_car_state_msg()
   car_control_msg = create_mock_car_control_msg()
   live_pose_msg = Mock() # Acknowledge live_pose_msg presence but it won't impact env conditions with current logic
+  driver_monitoring_state_msg = Mock() # Acknowledge driver_monitoring_state_msg presence
+
+  # Manually set mono_time for all messages to be recent
+  current_time = monotonic_time()
+  model_v2_mono_time = current_time
+  radar_state_mono_time = current_time
+  car_state_mono_time = current_time
+  live_pose_mono_time = current_time
+  driver_monitoring_state_mono_time = current_time
+
 
   safety_score, requires_intervention, safety_report = monitor.update(
-    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg=live_pose_msg
+    model_v2_msg, model_v2_mono_time,
+    radar_state_msg, radar_state_mono_time,
+    car_state_msg, car_state_mono_time,
+    car_control_msg, live_pose_msg, live_pose_mono_time,
+    driver_monitoring_state_msg, driver_monitoring_state_mono_time
   )
 
   # Assert that environmental conditions are set to default safe values
-  assert safety_report['lighting_condition'] == 'normal'
-  assert safety_report['weather_condition'] == 'clear'
-  assert safety_report['road_condition'] == 'dry'
+  assert safety_report['lighting_condition'] == 'unknown' # Changed to unknown due to lack of luminance data
+  assert safety_report['weather_condition'] == 'unknown' # Changed to unknown due to lack of comprehensive data
+  assert safety_report['road_condition'] == 'unknown' # Changed to unknown due to lack of comprehensive data
+
+def test_safety_monitor_critical_low_model_confidence_triggers_intervention():
+  """Test that critically low model confidence immediately triggers intervention"""
+  monitor = SafetyMonitor()
+  
+  # Set a very low model confidence threshold to ensure intervention
+  monitor.model_confidence_threshold = 0.7 # Default
+  monitor.model_confidence_threshold_multiplier = 0.8 # Default, so intervention threshold is 0.7 * 0.8 = 0.56
+
+  # Create model with critically low confidence
+  model_v2_msg = create_mock_model_v2_msg()
+  model_v2_msg.meta.confidence = 0.1 # Critically low confidence, below 0.56
+
+  # Mock other sensor messages
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+  live_pose_msg = Mock() # Provide a mock for live_pose_msg
+  driver_monitoring_state_msg = Mock() # Provide a mock for driver_monitoring_state_msg
+
+  # Manually set mono_time for all messages to be recent
+  current_time = monotonic_time()
+  model_v2_mono_time = current_time
+  radar_state_mono_time = current_time
+  car_state_mono_time = current_time
+  live_pose_mono_time = current_time
+  driver_monitoring_state_mono_time = current_time
+  
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, model_v2_mono_time,
+    radar_state_msg, radar_state_mono_time,
+    car_state_msg, car_state_mono_time,
+    car_control_msg, live_pose_msg, live_pose_mono_time,
+    driver_monitoring_state_msg, driver_monitoring_state_mono_time
+  )
+  
+  # Assert that intervention is required and safety score is critically low
+  assert requires_intervention == True
+  assert safety_score < monitor.safety_critical_threshold # This threshold is 0.3 by default
+  assert safety_report['confidence_degraded'] == True
+  assert safety_report['model_confidence'] < 0.2 # Should be low due to raw_model_confidence
 
 
-if __name__ == "__main__":
-  pytest.main([__file__])
+
+

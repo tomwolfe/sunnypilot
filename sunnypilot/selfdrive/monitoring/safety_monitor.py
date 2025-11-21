@@ -12,7 +12,7 @@ import time # Import time for performance measurements
 from cereal import log
 import cereal.messaging as messaging
 from openpilot.common.filter_simple import FirstOrderFilter
-from openpilot.common.realtime import DT_MDL, monotonic_time
+from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.params import Params, UnknownKeyName
 
@@ -331,18 +331,18 @@ class SafetyMonitor:
       roll = live_pose_msg.orientationNED[0]
       orientation_available = True
 
-            if orientation_available:
-              # Robust weather and road condition detection using multiple sensor inputs is not yet implemented.
-              # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
-              # To ensure conservative safety, defaulting to "unknown" for now and logging a warning.
-              logging.warning("Comprehensive multi-sensor fusion for weather/road condition detection is not yet implemented. Defaulting to 'unknown'.")
-              self.road_condition = "unknown"
-              self.weather_condition = "unknown"
-              self.imu_confidence = 1.0 # IMU data available, so confidence is high
-            else:
-              # If IMU data is not available, log a warning and maintain "unknown" state.
-              logging.warning("IMU data for weather/road condition detection is not available. Maintaining 'unknown' environmental conditions.")
-              self.imu_confidence = 0.1 # Set IMU confidence to a low value due to missing data.
+    if orientation_available:
+      # Robust weather and road condition detection using multiple sensor inputs is not yet implemented.
+      # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
+      # To ensure conservative safety, defaulting to "unknown" for now and logging a warning.
+      logging.warning("Comprehensive multi-sensor fusion for weather/road condition detection is not yet implemented. Defaulting to 'unknown'.")
+      self.road_condition = "unknown"
+      self.weather_condition = "unknown"
+      self.imu_confidence = 1.0 # IMU data available, so confidence is high
+    else:
+      # If IMU data is not available, log a warning and maintain "unknown" state.
+      logging.warning("IMU data for weather/road condition detection is not available. Maintaining 'unknown' environmental conditions.")
+      self.imu_confidence = 0.1 # Set IMU confidence to a low value due to missing data.
 
   def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
@@ -573,7 +573,7 @@ class SafetyMonitor:
 
   def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None) -> Tuple[float, bool, Dict]:
     """Main update function - processes all inputs and returns safety assessment"""
-    current_time = monotonic_time() # Get current time once in nanoseconds
+    current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
     start_time_update = time.monotonic() # Start timing for the entire update method
 
     # --- Initialize healthy flags to True at the start of each update cycle ---
@@ -600,35 +600,23 @@ class SafetyMonitor:
       self.camera_healthy = False
       logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {(current_time - car_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
 
-        # IMU Staleness (livePose)
-
-        if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
-
-          self.imu_healthy = False
-
-          logging.warning(f"IMU data (livePose) is stale. Last update: {(current_time - live_pose_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
-
-        elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
-
-          self.imu_healthy = False
-
-          logging.warning("LivePose message is not available. IMU data confidence reduced.")
+    # IMU Staleness (livePose)
+    if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      self.imu_healthy = False
+      logging.warning(f"IMU data (livePose) is stale. Last update: {(current_time - live_pose_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+    elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
+      self.imu_healthy = False
+      logging.warning("LivePose message is not available. IMU data confidence reduced.")
 
         
 
-        # Driver Monitoring Staleness
-
-        if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
-
-          self.driver_monitoring_healthy = False
-
-          logging.warning(f"Driver Monitoring data is stale. Last update: {(current_time - driver_monitoring_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
-
-        elif driver_monitoring_state_mono_time is None:
-
-          self.driver_monitoring_healthy = False
-
-          logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
+    # Driver Monitoring Staleness
+    if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      self.driver_monitoring_healthy = False
+      logging.warning(f"Driver Monitoring data is stale. Last update: {(current_time - driver_monitoring_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+    elif driver_monitoring_state_mono_time is None:
+      self.driver_monitoring_healthy = False
+      logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
 
     
 
@@ -705,26 +693,26 @@ class SafetyMonitor:
       self.confidence_degraded = self.overall_safety_score < 0.6
 
       # Prepare safety report with error information
-              safety_report = {
-                'model_confidence': getattr(self, 'model_confidence', 0.5),
-                'radar_confidence': getattr(self, 'radar_confidence', 0.5),
-                'camera_confidence': getattr(self, 'camera_confidence', 0.5),
-                'imu_confidence': getattr(self, 'imu_confidence', 0.5),
-                'model_healthy': self.model_healthy,
-                'radar_healthy': self.radar_healthy,
-                'camera_healthy': self.camera_healthy,
-                'imu_healthy': self.imu_healthy,
-          'driver_monitoring_healthy': self.driver_monitoring_healthy,
-                'lighting_condition': self.lighting_condition,
-                'weather_condition': self.weather_condition,
-                'road_condition': self.road_condition,
-                'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
-                'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
-                'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
-                'overall_safety_score': self.overall_safety_score,
-                'confidence_degraded': self.confidence_degraded,
-                'monitoring_cycles': self.monitoring_cycles
-              }
+      safety_report = {
+        'model_confidence': getattr(self, 'model_confidence', 0.5),
+        'radar_confidence': getattr(self, 'radar_confidence', 0.5),
+        'camera_confidence': getattr(self, 'camera_confidence', 0.5),
+        'imu_confidence': getattr(self, 'imu_confidence', 0.5),
+        'model_healthy': self.model_healthy,
+        'radar_healthy': self.radar_healthy,
+        'camera_healthy': self.camera_healthy,
+        'imu_healthy': self.imu_healthy,
+        'driver_monitoring_healthy': self.driver_monitoring_healthy,
+        'lighting_condition': self.lighting_condition,
+        'weather_condition': self.weather_condition,
+        'road_condition': self.road_condition,
+        'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
+        'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
+        'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
+        'overall_safety_score': self.overall_safety_score,
+        'confidence_degraded': self.confidence_degraded,
+        'monitoring_cycles': self.monitoring_cycles
+      }
       self.monitoring_cycles += 1
 
       # Add error flag if any sub-component failed
