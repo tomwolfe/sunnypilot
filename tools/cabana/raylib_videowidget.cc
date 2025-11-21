@@ -27,21 +27,21 @@ void TimeSlider::update() {
 void TimeSlider::render(const Rectangle& bounds) {
   Rectangle render_bounds = bounds.x != 0 || bounds.y != 0 || bounds.width != 0 || bounds.height != 0 ? bounds : bounds_;
   // Draw slider background
-  DrawRectangleRec(render_bounds, RAYLIB_LIGHTGRAY);
+  DrawRectangleRec(render_bounds, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
   // Draw filled portion
   float fill_width = ((current_value_ - min_) / (max_ - min_)) * render_bounds.width;
   Rectangle fill_rect = {render_bounds.x, render_bounds.y, fill_width, render_bounds.height};
-  DrawRectangleRec(fill_rect, RAYLIB_BLUE);
+  DrawRectangleRec(fill_rect, (Color){0, 121, 241, 255}); // BLUE in RGB
 
   // Draw thumb
   float thumb_x = render_bounds.x + fill_width - 3;  // Small adjustment for thumb position
   Rectangle thumb = {thumb_x, render_bounds.y - 2, 6, render_bounds.height + 4};
-  DrawRectangleRec(thumb, RAYLIB_DARKBLUE);
+  DrawRectangleRec(thumb, (Color){0, 82, 172, 255}); // DARKBLUE in RGB
 
   // Draw time markers (simple implementation)
-  DrawLine(render_bounds.x, render_bounds.y - 5, render_bounds.x, render_bounds.y + render_bounds.height + 5, RAYLIB_GRAY);
-  DrawLine(render_bounds.x + render_bounds.width, render_bounds.y - 5, render_bounds.x + render_bounds.width, render_bounds.y + render_bounds.height + 5, RAYLIB_GRAY);
+  DrawLine(render_bounds.x, render_bounds.y - 5, render_bounds.x, render_bounds.y + render_bounds.height + 5, (Color){128, 128, 128, 255}); // GRAY in RGB
+  DrawLine(render_bounds.x + render_bounds.width, render_bounds.y - 5, render_bounds.x + render_bounds.width, render_bounds.y + render_bounds.height + 5, (Color){128, 128, 128, 255}); // GRAY in RGB
 }
 
 void TimeSlider::handleInput() {
@@ -63,15 +63,15 @@ void StreamCameraView::render(const Rectangle& bounds) {
   int text_width = MeasureText(camera_text, 20);
   int text_x = bounds.x + (bounds.width - text_width) / 2;
   int text_y = bounds.y + bounds.height / 2 - 10;
-  DrawText(camera_text, text_x, text_y, 20, RAYLIB_GRAY);
+  DrawText(camera_text, text_x, text_y, 20, (Color){128, 128, 128, 255}); // GRAY in RGB
 
   // Draw stream name
-  DrawText(stream_name_.c_str(), bounds.x + 10, bounds.y + 10, 14, RAYLIB_LIGHTGRAY);
+  DrawText(stream_name_.c_str(), bounds.x + 10, bounds.y + 10, 14, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
   // Draw stream type indicator (using stream_type_)
   const char* type_name = stream_type_ == CabanaVisionStreamType::ROAD ? "ROAD" :
                           stream_type_ == CabanaVisionStreamType::DRIVER ? "DRIVER" : "WIDE ROAD";
-  DrawText(type_name, bounds.x + 10, bounds.y + 25, 10, RAYLIB_LIGHTGRAY);
+  DrawText(type_name, bounds.x + 10, bounds.y + 25, 10, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
   // Draw paused overlay if needed
   if (is_paused_overlay_visible_) {
@@ -80,7 +80,7 @@ void StreamCameraView::render(const Rectangle& bounds) {
     int p_text_width = MeasureText(paused_text, 30);
     int p_text_x = bounds.x + (bounds.width - p_text_width) / 2;
     int p_text_y = bounds.y + bounds.height / 2 - 15;
-    DrawText(paused_text, p_text_x, p_text_y, 30, RAYLIB_WHITE);
+    DrawText(paused_text, p_text_x, p_text_y, 30, (Color){255, 255, 255, 255}); // WHITE in RGB
   }
 }
 
@@ -118,7 +118,7 @@ void StreamCameraView::drawScrubThumbnail(const Rectangle& bounds) {
   // Reference thumbnail_display_time_ in implementation
   if (thumbnail_display_time_ >= 0) {
     // Show thumbnail at specific time if available
-    DrawText("Thumbnail", bounds.x + 10, bounds.y + 10, 10, RAYLIB_WHITE);
+    DrawText("Thumbnail", bounds.x + 10, bounds.y + 10, 10, (Color){255, 255, 255, 255}); // WHITE in RGB
   }
 }
 
@@ -134,7 +134,7 @@ void StreamCameraView::drawTime(const Rectangle& rect, double seconds) {
   
   // Draw background for text to make it more visible
   DrawRectangle(text_x - 5, text_y - 2, text_width + 10, 20, Color{0, 0, 0, 128});
-  DrawText(time_str, text_x, text_y, 16, RAYLIB_WHITE);
+  DrawText(time_str, text_x, text_y, 16, (Color){255, 255, 255, 255}); // WHITE in RGB
 }
 
 // VideoWidget implementation
@@ -177,7 +177,7 @@ void VideoWidget::render(const Rectangle& bounds) {
   
   // Draw panel background
   DrawRectangleRec(bounds, Color{50, 50, 50, 255}); // Dark gray
-  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
+  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
   // Calculate video area (leaving space for controls)
   Rectangle video_rect = {bounds.x + 5, bounds.y + 5, bounds.width - 10, bounds.height - 60};
@@ -192,7 +192,7 @@ void VideoWidget::render(const Rectangle& bounds) {
   snprintf(time_text, sizeof(time_text), "%s / %s", 
            formatTime(current_time_).c_str(), 
            formatTime(total_time_).c_str());
-  DrawText(time_text, bounds.x + 10, bounds.y + bounds.height - 50, 14, RAYLIB_WHITE);
+  DrawText(time_text, bounds.x + 10, bounds.y + bounds.height - 50, 14, (Color){255, 255, 255, 255}); // WHITE in RGB
 
   // Draw playback controls
   float control_x = bounds.x + bounds.width - 150;
@@ -200,23 +200,23 @@ void VideoWidget::render(const Rectangle& bounds) {
 
   // Play/Pause button
   Rectangle play_button = {control_x, control_y, 30, 20};
-  DrawRectangleRec(play_button, is_playing_ ? RAYLIB_RED : RAYLIB_GREEN);
-  DrawText(is_playing_ ? "||" : ">", play_button.x + 10, play_button.y + 2, 14, RAYLIB_WHITE);
+  DrawRectangleRec(play_button, is_playing_ ? (Color){230, 41, 55, 255} : (Color){0, 158, 47, 255}); // RED or GREEN in RGB
+  DrawText(is_playing_ ? "||" : ">", play_button.x + 10, play_button.y + 2, 14, (Color){255, 255, 255, 255}); // WHITE in RGB
 
   // Loop button
   Rectangle loop_button = {control_x + 35, control_y, 30, 20};
-  DrawRectangleRec(loop_button, is_looping_ ? RAYLIB_YELLOW : RAYLIB_GRAY);
-  DrawText("O", loop_button.x + 12, loop_button.y + 2, 14, is_looping_ ? RAYLIB_BLACK : RAYLIB_WHITE);
+  DrawRectangleRec(loop_button, is_looping_ ? (Color){253, 249, 0, 255} : (Color){128, 128, 128, 255}); // YELLOW or GRAY in RGB
+  DrawText("O", loop_button.x + 12, loop_button.y + 2, 14, is_looping_ ? (Color){0, 0, 0, 255} : (Color){255, 255, 255, 255}); // BLACK or WHITE in RGB
 
   // Speed button
   Rectangle speed_button = {control_x + 70, control_y, 40, 20};
-  DrawRectangleRec(speed_button, RAYLIB_GRAY);
-  DrawText(speed_options_[current_speed_index_].c_str(), speed_button.x + 2, speed_button.y + 2, 10, RAYLIB_WHITE);
+  DrawRectangleRec(speed_button, (Color){128, 128, 128, 255}); // GRAY in RGB
+  DrawText(speed_options_[current_speed_index_].c_str(), speed_button.x + 2, speed_button.y + 2, 10, (Color){255, 255, 255, 255}); // WHITE in RGB
 
   // Fullscreen button
   Rectangle fs_button = {control_x + 115, control_y, 30, 20};
-  DrawRectangleRec(fs_button, RAYLIB_GRAY);
-  DrawText("[]", fs_button.x + 8, fs_button.y + 2, 14, RAYLIB_WHITE);
+  DrawRectangleRec(fs_button, (Color){128, 128, 128, 255}); // GRAY in RGB
+  DrawText("[]", fs_button.x + 8, fs_button.y + 2, 14, (Color){255, 255, 255, 255}); // WHITE in RGB
   
   // Draw time slider if it exists
   if (slider_) {

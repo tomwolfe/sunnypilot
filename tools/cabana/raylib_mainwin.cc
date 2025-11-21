@@ -81,31 +81,31 @@ void CabanaMainWindow::update() {
 void CabanaMainWindow::render() {
   // Begin drawing
   BeginDrawing();
-  ClearBackground(RAYLIB_RAYWHITE);
+  ClearBackground((Color){245, 245, 245, 255}); // RAYWHITE equivalent
 
   // Render menu bar
-  DrawRectangleRec(menu_bar_rect, RAYLIB_LIGHTGRAY);
-  DrawText("Cabana - CAN Bus Analyzer", 10, 10, 16, RAYLIB_DARKGRAY);
+  DrawRectangleRec(menu_bar_rect, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
+  DrawText("Cabana - CAN Bus Analyzer", 10, 10, 16, (Color){64, 64, 64, 255}); // DARKGRAY in RGB
 
   // Render status bar
-  DrawRectangleRec(status_bar_rect, RAYLIB_LIGHTGRAY);
+  DrawRectangleRec(status_bar_rect, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
   if (!status_message.empty()) {
-    DrawText(status_message.c_str(), 10, 775, 12, RAYLIB_DARKGRAY);
+    DrawText(status_message.c_str(), 10, 775, 12, (Color){64, 64, 64, 255}); // DARKGRAY in RGB
   }
 
   // Render UI components based on visibility settings
   if (show_messages_panel && messages_widget) {
     messages_widget->render(messages_panel_rect);
   }
-  
+
   if (show_video_panel && video_widget) {
     video_widget->render(video_panel_rect);
   }
-  
+
   if (show_charts_panel && charts_widget) {
     charts_widget->render(charts_panel_rect);
   }
-  
+
   if (center_widget) {
     // Adjust center widget position based on other panels
     Rectangle center_rect = {800, 30, 400, 400};

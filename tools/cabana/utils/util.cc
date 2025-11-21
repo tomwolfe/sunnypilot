@@ -7,23 +7,16 @@
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <vector>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
-#include <QColor>
-#include <QDateTime>
-#include <QDir>
-#include <QFontDatabase>
-#include <QLocale>
-#include <QPixmapCache>
-#include <QSurfaceFormat>
-#include <QFileInfo>
-#include <QPainterPath>
-#include <QTextStream>
-#include <QtXml/QDomDocument>
 #include "common/util.h"
 
-// SegmentTree
+// SegmentTree for Raylib
 
-void SegmentTree::build(const std::vector<QPointF> &arr) {
+void SegmentTree::build(const std::vector<std::pair<double, double>> &arr) {
   size = arr.size();
   tree.resize(4 * size);  // size of the tree is 4 times the size of the array
   if (size > 0) {
@@ -31,10 +24,9 @@ void SegmentTree::build(const std::vector<QPointF> &arr) {
   }
 }
 
-void SegmentTree::build_tree(const std::vector<QPointF> &arr, int n, int left, int right) {
+void SegmentTree::build_tree(const std::vector<std::pair<double, double>> &arr, int n, int left, int right) {
   if (left == right) {
-    const double y = arr[left].y();
-    tree[n] = {y, y};
+    tree[n] = arr[left];
   } else {
     const int mid = (left + right) >> 1;
     build_tree(arr, 2 * n, left, mid);
@@ -54,109 +46,17 @@ std::pair<double, double> SegmentTree::get_minmax(int n, int left, int right, in
   return {std::min(l.first, r.first), std::max(l.second, r.second)};
 }
 
-// MessageBytesDelegate
+// UnixSignalHandler for Raylib
+// Static members need to be defined outside the class
+int UnixSignalHandler::sig_fd[2] = {};
 
-MessageBytesDelegate::MessageBytesDelegate(QObject *parent, bool multiple_lines)
-    : font_metrics(QApplication::font()), multiple_lines(multiple_lines), QStyledItemDelegate(parent) {
-  fixed_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-  byte_size = QFontMetrics(fixed_font).size(Qt::TextSingleLine, "00 ") + QSize(0, 2);
-  for (int i = 0; i < 256; ++i) {
-    hex_text_table[i].setText(QStringLiteral("%1").arg(i, 2, 16, QLatin1Char('0')).toUpper());
-    hex_text_table[i].prepare({}, fixed_font);
-  }
-  h_margin = QApplication::style()->pixelMetric(QStyle::PM_FocusFrameHMargin) + 1;
-  v_margin = QApplication::style()->pixelMetric(QStyle::PM_FocusFrameVMargin) + 1;
-}
-
-QSize MessageBytesDelegate::sizeForBytes(int n) const {
-  int rows = multiple_lines ? std::max(1, n / 8) : 1;
-  return {(n / rows) * byte_size.width() + h_margin * 2, rows * byte_size.height() + v_margin * 2};
-}
-
-QSize MessageBytesDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const {
-  auto data = index.data(BytesRole);
-  return sizeForBytes(data.isValid() ? static_cast<std::vector<uint8_t> *>(data.value<void *>())->size() : 0);
-}
-
-void MessageBytesDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const {
-  if (option.state & QStyle::State_Selected) {
-    painter->fillRect(option.rect, option.palette.brush(QPalette::Normal, QPalette::Highlight));
-  }
-
-  QRect item_rect = option.rect.adjusted(h_margin, v_margin, -h_margin, -v_margin);
-  QColor highlighted_color = option.palette.color(QPalette::HighlightedText);
-  auto text_color = index.data(Qt::ForegroundRole).value<QColor>();
-  bool inactive = text_color.isValid();
-  if (!inactive) {
-    text_color = option.palette.color(QPalette::Text);
-  }
-  auto data = index.data(BytesRole);
-  if (!data.isValid()) {
-    painter->setFont(option.font);
-    painter->setPen(option.state & QStyle::State_Selected ? highlighted_color : text_color);
-    QString text = font_metrics.elidedText(index.data(Qt::DisplayRole).toString(), Qt::ElideRight, item_rect.width());
-    painter->drawText(item_rect, Qt::AlignLeft | Qt::AlignVCenter, text);
+UnixSignalHandler::UnixSignalHandler() {
+  if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sig_fd)) {
+    printf("Couldn't create TERM socketpair\n");
     return;
   }
 
-  // Paint hex column
-  const auto &bytes = *static_cast<std::vector<uint8_t> *>(data.value<void *>());
-  const auto &colors = *static_cast<std::vector<QColor> *>(index.data(ColorsRole).value<void *>());
-
-  painter->setFont(fixed_font);
-  const QPen text_pen(option.state & QStyle::State_Selected ? highlighted_color : text_color);
-  const QPoint pt = item_rect.topLeft();
-  for (int i = 0; i < bytes.size(); ++i) {
-    int row = !multiple_lines ? 0 : i / 8;
-    int column = !multiple_lines ? i : i % 8;
-    QRect r({pt.x() + column * byte_size.width(), pt.y() + row * byte_size.height()}, byte_size);
-
-    if (!inactive && i < colors.size() && colors[i].alpha() > 0) {
-      if (option.state & QStyle::State_Selected) {
-        painter->setPen(option.palette.color(QPalette::Text));
-        painter->fillRect(r, option.palette.color(QPalette::Window));
-      }
-      painter->fillRect(r, colors[i]);
-    } else {
-      painter->setPen(text_pen);
-    }
-    utils::drawStaticText(painter, r, hex_text_table[bytes[i]]);
-  }
-}
-
-// TabBar
-
-int TabBar::addTab(const QString &text) {
-  int index = QTabBar::addTab(text);
-  QToolButton *btn = new ToolButton("x", tr("Close Tab"));
-  int width = style()->pixelMetric(QStyle::PM_TabCloseIndicatorWidth, nullptr, btn);
-  int height = style()->pixelMetric(QStyle::PM_TabCloseIndicatorHeight, nullptr, btn);
-  btn->setFixedSize({width, height});
-  setTabButton(index, QTabBar::RightSide, btn);
-  QObject::connect(btn, &QToolButton::clicked, this, &TabBar::closeTabClicked);
-  return index;
-}
-
-void TabBar::closeTabClicked() {
-  QObject *object = sender();
-  for (int i = 0; i < count(); ++i) {
-    if (tabButton(i, QTabBar::RightSide) == object) {
-      emit tabCloseRequested(i);
-      break;
-    }
-  }
-}
-
-// UnixSignalHandler
-
-UnixSignalHandler::UnixSignalHandler(QObject *parent) : QObject(nullptr) {
-  if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sig_fd)) {
-    qFatal("Couldn't create TERM socketpair");
-  }
-
-  sn = new QSocketNotifier(sig_fd[1], QSocketNotifier::Read, this);
-  connect(sn, &QSocketNotifier::activated, this, &UnixSignalHandler::handleSigTerm);
-  std::signal(SIGINT, signalHandler);
+  std::signal(SIGINT, UnixSignalHandler::signalHandler);
   std::signal(SIGTERM, UnixSignalHandler::signalHandler);
 }
 
@@ -170,191 +70,94 @@ void UnixSignalHandler::signalHandler(int s) {
 }
 
 void UnixSignalHandler::handleSigTerm() {
-  sn->setEnabled(false);
   int tmp;
   ::read(sig_fd[1], &tmp, sizeof(tmp));
 
   printf("\nexiting...\n");
-  qApp->closeAllWindows();
-  qApp->exit();
-}
-
-// NameValidator
-
-NameValidator::NameValidator(QObject *parent) : QRegExpValidator(QRegExp("^(\\w+)"), parent) {}
-
-QValidator::State NameValidator::validate(QString &input, int &pos) const {
-  input.replace(' ', '_');
-  return QRegExpValidator::validate(input, pos);
-}
-
-DoubleValidator::DoubleValidator(QObject *parent) : QDoubleValidator(parent) {
-  // Match locale of QString::toDouble() instead of system
-  QLocale locale(QLocale::C);
-  locale.setNumberOptions(QLocale::RejectGroupSeparator);
-  setLocale(locale);
+  // For raylib, there's no qApp, so we just need to handle exit differently
+  exit(0);
 }
 
 namespace utils {
 
 bool isDarkTheme() {
-  QColor windowColor = QApplication::palette().color(QPalette::Window);
-  return windowColor.lightness() < 128;
-}
-
-QPixmap icon(const QString &id) {
-  bool dark_theme = isDarkTheme();
-
-  QPixmap pm;
-  QString key = "bootstrap_" % id % (dark_theme ? "1" : "0");
-  if (!QPixmapCache::find(key, &pm)) {
-    pm = bootstrapPixmap(id);
-    if (dark_theme) {
-      QPainter p(&pm);
-      p.setCompositionMode(QPainter::CompositionMode_SourceIn);
-      p.fillRect(pm.rect(), QColor("#bbbbbb"));
-    }
-    QPixmapCache::insert(key, pm);
-  }
-  return pm;
+  // For now, default to false for raylib theme
+  return false;
 }
 
 void setTheme(int theme) {
-  auto style = QApplication::style();
-  if (!style) return;
-
-  static int prev_theme = 0;
+  // For raylib, theme management is different
+  // This is a simplified placeholder implementation
+  static int prev_theme = -1;
   if (theme != prev_theme) {
     prev_theme = theme;
-    QPalette new_palette;
-    if (theme == DARK_THEME) {
-      // "Darcula" like dark theme
-      new_palette.setColor(QPalette::Window, QColor("#353535"));
-      new_palette.setColor(QPalette::WindowText, QColor("#bbbbbb"));
-      new_palette.setColor(QPalette::Base, QColor("#3c3f41"));
-      new_palette.setColor(QPalette::AlternateBase, QColor("#3c3f41"));
-      new_palette.setColor(QPalette::ToolTipBase, QColor("#3c3f41"));
-      new_palette.setColor(QPalette::ToolTipText, QColor("#bbb"));
-      new_palette.setColor(QPalette::Text, QColor("#bbbbbb"));
-      new_palette.setColor(QPalette::Button, QColor("#3c3f41"));
-      new_palette.setColor(QPalette::ButtonText, QColor("#bbbbbb"));
-      new_palette.setColor(QPalette::Highlight, QColor("#2f65ca"));
-      new_palette.setColor(QPalette::HighlightedText, QColor("#bbbbbb"));
-      new_palette.setColor(QPalette::BrightText, QColor("#f0f0f0"));
-      new_palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#777777"));
-      new_palette.setColor(QPalette::Disabled, QPalette::WindowText, QColor("#777777"));
-      new_palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#777777"));
-      new_palette.setColor(QPalette::Light, QColor("#777777"));
-      new_palette.setColor(QPalette::Dark, QColor("#353535"));
-    } else {
-      new_palette = style->standardPalette();
-    }
-    qApp->setPalette(new_palette);
-    style->polish(qApp);
-    for (auto w : QApplication::allWidgets()) {
-      w->setPalette(new_palette);
-    }
+    // Theme change handling for raylib would go here
   }
 }
 
-QString formatSeconds(double sec, bool include_milliseconds, bool absolute_time) {
-  QString format = absolute_time ? "yyyy-MM-dd hh:mm:ss"
-                                 : (sec > 60 * 60 ? "hh:mm:ss" : "mm:ss");
-  if (include_milliseconds) format += ".zzz";
-  return QDateTime::fromMSecsSinceEpoch(sec * 1000).toString(format);
+std::string formatSeconds(double sec, bool include_milliseconds, bool absolute_time) {
+  auto duration = std::chrono::duration<double>(sec);
+  auto time_t = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+  std::time_t t = static_cast<std::time_t>(time_t);
+  auto tm = *std::localtime(&t);
+
+  std::stringstream ss;
+  if (absolute_time) {
+    ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+  } else {
+    if (sec > 3600) { // More than an hour
+      ss << std::put_time(&tm, "%H:%M:%S");
+    } else { // Less than an hour
+      ss << std::put_time(&tm, "%M:%S");
+    }
+  }
+
+  if (include_milliseconds) {
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() % 1000;
+    ss << "." << std::setfill('0') << std::setw(3) << ms;
+  }
+
+  return ss.str();
 }
 
 }  // namespace utils
 
 int num_decimals(double num) {
-  const QString string = QString::number(num);
-  auto dot_pos = string.indexOf('.');
-  return dot_pos == -1 ? 0 : string.size() - dot_pos - 1;
+  // Convert to string and count decimal places
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(10) << num;
+  std::string s = ss.str();
+
+  size_t dot_pos = s.find('.');
+  if (dot_pos == std::string::npos) {
+    return 0;
+  }
+
+  // Remove trailing zeros
+  std::string fractional_part = s.substr(dot_pos + 1);
+  fractional_part.erase(fractional_part.find_last_not_of('0') + 1, std::string::npos);
+
+  return static_cast<int>(fractional_part.length());
 }
 
-QString signalToolTip(const cabana::Signal *sig) {
-  return QObject::tr(R"(
-    %1<br /><span font-size:small">
-    Start Bit: %2 Size: %3<br />
-    MSB: %4 LSB: %5<br />
-    Little Endian: %6 Signed: %7</span>
-  )").arg(sig->name).arg(sig->start_bit).arg(sig->size).arg(sig->msb).arg(sig->lsb)
-     .arg(sig->is_little_endian ? "Y" : "N").arg(sig->is_signed ? "Y" : "N");
-}
-
-void setSurfaceFormat() {
-  QSurfaceFormat fmt;
-#ifdef __APPLE__
-  fmt.setVersion(3, 2);
-  fmt.setProfile(QSurfaceFormat::OpenGLContextProfile::CoreProfile);
-  fmt.setRenderableType(QSurfaceFormat::OpenGL);
-#else
-  fmt.setRenderableType(QSurfaceFormat::OpenGLES);
-#endif
-  fmt.setSamples(16);
-  fmt.setStencilBufferSize(1);
-  QSurfaceFormat::setDefaultFormat(fmt);
-}
-
-void sigTermHandler(int s) {
-  std::signal(s, SIG_DFL);
-  qApp->quit();
+std::string signalToolTip(const cabana::Signal *sig) {
+  std::stringstream ss;
+  ss << sig->name << "<br /><span font-size:small\">"
+     << "Start Bit: " << sig->start_bit << " Size: " << sig->size << "<br />"
+     << "MSB: " << sig->msb << " LSB: " << sig->lsb << "<br />"
+     << "Little Endian: " << (sig->is_little_endian ? "Y" : "N")
+     << " Signed: " << (sig->is_signed ? "Y" : "N") << "</span>";
+  return ss.str();
 }
 
 void initApp(int argc, char *argv[], bool disable_hidpi) {
   // setup signal handlers to exit gracefully
-  std::signal(SIGINT, sigTermHandler);
-  std::signal(SIGTERM, sigTermHandler);
-
-  QString app_dir;
-#ifdef __APPLE__
-  // Get the devicePixelRatio, and scale accordingly to maintain 1:1 rendering
-  QApplication tmp(argc, argv);
-  app_dir = QCoreApplication::applicationDirPath();
-  if (disable_hidpi) {
-    qputenv("QT_SCALE_FACTOR", QString::number(1.0 / tmp.devicePixelRatio()).toLocal8Bit());
-  }
-#else
-  app_dir = QFileInfo(util::readlink("/proc/self/exe").c_str()).path();
-#endif
-
-  qputenv("QT_DBL_CLICK_DIST", QByteArray::number(150));
-  // ensure the current dir matches the exectuable's directory
-  QDir::setCurrent(app_dir);
-
-  setSurfaceFormat();
-}
-
-static QHash<QString, QByteArray> load_bootstrap_icons() {
-  QHash<QString, QByteArray> icons;
-
-  QFile f(":/bootstrap-icons.svg");
-  if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    QDomDocument xml;
-    xml.setContent(&f);
-    QDomNode n = xml.documentElement().firstChild();
-    while (!n.isNull()) {
-      QDomElement e = n.toElement();
-      if (!e.isNull() && e.hasAttribute("id")) {
-        QString svg_str;
-        QTextStream stream(&svg_str);
-        n.save(stream, 0);
-        svg_str.replace("<symbol", "<svg");
-        svg_str.replace("</symbol>", "</svg>");
-        icons[e.attribute("id")] = svg_str.toUtf8();
-      }
-      n = n.nextSibling();
-    }
-  }
-  return icons;
-}
-
-QPixmap bootstrapPixmap(const QString &id) {
-  static QHash<QString, QByteArray> icons = load_bootstrap_icons();
-
-  QPixmap pixmap;
-  if (auto it = icons.find(id); it != icons.end()) {
-    pixmap.loadFromData(it.value(), "svg");
-  }
-  return pixmap;
+  std::signal(SIGINT, [](int s) {
+    printf("Received SIGINT, exiting...\n");
+    exit(0);
+  });
+  std::signal(SIGTERM, [](int s) {
+    printf("Received SIGTERM, exiting...\n");
+    exit(0);
+  });
 }

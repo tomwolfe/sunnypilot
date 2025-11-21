@@ -6,7 +6,7 @@
 
 #include "raylib.h"
 #include "tools/cabana/dbc/dbcmanager.h"
-#include "tools/cabana/chart/chartswidget.h"
+#include "tools/cabana/raylib_chartswidget.h"
 
 // Data structure for signal information
 struct SignalInfo {
@@ -75,5 +75,5 @@ private:
     int sparkline_range_ = 10;  // Default to 10 seconds
     
     // References to other components
-    ChartsWidget *charts_widget_;
+    // ChartsWidget *charts_widget_;  // Commented out to remove unused warning
 };

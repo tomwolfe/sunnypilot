@@ -4,167 +4,108 @@
 #include <cmath>
 #include <vector>
 #include <utility>
-
-#include <QApplication>
-#include <QByteArray>
-#include <QDoubleValidator>
-#include <QFont>
-#include <QFontMetrics>
-#include <QPainter>
-#include <QRegExpValidator>
-#include <QSocketNotifier>
-#include <QStaticText>
-#include <QStringBuilder>
-#include <QStyledItemDelegate>
-#include <QToolButton>
+#include <string>
+#include <chrono>
+#include <sstream>
+#include <iomanip>
 
 #include "tools/cabana/dbc/dbc.h"
-#include "tools/cabana/settings.h"
+#include "tools/cabana/raylib_settings.h"
 
-class LogSlider : public QSlider {
-  Q_OBJECT
+// Raylib-compatible utility functions and classes
 
+class LogSlider {
 public:
-  LogSlider(double factor, Qt::Orientation orientation, QWidget *parent = nullptr) : factor(factor), QSlider(orientation, parent) {}
+  LogSlider(double factor, bool orientation, void *parent = nullptr) : factor(factor) {}
 
   void setRange(double min, double max) {
     log_min = factor * std::log10(min);
     log_max = factor * std::log10(max);
-    QSlider::setRange(min, max);
-    setValue(QSlider::value());
   }
-  int value() const {
-    double v = log_min + (log_max - log_min) * ((QSlider::value() - minimum()) / double(maximum() - minimum()));
-    return std::lround(std::pow(10, v / factor));
+  double value() const {
+    double ratio = (current_value - min_value) / (max_value - min_value);
+    double log_v = log_min + (log_max - log_min) * ratio;
+    return std::round(std::pow(10, log_v / factor));
   }
-  void setValue(int v) {
-    double log_v = std::clamp(factor * std::log10(v), log_min, log_max);
-    v = minimum() + (maximum() - minimum()) * ((log_v - log_min) / (log_max - log_min));
-    QSlider::setValue(v);
+  void setValue(double v) {
+    current_value = v;
   }
 
 private:
   double factor, log_min = 0, log_max = 1;
+  double min_value = 0, max_value = 100;
+  double current_value = 50;
 };
 
-enum {
-  ColorsRole = Qt::UserRole + 1,
-  BytesRole = Qt::UserRole + 2
-};
-
+// Basic segment tree implementation for raylib
 class SegmentTree {
 public:
   SegmentTree() = default;
-  void build(const std::vector<QPointF> &arr);
+  void build(const std::vector<std::pair<double, double>> &arr);
   inline std::pair<double, double> minmax(int left, int right) const { return get_minmax(1, 0, size - 1, left, right); }
 
 private:
   std::pair<double, double> get_minmax(int n, int left, int right, int range_left, int range_right) const;
-  void build_tree(const std::vector<QPointF> &arr, int n, int left, int right);
+  void build_tree(const std::vector<std::pair<double, double>> &arr, int n, int left, int right);
   std::vector<std::pair<double, double>> tree;
   int size = 0;
 };
 
-class MessageBytesDelegate : public QStyledItemDelegate {
-  Q_OBJECT
-public:
-  MessageBytesDelegate(QObject *parent, bool multiple_lines = false);
-  void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-  QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
-  bool multipleLines() const { return multiple_lines; }
-  void setMultipleLines(bool v) { multiple_lines = v; }
-  QSize sizeForBytes(int n) const;
+// Simple color validation utility
+bool isValidColor(const std::string &color_str) {
+  // Check if it matches hex format (#RRGGBB or #RGB)
+  if (color_str.empty()) return false;
+  if (color_str[0] != '#') return false;
 
-private:
-  std::array<QStaticText, 256> hex_text_table;
-  QFontMetrics font_metrics;
-  QFont fixed_font;
-  QSize byte_size = {};
-  bool multiple_lines = false;
-  int h_margin, v_margin;
-};
+  size_t expected_length = (color_str.length() == 4) ? 4 : 7;  // #RGB or #RRGGBB
+  if (color_str.length() != expected_length) return false;
 
-class NameValidator : public QRegExpValidator {
-  Q_OBJECT
-public:
-  NameValidator(QObject *parent=nullptr);
-  QValidator::State validate(QString &input, int &pos) const override;
-};
+  for (size_t i = 1; i < color_str.length(); ++i) {
+    char c = color_str[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
 
-class DoubleValidator : public QDoubleValidator {
-  Q_OBJECT
-public:
-  DoubleValidator(QObject *parent = nullptr);
-};
+// Utility for hex string formatting
+inline std::string toHexString(int value) {
+  std::stringstream ss;
+  ss << "0x" << std::setfill('0') << std::setw(2) << std::uppercase << std::hex << value;
+  return ss.str();
+}
 
 namespace utils {
 
-QPixmap icon(const QString &id);
 bool isDarkTheme();
 void setTheme(int theme);
-QString formatSeconds(double sec, bool include_milliseconds = false, bool absolute_time = false);
-inline void drawStaticText(QPainter *p, const QRect &r, const QStaticText &text) {
-  auto size = (r.size() - text.size()) / 2;
-  p->drawStaticText(r.left() + size.width(), r.top() + size.height(), text);
-}
-inline QString toHex(const std::vector<uint8_t> &dat, char separator = '\0') {
-  return QByteArray::fromRawData((const char *)dat.data(), dat.size()).toHex(separator).toUpper();
-}
-
-}
-
-class ToolButton : public QToolButton {
-  Q_OBJECT
-public:
-  ToolButton(const QString &icon, const QString &tooltip = {}, QWidget *parent = nullptr) : QToolButton(parent) {
-    setIcon(icon);
-    setToolTip(tooltip);
-    setAutoRaise(true);
-    const int metric = QApplication::style()->pixelMetric(QStyle::PM_SmallIconSize);
-    setIconSize({metric, metric});
-    theme = settings.theme;
-    connect(&settings, &Settings::changed, this, &ToolButton::updateIcon);
+std::string formatSeconds(double sec, bool include_milliseconds = false, bool absolute_time = false);
+inline std::string toHex(const std::vector<uint8_t> &dat, char separator = '\0') {
+  std::stringstream ss;
+  for (size_t i = 0; i < dat.size(); ++i) {
+    if (i > 0 && separator != '\0') ss << separator;
+    ss << std::setfill('0') << std::setw(2) << std::uppercase << std::hex << static_cast<int>(dat[i]);
   }
-  void setIcon(const QString &icon) {
-    icon_str = icon;
-    QToolButton::setIcon(utils::icon(icon_str));
-  }
+  return ss.str();
+}
 
-private:
-  void updateIcon() { if (std::exchange(theme, settings.theme) != theme) setIcon(icon_str); }
-  QString icon_str;
-  int theme;
-};
+}
 
-class TabBar : public QTabBar {
-  Q_OBJECT
-
+// Unix signal handling for Raylib (simplified)
+class UnixSignalHandler {
 public:
-  TabBar(QWidget *parent) : QTabBar(parent) {}
-  int addTab(const QString &text);
-
-private:
-  void closeTabClicked();
-};
-
-class UnixSignalHandler : public QObject {
-  Q_OBJECT
-
-public:
-  UnixSignalHandler(QObject *parent = nullptr);
+  UnixSignalHandler();
   ~UnixSignalHandler();
   static void signalHandler(int s);
 
-public slots:
-  void handleSigTerm();
-
 private:
-  inline static int sig_fd[2] = {};
-  QSocketNotifier *sn;
+  static void handleSigTerm();
+
+  // Static members for signal handling
+  static int sig_fd[2];
 };
 
 int num_decimals(double num);
-QString signalToolTip(const cabana::Signal *sig);
-inline QString toHexString(int value) { return QString("0x%1").arg(QString::number(value, 16).toUpper(), 2, '0'); }
+std::string signalToolTip(const cabana::Signal *sig);
 void initApp(int argc, char *argv[], bool disable_hidpi = true);
-QPixmap bootstrapPixmap(const QString &id);

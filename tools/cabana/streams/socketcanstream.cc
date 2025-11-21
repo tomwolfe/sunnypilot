@@ -22,7 +22,7 @@ bool SocketCanStream::connect() {
 void SocketCanStream::streamThread() {
   // This would read from the SocketCAN interface
   // Implementation similar to the raylib version but adapted for the stream interface
-  while (!paused_) {
+  while (!isPaused()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     // In real implementation: read CAN frames and add to events
   }

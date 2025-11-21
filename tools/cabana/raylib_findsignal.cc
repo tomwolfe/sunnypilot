@@ -238,6 +238,7 @@ void FindSignalDlg::render(const Rectangle& parentBounds) {
     const char* compareOptions[] = {"=", ">", ">=", "!=", "<", "<=", "between"};
     DrawText(compareOptions[compareSelection], compareCbBounds.x + 5, compareCbBounds.y + 3, 10, BLACK);
     
+    Vector2 mousePos = GetMousePosition();
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mousePos, compareCbBounds)) {
         compareSelection = (compareSelection + 1) % 7;
     }
@@ -385,8 +386,6 @@ void FindSignalDlg::search() {
 }
 
 void FindSignalDlg::modelReset() {
-    bool isEmptyHistory = model.histories.empty();
-    
     // Update status text
     statusText = std::to_string(model.filtered_signals.size()) + " matches. Double click on an item to open message";
 }

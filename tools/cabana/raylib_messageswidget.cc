@@ -159,10 +159,10 @@ void MessagesWidget::render(const Rectangle& bounds) {
 
   // Draw panel background
   DrawRectangleRec(bounds, Color{240, 240, 240, 255}); // Light gray
-  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, RAYLIB_LIGHTGRAY);
+  DrawRectangleLines(bounds.x, bounds.y, bounds.width, bounds.height, (Color){211, 211, 211, 255}); // LIGHTGRAY in RGB
 
   // Draw title
-  DrawText(title.c_str(), bounds.x + 10, bounds.y + 5, 14, RAYLIB_DARKGRAY);
+  DrawText(title.c_str(), bounds.x + 10, bounds.y + 5, 14, (Color){64, 64, 64, 255}); // DARKGRAY in RGB
 
   // Draw header row
   float header_height = 20;
@@ -176,8 +176,8 @@ void MessagesWidget::render(const Rectangle& bounds) {
   for (int i = 0; i < 7; ++i) {
     float x = bounds.x + bounds.width * col_positions[i];
     float width = bounds.width * col_widths[i];
-    DrawText(headers[i], x + 5, bounds.y + 22, 12, RAYLIB_DARKGRAY);
-    DrawLine(bounds.x + x + width, bounds.y + 20, bounds.x + x + width, bounds.y + 20 + header_height, RAYLIB_GRAY);
+    DrawText(headers[i], x + 5, bounds.y + 22, 12, (Color){64, 64, 64, 255}); // DARKGRAY in RGB
+    DrawLine(bounds.x + x + width, bounds.y + 20, bounds.x + x + width, bounds.y + 20 + header_height, (Color){128, 128, 128, 255}); // GRAY in RGB
   }
 
   // Draw messages
@@ -205,13 +205,13 @@ void MessagesWidget::render(const Rectangle& bounds) {
 
     float scrollbar_y = bounds.y + 40 + (bounds.height - 85) * scroll_ratio;
 
-    DrawRectangle(bounds.x + bounds.width - 15, scrollbar_y, 10, scrollbar_height, RAYLIB_GRAY);
+    DrawRectangle(bounds.x + bounds.width - 15, scrollbar_y, 10, scrollbar_height, (Color){128, 128, 128, 255}); // GRAY in RGB
   }
 }
 
 void MessagesWidget::drawRow(int index, float yPos, const Rectangle& bounds, const MessageListModel::Item& item) {
-  Color textColor = (index == selected_message_index) ? RAYLIB_BLUE : RAYLIB_DARKGRAY;
-  Color bgColor = (index == selected_message_index) ? Color{200, 200, 255, 255} : RAYLIB_RAYWHITE;
+  Color textColor = (index == selected_message_index) ? (Color){0, 121, 241, 255} : (Color){64, 64, 64, 255}; // BLUE or DARKGRAY in RGB
+  Color bgColor = (index == selected_message_index) ? Color{200, 200, 255, 255} : (Color){245, 245, 245, 255}; // RAYWHITE equivalent
 
   // Draw row background if selected
   if (index == selected_message_index) {

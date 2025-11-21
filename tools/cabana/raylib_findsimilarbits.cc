@@ -50,7 +50,9 @@ void FindSimilarBitsDlg::update() {
                 // Double-click simulation (in real app this would be two quick clicks)
                 if (GetTime() - lastClickTime < 0.5) {  // Double click threshold
                     if (onOpenMessage && selectedRow >= 0 && selectedRow < results.size()) {
-                        MessageId msg_id = {.source = static_cast<uint8_t>(findBus), .address = results[selectedRow].address};
+                        MessageId msg_id;
+                        msg_id.source = static_cast<uint8_t>(findBus);
+                        msg_id.address = results[selectedRow].address;
                         onOpenMessage(msg_id);
                     }
                 }

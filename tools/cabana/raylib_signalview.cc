@@ -2,8 +2,7 @@
 #include <sstream>
 #include <iomanip>
 
-SignalView::SignalView(ChartsWidget *charts_widget, void* parent) 
-    : charts_widget_(charts_widget) {
+SignalView::SignalView(ChartsWidget *charts_widget, void* parent) {
     // Initialize with default values
     updateToolBar();
 }
@@ -101,7 +100,7 @@ void SignalView::drawSignalRow(int index, float yPos, const Rectangle& bounds, c
     
     // Draw signal type indicator if multiplexed
     if (signal.type != "Normal Signal") {
-        Rectangle indicator_rect = {bounds.x + bounds.width - 120, static_cast<int>(yPos), 30, 15};
+        Rectangle indicator_rect = {static_cast<float>(bounds.x + bounds.width - 120), static_cast<float>(yPos), 30.0f, 15.0f};
         DrawRectangleRec(indicator_rect, GRAY);
         DrawText(signal.type == "Multiplexor Signal" ? "M" : "m", 
                  indicator_rect.x + 10, indicator_rect.y + 1, 8, WHITE);
