@@ -27,10 +27,19 @@ KI = 0.5
 KD = 0.0
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
 KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
-# Define the curvature gain interpolation. The first array represents absolute
-# curvature values (in 1/meter), and the second array represents the corresponding
-# gain multipliers for the proportional term.
+# Define the curvature gain interpolation.
+# The first array represents absolute curvature values (in 1/meter).
+# The second array represents the corresponding gain multipliers for the proportional term.
 # Values outside the defined curvature range will be clamped to the nearest boundary.
+#
+# Default values explanation:
+# - Curvature 0.06 m^-1 corresponds to a 16.7m radius turn, typical for sharp urban corners.
+# - A gain multiplier of 2.0 means proportional gain is doubled for the sharpest turns.
+#
+# Tuning guidance:
+# These values can be tuned for different vehicle types based on steering ratio and tire characteristics.
+# Increasing the gain multiplier will make the steering more aggressive in turns.
+# Ensure that the curvature values are non-negative and in ascending order, and gain multipliers are >= 1.0.
 CURVATURE_GAIN_INTERP = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]
 
 LP_FILTER_CUTOFF_HZ = 1.2

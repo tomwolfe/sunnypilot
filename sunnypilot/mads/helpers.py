@@ -6,7 +6,9 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 import json
+import numpy as np
 from openpilot.common.params import Params
+from openpilot.common.swaglog import cloudlog
 from opendbc.car import structs
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.hyundai.values import HyundaiFlagsSP, HyundaiSafetyFlagsSP
@@ -90,12 +92,30 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
   if curvature_gain_interp_str:
     try:
       curvature_gain_interp = json.loads(curvature_gain_interp_str)
-      # Basic validation: ensure it's a list of two lists of floats
-      if (isinstance(curvature_gain_interp, list) and len(curvature_gain_interp) == 2 and
-          all(isinstance(l, list) and all(isinstance(f, (float, int)) for f in l) for l in curvature_gain_interp)):
-        CP_SP.curvatureGainInterp = curvature_gain_interp
-    except json.JSONDecodeError:
-      cloudlog.error("Failed to decode CurvatureGainInterp from Params")
+      # Comprehensive validation for curvatureGainInterp
+      if not (isinstance(curvature_gain_interp, list) and len(curvature_gain_interp) == 2 and
+              all(isinstance(l, list) and all(isinstance(f, (float, int)) for f in l) for l in curvature_gain_interp)):
+        raise ValueError("curvatureGainInterp must be a list of two lists of floats")
+
+      curvatures = np.array(curvature_gain_interp[0])
+      gains = np.array(curvature_gain_interp[1])
+
+      if not all(curvatures >= 0):
+        raise ValueError("Curvature values must be non-negative")
+      if not all(np.diff(curvatures) > 0):
+        raise ValueError("Curvature values must be in ascending order")
+      if not all(gains >= 1.0):
+        raise ValueError("Gain multipliers must be at least 1.0 (reducing gain for curves is counterproductive)")
+      if len(curvatures) != len(gains):
+        raise ValueError("Curvature values and gain multipliers must have the same length")
+      if len(curvatures) == 0:
+        raise ValueError("Curvature values cannot be empty")
+      if max(curvatures) > 0.1: # Max physical curvature limit of 0.1 m^-1 (10m radius)
+        raise ValueError("Curvature values exceed physical limits for road turns (max 0.1 m^-1)")
+
+      CP_SP.curvatureGainInterp = curvature_gain_interp
+    except (json.JSONDecodeError, ValueError) as e:
+      cloudlog.error(f"Failed to decode or validate CurvatureGainInterp from Params: {e}")
 
   # Use the new validation system
   validator = ParamsValidator(params)
