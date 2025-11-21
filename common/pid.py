@@ -3,11 +3,12 @@ from numbers import Number
 from openpilot.common.performance_monitor import PerfTrack
 
 class PIDController:
-  def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, pos_limit=1e308, neg_limit=-1e308, rate=100):
+  def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0, pos_limit=1e308, neg_limit=-1e308, rate=100):
     self._k_p = k_p
     self._k_i = k_i
     self._k_d = k_d
     self._k_curvature = k_curvature
+    self.max_curvature_gain_multiplier = max_curvature_gain_multiplier  # Configurable maximum gain multiplier
     self.k_f = k_f   # feedforward gain
     if isinstance(self._k_p, Number):
       self._k_p = [[0], [self._k_p]]
@@ -57,7 +58,7 @@ class PIDController:
       # Implement safety bounds to prevent excessive gain growth when both factors are high
       # This is particularly important for corner cases where both speed and curvature
       # require high gains simultaneously
-      max_allowable_gain = original_k_p * 4.0  # Allow up to 4x total gain
+      max_allowable_gain = original_k_p * self.max_curvature_gain_multiplier  # Allow configurable max gain
       k_p = min(k_p, max_allowable_gain)
 
     return k_p

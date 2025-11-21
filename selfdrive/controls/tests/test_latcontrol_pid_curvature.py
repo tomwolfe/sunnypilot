@@ -29,6 +29,7 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         # Create custom CarParamsSP with curvature gain interpolation
         CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
         CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]  # Default curvature gain
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
         
         CI = CarInterface(CP, CP_SP)
         sunnypilot_interfaces.setup_interfaces(CI)
@@ -81,6 +82,7 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         # Define a simple curvature gain curve for testing
         CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
         CP_SP.curvatureGainInterp = [[0.0, 0.05, 0.1], [1.0, 1.5, 2.0]]  # Simple curve
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
         
         CI = CarInterface(CP, CP_SP)
         sunnypilot_interfaces.setup_interfaces(CI)
@@ -128,6 +130,7 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         # Set up curvature gain with reasonable range
         CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
         CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04], [1.0, 1.2, 1.5]]  # Normal range
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
         
         CI = CarInterface(CP, CP_SP)
         sunnypilot_interfaces.setup_interfaces(CI)
@@ -171,6 +174,7 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         # Set up curvature gain
         CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
         CP_SP.curvatureGainInterp = [[0.0, 0.02, 0.04], [1.0, 1.2, 1.5]]
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
         
         CI = CarInterface(CP, CP_SP)
         sunnypilot_interfaces.setup_interfaces(CI)
@@ -211,6 +215,7 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         # Create CarParamsSP without curvature gain (should use default)
         CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
         CP_SP.curvatureGainInterp = None  # Explicitly set to None
+        CP_SP.maxCurvatureGainMultiplier = 4.0  # Default max gain multiplier
         
         CI = CarInterface(CP, CP_SP)
         sunnypilot_interfaces.setup_interfaces(CI)
@@ -243,6 +248,51 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
             self.assertTrue(np.isfinite(pid_log.p), "P term should be finite with default curvature gain")
         except Exception as e:
             self.fail(f"PID controller should work with default curvature gain: {e}")
+
+  @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+  def test_pid_curvature_gain_configurable_max_multiplier(self, car_name):
+    """Test that the PID controller respects configurable maximum gain multiplier"""
+    CarInterface = interfaces[car_name]
+    CP = CarInterface.get_non_essential_params(car_name)
+
+    # Create CarParamsSP with high curvature gain and low max multiplier
+    CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+    CP_SP.curvatureGainInterp = [[0.0, 0.06], [1.0, 5.0]]  # Very high gain at high curvature
+    CP_SP.maxCurvatureGainMultiplier = 2.0  # Restrict to 2x max gain
+
+    CI = CarInterface(CP, CP_SP)
+    sunnypilot_interfaces.setup_interfaces(CI)
+    CP_SP = convert_to_capnp(CP_SP)
+    VM = VehicleModel(CP)
+
+    controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+    CS = car.CarState.new_message()
+    CS.vEgo = 5  # 5 m/s
+    CS.steeringPressed = False
+    CS.steeringAngleDeg = 2.0
+
+    params = log.LiveParametersData.new_message()
+    params.angleOffsetDeg = 0.0
+
+    from openpilot.selfdrive.locationd.helpers import Pose
+    from openpilot.common.mock.generators import generate_livePose
+    lp = generate_livePose()
+    pose = Pose.from_live_pose(lp.livePose)
+
+    # Test with high curvature that would normally result in 5x gain
+    # but should be limited to 2x due to max multiplier
+    high_curvature = 0.06
+
+    controller.pid.reset()
+    output, _, pid_log = controller.update(True, CS, VM, params, False, high_curvature, pose, False, 0.2)
+
+    # Verify the gain is limited by the configurable multiplier
+    # The original gain would be much higher without the limit
+    self.assertTrue(np.isfinite(output), "Controller output should be finite with max gain limit")
+    # The P term should be limited by the max multiplier
+    self.assertLessEqual(abs(pid_log.p), abs(controller.pid._k_p[1][0] * 2.0 * CS.steeringAngleDeg),
+                        "P term should be limited by max gain multiplier")
 
 
 if __name__ == "__main__":

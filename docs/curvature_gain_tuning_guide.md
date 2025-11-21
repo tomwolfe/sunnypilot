@@ -87,6 +87,10 @@ The effective proportional gain (`k_p_effective`) used by the PID controller is 
 base_k_p = np.interp(speed, kpBP, kpV)  # Speed-based proportional gain
 curvature_gain_multiplier = np.interp(abs(desired_curvature), curvatures, gains)
 k_p_effective = base_k_p * curvature_gain_multiplier
+
+# Apply configurable maximum gain multiplier to prevent explosive behavior
+max_allowable_gain = original_k_p * maxCurvatureGainMultiplier  # Configurable safety limit
+k_p_effective = min(k_p_effective, max_allowable_gain)
 ```
 
 Where:
@@ -94,8 +98,19 @@ Where:
 - `kpBP`, `kpV`: Breakpoints and values for the speed-based proportional gain lookup table.
 - `desired_curvature`: The absolute value of the desired road curvature.
 - `curvatures`, `gains`: The configured arrays from `CurvatureGainInterp` (now `MaxCurvatureForGainInterp`).
+- `maxCurvatureGainMultiplier`: Configurable maximum gain multiplier from `MaxCurvatureGainMultiplier` parameter.
 
-This shows that the curvature gain acts as a multiplier on top of the already speed-adjusted base proportional gain.
+This shows that the curvature gain acts as a multiplier on top of the already speed-adjusted base proportional gain, with an additional configurable safety limit to prevent excessive gain growth.
+
+### MaxCurvatureGainMultiplier Parameter
+
+The `MaxCurvatureGainMultiplier` parameter allows for configurable maximum gain limiting, with vehicle-specific defaults based on mass:
+
+- **Heavy vehicles (mass > 2000kg)**: Default 3.0 (conservative for safety)
+- **Standard vehicles (1200kg ≤ mass ≤ 2000kg)**: Default 4.0 (balanced for most applications)
+- **Light vehicles (mass < 1200kg)**: Default 5.0 (more responsive when appropriate)
+
+This parameter can be overridden via the `MaxCurvatureGainMultiplier` parameter (1.0 to 10.0 range) to suit specific vehicle capabilities or application requirements.
 
 
 ## Setting the Parameter

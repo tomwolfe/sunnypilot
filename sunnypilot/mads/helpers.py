@@ -114,9 +114,9 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       if len(curvatures) == 0:
         raise ValueError("Curvature values cannot be empty")
 
-      # Determine maximum curvature limit based on vehicle characteristics for better safety
+      # Determine maximum curvature limit based on comprehensive vehicle characteristics for better safety
       # Default to 0.1 m^-1 (10m radius) for standard vehicles, but allow customization for urban driving
-      # Adjust limit based on vehicle-specific characteristics for better safety
+      # Adjust limit based on multiple vehicle-specific characteristics for better safety
       base_curvature_limit = 0.1  # Default: 10m radius turn
 
       # Adjust based on vehicle's turning capability and safety characteristics
@@ -131,6 +131,35 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
           base_curvature_limit = min(base_curvature_limit * 1.2, 0.2)
         elif CP.steerRatio < 12:  # Lower steering ratio = less responsive steering
           base_curvature_limit = max(base_curvature_limit * 0.8, 0.05)
+
+      # Consider vehicle's center of gravity and stability characteristics
+      # Higher center of gravity vehicles should have more conservative limits
+      if hasattr(CP, 'centerToFront') and CP.centerToFront is not None:
+        # If the center is further towards the rear (more weight on rear),
+        # adjust for possible oversteering characteristics
+        front_weight_ratio = CP.centerToFront / CP.wheelbase
+        if front_weight_ratio > 0.6:  # More weight on front (conservative) - can handle more curvature
+          base_curvature_limit = min(base_curvature_limit * 1.1, 0.2)
+        elif front_weight_ratio < 0.45:  # More weight on rear (potentially unstable) - be more conservative
+          base_curvature_limit = max(base_curvature_limit * 0.9, 0.03)
+
+      # Consider vehicle track width for stability (if available)
+      if hasattr(CP, 'wheelStrutOffset') and CP.wheelStrutOffset is not None:
+        # Wider track = more stability = can handle higher curvatures
+        if CP.wheelStrutOffset > 0.2:  # Wider track vehicles
+          base_curvature_limit = min(base_curvature_limit * 1.05, 0.2)
+
+      # Consider vehicle mass distribution and overall mass
+      if CP.mass > 2200:  # Heavy vehicles (SUVs, trucks) - reduce limits for safety
+        base_curvature_limit = max(base_curvature_limit * 0.9, 0.03)
+      elif CP.mass < 1100:  # Light vehicles - can be more aggressive
+        base_curvature_limit = min(base_curvature_limit * 1.1, 0.2)
+
+      # Additional vehicle-specific factors could be considered in the future:
+      # - Tire size and type (if available in CP)
+      # - Suspension characteristics
+      # - Aerodynamic properties
+      # - Brake distribution
 
       # Allow user override but within safe bounds for the specific vehicle
       max_curvature_limit = base_curvature_limit
@@ -185,6 +214,29 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default on error
   else:
     CP_SP.curvatureGainInterp = [[0.0], [1.0]] # Set safe default if param is not set
+
+  # Set configurable maximum curvature gain multiplier with vehicle-specific defaults
+  max_curvature_gain_multiplier_str = params.get("MaxCurvatureGainMultiplier", encoding='utf8')
+  if max_curvature_gain_multiplier_str:
+    try:
+      max_curvature_gain_multiplier = float(max_curvature_gain_multiplier_str)
+      # Validate the multiplier is reasonable - minimum 1.0 (no gain limiting), maximum 10.0 (very aggressive)
+      if 1.0 <= max_curvature_gain_multiplier <= 10.0:
+        CP_SP.maxCurvatureGainMultiplier = max_curvature_gain_multiplier
+      else:
+        cloudlog.warning(f"MaxCurvatureGainMultiplier parameter {max_curvature_gain_multiplier} outside safe range [1.0, 10.0], using default 4.0")
+        CP_SP.maxCurvatureGainMultiplier = 4.0
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid MaxCurvatureGainMultiplier parameter: {max_curvature_gain_multiplier_str}, using default 4.0")
+      CP_SP.maxCurvatureGainMultiplier = 4.0
+  else:
+    # Set default based on vehicle characteristics
+    if CP.mass > 2000:  # Large/heavy vehicles get more conservative default
+      CP_SP.maxCurvatureGainMultiplier = 3.0
+    elif CP.mass < 1200:  # Lighter vehicles can be more aggressive if needed
+      CP_SP.maxCurvatureGainMultiplier = 5.0
+    else:  # Standard vehicles
+      CP_SP.maxCurvatureGainMultiplier = 4.0
 
   # Use the new validation system
   validator = ParamsValidator(params)

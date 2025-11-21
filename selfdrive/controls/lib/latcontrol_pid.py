@@ -12,9 +12,12 @@ class LatControlPID(LatControl):
     super().__init__(CP, CP_SP, CI, dt)
     # Use curvature gain interpolation from car params if available, otherwise use default
     curvature_gain_interp = CP_SP.curvatureGainInterp if CP_SP.curvatureGainInterp else [[0.0], [1.0]]
+    # Use configurable max curvature gain multiplier from car params, default to 4.0 for safety
+    max_curvature_gain_multiplier = getattr(CP_SP, 'maxCurvatureGainMultiplier', 4.0)
     self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
                              (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
                              k_curvature=curvature_gain_interp,
+                             max_curvature_gain_multiplier=max_curvature_gain_multiplier,
                              pos_limit=self.steer_max, neg_limit=-self.steer_max)
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
