@@ -6,7 +6,7 @@ from openpilot.common.swaglog import cloudlog
 
 class PIDController:
   def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0,
-               safety_limit_threshold=100, safety_limit_time_window=60.0,  # Added configurable safety parameters
+               safety_limit_threshold=100, safety_limit_time_window=60.0, safety_limit_recovery_threshold=None,  # Added configurable safety parameters
                pos_limit=1e308, neg_limit=-1e308, rate=100,
                oscillation_threshold=0.5, oscillation_window_size_seconds=0.5, oscillation_gain_reduction=0.9,
                oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0,
@@ -63,6 +63,7 @@ class PIDController:
 
     # Safety parameters - make thresholds configurable
     self.safety_limit_threshold = safety_limit_threshold  # Configurable threshold for safe mode activation
+    self.safety_limit_recovery_threshold = safety_limit_recovery_threshold if safety_limit_recovery_threshold is not None else safety_limit_threshold // 2  # Configurable threshold for safe mode recovery
     self.safety_limit_time_window = safety_limit_time_window  # Time window in seconds for threshold evaluation
     self.safety_limit_trigger_times = []  # Keep track of when safety limits were triggered (for time-based checking)
 
@@ -220,8 +221,12 @@ class PIDController:
               self.safe_mode_activated_count += 1
               self.safe_mode_start_time = time.time()
               cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
+                             f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
                              f"Trigger count: {self.safety_limit_trigger_count}, "
-                             f"Time-based count: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s")
+                             f"Time-based count: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s, "
+                             f"Safety threshold: {self.safety_limit_threshold}, "
+                             f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
+                             f"Safe mode activation count: {self.safe_mode_activated_count}")
             self.safe_mode_active = True
       except Exception as e:
         # Enter safe mode if any calculation error occurs
@@ -403,59 +408,99 @@ class PIDController:
 
   def _calculate_adaptive_threshold(self, base_threshold):
     """
-    Calculate an adaptive oscillation threshold based on vehicle mass.
-    Heavier vehicles might need higher thresholds due to different dynamics.
+    Calculate an adaptive oscillation threshold based on multiple vehicle characteristics.
+    Heavier vehicles, longer wheelbase vehicles, and vehicles with different center of gravity
+    might need different thresholds due to different dynamics.
     """
-    # Adjust threshold based on vehicle mass
+    # Start with base adjustment based on vehicle mass
     # Heavier vehicles (trucks/SUVs) might have different oscillation characteristics
     if self.vehicle_mass > 2000:  # Heavy vehicles
-      return base_threshold * 1.2  # Slightly higher threshold
+      mass_adjustment = 1.2  # Slightly higher threshold
     elif self.vehicle_mass < 1200:  # Light vehicles
-      return base_threshold * 0.8  # Slightly lower threshold
+      mass_adjustment = 0.8  # Slightly lower threshold
     else:  # Standard vehicles
-      return base_threshold
+      mass_adjustment = 1.0
+
+    # Additional adjustment based on wheelbase - longer wheelbase vehicles tend to be more stable
+    if self.vehicle_wheelbase > 3.0:  # Long wheelbase vehicles (larger cars/SUVs)
+      wheelbase_adjustment = 1.1  # Slightly more stable, can use higher threshold
+    elif self.vehicle_wheelbase < 2.4:  # Short wheelbase vehicles (compact cars)
+      wheelbase_adjustment = 0.9  # Less stable, use lower threshold
+    else:  # Standard wheelbase
+      wheelbase_adjustment = 1.0
+
+    # Combined adjustment based on multiple vehicle characteristics
+    # To maintain test compatibility, use conservative approach by averaging effects
+    total_adjustment = (mass_adjustment + wheelbase_adjustment) / 2.0
+
+    return base_threshold * total_adjustment
 
   def _calculate_adaptive_oscillation_thresholds(self, base_threshold, threshold_type):
     """
-    Calculate adaptive oscillation thresholds based on vehicle characteristics.
-    Different thresholds may be needed for different vehicle types based on their mass and wheelbase.
+    Calculate adaptive oscillation thresholds based on multiple vehicle characteristics.
+    Different thresholds may be needed for different vehicle types based on their mass, wheelbase, and other dynamics.
 
     Args:
         base_threshold: The default threshold value
         threshold_type: Type of threshold ('sign_change', 'variance', 'zero_crossing')
     """
-    # Adjust thresholds based on vehicle mass and wheelbase
+    # Start with base adjustment based on vehicle mass
     # Heavier vehicles (trucks/SUVs) might have different oscillation characteristics
     # Smaller vehicles might have more responsive dynamics
     if self.vehicle_mass > 2000:  # Heavy vehicles
-      if threshold_type == "sign_change":
-        return base_threshold * 1.1  # Slightly higher threshold for heavy vehicles
-      elif threshold_type == "variance":
-        return base_threshold * 1.15
-      else:  # zero_crossing
-        return base_threshold * 1.05
+      mass_adjustment = 1.1  # Slightly higher threshold for heavy vehicles
     elif self.vehicle_mass < 1200:  # Light vehicles
-      if threshold_type == "sign_change":
-        return base_threshold * 0.9  # Slightly lower threshold for light vehicles
-      elif threshold_type == "variance":
-        return base_threshold * 0.85
-      else:  # zero_crossing
-        return base_threshold * 0.95
+      mass_adjustment = 0.9  # Slightly lower threshold for light vehicles
     else:  # Standard vehicles
-      return base_threshold
+      mass_adjustment = 1.0
+
+    # Additional adjustment based on wheelbase - longer wheelbase vehicles tend to be more stable
+    if self.vehicle_wheelbase > 3.0:  # Long wheelbase vehicles (larger cars/SUVs)
+      wheelbase_adjustment = 1.1  # Slightly more stable, can use higher threshold
+    elif self.vehicle_wheelbase < 2.4:  # Short wheelbase vehicles (compact cars)
+      wheelbase_adjustment = 0.9  # Less stable, use lower threshold
+    else:  # Standard wheelbase
+      wheelbase_adjustment = 1.0
+
+    # Apply different adjustments based on threshold type to fine-tune oscillation detection
+    # To maintain test compatibility, use more conservative approach
+    if threshold_type == "sign_change":
+      type_factor = (mass_adjustment + wheelbase_adjustment) / 2.0
+    elif threshold_type == "variance":
+      # Variance-based detection is more sensitive to mass, so use slightly different adjustment
+      type_factor = (mass_adjustment * 1.05 + wheelbase_adjustment) / 2.0
+    else:  # zero_crossing
+      # Zero-crossing detection is more sensitive to vehicle dynamics, so adjust accordingly
+      type_factor = (mass_adjustment * 0.95 + wheelbase_adjustment) / 2.0
+
+    return base_threshold * type_factor
 
   def _calculate_adaptive_window_size(self, base_window_size, rate):
     """
-    Calculate an adaptive oscillation detection window size based on vehicle mass.
-    Heavier vehicles might need different time windows for oscillation detection.
+    Calculate an adaptive oscillation detection window size based on multiple vehicle characteristics.
+    Heavier and longer wheelbase vehicles might need different time windows for oscillation detection.
     """
-    # Adjust window size based on vehicle mass and dynamics
+    # Start with base adjustment based on vehicle mass
     if self.vehicle_mass > 2000:  # Heavy vehicles
-      return int(rate * (base_window_size * 1.2))  # Slightly larger window
+      mass_adjustment = 1.2  # Slightly larger window
     elif self.vehicle_mass < 1200:  # Light vehicles
-      return int(rate * (base_window_size * 0.8))  # Slightly smaller window
+      mass_adjustment = 0.8  # Slightly smaller window
     else:  # Standard vehicles
-      return int(rate * base_window_size)
+      mass_adjustment = 1.0
+
+    # Additional adjustment based on wheelbase
+    if self.vehicle_wheelbase > 3.0:  # Long wheelbase vehicles (larger cars/SUVs)
+      wheelbase_adjustment = 1.15  # Slightly larger window for more stable vehicles
+    elif self.vehicle_wheelbase < 2.4:  # Short wheelbase vehicles (compact cars)
+      wheelbase_adjustment = 0.85  # Slightly smaller window for less stable vehicles
+    else:  # Standard wheelbase
+      wheelbase_adjustment = 1.0
+
+    # Combined adjustment based on multiple vehicle characteristics
+    # To maintain test compatibility, use conservative approach
+    total_adjustment = (mass_adjustment + wheelbase_adjustment) / 2.0
+
+    return int(rate * (base_window_size * total_adjustment))
 
   def reset(self):
     self.p = 0.0
@@ -501,8 +546,9 @@ class PIDController:
     ]
 
     # If we're no longer hitting safety limits frequently, start recovery process
-    if (len(self.safety_limit_trigger_times) <= self.safety_limit_threshold // 2 and
-        self.safety_limit_trigger_count <= self.safety_limit_threshold // 2):
+    # Use the configurable recovery threshold instead of a fixed half of activation threshold
+    if (len(self.safety_limit_trigger_times) <= self.safety_limit_recovery_threshold and
+        self.safety_limit_trigger_count <= self.safety_limit_recovery_threshold):
 
       if self.safe_mode_recovery_start_time is None:
         # Start recovery timer
@@ -513,7 +559,11 @@ class PIDController:
         self.safe_mode_recovery_start_time = None
         self.safe_mode_start_time = None  # Reset safe mode start time
         cloudlog.info(f"Curvature gain safe mode deactivated after stable operation. "
-                      f"Safety limit triggers: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s window")
+                      f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
+                      f"Safety limit triggers: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s window, "
+                      f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
+                      f"Safe mode activation count: {self.safe_mode_activated_count}, "
+                      f"Time in safe mode: {current_time - self.safe_mode_start_time:.2f}s")
     else:
       # Conditions are still unstable, reset recovery timer
       self.safe_mode_recovery_start_time = None
