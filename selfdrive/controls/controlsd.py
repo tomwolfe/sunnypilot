@@ -48,6 +48,14 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
+    # Safety Threshold Definitions for overall_safety_score:
+    # 0.0-0.3: Immediate disengagement - System is in a critical state, immediate human intervention is required.
+    # 0.3-0.5: Strong intervention (reduced speed, conservative control) - System detects high risk, takes strong
+    #          measures to mitigate, but may not fully disengage.
+    # 0.5-0.7: Degraded mode (reduced acceleration, enhanced caution) - System is operating with reduced confidence,
+    #          applies more cautious driving behaviors.
+    # 0.7+: Normal operation - System is functioning as expected with high confidence.
+    #
     # Initialize configurable safety thresholds
     try:
         critical_threshold_param = self.params.get("SafetyCriticalThreshold")
@@ -66,8 +74,8 @@ class Controls(ControlsExt, ModelStateBase):
         if not (0.0 <= self.safety_high_risk_threshold <= 1.0):
             cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} is out of range [0, 1]. Using default 0.4")
             self.safety_high_risk_threshold = 0.4
-        elif self.safety_high_risk_threshold <= self.safety_critical_threshold:
-            cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} is not strictly greater than SafetyCriticalThreshold {self.safety_critical_threshold}. Using default 0.4")
+        elif self.safety_high_risk_threshold <= (self.safety_critical_threshold + 0.1):
+            cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} must be at least 0.1 greater than SafetyCriticalThreshold {self.safety_critical_threshold}. Using default 0.4")
             self.safety_high_risk_threshold = 0.4
     except (TypeError, ValueError):
         self.safety_high_risk_threshold = 0.4  # Default value if parameter is invalid type

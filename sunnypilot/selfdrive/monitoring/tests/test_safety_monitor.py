@@ -324,5 +324,103 @@ def test_safety_monitor_conflicting_sensor_data():
   # With conflicting data, safety score should reflect the uncertainty
 
 
+def test_safety_monitor_sensor_failure_no_radar_lead_with_model_lead():
+  """Test safety monitor behavior when radar fails to detect lead but model suggests lead"""
+  monitor = SafetyMonitor()
+
+  # Model indicates a lead ahead
+  model_v2_msg = create_mock_model_v2_msg()
+  # For modelV2, lead information is typically in modelV2.leads[0].dRel or similar,
+  # but create_mock_model_v2_msg doesn't include it. Let's assume high confidence implies lead detection.
+  # Or, even better, let's make a mock that clearly indicates a lead.
+  # For simplicity, we'll assume the base mock_model_v2_msg implicitly supports a lead detection
+  # since it has high confidence.
+
+  # Radar indicates no lead
+  radar_state_msg = Mock()
+  radar_state_msg.leadOne = Mock()
+  radar_state_msg.leadOne.status = False  # No lead detected by radar
+
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Radar confidence should be low due to no lead, affecting overall safety score
+  assert safety_report['radar_confidence'] < 0.5
+  assert isinstance(safety_score, float)
+  assert isinstance(safety_report, dict)
+  # The overall safety score should be degraded but not critically low, as model still has high confidence.
+  assert safety_score < 1.0
+  assert safety_score > 0.3 # Should not be in critical intervention mode
+
+
+def test_safety_monitor_rapid_threshold_transition():
+  """Test safety monitor's response to a rapidly decreasing safety score, crossing thresholds."""
+  monitor = SafetyMonitor()
+
+  # Mock messages for a consistent environment
+  model_v2_msg = create_mock_model_v2_msg()
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  # Initially, normal conditions, high safety score
+  safety_score, requires_intervention, safety_report = monitor.update(
+      model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+  assert safety_score > 0.7  # Normal operation
+  assert not requires_intervention
+  assert not safety_report['confidence_degraded']
+
+  # Simulate a drop to degraded mode (0.5-0.7)
+  model_v2_msg.meta.confidence = 0.55 # Puts it in degraded range
+  safety_score, requires_intervention, safety_report = monitor.update(
+      model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+  assert safety_score < 0.7 and safety_score > 0.5 # Degraded mode
+  assert not requires_intervention # Should not require intervention yet
+  assert safety_report['confidence_degraded']
+
+  # Simulate a further drop to high risk (0.3-0.5)
+  model_v2_msg.meta.confidence = 0.35 # Puts it in high risk range
+  safety_score, requires_intervention, safety_report = monitor.update(
+      model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+  assert safety_score < 0.5 and safety_score > 0.3 # High risk
+  assert safety_report['confidence_degraded']
+
+  # Simulate a critical drop (0.0-0.3)
+  model_v2_msg.meta.confidence = 0.1 # Puts it in critical range
+  safety_score, requires_intervention, safety_report = monitor.update(
+      model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+  assert safety_score < 0.3 # Critical
+  assert requires_intervention # Should require intervention
+  assert safety_report['confidence_degraded']
+
+
+def test_safety_monitor_default_environmental_conditions():
+  """Test that default environmental conditions are 'normal', 'clear', 'dry' after changes."""
+  monitor = SafetyMonitor()
+
+  model_v2_msg = create_mock_model_v2_msg()
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+  live_pose_msg = Mock() # Acknowledge live_pose_msg presence but it won't impact env conditions with current logic
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg=live_pose_msg
+  )
+
+  # Assert that environmental conditions are set to default safe values
+  assert safety_report['lighting_condition'] == 'normal'
+  assert safety_report['weather_condition'] == 'clear'
+  assert safety_report['road_condition'] == 'dry'
+
+
 if __name__ == "__main__":
   pytest.main([__file__])

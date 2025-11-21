@@ -126,9 +126,14 @@ class SafetyMonitor:
       lead = radar_state_msg.leadOne
       MAX_RADAR_DISTANCE_FOR_CONFIDENCE = 150.0  # Modern radar can detect leads at 150m+
       distance_confidence = max(0.0, 1.0 - (abs(lead.dRel) / MAX_RADAR_DISTANCE_FOR_CONFIDENCE))
-      velocity_confidence = min(1.0, max(0.0, (30.0 - abs(lead.vRel)) / 30.0))
+      velocity_confidence = min(1.0, max(0.0, (100.0 - abs(lead.vRel)) / 100.0))
+      # Add acceleration-based confidence component
+      # Assuming lead.aRel exists and is populated in radar_state_msg.leadOne
+      acceleration_confidence = 1.0 # Default if aRel is not available
+      if hasattr(lead, 'aRel') and lead.aRel is not None:
+        acceleration_confidence = min(1.0, max(0.0, (5.0 - abs(lead.aRel)) / 5.0))
       self.radar_confidence = self.radar_confidence_filter.update(
-        (distance_confidence * 0.7 + velocity_confidence * 0.3)
+        (distance_confidence * 0.5 + velocity_confidence * 0.3 + acceleration_confidence * 0.2)
       )
     else:
       self.radar_confidence = 0.3  # Lower confidence when no lead detected
@@ -162,29 +167,15 @@ class SafetyMonitor:
     # Lighting condition detection - use a more sophisticated approach based on actual lighting data
     # Instead of just using model confidence, look for signs of tunnel lighting based on other indicators
 
-    lighting_factor = 0.5  # Base value
-
-    # Use model confidence as a proxy for visibility conditions if dedicated lighting detection is not available
-    if hasattr(model_v2_msg, 'meta') and hasattr(model_v2_msg.meta, 'confidence') and model_v2_msg.meta.confidence is not None:
-      lighting_factor = model_v2_msg.meta.confidence
-    else:
-      lighting_factor = 0.5 # Default if model confidence is not available
-
-    # Tunnel detection should look for signs like consistent low light with specific visual cues
-    # A better approach is to look for consistent moderate lighting over time with other tunnel indicators
-    # For now, we'll use a more nuanced approach that doesn't label high confidence as tunnel
-    if lighting_factor < 0.3:
-      self.lighting_condition = "night"
-    elif lighting_factor < 0.5:
-      self.lighting_condition = "dawn_dusk"
-    elif lighting_factor > 0.8 and hasattr(model_v2_msg, 'leads') and model_v2_msg.leads is not None:
-      # Check for consistent lighting over time or other tunnel indicators
-      # This is a simplified check - real implementation would use additional data
-      # Check for consistent lighting + tunnel indicators from model
-      # Check for specific visual indicators that suggest tunnel (e.g., consistent lane markings, specific visual patterns)
-      self.lighting_condition = "tunnel"  # Only if additional tunnel indicators are present
-    else:
-      self.lighting_condition = "normal"
+    # Lighting condition detection: Model confidence is not a reliable proxy for lighting.
+    # Without dedicated lighting sensors or camera-based luminance measurements,
+    # we default to 'normal' and log a warning.
+    # Future enhancement: Integrate actual lighting data when available.
+    logging.warning("Dedicated lighting detection data is not available. Defaulting to 'normal' lighting condition.")
+    self.lighting_condition = "normal"
+    # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns).
+    # This cannot be reliably inferred without proper camera-based analysis or dedicated sensors.
+    # For now, tunnel detection is not implemented until appropriate data sources are integrated.
 
     # Weather condition detection based on IMU and car dynamics (improved approach)
     # Use livePose orientation instead of carControl (carControl doesn't have orientation data)
@@ -200,25 +191,15 @@ class SafetyMonitor:
       pitch = live_pose_msg.orientationNED[1]
       roll = live_pose_msg.orientationNED[0]
       orientation_available = True
-    # Fallback: try to get orientation from carState if livePose is not available
-    elif (hasattr(car_state_msg, 'orientationNED') and
-          car_state_msg.orientationNED is not None and
-          hasattr(car_state_msg.orientationNED, '__len__') and
-          len(car_state_msg.orientationNED) >= 3):
-      pitch = car_state_msg.orientationNED[1]
-      roll = car_state_msg.orientationNED[0]
-      orientation_available = True
 
     if orientation_available:
-      # More sophisticated approach than just raw IMU values
-      # Check for sustained unusual angles that might indicate weather or road conditions
-      # Combine multiple indicators for more accurate weather/road condition assessment
-      if acceleration_jerk_indicators:
-        self.road_condition = "potentially_slippery"
-        self.weather_condition = "possible_rain"
-      else:
-        self.road_condition = "dry"
-        self.weather_condition = "clear"
+      # More sophisticated approach than just raw IMU values could use IMU data
+      # to detect sustained unusual angles that might indicate weather or road conditions.
+      # However, `acceleration_jerk_indicators` is not defined.
+      # For now, default to dry and clear conditions if orientation is available,
+      # until specific logic for road/weather condition detection from IMU is implemented.
+      self.road_condition = "dry"
+      self.weather_condition = "clear"
     else:
       # Default to safe assumption if we can't get reliable IMU data
       self.road_condition = "dry"
@@ -237,14 +218,18 @@ class SafetyMonitor:
         x_coords_np = np.array(x_coords)
         y_coords_np = np.array(y_coords)
 
-        # Add validation for path length
-        expected_min_path_points = int(self.max_anticipation_distance / path_interval)
-        if len(x_coords_np) < expected_min_path_points:
-            logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {expected_min_path_points} points.")
-
-        # Calculate first derivatives (dx/ds, dy/ds) using numpy.gradient
         # Assuming path points are equally spaced (0.5m)
         path_interval = 0.5 # Typically 0.5 meters between path points
+
+        # Add proper path length validation
+        min_points_needed = int(self.max_anticipation_distance / path_interval)
+        current_max_anticipation_distance = self.max_anticipation_distance
+        if len(x_coords_np) < min_points_needed:
+            logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {min_points_needed} points.")
+            # Fall back to shorter distance for calculation
+            current_max_anticipation_distance = len(x_coords_np) * path_interval
+
+        # Calculate first derivatives (dx/ds, dy/ds) using numpy.gradient
         dx_ds = np.gradient(x_coords_np, path_interval)
         dy_ds = np.gradient(y_coords_np, path_interval)
 
@@ -252,9 +237,9 @@ class SafetyMonitor:
         d2x_ds2 = np.gradient(dx_ds, path_interval)
         d2y_ds2 = np.gradient(dy_ds, path_interval)
 
-        # Iterate up to the maximum anticipation distance
+        # Iterate up to the effective maximum anticipation distance
         # Ensure that we don't go out of bounds
-        for i in range(min(len(x_coords_np), int(self.max_anticipation_distance / path_interval))): # Loop over path points up to max_anticipation_distance
+        for i in range(min(len(x_coords_np), int(current_max_anticipation_distance / path_interval))): # Loop over path points up to max_anticipation_distance
             if i >= len(dx_ds) or i >= len(d2x_ds2): # Check array bounds
                 continue
 
