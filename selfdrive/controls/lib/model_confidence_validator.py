@@ -14,7 +14,7 @@ from .safety_state_manager import ERROR_HANDLING
 
 class ModelConfidenceValidator:
     """
-    Enhanced model confidence validation with cross-verification
+    Enhanced model confidence validation with cross-verification and multi-sensor validation
     """
 
     def __init__(self):
@@ -24,45 +24,62 @@ class ModelConfidenceValidator:
         self.confidence_threshold = SAFETY_PARAMETERS['MODEL_CONFIDENCE_THRESHOLD']  # Minimum confidence for safe operation
         self.low_confidence_count = 0
         self.max_low_confidence = ERROR_HANDLING['max_consecutive_failures']  # From standardized error handling policy
+
+        # Add cross-validation components
+        self.radar_confidence_buffer = []
+        self.camera_confidence_buffer = []
+        self.max_validation_buffer = 20  # Buffer size for cross-validation
+
+        # Track lead vehicle detection confidence from various sources
+        self.lead_detection_confidence_history = []
         
-    def validate_model_output(self, model_output: Dict[str, Any], 
-                            v_ego: float, 
-                            curvature: float) -> Tuple[float, bool, Dict[str, Any]]:
+    def validate_model_output(self, model_output: Dict[str, Any],
+                            v_ego: float,
+                            curvature: float,
+                            radar_data: Optional[Dict[str, Any]] = None,
+                            camera_data: Optional[Dict[str, Any]] = None) -> Tuple[float, bool, Dict[str, Any]]:
         """
         Validate model output and return enhanced confidence score
         :param model_output: Raw model output to validate
         :param v_ego: Current vehicle speed
         :param curvature: Current road curvature
+        :param radar_data: Optional radar data for cross-validation
+        :param camera_data: Optional camera-based object detection for cross-validation
         :return: Tuple of (enhanced_confidence, is_safe, validation_details)
         """
         validation_details = {}
-        
+
         # Get base confidence from model
         base_confidence = self._get_base_confidence(model_output)
         validation_details['base_confidence'] = base_confidence
-        
+
         # Perform path consistency check
         path_consistency = self._check_path_consistency(model_output)
         validation_details['path_consistency'] = path_consistency
-        
+
         # Perform curvature smoothness check
         curvature_smoothness = self._check_curvature_smoothness(model_output, v_ego, curvature)
         validation_details['curvature_smoothness'] = curvature_smoothness
-        
+
         # Perform temporal consistency check
         temporal_consistency = self._check_temporal_consistency(model_output)
         validation_details['temporal_consistency'] = temporal_consistency
-        
+
+        # Perform cross-sensor validation using radar and camera data if available
+        cross_sensor_validation = self._validate_with_cross_sensors(model_output, radar_data, camera_data, v_ego)
+        validation_details['cross_sensor_validation'] = cross_sensor_validation
+
         # Calculate enhanced confidence based on all validation factors
         enhanced_confidence = self._calculate_enhanced_confidence(
-            base_confidence, path_consistency, curvature_smoothness, temporal_consistency, v_ego
+            base_confidence, path_consistency, curvature_smoothness, temporal_consistency,
+            cross_sensor_validation, v_ego
         )
-        
+
         # Track confidence history
         self.confidence_history.append(enhanced_confidence)
         if len(self.confidence_history) > self.max_history:
             self.confidence_history.pop(0)
-        
+
         # Check if confidence is low for consecutive readings
         if enhanced_confidence < self.confidence_threshold:
             self.low_confidence_count += 1
@@ -179,32 +196,92 @@ class ModelConfidenceValidator:
             cloudlog.error(f"Error in temporal consistency check: {e}")
             return 0.9  # Default to slightly reduced confidence on error
     
-    def _calculate_enhanced_confidence(self, base_confidence: float, path_consistency: float, 
-                                     curvature_smoothness: float, temporal_consistency: float, 
-                                     v_ego: float) -> float:
+    def _validate_with_cross_sensors(self, model_output: Dict[str, Any],
+                                   radar_data: Optional[Dict[str, Any]],
+                                   camera_data: Optional[Dict[str, Any]],
+                                   v_ego: float) -> float:
+        """Validate model confidence using cross-sensor data"""
+        if radar_data is None and camera_data is None:
+            # If no cross-sensor data available, return neutral factor
+            return 1.0
+
+        cross_validation_score = 1.0
+        validation_factors = []
+
+        # Validate lead vehicle detection using radar cross-check
+        if radar_data and 'lead_one' in radar_data:
+            radar_lead = radar_data['lead_one']
+            if 'leadOne' in model_output:
+                model_lead = model_output['leadOne']
+
+                # Check distance agreement between radar and model
+                if hasattr(radar_lead, 'dRel') and hasattr(model_lead, 'dist'):
+                    distance_agreement = 1.0 - min(1.0, abs(radar_lead.dRel - model_lead.dist) / max(radar_lead.dRel, 1.0))
+                    validation_factors.append(distance_agreement)
+
+                # Check velocity agreement (if available)
+                if hasattr(radar_lead, 'vRel') and hasattr(model_lead, 'vRel'):
+                    velocity_agreement = 1.0 - min(1.0, abs(radar_lead.vRel - model_lead.vRel) / max(abs(radar_lead.vRel), 1.0))
+                    validation_factors.append(velocity_agreement)
+
+        # Validate object detection using camera cross-check
+        if camera_data and 'objects' in camera_data:
+            # Compare camera-detected objects with model predictions
+            # This would involve comparing camera-detected lane lines, road signs, etc.
+            camera_objects = camera_data['objects']
+            # Implementation would depend on specific camera object detection output format
+            # For now, we'll add a simple validation if lane detection is available
+            if 'laneLine' in model_output and 'lane_lines' in camera_data:
+                camera_lane_lines = camera_data.get('lane_lines', [])
+                # Compare number of detected lane lines as a simple cross-validation
+                model_lane_lines = model_output.get('laneLine', [])
+                if len(camera_lane_lines) > 0 and len(model_lane_lines) > 0:
+                    # If both systems detect lane lines, increase confidence
+                    validation_factors.append(0.9)
+                elif len(camera_lane_lines) == 0 and len(model_lane_lines) == 0:
+                    # If neither system detects lane lines, check if this is expected (laneless road)
+                    validation_factors.append(0.7)  # Slightly lower confidence
+                else:
+                    # Mismatch between systems, decrease confidence
+                    validation_factors.append(0.5)
+
+        # Calculate cross-validation score from all factors
+        if validation_factors:
+            cross_validation_score = sum(validation_factors) / len(validation_factors)
+        else:
+            # If we have sensor data but no specific validation factors, return moderate score
+            cross_validation_score = 0.8 if (radar_data or camera_data) else 1.0
+
+        return cross_validation_score
+
+    def _calculate_enhanced_confidence(self, base_confidence: float, path_consistency: float,
+                                     curvature_smoothness: float, temporal_consistency: float,
+                                     cross_sensor_validation: float, v_ego: float) -> float:
         """Calculate enhanced confidence based on all validation factors"""
         # Weight different factors based on their importance
         # At higher speeds, path consistency and curvature smoothness are more critical
         speed_factor = min(1.0, v_ego / 25.0)  # Normalize to 25 m/s (about 90 km/h)
-        
+
         weights = {
-            'base': 0.4,
-            'path': 0.2 + 0.1 * speed_factor,  # Higher weight at higher speeds
-            'curvature': 0.2 + 0.1 * speed_factor,  # Higher weight at higher speeds
-            'temporal': 0.2
+            'base': 0.3,  # Reduced weight since we now have cross-validation
+            'path': 0.15 + 0.075 * speed_factor,  # Higher weight at higher speeds
+            'curvature': 0.15 + 0.075 * speed_factor,  # Higher weight at higher speeds
+            'temporal': 0.15,
+            'cross_sensor': 0.25  # Weight for cross-sensor validation to reduce over-reliance on model
         }
-        
+
         # Calculate weighted confidence
         enhanced_confidence = (
             weights['base'] * base_confidence +
             weights['path'] * path_consistency +
             weights['curvature'] * curvature_smoothness +
-            weights['temporal'] * temporal_consistency
+            weights['temporal'] * temporal_consistency +
+            weights['cross_sensor'] * cross_sensor_validation
         )
-        
+
         # Clamp to valid range
         enhanced_confidence = max(0.0, min(1.0, enhanced_confidence))
-        
+
         return enhanced_confidence
     
     def get_confidence_trend(self) -> Dict[str, Any]:

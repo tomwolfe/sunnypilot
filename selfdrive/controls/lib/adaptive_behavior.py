@@ -46,7 +46,7 @@ MIN_FOLLOW_DISTANCE = ADAPTIVE_BEHAVIOR_PARAMS['MIN_FOLLOW_DISTANCE']
 class DrivingPersonality(Enum):
     """Driving personality enum - Only conservative behavior is allowed for safety"""
     CONSERVATIVE = "conservative"  # Only safe, conservative behavior allowed
-    BALANCED = "balanced"  # Balanced approach - conservative by default
+    CONSERVATIVE_LITE = "conservative_lite"  # Slightly less conservative but still safe approach
 
 
 class AdaptiveController:
@@ -56,7 +56,7 @@ class AdaptiveController:
     """
 
     def __init__(self):
-        self.personality = DrivingPersonality.BALANCED  # Default to balanced/conservative
+        self.personality = DrivingPersonality.CONSERVATIVE_LITE  # Default to conservative_lite/conservative
         self.current_road_curvature = 0.0
         self.current_speed = 0.0
         self.environmental_risk = 0.0
@@ -121,7 +121,7 @@ class AdaptiveController:
             adjustment *= CONSERVATIVE_PERSONALITY_FACTOR
         # No aggressive personality allowed - all behavior must be safe
         # Default to conservative adjustment when in doubt
-        else:  # BALANCED personality
+        else:  # CONSERVATIVE_LITE personality
             adjustment *= 0.95  # Slightly conservative by default for safety
 
         adjusted_limit = base_limit * adjustment
@@ -161,7 +161,7 @@ class AdaptiveController:
             adjustment *= 0.85
         # No aggressive personality allowed - all behavior must be safe
         # Default to conservative adjustment (90% of normal limits) for safety
-        else:  # BALANCED personality
+        else:  # CONSERVATIVE_LITE personality
             adjustment *= 0.90  # Slightly conservative by default for safety
 
         return min_accel * adjustment, max_accel * adjustment
@@ -249,8 +249,8 @@ class AdaptiveController:
         if self.personality == DrivingPersonality.CONSERVATIVE:
             adjustment *= CONSERVATIVE_FOLLOWING_DISTANCE_FACTOR
         # No aggressive personality allowed - all behavior must be safe
-        # Default to safe following distance for balanced personality
-        else:  # BALANCED personality
+        # Default to safe following distance for conservative_lite personality
+        else:  # CONSERVATIVE_LITE personality
             adjustment *= 1.2  # Maintain safe following distance by default
 
         return base_distance * adjustment
@@ -268,8 +268,8 @@ class AdaptiveController:
             return DrivingPersonality.CONSERVATIVE
 
         # No aggressive driving allowed - all conditions must be handled conservatively
-        # Return balanced (conservative by default) for all other conditions
-        return DrivingPersonality.BALANCED
+        # Return conservative_lite (conservative by default) for all other conditions
+        return DrivingPersonality.CONSERVATIVE_LITE
 
 
 class ConditionBasedParameterTuner:

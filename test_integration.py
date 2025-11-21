@@ -19,6 +19,7 @@ from selfdrive.controls.lib.backup_safety import RedundantControlValidator
 from selfdrive.controls.lib.vehicle_calibration import VehicleCalibration
 from selfdrive.controls.lib.model_confidence_validator import ModelConfidenceValidator
 from selfdrive.modeld.performance_optimization import PerformanceOptimizer
+from selfdrive.controls.lib.operational_safety_metrics import OperationalSafetyMetrics
 from cereal import log
 
 
@@ -330,6 +331,78 @@ class TestSunnypilotIntegration(unittest.TestCase):
             # Should return safe default values
             self.assertEqual(safe_curv, 0.0)
             self.assertEqual(safe_accel, 0.0)
+
+    def test_operational_safety_metrics_verification(self):
+        """
+        Test operational safety metrics verification
+        """
+        safety_metrics = OperationalSafetyMetrics()
+
+        # Test following distance verification under various conditions
+        is_safe, details = safety_metrics.verify_following_distance(
+            current_distance=50.0,  # 50 meters
+            lead_velocity=20.0,     # Lead vehicle at 20 m/s
+            ego_velocity=25.0       # Ego vehicle at 25 m/s
+        )
+        self.assertTrue(is_safe, "Following distance should be safe at 50m")
+        self.assertGreaterEqual(details['current_distance'], safety_metrics.MIN_FOLLOWING_DISTANCE_METERS)
+
+        # Test lateral acceleration with high environmental risk
+        is_safe, details = safety_metrics.verify_lateral_acceleration(
+            lateral_acceleration=1.0,   # 1.0 m/s^2
+            environmental_risk=0.8      # High risk
+        )
+        # Should be safe since 1.0 < MAX_LATERAL_ACCEL_HIGH_RISK (1.5)
+        self.assertTrue(is_safe, "Lateral acceleration should be safe at 1.0 m/s^2 with high risk")
+
+        # Test with excessive lateral acceleration in high risk
+        is_safe, details = safety_metrics.verify_lateral_acceleration(
+            lateral_acceleration=2.0,   # 2.0 m/s^2
+            environmental_risk=0.9      # Very high risk
+        )
+        # Should be unsafe since 2.0 > MAX_LATERAL_ACCEL_HIGH_RISK (1.5)
+        self.assertFalse(is_safe, "Lateral acceleration should be unsafe at 2.0 m/s^2 with very high risk")
+
+        # Test longitudinal jerk verification
+        is_safe, details = safety_metrics.verify_longitudinal_jerk(
+            current_accel=1.5,    # Current acceleration
+            prev_accel=1.0,       # Previous acceleration
+            dt=0.05               # 50ms time delta
+        )
+        expected_jerk = abs(1.5 - 1.0) / 0.05  # 10.0 m/s^3
+        self.assertFalse(is_safe, f"Jerk of {expected_jerk} should be unsafe (limit is {safety_metrics.MAX_LONGITUDINAL_JERK})")
+
+        # Test with acceptable jerk
+        is_safe, details = safety_metrics.verify_longitudinal_jerk(
+            current_accel=1.1,    # Current acceleration
+            prev_accel=1.0,       # Previous acceleration
+            dt=0.05               # 50ms time delta (0.1 / 0.05 = 2.0 m/s^3)
+        )
+        self.assertTrue(is_safe, "Jerk should be safe at 2.0 m/s^3")
+
+        # Test all metrics at once
+        all_results = safety_metrics.verify_all_operational_metrics(
+            following_distance=60.0,
+            lead_velocity=20.0,
+            ego_velocity=20.0,  # Matching velocities
+            lateral_accel=0.8,
+            environmental_risk=0.3,  # Low risk
+            current_accel=1.0,
+            prev_accel=0.9,
+            current_lat_accel=0.5,
+            prev_lat_accel=0.4,
+            current_curvature=0.005,
+            prev_curvature=0.004,
+            dt=0.05
+        )
+
+        # All should be safe in this scenario
+        all_safe = all(is_safe for is_safe, _ in all_results.values())
+        self.assertTrue(all_safe, f"Not all operational metrics were safe: {all_results}")
+
+        # Calculate safety score
+        safety_score = safety_metrics.get_operational_safety_score(all_results)
+        self.assertGreaterEqual(safety_score, 0.8, "Safety score should be high when all metrics are safe")
 
 
 class TestSafetyCriticalInteractions(unittest.TestCase):

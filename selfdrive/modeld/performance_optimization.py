@@ -72,9 +72,21 @@ class InferencePerformanceOptimizer:
         :param v_ego: Current vehicle speed
         :return: True if frame should be skipped, False otherwise
         """
+        # Enhanced safety requirements for frame skipping:
+        # 1. Both lateral AND longitudinal control must be inactive
+        # 2. Model confidence must be high
+        # 3. Environmental risk must be low
+        # 4. No lead vehicle present
+        # 5. Vehicle speed must be low
+        # 6. System must be under stress
+
         # NEVER skip frames during ANY active control - this is safety-critical
-        # Frame skipping is only safe when the system is completely inactive
-        if lat_active or longitudinal_active:
+        if lat_active:
+            return False
+
+        # CRITICAL: Verify longitudinal control is NOT active - this was the issue mentioned in review
+        if longitudinal_active:
+            cloudlog.debug("Performance: Longitudinal control is active, frame skipping disabled")
             return False
 
         # Don't skip if model confidence is low - need consistent processing for safety

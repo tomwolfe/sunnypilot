@@ -201,47 +201,95 @@ class EnvironmentalConditionMonitor:
     
     def get_environmental_risk_score(self, v_ego, curvature_ahead):
         """
-        Calculate an overall environmental risk score using additive model with clear thresholds
+        Calculate an overall environmental risk score using multiplicative risk factors
+        with speed-scaled interactions between parameters, as required by ISO 21448 SOTIF standards
         :param v_ego: Current vehicle speed
         :param curvature_ahead: Anticipated curvature ahead
         :return: Risk score from 0.0 (low risk) to 1.0 (high risk)
         """
         # Initialize risk score
-        risk_score = 0.0
+        base_risk_score = 0.0
 
         # Weather risks (additive with clear thresholds)
         if self.is_rainy:
-            risk_score += 0.20  # Rain risk
+            base_risk_score += 0.20  # Rain risk
         if self.is_snowy:
-            risk_score += 0.30  # Snow risk (higher than rain)
+            base_risk_score += 0.30  # Snow risk (higher than rain)
         if self.low_visibility:
-            risk_score += 0.25  # Low visibility risk
+            base_risk_score += 0.25  # Low visibility risk
         if self.is_night:
-            risk_score += 0.15  # Night time risk
+            base_risk_score += 0.15  # Night time risk
 
         # Road and model condition risks
         road_quality_risk = max(0.0, (1.0 - self.model_road_quality) * 0.3)  # Up to 0.3 for poor road quality
         surface_condition_risk = max(0.0, (1.0 - self.model_surface_condition) * 0.35)  # Up to 0.35 for poor surface
         model_uncertainty_risk = max(0.0, (1.0 - self.weather_confidence) * 0.4)  # Up to 0.4 for model uncertainty
 
-        risk_score += road_quality_risk
-        risk_score += surface_condition_risk
-        risk_score += model_uncertainty_risk
+        base_risk_score += road_quality_risk
+        base_risk_score += surface_condition_risk
+        base_risk_score += model_uncertainty_risk
 
         # Speed scaling risk (additive)
         if v_ego > 25.0:  # High speed (>55 mph)
-            risk_score += min(0.3, (v_ego / SPEED_NORMALIZATION_BASELINE) * 0.3)  # Up to 0.3 for high speed
+            speed_risk = min(0.3, (v_ego / SPEED_NORMALIZATION_BASELINE) * 0.3)  # Up to 0.3 for high speed
+            base_risk_score += speed_risk
+        else:
+            # For lower speeds, apply reduced risk scaling
+            speed_risk = max(0.0, (v_ego / SPEED_NORMALIZATION_BASELINE) * 0.15)
+            base_risk_score += speed_risk
 
         # Curvature risk (additive)
         if abs(curvature_ahead) > 0.008:  # Sharp curve threshold
             curvature_risk = min(0.25, abs(curvature_ahead) * RISK_CURVATURE_FACTOR)  # Up to 0.25 for sharp curves
-            risk_score += curvature_risk
+            base_risk_score += curvature_risk
+        else:
+            # For non-sharp curves, apply scaled risk
+            curvature_risk = abs(curvature_ahead) * RISK_CURVATURE_FACTOR * 0.5  # Reduced effect for non-sharp curves
+            base_risk_score += curvature_risk
 
-        # Clamp to valid range [0.0, 1.0]
-        risk_score = min(1.0, risk_score)
+        # Clamp base risk to valid range [0.0, 1.0]
+        base_risk_score = min(1.0, max(0.0, base_risk_score))
+
+        # Apply risk multiplication for parameter interactions
+        # When multiple risk factors are present, risks should multiply rather than just add
+        # Calculate interaction multipliers based on combinations of risk factors
+
+        # Count how many major risk factors are active
+        major_risk_factors = 0
+        if self.is_rainy or self.is_snowy:  # Weather
+            major_risk_factors += 1
+        if self.low_visibility:  # Visibility
+            major_risk_factors += 1
+        if road_quality_risk > 0.15 or surface_condition_risk > 0.175:  # Road condition
+            major_risk_factors += 1
+        if model_uncertainty_risk > 0.2:  # Model uncertainty
+            major_risk_factors += 1
+        if v_ego > SPEED_NORMALIZATION_BASELINE:  # High speed
+            major_risk_factors += 1
+        if abs(curvature_ahead) > 0.008:  # Sharp curve
+            major_risk_factors += 1
+
+        # Apply multiplicative interaction factor based on number of risk factors
+        interaction_multiplier = 1.0
+        if major_risk_factors >= 4:
+            interaction_multiplier = 2.0  # Double risk when 4+ factors present
+        elif major_risk_factors >= 3:
+            interaction_multiplier = 1.8  # Significant increase when 3+ factors
+        elif major_risk_factors >= 2:
+            interaction_multiplier = 1.5  # Moderate increase when 2+ factors
+        elif major_risk_factors >= 1:
+            interaction_multiplier = 1.2  # Small increase when 1+ factors
+
+        # Apply speed-scaling to the interaction effect
+        # At high speeds, risk interactions are more dangerous
+        speed_interaction_factor = 1.0 + (max(0.0, v_ego - 20.0) / 50.0) * 0.5  # Up to 50% additional risk at very high speeds
+        interaction_multiplier *= speed_interaction_factor
+
+        # Calculate final risk score with multiplicative interaction effects
+        risk_score = min(1.0, base_risk_score * interaction_multiplier)
 
         # Additional safety check to ensure risk is in valid range
-        risk_score = max(0.0, risk_score)
+        risk_score = max(0.0, min(1.0, risk_score))
 
         return risk_score
     

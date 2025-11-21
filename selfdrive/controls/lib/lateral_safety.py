@@ -264,11 +264,32 @@ def adjust_lateral_limits_for_conditions(v_ego, curvature_ahead, model_confidenc
   return max_lat_accel, rate_limit_multiplier
 
 
+def _handle_adaptive_curvature_error(prev_curvature, error_count):
+    """
+    Internal function to handle errors in adaptive curvature calculation
+    Simplified fallback logic using state manager
+    """
+    from .safety_state_manager import ERROR_HANDLING
+
+    if error_count >= ERROR_HANDLING['max_consecutive_failures']:  # 8 errors
+        cloudlog.error("Maximum error count reached, system should disengage")
+        return 0.0  # Complete disengagement curvature
+    elif error_count >= 6:
+        # Apply 90% conservative factor after 6 errors
+        return prev_curvature * ERROR_HANDLING['degradation_factors'][6]
+    elif error_count >= 3:
+        # Apply 70% conservative factor after 3 errors
+        return prev_curvature * ERROR_HANDLING['degradation_factors'][3]
+    else:
+        # Use historical data for first few errors
+        return prev_curvature
+
+
 def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, model_v2, params, CP=None,
                                    is_rainy=False, is_night=False, dt=0.01):
     """
     Get laterally safe and adaptive curvature considering various environmental factors
-    Optimized for performance while maintaining safety
+    Optimized for performance while maintaining safety with simplified error handling
     """
     try:
         # Validate time step parameter early and return if invalid
@@ -335,7 +356,7 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
         _safety_state.reset_errors()
         return final_curvature
     except Exception as e:
-        # Comprehensive error handling with safer fallback
+        # Comprehensive error handling with simpler fallback
         cloudlog.error(f"Error in get_adaptive_lateral_curvature: {e}")
 
         # Update state manager with new curvature and increment error
@@ -344,22 +365,5 @@ def get_adaptive_lateral_curvature(v_ego, desired_curvature, prev_curvature, mod
         # Get error count for tiered fallback
         error_count = _safety_state.get_error_count()
 
-        # Implement standardized fallback as per unified error handling policy
-        from .safety_state_manager import ERROR_HANDLING
-
-        if error_count >= 8:
-            # Disengage system after 8 consecutive errors
-            cloudlog.error("Maximum error count reached, system should disengage")
-            # For this function, return the fallback curvature
-            return _safety_state.get_fallback_curvature()
-        elif error_count >= 6:
-            # Apply 90% conservative factor after 6 errors
-            fallback_curvature = _safety_state.get_fallback_curvature()
-            return fallback_curvature * ERROR_HANDLING['degradation_factors'][6]
-        elif error_count >= 3:
-            # Apply 70% conservative factor after 3 errors
-            fallback_curvature = _safety_state.get_fallback_curvature()
-            return fallback_curvature * ERROR_HANDLING['degradation_factors'][3]
-        else:
-            # Use historical data for first few errors
-            return _safety_state.get_fallback_curvature()
+        # Use simplified error handling function
+        return _handle_adaptive_curvature_error(prev_curvature, error_count)
