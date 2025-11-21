@@ -6,6 +6,7 @@ Test suite for curvature gain functionality in PID lateral controller
 import unittest
 import numpy as np
 from parameterized import parameterized
+import time
 
 from cereal import car, log
 from opendbc.car.car_helpers import interfaces
@@ -872,6 +873,142 @@ class TestLatControlPIDCurvatureGain(unittest.TestCase):
         self.assertTrue(np.isfinite(output_high), "Controller should handle extremely high curvature")
         self.assertLess(abs(output_high), 3.0, "High curvature should still result in bounded output")
 
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_explicit_safe_mode_recovery_scenario(self, car_name):
+        """Test explicit safe mode activation and recovery scenarios."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+        CP_SP.curvatureGainInterp = [[0.0], [1.0]]
+        CP_SP.maxCurvatureGainMultiplier = 4.0
+        CP_SP.safetyLimitThreshold = 10  # Low threshold to easily trigger safe mode
+        CP_SP.safeModeRecoveryTime = 1.0  # Short recovery time for testing
+
+        CI = CarInterface(CP, CP_SP)
+        sunnypilot_interfaces.setup_interfaces(CI)
+        CP_SP = convert_to_capnp(CP_SP)
+        VM = VehicleModel(CP)
+
+        controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+        CS = car.CarState.new_message()
+        CS.vEgo = 10
+        CS.steeringPressed = False
+        CS.steeringAngleDeg = 2.0
+
+        params = log.LiveParametersData.new_message()
+        params.angleOffsetDeg = 0.0
+
+        from openpilot.selfdrive.locationd.helpers import Pose
+        from openpilot.common.mock.generators import generate_livePose
+        lp = generate_live_pose()
+        pose = Pose.from_live_pose(lp.livePose)
+
+        # 1. Trigger safe mode
+        controller.pid.reset()
+        for i in range(CP_SP.safetyLimitThreshold + 5): # Exceed threshold
+            controller.pid.safety_limit_trigger_count += 1
+            controller.pid.safety_limit_trigger_times.append(time.time())
+            controller.update(True, CS, VM, params, False, 0.05, pose, False, 0.2)
+            time.sleep(DT_CTRL) # Simulate control loop update
+
+        self.assertTrue(controller.pid.safe_mode_active, "Safe mode should be active after triggers")
+        self.assertIsNotNone(controller.pid.safe_mode_start_time, "Safe mode start time should be set")
+
+        # 2. Simulate stable operation for recovery
+        controller.pid.safety_limit_trigger_count = controller.pid.safety_limit_recovery_threshold - 1 # Below recovery threshold
+        controller.pid.safety_limit_trigger_times = [] # No recent triggers
+
+        # Simulate stable operation for less than safe_mode_recovery_time
+        stable_start_time = time.time()
+        while time.time() - stable_start_time < CP_SP.safeModeRecoveryTime - (DT_CTRL / 2): # Just shy of recovery time
+            controller.update(True, CS, VM, params, False, 0.01, pose, False, 0.2)
+            time.sleep(DT_CTRL)
+
+        self.assertTrue(controller.pid.safe_mode_active, "Safe mode should still be active before recovery time expires")
+        self.assertIsNotNone(controller.pid.safe_mode_recovery_start_time, "Recovery start time should be set")
+
+        # 3. Simulate stable operation until safe_mode_recovery_time expires
+        while time.time() - stable_start_time < CP_SP.safeModeRecoveryTime + (DT_CTRL / 2): # Just past recovery time
+            controller.update(True, CS, VM, params, False, 0.01, pose, False, 0.2)
+            time.sleep(DT_CTRL)
+
+        self.assertFalse(controller.pid.safe_mode_active, "Safe mode should be deactivated after recovery time expires")
+        self.assertIsNone(controller.pid.safe_mode_recovery_start_time, "Recovery start time should be reset after recovery")
+        self.assertIsNone(controller.pid.safe_mode_start_time, "Safe mode start time should be reset after recovery")
+
+    @parameterized.expand([(HONDA.HONDA_CIVIC,), (TOYOTA.TOYOTA_RAV4,)])
+    def test_pid_adaptive_threshold_extreme_vehicle_params(self, car_name):
+        """Test that adaptive oscillation thresholds adjust correctly for extreme vehicle mass and wheelbase."""
+        CarInterface = interfaces[car_name]
+        CP = CarInterface.get_non_essential_params(car_name)
+
+        # Skip test if PID controller not available for this car
+        if not self._check_pid_available(CP):
+            self.skipTest(f"PID controller not available for {car_name}")
+
+        # Test cases for extreme vehicle parameters
+        extreme_params = [
+            # Very light vehicle
+            {"mass": 800.0, "wheelbase": 2.0, "expected_mass_adj": 0.9, "expected_wb_adj": 0.9, "desc": "Very light, short wheelbase"},
+            # Very heavy vehicle
+            {"mass": 2500.0, "wheelbase": 3.5, "expected_mass_adj": 1.1, "expected_wb_adj": 1.1, "desc": "Very heavy, long wheelbase"},
+            # Light mass, long wheelbase
+            {"mass": 1000.0, "wheelbase": 3.2, "expected_mass_adj": 0.9, "expected_wb_adj": 1.1, "desc": "Light mass, long wheelbase"},
+            # Heavy mass, short wheelbase
+            {"mass": 2200.0, "wheelbase": 2.2, "expected_mass_adj": 1.1, "expected_wb_adj": 0.9, "desc": "Heavy mass, short wheelbase"},
+        ]
+
+        for params_case in extreme_params:
+            with self.subTest(msg=params_case["desc"]):
+                # Create a controller with extreme vehicle parameters
+                CP.mass = params_case["mass"]
+                CP.wheelbase = params_case["wheelbase"]
+
+                CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+                # Keep curvature gain interp simple for this test
+                CP_SP.curvatureGainInterp = [[0.0], [1.0]]
+                CP_SP.maxCurvatureGainMultiplier = 4.0
+
+                CI = CarInterface(CP, CP_SP)
+                sunnypilot_interfaces.setup_interfaces(CI)
+                CP_SP = convert_to_capnp(CP_SP)
+                VM = VehicleModel(CP)
+
+                controller = LatControlPID(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+                # Test _calculate_adaptive_threshold
+                base_threshold = 0.5
+                adaptive_threshold = controller.pid._calculate_adaptive_threshold(base_threshold)
+                expected_total_adj = (params_case["expected_mass_adj"] * 0.6 + params_case["expected_wb_adj"] * 0.4)
+                expected_adaptive_threshold = base_threshold * expected_total_adj
+                self.assertAlmostEqual(adaptive_threshold, expected_adaptive_threshold, places=5,
+                                       msg=f"Adaptive threshold mismatch for {params_case['desc']}")
+
+                # Test _calculate_adaptive_oscillation_thresholds for each type
+                base_osc_threshold = 0.6
+                
+                # Sign Change
+                adaptive_sign_change = controller.pid._calculate_adaptive_oscillation_thresholds(base_osc_threshold, "sign_change")
+                expected_sc_factor = (params_case["expected_mass_adj"] * 0.5 + params_case["expected_wb_adj"] * 0.5)
+                self.assertAlmostEqual(adaptive_sign_change, base_osc_threshold * expected_sc_factor, places=5,
+                                       msg=f"Sign change threshold mismatch for {params_case['desc']}")
+
+                # Variance
+                adaptive_variance = controller.pid._calculate_adaptive_oscillation_thresholds(base_osc_threshold, "variance")
+                expected_var_factor = (params_case["expected_mass_adj"] * 0.7 + params_case["expected_wb_adj"] * 0.3)
+                self.assertAlmostEqual(adaptive_variance, base_osc_threshold * expected_var_factor, places=5,
+                                       msg=f"Variance threshold mismatch for {params_case['desc']}")
+
+                # Zero Crossing
+                adaptive_zero_crossing = controller.pid._calculate_adaptive_oscillation_thresholds(base_osc_threshold, "zero_crossing")
+                expected_zc_factor = (params_case["expected_mass_adj"] * 0.4 + params_case["expected_wb_adj"] * 0.6)
+                self.assertAlmostEqual(adaptive_zero_crossing, base_osc_threshold * expected_zc_factor, places=5,
+                                       msg=f"Zero crossing threshold mismatch for {params_case['desc']}")
 
 if __name__ == "__main__":
     unittest.main()

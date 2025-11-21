@@ -229,19 +229,46 @@ class PIDController:
           ]
 
           # If safety limits are being hit too frequently (both count and time-based), enter safe mode
-          count_based_exceeded = self.safety_limit_trigger_count > self.safety_limit_threshold
-          time_based_exceeded = len(self.safety_limit_trigger_times) > self.safety_limit_threshold
+          # Calculate a normalized score for both count-based and time-based triggers
+          # This allows for a more consistent and robust safety trigger mechanism
+          count_based_score = self.safety_limit_trigger_count / self.safety_limit_threshold
+          time_based_score = len(self.safety_limit_trigger_times) / self.safety_limit_threshold
 
-          if count_based_exceeded or time_based_exceeded:
+          # Combine the scores into a single safety_score using a weighted average
+          # This provides a unified metric for evaluating safety limit exceedance
+          safety_score = (count_based_score + time_based_score) / 2.0  # 50/50 weighting, can be configured later
+
+          # Add a logging mechanism for frequent safety limit triggers, even if safe mode is not yet active
+          # This helps identify potential misconfigurations or edge cases during normal operation
+          if self.safety_limit_trigger_count > 50 and safety_score <= 1.0: # Check if not yet in safe mode
+            time_since_last_trigger = current_time - self.safety_limit_trigger_times[-1] if self.safety_limit_trigger_times else 0
+            cloudlog.info(f"Frequent curvature gain safety limit triggers (not yet in safe mode). "
+                          f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
+                          f"Safety score: {safety_score:.3f}, "
+                          f"Current k_p: {k_p:.3f}, Combined Gain: {combined_gain:.3f}, "
+                          f"Current Curvature: {current_curvature:.3f}, Current Speed: {self.speed:.2f} m/s, "
+                          f"Total Safety Triggers: {self.safety_limit_trigger_count}, Recent Triggers in Window: {len(self.safety_limit_trigger_times)}, "
+                          f"Time Since Last Trigger: {time_since_last_trigger:.2f}s, "
+                          f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}")
+
+          if safety_score > 1.0:
             if not self.safe_mode_active:
               # Only increment activation count and log when entering safe mode (not when already in safe mode)
               self.safe_mode_activated_count += 1
               self.safe_mode_start_time = time.time()
+              # Calculate time since last trigger for more detailed logging
+              time_since_last_trigger = current_time - self.safety_limit_trigger_times[-1] if self.safety_limit_trigger_times else 0
+
               cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
                              f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
-                             f"Count-based: {self.safety_limit_trigger_count} > {self.safety_limit_threshold} ({'EXCEEDED' if count_based_exceeded else 'OK'}), "
-                             f"Time-based: {len(self.safety_limit_trigger_times)} > {self.safety_limit_threshold} ({'EXCEEDED' if time_based_exceeded else 'OK'}) in {self.safety_limit_time_window}s, "
+                             f"Safety score: {safety_score:.3f} (>1.0), "
+                             f"Count-based score: {count_based_score:.3f}, "
+                             f"Time-based score: {time_based_score:.3f}, "
                              f"Safety threshold: {self.safety_limit_threshold}, "
+                             f"Current k_p: {k_p:.3f}, Combined Gain: {combined_gain:.3f}, "
+                             f"Current Curvature: {current_curvature:.3f}, Current Speed: {self.speed:.2f} m/s, "
+                             f"Total Safety Triggers: {self.safety_limit_trigger_count}, Recent Triggers in Window: {len(self.safety_limit_trigger_times)}, "
+                             f"Time Since Last Trigger: {time_since_last_trigger:.2f}s, "
                              f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
                              f"Safe mode activation count: {self.safe_mode_activated_count}")
             self.safe_mode_active = True
@@ -459,9 +486,8 @@ class PIDController:
     else:  # Standard wheelbase
       wheelbase_adjustment = 1.0
 
-    # Combined adjustment based on multiple vehicle characteristics
-    # To maintain test compatibility, use conservative approach by averaging effects
-    total_adjustment = (mass_adjustment + wheelbase_adjustment) / 2.0
+    # Combined adjustment based on multiple vehicle characteristics with explicit weighting
+    total_adjustment = (mass_adjustment * 0.6 + wheelbase_adjustment * 0.4) # Giving more weight to mass for general threshold
 
     return base_threshold * total_adjustment
 
@@ -493,15 +519,12 @@ class PIDController:
       wheelbase_adjustment = 1.0
 
     # Apply different adjustments based on threshold type to fine-tune oscillation detection
-    # To maintain test compatibility, use more conservative approach
     if threshold_type == "sign_change":
-      type_factor = (mass_adjustment + wheelbase_adjustment) / 2.0
+      type_factor = (mass_adjustment * 0.5 + wheelbase_adjustment * 0.5)  # Equal weighting
     elif threshold_type == "variance":
-      # Variance-based detection is more sensitive to mass, so use slightly different adjustment
-      type_factor = (mass_adjustment * 1.05 + wheelbase_adjustment) / 2.0
+      type_factor = (mass_adjustment * 0.7 + wheelbase_adjustment * 0.3)  # More weight to mass
     else:  # zero_crossing
-      # Zero-crossing detection is more sensitive to vehicle dynamics, so adjust accordingly
-      type_factor = (mass_adjustment * 0.95 + wheelbase_adjustment) / 2.0
+      type_factor = (mass_adjustment * 0.4 + wheelbase_adjustment * 0.6)  # More weight to wheelbase
 
     return base_threshold * type_factor
 
@@ -562,6 +585,15 @@ class PIDController:
     """
     Check if safe mode should be deactivated based on normalized conditions.
     Safe mode will automatically recover when safety issues are no longer detected for a specified time period.
+
+    Recovery conditions:
+    1. The number of safety limit triggers within the `safety_limit_time_window` (tracked by `safety_limit_trigger_times`)
+       and the total count of triggers (`safety_limit_trigger_count`) must both fall below `safety_limit_recovery_threshold`.
+       The `safety_limit_recovery_threshold` is typically set to half of `safety_limit_threshold` to allow for a buffer
+       before full recovery, preventing rapid toggling of safe mode.
+    2. Once the above conditions are met, a timer (`safe_mode_recovery_start_time`) starts.
+    3. Safe mode is deactivated only after `safe_mode_recovery_time` (configurable, default 5 seconds)
+       of continuous stable operation (i.e., conditions for activating safe mode are not met again).
     """
     if not self.safe_mode_active:
       return  # Nothing to do if not in safe mode
@@ -590,7 +622,8 @@ class PIDController:
         self.safe_mode_start_time = None  # Reset safe mode start time
         cloudlog.info(f"Curvature gain safe mode deactivated after stable operation. "
                       f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
-                      f"Safety limit triggers: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s window, "
+                      f"Safety limit triggers: {len(self.safety_limit_trigger_times)} (current in window) / {self.safety_limit_trigger_count} (total) "
+                      f"below recovery threshold: {self.safety_limit_recovery_threshold}. "
                       f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
                       f"Safe mode activation count: {self.safe_mode_activated_count}, "
                       f"Time in safe mode: {current_time - self.safe_mode_start_time:.2f}s, "
