@@ -14,12 +14,27 @@ class LatControlPID(LatControl):
     curvature_gain_interp = CP_SP.curvatureGainInterp if CP_SP.curvatureGainInterp else [[0.0], [1.0]]
     # Use configurable max curvature gain multiplier from car params, default to 4.0 for safety
     max_curvature_gain_multiplier = getattr(CP_SP, 'maxCurvatureGainMultiplier', 4.0)
+    # Use configurable safety limit threshold from car params, with vehicle-specific defaults
+    safety_limit_threshold = getattr(CP_SP, 'safetyLimitThreshold', 100)
+    # Use configurable safety limit time window from car params
+    safety_limit_time_window = getattr(CP_SP, 'safetyLimitTimeWindow', 60.0)
+    # Vehicle-specific oscillation thresholds
+    oscillation_sign_change_threshold = getattr(CP_SP, 'oscillationSignChangeThreshold', 0.6)
+    oscillation_variance_threshold = getattr(CP_SP, 'oscillationVarianceThreshold', 0.8)
+    oscillation_zero_crossing_threshold = getattr(CP_SP, 'oscillationZeroCrossingThreshold', 0.5)
+
     self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
                              (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
                              k_curvature=curvature_gain_interp,
                              max_curvature_gain_multiplier=max_curvature_gain_multiplier,
+                             safety_limit_threshold=safety_limit_threshold,
+                             safety_limit_time_window=safety_limit_time_window,
                              pos_limit=self.steer_max, neg_limit=-self.steer_max,
-                             vehicle_mass=CP.mass)  # Pass vehicle mass for adaptive oscillation thresholds
+                             oscillation_sign_change_threshold=oscillation_sign_change_threshold,
+                             oscillation_variance_threshold=oscillation_variance_threshold,
+                             oscillation_zero_crossing_threshold=oscillation_zero_crossing_threshold,
+                             vehicle_mass=CP.mass,  # Pass vehicle mass for adaptive oscillation thresholds
+                             vehicle_wheelbase=CP.wheelbase)  # Pass vehicle wheelbase for adaptive oscillation thresholds
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
     # Initialize FirstOrderFilter with base time constant and consider adaptive filtering

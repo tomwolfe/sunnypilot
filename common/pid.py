@@ -1,13 +1,17 @@
 import numpy as np
+import time
 from numbers import Number
 from openpilot.common.performance_monitor import PerfTrack
 from openpilot.common.swaglog import cloudlog
 
 class PIDController:
-  def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0, pos_limit=1e308, neg_limit=-1e308, rate=100,
+  def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0,
+               safety_limit_threshold=100, safety_limit_time_window=60.0,  # Added configurable safety parameters
+               pos_limit=1e308, neg_limit=-1e308, rate=100,
                oscillation_threshold=0.5, oscillation_window_size_seconds=0.5, oscillation_gain_reduction=0.9,
                oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0,
-               vehicle_mass=1500.0):  # Added vehicle mass to enable adaptive oscillation thresholds
+               oscillation_sign_change_threshold=0.6, oscillation_variance_threshold=0.8, oscillation_zero_crossing_threshold=0.5,  # Vehicle-specific oscillation thresholds
+               vehicle_mass=1500.0, vehicle_wheelbase=2.7):  # Added vehicle mass and wheelbase to enable adaptive thresholds
     self._k_p = k_p
     self._k_i = k_i
     self._k_d = k_d
@@ -57,6 +61,11 @@ class PIDController:
     self.speed = 0.0
     self._last_desired_curvature = 0.0
 
+    # Safety parameters - make thresholds configurable
+    self.safety_limit_threshold = safety_limit_threshold  # Configurable threshold for safe mode activation
+    self.safety_limit_time_window = safety_limit_time_window  # Time window in seconds for threshold evaluation
+    self.safety_limit_trigger_times = []  # Keep track of when safety limits were triggered (for time-based checking)
+
     # Adaptive damping mechanism for oscillation detection with configurable parameters
     self.oscillation_history = []  # Store error values for oscillation detection
     # The oscillation threshold (0.5 degrees steering angle error) is based on typical vehicle dynamics
@@ -71,12 +80,28 @@ class PIDController:
     self.oscillation_recovery_rate = oscillation_recovery_rate  # Configurable rate to gradually restore gain when no oscillations
     self.min_oscillation_gain_factor = min_oscillation_gain_factor  # Configurable minimum gain factor (50% of computed gain)
     self.max_oscillation_gain_factor = max_oscillation_gain_factor  # Configurable maximum gain factor (100% of computed gain)
-    # Store vehicle mass for adaptive oscillation detection
+
+    # Vehicle-specific oscillation detection thresholds
+    self.oscillation_sign_change_threshold = oscillation_sign_change_threshold  # Configurable sign change threshold
+    self.oscillation_variance_threshold = oscillation_variance_threshold  # Configurable variance threshold
+    self.oscillation_zero_crossing_threshold = oscillation_zero_crossing_threshold  # Configurable zero crossing threshold
+
+    # Store vehicle mass and wheelbase for adaptive oscillation detection
     self.vehicle_mass = vehicle_mass
+    self.vehicle_wheelbase = vehicle_wheelbase
 
     # Calculate adaptive oscillation thresholds based on vehicle characteristics
     # Heavier vehicles may need different thresholds than lighter vehicles
     self.oscillation_threshold = self._calculate_adaptive_threshold(oscillation_threshold)
+    self.oscillation_sign_change_threshold = self._calculate_adaptive_oscillation_thresholds(
+        self.oscillation_sign_change_threshold, "sign_change"
+    )
+    self.oscillation_variance_threshold = self._calculate_adaptive_oscillation_thresholds(
+        self.oscillation_variance_threshold, "variance"
+    )
+    self.oscillation_zero_crossing_threshold = self._calculate_adaptive_oscillation_thresholds(
+        self.oscillation_zero_crossing_threshold, "zero_crossing"
+    )
 
     self.oscillation_gain_factor = 1.0  # Current gain factor
     # Enhanced oscillation detection metrics for monitoring
@@ -167,10 +192,9 @@ class PIDController:
         # gains are high simultaneously, the combined effect could be dangerous
         # First apply the original relative multiplier limit (relative to current speed-adjusted k_p)
         max_relative_gain = original_k_p * self.max_curvature_gain_multiplier
-        # Then apply an additional safety limit relative to baseline (speed 0) k_p to prevent
-        # explosive behavior when both speed and curvature gains are high simultaneously
-        # Use max_curvature_gain_multiplier as the factor instead of arbitrary 3.0 to maintain consistency
-        baseline_limit = self._baseline_k_p * self.max_curvature_gain_multiplier
+        # Use current speed-adjusted k_p (not baseline) as the reference for the baseline limit
+        # This addresses the concern that baseline limit (speed 0) might be too conservative at high speeds
+        baseline_limit = original_k_p * self.max_curvature_gain_multiplier
 
         # Take the minimum of combined gain, original relative limit, and additional safety limit
         k_p = min(combined_gain, max_relative_gain, baseline_limit)
@@ -178,8 +202,26 @@ class PIDController:
         # Check if we hit any of the safety limits (meaning the gain was reduced)
         if k_p < combined_gain:
           self.safety_limit_trigger_count += 1
-          # If safety limits are being hit too frequently, consider entering safe mode
-          if self.safety_limit_trigger_count > 100:  # Threshold could be configurable
+          # Record the time when safety limit was triggered for time-based thresholding
+          current_time = time.time()  # Need to import time module
+          self.safety_limit_trigger_times.append(current_time)
+
+          # Remove old trigger times outside the time window
+          self.safety_limit_trigger_times = [
+              t for t in self.safety_limit_trigger_times
+              if current_time - t <= self.safety_limit_time_window
+          ]
+
+          # If safety limits are being hit too frequently (both count and time-based), enter safe mode
+          if (self.safety_limit_trigger_count > self.safety_limit_threshold or
+              len(self.safety_limit_trigger_times) > self.safety_limit_threshold):
+            if not self.safe_mode_active:
+              # Only increment activation count and log when entering safe mode (not when already in safe mode)
+              self.safe_mode_activated_count += 1
+              self.safe_mode_start_time = time.time()
+              cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
+                             f"Trigger count: {self.safety_limit_trigger_count}, "
+                             f"Time-based count: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s")
             self.safe_mode_active = True
       except Exception as e:
         # Enter safe mode if any calculation error occurs
@@ -230,6 +272,10 @@ class PIDController:
     self.neg_limit = neg_limit
 
   def update(self, error, error_rate=0.0, speed=0.0, curvature=0.0, feedforward=0., freeze_integrator=False):
+    # Track performance metrics for oscillation detection overhead
+    start_time = time.perf_counter()
+    oscillation_detection_time = 0
+
     with PerfTrack("pid_update"):
       self.speed = speed
       # Handle NaN curvature values by setting to 0 to prevent NaN propagation
@@ -242,7 +288,9 @@ class PIDController:
         self.oscillation_history.pop(0)
 
       # Detect oscillations and adjust gain accordingly
+      oscillation_start = time.perf_counter()
       self._update_oscillation_damping()
+      oscillation_detection_time = time.perf_counter() - oscillation_start
 
       self.p = error * self._get_k_p()
       self.f = feedforward * self.k_f
@@ -259,6 +307,15 @@ class PIDController:
 
       control = self.p + self.i + self.d + self.f
       self.control = np.clip(control, self.neg_limit, self.pos_limit)
+
+      # Store performance metrics
+      total_update_time = time.perf_counter() - start_time
+      self.last_update_time = total_update_time
+      self.last_oscillation_detection_time = oscillation_detection_time
+
+      # Check for safe mode recovery if needed
+      self._check_safe_mode_recovery()
+
       return self.control
 
   def _update_oscillation_damping(self):
@@ -328,18 +385,12 @@ class PIDController:
     oscillation_ratio = sign_changes / len(significant_errors_array) if len(significant_errors_array) > 0 else 0
     zero_crossing_ratio = zero_crossings / len(recent_errors_array) if len(recent_errors_array) > 0 else 0
 
-    # Determine if oscillation is occurring based on combined criteria
-    # These thresholds are based on statistical analysis of typical steering behavior:
-    # - 60% sign change ratio: indicates sustained oscillatory pattern in significant errors
-    # - 80% relative variance: indicates high variability compared to mean error, suggesting oscillations
-    # - 50% zero crossing rate: indicates frequent direction changes, typical of oscillatory systems
-    # These values were validated through simulation and real-world testing to provide robust detection
-    # while minimizing false positives from normal driving conditions
+    # Determine if oscillation is occurring based on combined criteria using vehicle-specific thresholds
     # Using OR logic allows detection when any method indicates oscillations (for robustness)
     oscillation_detected = (
-      oscillation_ratio > 0.6 or
-      relative_variance > 0.8 or
-      zero_crossing_ratio > 0.5
+      oscillation_ratio > self.oscillation_sign_change_threshold or
+      relative_variance > self.oscillation_variance_threshold or
+      zero_crossing_ratio > self.oscillation_zero_crossing_threshold
     )
 
     if oscillation_detected:
@@ -368,6 +419,35 @@ class PIDController:
       return base_threshold * 1.2  # Slightly higher threshold
     elif self.vehicle_mass < 1200:  # Light vehicles
       return base_threshold * 0.8  # Slightly lower threshold
+    else:  # Standard vehicles
+      return base_threshold
+
+  def _calculate_adaptive_oscillation_thresholds(self, base_threshold, threshold_type):
+    """
+    Calculate adaptive oscillation thresholds based on vehicle characteristics.
+    Different thresholds may be needed for different vehicle types based on their mass and wheelbase.
+
+    Args:
+        base_threshold: The default threshold value
+        threshold_type: Type of threshold ('sign_change', 'variance', 'zero_crossing')
+    """
+    # Adjust thresholds based on vehicle mass and wheelbase
+    # Heavier vehicles (trucks/SUVs) might have different oscillation characteristics
+    # Smaller vehicles might have more responsive dynamics
+    if self.vehicle_mass > 2000:  # Heavy vehicles
+      if threshold_type == "sign_change":
+        return base_threshold * 1.1  # Slightly higher threshold for heavy vehicles
+      elif threshold_type == "variance":
+        return base_threshold * 1.15
+      else:  # zero_crossing
+        return base_threshold * 1.05
+    elif self.vehicle_mass < 1200:  # Light vehicles
+      if threshold_type == "sign_change":
+        return base_threshold * 0.9  # Slightly lower threshold for light vehicles
+      elif threshold_type == "variance":
+        return base_threshold * 0.85
+      else:  # zero_crossing
+        return base_threshold * 0.95
     else:  # Standard vehicles
       return base_threshold
 
@@ -401,3 +481,46 @@ class PIDController:
     self.safe_mode_active = False
     self.safe_mode_trigger_count = 0
     self.safety_limit_trigger_count = 0
+    self.safety_limit_trigger_times = []  # Reset safety limit trigger times
+    # Reset safe mode recovery tracking
+    self.safe_mode_start_time = None
+    self.safe_mode_recovery_start_time = None
+    self.safe_mode_activated_count = 0
+    # Reset performance monitoring variables
+    self.last_update_time = 0.0
+    self.last_oscillation_detection_time = 0.0
+
+  def _check_safe_mode_recovery(self):
+    """
+    Check if safe mode should be deactivated based on normalized conditions.
+    Safe mode will automatically recover when safety issues are no longer detected for a specified time period.
+    """
+    if not self.safe_mode_active:
+      return  # Nothing to do if not in safe mode
+
+    current_time = time.time()
+
+    # Check if safety limit triggers have decreased significantly
+    # Remove old trigger times outside the time window
+    self.safety_limit_trigger_times = [
+        t for t in self.safety_limit_trigger_times
+        if current_time - t <= self.safety_limit_time_window
+    ]
+
+    # If we're no longer hitting safety limits frequently, start recovery process
+    if (len(self.safety_limit_trigger_times) <= self.safety_limit_threshold // 2 and
+        self.safety_limit_trigger_count <= self.safety_limit_threshold // 2):
+
+      if self.safe_mode_recovery_start_time is None:
+        # Start recovery timer
+        self.safe_mode_recovery_start_time = current_time
+      elif current_time - self.safe_mode_recovery_start_time >= 5.0:  # 5 seconds of stable operation
+        # Safe mode recovery conditions met
+        self.safe_mode_active = False
+        self.safe_mode_recovery_start_time = None
+        self.safe_mode_start_time = None  # Reset safe mode start time
+        cloudlog.info(f"Curvature gain safe mode deactivated after stable operation. "
+                      f"Safety limit triggers: {len(self.safety_limit_trigger_times)} in {self.safety_limit_time_window}s window")
+    else:
+      # Conditions are still unstable, reset recovery timer
+      self.safe_mode_recovery_start_time = None

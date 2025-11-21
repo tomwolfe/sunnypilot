@@ -357,6 +357,11 @@ struct CarParamsSP @0x80ae746ee2596b11 {
   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
   curvatureGainInterp @6 :List(List(Float32));
   maxCurvatureGainMultiplier @7 :Float32;
+  safetyLimitThreshold @8 :Float32;
+  safetyLimitTimeWindow @9 :Float32;
+  oscillationSignChangeThreshold @10 :Float32;
+  oscillationVarianceThreshold @11 :Float32;
+  oscillationZeroCrossingThreshold @12 :Float32;
 
   struct NeuralNetworkLateralControl {
     model @0 :Model;

@@ -257,6 +257,134 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
       CP_SP.maxCurvatureGainMultiplier = 4.0
       cloudlog.debug("Max curvature gain multiplier set to 4.0x (standard default)")
 
+  # Set configurable safety limit threshold with vehicle-specific defaults
+  safety_limit_threshold_str = params.get("SafetyLimitThreshold", encoding='utf8')
+  if safety_limit_threshold_str:
+    try:
+      safety_limit_threshold = int(safety_limit_threshold_str)
+      # Validate threshold is reasonable - minimum 10, maximum 500
+      if 10 <= safety_limit_threshold <= 500:
+        CP_SP.safetyLimitThreshold = safety_limit_threshold
+        cloudlog.debug(f"Safe mode activation threshold set to {safety_limit_threshold} from parameter")
+      else:
+        cloudlog.warning(f"SafetyLimitThreshold parameter {safety_limit_threshold} outside safe range [10, 500], using default 100")
+        CP_SP.safetyLimitThreshold = 100
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid SafetyLimitThreshold parameter: {safety_limit_threshold_str}, using default 100")
+      CP_SP.safetyLimitThreshold = 100
+  else:
+    # Set default based on vehicle characteristics
+    if CP.mass > 2000:  # Heavy vehicles - more conservative
+      CP_SP.safetyLimitThreshold = 80
+      cloudlog.debug("Safe mode activation threshold set to 80 (conservative for heavy vehicles)")
+    elif CP.mass < 1200:  # Light vehicles - can be more sensitive
+      CP_SP.safetyLimitThreshold = 120
+      cloudlog.debug("Safe mode activation threshold set to 120 (sensitive for light vehicles)")
+    else:  # Standard vehicles
+      CP_SP.safetyLimitThreshold = 100
+      cloudlog.debug("Safe mode activation threshold set to 100 (standard default)")
+
+  # Set configurable safety limit time window with defaults
+  safety_limit_time_window_str = params.get("SafetyLimitTimeWindow", encoding='utf8')
+  if safety_limit_time_window_str:
+    try:
+      safety_limit_time_window = float(safety_limit_time_window_str)
+      # Validate time window is reasonable - minimum 5.0, maximum 300.0 (5 minutes)
+      if 5.0 <= safety_limit_time_window <= 300.0:
+        CP_SP.safetyLimitTimeWindow = safety_limit_time_window
+        cloudlog.debug(f"Safe mode time window set to {safety_limit_time_window}s from parameter")
+      else:
+        cloudlog.warning(f"SafetyLimitTimeWindow parameter {safety_limit_time_window} outside safe range [5.0, 300.0], using default 60.0")
+        CP_SP.safetyLimitTimeWindow = 60.0
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid SafetyLimitTimeWindow parameter: {safety_limit_time_window_str}, using default 60.0")
+      CP_SP.safetyLimitTimeWindow = 60.0
+  else:
+    CP_SP.safetyLimitTimeWindow = 60.0  # Default to 60 seconds
+    cloudlog.debug("Safe mode time window set to 60.0s (standard default)")
+
+  # Set vehicle-specific oscillation detection thresholds
+  # Sign change threshold
+  oscillation_sign_threshold_str = params.get("OscillationSignChangeThreshold", encoding='utf8')
+  if oscillation_sign_threshold_str:
+    try:
+      oscillation_sign_threshold = float(oscillation_sign_threshold_str)
+      # Validate threshold is reasonable - minimum 0.1, maximum 0.9
+      if 0.1 <= oscillation_sign_threshold <= 0.9:
+        CP_SP.oscillationSignChangeThreshold = oscillation_sign_threshold
+        cloudlog.debug(f"Oscillation sign change threshold set to {oscillation_sign_threshold} from parameter")
+      else:
+        cloudlog.warning(f"OscillationSignChangeThreshold parameter {oscillation_sign_threshold} outside safe range [0.1, 0.9], using default 0.6")
+        CP_SP.oscillationSignChangeThreshold = 0.6
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid OscillationSignChangeThreshold parameter: {oscillation_sign_threshold_str}, using default 0.6")
+      CP_SP.oscillationSignChangeThreshold = 0.6
+  else:
+    # Set default based on vehicle characteristics
+    if CP.mass > 2000:  # Heavy vehicles - higher threshold (less sensitive)
+      CP_SP.oscillationSignChangeThreshold = 0.66  # 66% for heavy vehicles
+      cloudlog.debug("Oscillation sign change threshold set to 0.66 (less sensitive for heavy vehicles)")
+    elif CP.mass < 1200:  # Light vehicles - lower threshold (more sensitive)
+      CP_SP.oscillationSignChangeThreshold = 0.54  # 54% for light vehicles
+      cloudlog.debug("Oscillation sign change threshold set to 0.54 (more sensitive for light vehicles)")
+    else:  # Standard vehicles
+      CP_SP.oscillationSignChangeThreshold = 0.60
+      cloudlog.debug("Oscillation sign change threshold set to 0.60 (standard default)")
+
+  # Variance threshold
+  oscillation_variance_threshold_str = params.get("OscillationVarianceThreshold", encoding='utf8')
+  if oscillation_variance_threshold_str:
+    try:
+      oscillation_variance_threshold = float(oscillation_variance_threshold_str)
+      # Validate threshold is reasonable - minimum 0.3, maximum 0.95
+      if 0.3 <= oscillation_variance_threshold <= 0.95:
+        CP_SP.oscillationVarianceThreshold = oscillation_variance_threshold
+        cloudlog.debug(f"Oscillation variance threshold set to {oscillation_variance_threshold} from parameter")
+      else:
+        cloudlog.warning(f"OscillationVarianceThreshold parameter {oscillation_variance_threshold} outside safe range [0.3, 0.95], using default 0.8")
+        CP_SP.oscillationVarianceThreshold = 0.8
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid OscillationVarianceThreshold parameter: {oscillation_variance_threshold_str}, using default 0.8")
+      CP_SP.oscillationVarianceThreshold = 0.8
+  else:
+    # Set default based on vehicle characteristics
+    if CP.mass > 2000:  # Heavy vehicles - higher threshold (less sensitive)
+      CP_SP.oscillationVarianceThreshold = 0.88  # 88% for heavy vehicles
+      cloudlog.debug("Oscillation variance threshold set to 0.88 (less sensitive for heavy vehicles)")
+    elif CP.mass < 1200:  # Light vehicles - lower threshold (more sensitive)
+      CP_SP.oscillationVarianceThreshold = 0.72  # 72% for light vehicles
+      cloudlog.debug("Oscillation variance threshold set to 0.72 (more sensitive for light vehicles)")
+    else:  # Standard vehicles
+      CP_SP.oscillationVarianceThreshold = 0.80
+      cloudlog.debug("Oscillation variance threshold set to 0.80 (standard default)")
+
+  # Zero crossing threshold
+  oscillation_zero_crossing_threshold_str = params.get("OscillationZeroCrossingThreshold", encoding='utf8')
+  if oscillation_zero_crossing_threshold_str:
+    try:
+      oscillation_zero_crossing_threshold = float(oscillation_zero_crossing_threshold_str)
+      # Validate threshold is reasonable - minimum 0.2, maximum 0.9
+      if 0.2 <= oscillation_zero_crossing_threshold <= 0.9:
+        CP_SP.oscillationZeroCrossingThreshold = oscillation_zero_crossing_threshold
+        cloudlog.debug(f"Oscillation zero crossing threshold set to {oscillation_zero_crossing_threshold} from parameter")
+      else:
+        cloudlog.warning(f"OscillationZeroCrossingThreshold parameter {oscillation_zero_crossing_threshold} outside safe range [0.2, 0.9], using default 0.5")
+        CP_SP.oscillationZeroCrossingThreshold = 0.5
+    except (ValueError, TypeError):
+      cloudlog.warning(f"Invalid OscillationZeroCrossingThreshold parameter: {oscillation_zero_crossing_threshold_str}, using default 0.5")
+      CP_SP.oscillationZeroCrossingThreshold = 0.5
+  else:
+    # Set default based on vehicle characteristics
+    if CP.mass > 2000:  # Heavy vehicles - higher threshold (less sensitive)
+      CP_SP.oscillationZeroCrossingThreshold = 0.55  # 55% for heavy vehicles
+      cloudlog.debug("Oscillation zero crossing threshold set to 0.55 (less sensitive for heavy vehicles)")
+    elif CP.mass < 1200:  # Light vehicles - lower threshold (more sensitive)
+      CP_SP.oscillationZeroCrossingThreshold = 0.45  # 45% for light vehicles
+      cloudlog.debug("Oscillation zero crossing threshold set to 0.45 (more sensitive for light vehicles)")
+    else:  # Standard vehicles
+      CP_SP.oscillationZeroCrossingThreshold = 0.50
+      cloudlog.debug("Oscillation zero crossing threshold set to 0.50 (standard default)")
+
   # Use the new validation system
   validator = ParamsValidator(params)
 
