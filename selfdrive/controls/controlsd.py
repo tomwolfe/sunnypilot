@@ -248,18 +248,18 @@ class Controls(ControlsExt, ModelStateBase):
       if overall_safety_score < self.safety_critical_threshold:  # Critical safety threshold
         # Very conservative operation, approaching disengagement
         acceleration_safety_factor = 0.5
-        braking_safety_factor = 0.7  # Less reduction on braking to maintain stopping capability
+        braking_safety_factor = 1.0  # Preserve full braking capability
         # Consider disengaging if safety score remains critically low
         cloudlog.warning(f"Critical safety mode: safety score {overall_safety_score} - very conservative operation")
       elif overall_safety_score < self.safety_high_risk_threshold:  # High risk threshold
         acceleration_safety_factor = 0.6
-        braking_safety_factor = 0.8  # Slightly less reduction on braking
+        braking_safety_factor = 1.0
       elif overall_safety_score < self.safety_moderate_risk_threshold:  # Moderate risk threshold
         acceleration_safety_factor = 0.75
-        braking_safety_factor = 0.85  # Minimal reduction on braking
+        braking_safety_factor = 1.0
       else:  # Lower risk but still degraded
         acceleration_safety_factor = 0.85
-        braking_safety_factor = 0.95  # Very minimal reduction on braking
+        braking_safety_factor = 1.0
 
       # Apply safety factors to acceleration limits while preserving braking capability
       # Note: pid_accel_limits[0] is typically the minimum (braking) value (negative)
@@ -270,10 +270,33 @@ class Controls(ControlsExt, ModelStateBase):
       # Preserve braking capability more than acceleration for safety
       # For braking (negative values), we want to make the limit less negative (closer to 0) by a smaller factor
       # For acceleration (positive values), we reduce more significantly
-      adjusted_min_limit = min_accel_limit * braking_safety_factor if min_accel_limit < 0 else min_accel_limit * braking_safety_factor
-      adjusted_max_limit = max_accel_limit * acceleration_safety_factor if max_accel_limit > 0 else max_accel_limit * acceleration_safety_factor
+      adjusted_min_limit = min_accel_limit  # Preserve full braking capability
+      adjusted_max_limit = max_accel_limit * acceleration_safety_factor
 
       pid_accel_limits = (adjusted_min_limit, adjusted_max_limit)
+
+      # --- Start Safety Validation for Accel Limits ---
+      # Ensure min_accel_limit is sufficiently negative (strong braking)
+      # Assuming -4.0 m/s^2 is a reasonable minimum braking threshold for safety
+      # This value should ideally be derived from vehicle capabilities or safety requirements
+      SAFE_MIN_BRAKING_THRESHOLD = -4.0 # m/s^2
+      if adjusted_min_limit > SAFE_MIN_BRAKING_THRESHOLD:
+        cloudlog.warning(f"Safety Validation: adjusted_min_limit {adjusted_min_limit:.2f} m/s^2 "
+                         f"is weaker than safe threshold {SAFE_MIN_BRAKING_THRESHOLD:.2f} m/s^2.")
+        # Optionally, force a safer, more negative limit if validation fails
+        # adjusted_min_limit = min(adjusted_min_limit, SAFE_MIN_BRAKING_THRESHOLD)
+
+      # Ensure max_accel_limit does not exceed a reasonable acceleration threshold
+      # Assuming 2.0 m/s^2 is a reasonable maximum acceleration threshold for safety
+      SAFE_MAX_ACCELERATION_THRESHOLD = 2.0 # m/s^2
+      if adjusted_max_limit > SAFE_MAX_ACCELERATION_THRESHOLD:
+        cloudlog.warning(f"Safety Validation: adjusted_max_limit {adjusted_max_limit:.2f} m/s^2 "
+                         f"is stronger than safe threshold {SAFE_MAX_ACCELERATION_THRESHOLD:.2f} m/s^2.")
+        # Optionally, force a safer, less positive limit if validation fails
+        # adjusted_max_limit = min(adjusted_max_limit, SAFE_MAX_ACCELERATION_THRESHOLD)
+      # --- End Safety Validation for Accel Limits ---
+
+
 
     actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)  # removed float() wrapper
 
