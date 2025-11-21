@@ -48,11 +48,30 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
+    # Initialize configurable safety thresholds
+    try:
+        critical_threshold_param = self.params.get("SafetyCriticalThreshold")
+        self.safety_critical_threshold = float(critical_threshold_param) if critical_threshold_param else 0.2
+    except (TypeError, ValueError):
+        self.safety_critical_threshold = 0.2  # Default value if parameter is invalid type
+
+    try:
+        high_risk_threshold_param = self.params.get("SafetyHighRiskThreshold")
+        self.safety_high_risk_threshold = float(high_risk_threshold_param) if high_risk_threshold_param else 0.4
+    except (TypeError, ValueError):
+        self.safety_high_risk_threshold = 0.4  # Default value if parameter is invalid type
+
+    try:
+        moderate_risk_threshold_param = self.params.get("SafetyModerateRiskThreshold")
+        self.safety_moderate_risk_threshold = float(moderate_risk_threshold_param) if moderate_risk_threshold_param else 0.6
+    except (TypeError, ValueError):
+        self.safety_moderate_risk_threshold = 0.6  # Default value if parameter is invalid type
+
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
                                    'radarState'] + self.sm_services_ext,
-                                  poll=['selfdriveState'])
+                                  poll=['selfdriveState', 'radarState', 'livePose'])
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
     self.steer_limited_by_safety = False
@@ -119,13 +138,14 @@ class Controls(ControlsExt, ModelStateBase):
       self.LaC.extension.update_lateral_lag(self.lat_delay)
 
     # Enhanced safety monitoring - perform safety checks using multi-sensor fusion
-    if self.sm.all_checks(['modelV2', 'radarState', 'carState', 'carControl']):
+    if self.sm.all_checks(['modelV2', 'radarState', 'carState', 'carControl', 'livePose']):
       try:
         safety_score, requires_intervention, safety_report = self.safety_monitor.update(
           self.sm['modelV2'],
           self.sm['radarState'],
           self.sm['carState'],
-          self.sm['carControl']
+          self.sm['carControl'],
+          self.sm['livePose']
         )
 
         # Update safety degraded mode based on safety monitor
@@ -133,13 +153,13 @@ class Controls(ControlsExt, ModelStateBase):
 
         # Check for critical safety failures that require immediate disengagement
         overall_safety_score = safety_report.get('overall_safety_score', 1.0)
-        if overall_safety_score < 0.2:  # Critical safety threshold
-          cloudlog.error(f"Critical safety failure: safety score {overall_safety_score} < 0.2 - requesting disengagement")
+        if overall_safety_score < self.safety_critical_threshold:  # Critical safety threshold
+          cloudlog.error(f"Critical safety failure: safety score {overall_safety_score} < {self.safety_critical_threshold} - requesting disengagement")
           # Request immediate disengagement for critical safety failures
           self.safety_degraded_mode = True
           requires_intervention = True
-        elif overall_safety_score < 0.4:  # High risk threshold
-          cloudlog.warning(f"High risk safety level: safety score {overall_safety_score} < 0.4 - applying strong safety measures")
+        elif overall_safety_score < self.safety_high_risk_threshold:  # High risk threshold
+          cloudlog.warning(f"High risk safety level: safety score {overall_safety_score} < {self.safety_high_risk_threshold} - applying strong safety measures")
           self.safety_degraded_mode = True
 
         # If intervention is required, apply safety measures
@@ -199,16 +219,16 @@ class Controls(ControlsExt, ModelStateBase):
       overall_safety_score = safety_report.get('overall_safety_score', 1.0)
 
       # Determine appropriate safety factor based on safety score
-      if overall_safety_score < 0.2:  # Critical safety threshold
+      if overall_safety_score < self.safety_critical_threshold:  # Critical safety threshold
         # Very conservative operation, approaching disengagement
         acceleration_safety_factor = 0.5
         braking_safety_factor = 0.7  # Less reduction on braking to maintain stopping capability
         # Consider disengaging if safety score remains critically low
         cloudlog.warning(f"Critical safety mode: safety score {overall_safety_score} - very conservative operation")
-      elif overall_safety_score < 0.4:  # High risk threshold
+      elif overall_safety_score < self.safety_high_risk_threshold:  # High risk threshold
         acceleration_safety_factor = 0.6
         braking_safety_factor = 0.8  # Slightly less reduction on braking
-      elif overall_safety_score < 0.6:  # Moderate risk threshold
+      elif overall_safety_score < self.safety_moderate_risk_threshold:  # Moderate risk threshold
         acceleration_safety_factor = 0.75
         braking_safety_factor = 0.85  # Minimal reduction on braking
       else:  # Lower risk but still degraded

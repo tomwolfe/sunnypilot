@@ -57,7 +57,25 @@ class SafetyMonitor:
     except UnknownKeyName:
         self.lane_deviation_threshold = 0.8  # Default value if parameter not found
     except (TypeError, ValueError):
-        self.lane_deviation_threshold = 0.8  # Default value if parameter is invalid type  # meters from center
+        self.lane_deviation_threshold = 0.8  # Default value if parameter is invalid type
+
+    # Low speed safety threshold for conservative behavior
+    try:
+        low_speed_safety_param = self.params.get("LowSpeedSafetyThreshold")
+        self.low_speed_safety_threshold = float(low_speed_safety_param) if low_speed_safety_param else 0.4
+    except UnknownKeyName:
+        self.low_speed_safety_threshold = 0.4  # Default value if parameter not found
+    except (TypeError, ValueError):
+        self.low_speed_safety_threshold = 0.4  # Default value if parameter is invalid type  # meters from center
+
+    # Model confidence threshold multiplier for critical safety checks
+    try:
+        model_confidence_multiplier_param = self.params.get("ModelConfidenceThresholdMultiplier")
+        self.model_confidence_threshold_multiplier = float(model_confidence_multiplier_param) if model_confidence_multiplier_param else 0.8
+    except UnknownKeyName:
+        self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter not found
+    except (TypeError, ValueError):
+        self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter is invalid type
     
     # Environmental condition detection
     self.lighting_condition = "normal"  # "night", "dawn_dusk", "normal", "tunnel"
@@ -137,7 +155,7 @@ class SafetyMonitor:
     else:
       self.camera_confidence = 0.6
 
-  def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg) -> None:
+  def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> None:
     """Detect environmental conditions and adjust safety accordingly"""
     # Lighting condition detection based on actual model outputs and car state (simplified)
     # Using model validy and other standard model_v2 fields instead of non-standard lighting field
@@ -168,13 +186,29 @@ class SafetyMonitor:
         self.lighting_condition = "normal"
 
     # Weather condition detection based on IMU and car dynamics (improved approach)
-    if (hasattr(car_control_msg, 'orientationNED') and
-        car_control_msg.orientationNED is not None and
-        hasattr(car_control_msg.orientationNED, '__len__') and
-        len(car_control_msg.orientationNED) >= 3):
-      pitch = car_control_msg.orientationNED[1]
-      roll = car_control_msg.orientationNED[0]
+    # Use livePose orientation instead of carControl (carControl doesn't have orientation data)
+    pitch = 0.0
+    roll = 0.0
+    orientation_available = False
 
+    if (live_pose_msg is not None and
+        hasattr(live_pose_msg, 'orientationNED') and
+        live_pose_msg.orientationNED is not None and
+        hasattr(live_pose_msg.orientationNED, '__len__') and
+        len(live_pose_msg.orientationNED) >= 3):
+      pitch = live_pose_msg.orientationNED[1]
+      roll = live_pose_msg.orientationNED[0]
+      orientation_available = True
+    # Fallback: try to get orientation from carState if livePose is not available
+    elif (hasattr(car_state_msg, 'orientationNED') and
+          car_state_msg.orientationNED is not None and
+          hasattr(car_state_msg.orientationNED, '__len__') and
+          len(car_state_msg.orientationNED) >= 3):
+      pitch = car_state_msg.orientationNED[1]
+      roll = car_state_msg.orientationNED[0]
+      orientation_available = True
+
+    if orientation_available:
       # More sophisticated approach than just raw IMU values
       # Check for sustained unusual angles that might indicate weather or road conditions
       pitch_threshold = 0.1  # Reduced threshold for realistic detection
@@ -199,20 +233,58 @@ class SafetyMonitor:
   def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
     if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
-      # Analyze path curvature ahead
+      # Properly calculate path curvature using first and second derivatives
       max_curvature_ahead = 0.0
-      curve_points_ahead = min(25, len(model_v2_msg.path.y))
-      
-      for i in range(5, curve_points_ahead):  # Look ahead starting from 0.5s
-        if i < len(model_v2_msg.path.y):
-          curvature = abs(model_v2_msg.path.y[i])
-          max_curvature_ahead = max(max_curvature_ahead, curvature)
-      
+      x_coords = model_v2_msg.path.x
+      y_coords = model_v2_msg.path.y
+
+      if len(x_coords) > 2 and len(y_coords) > 2:
+        # Calculate curvature using numerical derivatives
+        # Use central differences for better accuracy where possible
+        for i in range(1, min(25, len(x_coords)-1)):  # Look ahead starting from 0.5s
+          if i < len(x_coords) and i < len(y_coords):
+            # First derivatives (dx, dy)
+            if i > 0 and i < len(x_coords)-1:  # Central difference for internal points
+              dx_dt = (x_coords[i+1] - x_coords[i-1]) / 2.0  # Approximate dx/dt
+              dy_dt = (y_coords[i+1] - y_coords[i-1]) / 2.0  # Approximate dy/dt
+            else:  # Forward or backward difference for edge points
+              if i == 0:
+                dx_dt = x_coords[i+1] - x_coords[i]
+                dy_dt = y_coords[i+1] - y_coords[i]
+              else:  # i == len-1
+                dx_dt = x_coords[i] - x_coords[i-1]
+                dy_dt = y_coords[i] - y_coords[i-1]
+
+            # Second derivatives (d2x, d2y)
+            if i > 0 and i < len(x_coords)-1:  # Central difference for second derivative
+              d2x_dt2 = x_coords[i+1] - 2*x_coords[i] + x_coords[i-1]
+              d2y_dt2 = y_coords[i+1] - 2*y_coords[i] + y_coords[i-1]
+            else:  # Use forward/backward difference for boundary points
+              if i == 0 and len(x_coords) > 2:
+                d2x_dt2 = x_coords[i+2] - 2*x_coords[i+1] + x_coords[i]
+                d2y_dt2 = y_coords[i+2] - 2*y_coords[i+1] + y_coords[i]
+              elif i == len(x_coords)-1 and len(x_coords) > 2:
+                d2x_dt2 = x_coords[i] - 2*x_coords[i-1] + x_coords[i-2]
+                d2y_dt2 = y_coords[i] - 2*y_coords[i-1] + y_coords[i-2]
+              else:
+                d2x_dt2 = 0.0
+                d2y_dt2 = 0.0
+
+            # Calculate curvature using the formula:
+            # curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+            numerator = abs(dx_dt * d2y_dt2 - dy_dt * d2x_dt2)
+            denominator_squared = dx_dt**2 + dy_dt**2
+
+            if denominator_squared > 1e-6:  # Avoid division by zero
+              denominator = denominator_squared ** 1.5
+              local_curvature = numerator / denominator
+              max_curvature_ahead = max(max_curvature_ahead, abs(local_curvature))
+
       # Calculate safe speed based on curvature
       if max_curvature_ahead > 0.001:  # Significant curve
         max_lat_accel = 3.0  # Maximum lateral acceleration considered safe
         safe_speed = (max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
-        
+
         # Calculate anticipation score based on speed vs safe speed
         if car_state_msg.vEgo > 5.0:  # Only for meaningful speeds
           speed_ratio = min(1.0, max(0.0, safe_speed / car_state_msg.vEgo))
@@ -259,7 +331,7 @@ class SafetyMonitor:
 
     # Apply critical safety penalties for values significantly below thresholds
     # Use raw confidence for immediate safety response to avoid filter delays
-    model_confidence_threshold_adjusted = self.model_confidence_threshold * 0.8  # 0.56 if threshold is 0.7
+    model_confidence_threshold_adjusted = self.model_confidence_threshold * self.model_confidence_threshold_multiplier  # 0.56 if threshold is 0.7
     if self.raw_model_confidence < model_confidence_threshold_adjusted:
       # Apply additional penalty when raw model confidence is critically low
       confidence_deficit = (model_confidence_threshold_adjusted - self.raw_model_confidence) / model_confidence_threshold_adjusted
@@ -285,7 +357,7 @@ class SafetyMonitor:
     intervention_needed = False
     
     # Model confidence too low
-    if self.model_confidence < self.model_confidence_threshold * 0.8:
+    if self.model_confidence < self.model_confidence_threshold * self.model_confidence_threshold_multiplier:
       intervention_needed = True
     
     # Lane deviation too high
@@ -299,14 +371,14 @@ class SafetyMonitor:
     # Overall safety score too low
     if safety_score < 0.3:
       intervention_needed = True
-    
+
     # At very low speeds, be more conservative with intervention
-    if car_state_msg.vEgo < 5.0 and safety_score < 0.4:
+    if car_state_msg.vEgo < 5.0 and safety_score < self.low_speed_safety_threshold:
       intervention_needed = True
     
     return intervention_needed
 
-  def update(self, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg) -> Tuple[float, bool, Dict]:
+  def update(self, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> Tuple[float, bool, Dict]:
     """Main update function - processes all inputs and returns safety assessment"""
     try:
       # Update all confidence measures with error handling
@@ -332,7 +404,7 @@ class SafetyMonitor:
         self.camera_confidence = 0.5
 
       try:
-        self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg)
+        self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg)
       except Exception as e:
         import logging
         logging.error(f"Error in detect_environmental_conditions: {e}")
