@@ -7,6 +7,7 @@ from openpilot.common.swaglog import cloudlog
 class PIDController:
   def __init__(self, k_p, k_i, k_f=0., k_d=0., k_curvature=None, max_curvature_gain_multiplier=4.0,
                safety_limit_threshold=100, safety_limit_time_window=60.0, safety_limit_recovery_threshold=None,  # Added configurable safety parameters
+               safety_score_count_weight=0.5, safety_score_time_weight=0.5, safe_mode_activation_delay_time=0.0, # New: configurable weights and activation delay
                pos_limit=1e308, neg_limit=-1e308, rate=100,
                oscillation_threshold=0.5, oscillation_window_size_seconds=0.5, oscillation_gain_reduction=0.9,
                oscillation_recovery_rate=1.005, min_oscillation_gain_factor=0.5, max_oscillation_gain_factor=1.0,
@@ -19,6 +20,11 @@ class PIDController:
     self._k_curvature = k_curvature
     self.max_curvature_gain_multiplier = max_curvature_gain_multiplier  # Configurable maximum gain multiplier relative to base
     self.safe_mode_recovery_time = safe_mode_recovery_time  # Configurable safe mode recovery time in seconds
+    # New: configurable safety score weights and activation delay
+    self.safety_score_count_weight = safety_score_count_weight
+    self.safety_score_time_weight = safety_score_time_weight
+    self.safe_mode_activation_delay_time = safe_mode_activation_delay_time
+
     # Calculate reference values for safety limiting to prevent explosive behavior when both speed and curvature gains are high
     if isinstance(k_p, (list, tuple)) and len(k_p) == 2:
       # k_p is in format (breakpoints, values) like the car params
@@ -236,7 +242,7 @@ class PIDController:
 
           # Combine the scores into a single safety_score using a weighted average
           # This provides a unified metric for evaluating safety limit exceedance
-          safety_score = (count_based_score + time_based_score) / 2.0  # 50/50 weighting, can be configured later
+          safety_score = (count_based_score * self.safety_score_count_weight + time_based_score * self.safety_score_time_weight)
 
           # Add a logging mechanism for frequent safety limit triggers, even if safe mode is not yet active
           # This helps identify potential misconfigurations or edge cases during normal operation
@@ -252,26 +258,40 @@ class PIDController:
                           f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}")
 
           if safety_score > 1.0:
-            if not self.safe_mode_active:
-              # Only increment activation count and log when entering safe mode (not when already in safe mode)
-              self.safe_mode_activated_count += 1
-              self.safe_mode_start_time = time.time()
-              # Calculate time since last trigger for more detailed logging
-              time_since_last_trigger = current_time - self.safety_limit_trigger_times[-1] if self.safety_limit_trigger_times else 0
+            if not self.safe_mode_active: # If not already active
+              if not self.safe_mode_pending_activation:
+                # Start pending activation timer
+                self.safe_mode_pending_activation = True
+                self.safety_score_exceeded_start_time = current_time
+              elif current_time - self.safety_score_exceeded_start_time >= self.safe_mode_activation_delay_time:
+                # Delay met, activate safe mode
+                self.safe_mode_activated_count += 1
+                self.safe_mode_start_time = time.time()
+                time_since_last_trigger = current_time - self.safety_limit_trigger_times[-1] if self.safety_limit_trigger_times else 0
 
-              cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
-                             f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
-                             f"Safety score: {safety_score:.3f} (>1.0), "
-                             f"Count-based score: {count_based_score:.3f}, "
-                             f"Time-based score: {time_based_score:.3f}, "
-                             f"Safety threshold: {self.safety_limit_threshold}, "
-                             f"Current k_p: {k_p:.3f}, Combined Gain: {combined_gain:.3f}, "
-                             f"Current Curvature: {current_curvature:.3f}, Current Speed: {self.speed:.2f} m/s, "
-                             f"Total Safety Triggers: {self.safety_limit_trigger_count}, Recent Triggers in Window: {len(self.safety_limit_trigger_times)}, "
-                             f"Time Since Last Trigger: {time_since_last_trigger:.2f}s, "
-                             f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
-                             f"Safe mode activation count: {self.safe_mode_activated_count}")
-            self.safe_mode_active = True
+                cloudlog.warning(f"Curvature gain safe mode activated due to safety limits being exceeded. "
+                               f"Vehicle mass: {self.vehicle_mass}, wheelbase: {self.vehicle_wheelbase}, "
+                               f"Safety score: {safety_score:.3f} (>1.0), "
+                               f"Count-based score: {count_based_score:.3f}, "
+                               f"Time-based score: {time_based_score:.3f}, "
+                               f"Safety threshold: {self.safety_limit_threshold}, "
+                               f"Current k_p: {k_p:.3f}, Combined Gain: {combined_gain:.3f}, "
+                               f"Current Curvature: {current_curvature:.3f}, Current Speed: {self.speed:.2f} m/s, "
+                               f"Total Safety Triggers: {self.safety_limit_trigger_count}, Recent Triggers in Window: {len(self.safety_limit_trigger_times)}, "
+                               f"Time Since Last Trigger: {time_since_last_trigger:.2f}s, "
+                               f"Current oscillation gain factor: {self.oscillation_gain_factor:.3f}, "
+                               f"Safe mode activation count: {self.safe_mode_activated_count}")
+                self.safe_mode_active = True
+                self.safe_mode_pending_activation = False # Reset pending
+            else: # Already in safe mode, maintain state
+                # Reset pending activation if already in safe mode, to ensure it only logs once
+                self.safe_mode_pending_activation = False
+                self.safety_score_exceeded_start_time = None
+          else: # safety_score <= 1.0
+            # Reset pending activation if conditions are no longer met
+            self.safe_mode_pending_activation = False
+            self.safety_score_exceeded_start_time = None
+
       except Exception as e:
         # Enter safe mode if any calculation error occurs
         self.safe_mode_active = True
@@ -577,6 +597,9 @@ class PIDController:
     self.safe_mode_start_time = None
     self.safe_mode_recovery_start_time = None
     self.safe_mode_activated_count = 0
+    # Reset safe mode activation delay tracking
+    self.safety_score_exceeded_start_time = None
+    self.safe_mode_pending_activation = False
     # Reset performance monitoring variables
     self.last_update_time = 0.0
     self.last_oscillation_detection_time = 0.0
