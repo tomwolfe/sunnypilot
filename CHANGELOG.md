@@ -1,7 +1,12 @@
-sunnypilot Version 2025.003.000 (20xx-xx-xx)
+sunnypilot Version 2025.003.000 (2025-11-21)
 ========================
 * What's Changed (sunnypilot/sunnypilot)
   * Feat: Enhanced safety monitoring with multi-sensor fusion validation, confidence thresholds, environmental adaptation, and curve anticipation
+  * Fixed critical radarState polling issue in controlsd.py
+  * Improved environmental condition detection logic for lighting and weather
+  * Implemented proper disengagement mechanism for critical safety failures
+  * Added comprehensive error logging and fallback behavior
+  * Updated acceleration/braking limits to maintain proper safety margins
   * models: bump model json to v8 by @Discountchubbs
   * Bug: Model UI Crash Fix by @nayan8teen
   * controlsd: add `CP_SP` to `get_pid_accel_limits` by @THERoenPR

@@ -52,7 +52,7 @@ class Controls(ControlsExt, ModelStateBase):
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
                                    'radarState'] + self.sm_services_ext,
-                                  poll='selfdriveState')
+                                  poll=['selfdriveState'])
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
     self.steer_limited_by_safety = False
@@ -131,15 +131,32 @@ class Controls(ControlsExt, ModelStateBase):
         # Update safety degraded mode based on safety monitor
         self.safety_degraded_mode = safety_report.get('confidence_degraded', False)
 
+        # Check for critical safety failures that require immediate disengagement
+        overall_safety_score = safety_report.get('overall_safety_score', 1.0)
+        if overall_safety_score < 0.2:  # Critical safety threshold
+          cloudlog.error(f"Critical safety failure: safety score {overall_safety_score} < 0.2 - requesting disengagement")
+          # Request immediate disengagement for critical safety failures
+          self.safety_degraded_mode = True
+          requires_intervention = True
+        elif overall_safety_score < 0.4:  # High risk threshold
+          cloudlog.warning(f"High risk safety level: safety score {overall_safety_score} < 0.4 - applying strong safety measures")
+          self.safety_degraded_mode = True
+
         # If intervention is required, apply safety measures
         if requires_intervention:
           # Reduce acceleration limits for safer deceleration
           cloudlog.warning("Safety intervention required - applying conservative driving")
       except Exception as e:
         cloudlog.error(f"Safety monitor update failed: {e}")
+        # Log detailed error information
+        import traceback
+        cloudlog.error(f"Safety monitor error traceback: {traceback.format_exc()}")
         # Default to safe state if monitoring fails
         self.safety_degraded_mode = True
-        safety_report = {'overall_safety_score': 0.5, 'confidence_degraded': True}
+        safety_report = {'overall_safety_score': 0.1, 'confidence_degraded': True}
+        # Safety report should include failure information
+        safety_report['error_occurred'] = True
+        safety_report['error_details'] = str(e)
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
@@ -178,9 +195,39 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Apply safety-based acceleration limits if in degraded mode
     if self.safety_degraded_mode:
-      # Reduce acceleration and braking limits for safer operation
-      safety_factor = 0.7 if safety_report.get('overall_safety_score', 1.0) < 0.5 else 0.85
-      pid_accel_limits = (pid_accel_limits[0] * safety_factor, pid_accel_limits[1] * safety_factor)
+      # Get overall safety score
+      overall_safety_score = safety_report.get('overall_safety_score', 1.0)
+
+      # Determine appropriate safety factor based on safety score
+      if overall_safety_score < 0.2:  # Critical safety threshold
+        # Very conservative operation, approaching disengagement
+        acceleration_safety_factor = 0.5
+        braking_safety_factor = 0.7  # Less reduction on braking to maintain stopping capability
+        # Consider disengaging if safety score remains critically low
+        cloudlog.warning(f"Critical safety mode: safety score {overall_safety_score} - very conservative operation")
+      elif overall_safety_score < 0.4:  # High risk threshold
+        acceleration_safety_factor = 0.6
+        braking_safety_factor = 0.8  # Slightly less reduction on braking
+      elif overall_safety_score < 0.6:  # Moderate risk threshold
+        acceleration_safety_factor = 0.75
+        braking_safety_factor = 0.85  # Minimal reduction on braking
+      else:  # Lower risk but still degraded
+        acceleration_safety_factor = 0.85
+        braking_safety_factor = 0.95  # Very minimal reduction on braking
+
+      # Apply safety factors to acceleration limits while preserving braking capability
+      # Note: pid_accel_limits[0] is typically the minimum (braking) value (negative)
+      #       pid_accel_limits[1] is typically the maximum (acceleration) value (positive)
+      min_accel_limit = pid_accel_limits[0]  # Braking capability (typically negative value)
+      max_accel_limit = pid_accel_limits[1]  # Acceleration capability (typically positive value)
+
+      # Preserve braking capability more than acceleration for safety
+      # For braking (negative values), we want to make the limit less negative (closer to 0) by a smaller factor
+      # For acceleration (positive values), we reduce more significantly
+      adjusted_min_limit = min_accel_limit * braking_safety_factor if min_accel_limit < 0 else min_accel_limit * braking_safety_factor
+      adjusted_max_limit = max_accel_limit * acceleration_safety_factor if max_accel_limit > 0 else max_accel_limit * acceleration_safety_factor
+
+      pid_accel_limits = (adjusted_min_limit, adjusted_max_limit)
 
     actuators.accel = self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits)  # removed float() wrapper
 

@@ -1,7 +1,7 @@
 # Enhanced Safety Monitoring for sunnypilot
 
 ## Overview
-This document describes the enhanced safety monitoring system implemented as part of the 80/20 Pareto-optimal improvement plan for sunnypilot autonomous driving capabilities. The system provides multi-sensor fusion validation, confidence thresholds, environmental adaptation, and curve anticipation.
+This document describes the enhanced safety monitoring system for sunnypilot autonomous driving capabilities. The system provides multi-sensor fusion validation, confidence thresholds, environmental adaptation, and curve anticipation.
 
 ## Key Features Implemented
 
@@ -37,6 +37,31 @@ This document describes the enhanced safety monitoring system implemented as par
 - Integrated SafetyMonitor class for comprehensive safety assessment
 - Added safety-degraded mode that reduces acceleration limits
 - Applied safety-based interventions when required
+
+## SafetyMonitor API Documentation
+
+### Class: SafetyMonitor
+The main class for the safety monitoring system.
+
+#### Methods:
+- `__init__()`: Initializes the safety monitor with default thresholds and filters.
+- `update(model_v2_msg, radar_state_msg, car_state_msg, car_control_msg) -> Tuple[float, bool, Dict]`: Main update function that processes sensor inputs and returns safety assessment.
+  - Parameters:
+    - model_v2_msg: Cereal message with model outputs
+    - radar_state_msg: Cereal message with radar data
+    - car_state_msg: Cereal message with car state (velocity, acceleration, etc.)
+    - car_control_msg: Cereal message with control data
+  - Returns:
+    - float: Overall safety score (0.0-1.0)
+    - bool: Whether safety intervention is required
+    - Dict: Detailed safety report with all metrics
+- `update_model_confidence(model_v2_msg)`: Updates model confidence based on neural network outputs.
+- `update_radar_confidence(radar_state_msg)`: Updates radar confidence based on lead detection reliability.
+- `update_camera_confidence(model_v2_msg, car_state_msg)`: Updates camera confidence based on lane detection and visual clarity.
+- `detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg)`: Detects environmental conditions (lighting, weather, road).
+- `detect_curve_anticipation(model_v2_msg, car_state_msg)`: Enhanced curve anticipation with improved safety margins.
+- `calculate_overall_safety_score(car_state_msg)`: Calculates overall safety score based on all inputs.
+- `evaluate_safety_intervention_needed(safety_score, car_state_msg)`: Determines if safety intervention is required.
 
 ## Safety Behaviors
 

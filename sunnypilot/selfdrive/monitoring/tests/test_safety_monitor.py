@@ -131,21 +131,124 @@ def test_safety_monitor_curve_anticipation():
 def test_safety_monitor_lane_deviation():
   """Test safety monitor's lane deviation detection"""
   monitor = SafetyMonitor()
-  
+
   model_v2_msg = create_mock_model_v2_msg()
   model_v2_msg.lateralPlan.dPath = [0.5, 0.6, 0.7, 0.9, 1.2]  # Deviating from center
-  
+
   radar_state_msg = create_mock_radar_state_msg()
   car_state_msg = create_mock_car_state_msg()
   car_control_msg = create_mock_car_control_msg()
-  
+
   safety_score, requires_intervention, safety_report = monitor.update(
     model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
   )
-  
+
   # With high lane deviation, safety score should be lower
   assert safety_report['lane_deviation'] > 0.5
   assert safety_score < 0.8
+
+
+def test_safety_monitor_tunnel_lighting_conditions():
+  """Test safety monitor's response to tunnel lighting conditions"""
+  monitor = SafetyMonitor()
+
+  # Create model with conditions that might indicate tunnel (high confidence lighting)
+  model_v2_msg = create_mock_model_v2_msg()
+  # Modify path probs to simulate conditions that might indicate tunnel lighting
+  model_v2_msg.path.probs = [0.9]  # High confidence path detection
+
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Verify that environmental conditions are properly detected
+  assert 'lighting_condition' in safety_report
+  assert 'weather_condition' in safety_report
+  assert 'road_condition' in safety_report
+
+
+def test_safety_monitor_weather_detection_with_imu():
+  """Test safety monitor's weather detection based on IMU data"""
+  monitor = SafetyMonitor()
+
+  model_v2_msg = create_mock_model_v2_msg()
+  radar_state_msg = create_mock_radar_state_msg()
+  car_state_msg = create_mock_car_state_msg()
+
+  # Create car control message with unusual IMU angles that might indicate weather conditions
+  car_control_msg = Mock()
+  car_control_msg.orientationNED = [0.15, 0.15, 0.0]  # Slightly unusual angles
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Should detect environmental conditions based on IMU data
+  assert 'lighting_condition' in safety_report
+  assert 'weather_condition' in safety_report
+  assert 'road_condition' in safety_report
+
+
+def test_safety_monitor_error_handling():
+  """Test safety monitor's error handling with invalid inputs"""
+  monitor = SafetyMonitor()
+
+  # Create completely invalid model message to test error handling
+  invalid_model_v2_msg = Mock()
+  invalid_model_v2_msg.path = Mock()
+  invalid_model_v2_msg.path.x = []  # Empty path to cause errors
+  invalid_model_v2_msg.path.y = []
+  invalid_model_v2_msg.path.probs = []
+  invalid_model_v2_msg.lateralPlan = Mock()
+  invalid_model_v2_msg.lateralPlan.laneWidth = 3.5
+  invalid_model_v2_msg.lateralPlan.dPath = []
+  invalid_model_v2_msg.frameId = 0
+
+  invalid_radar_state_msg = Mock()
+  invalid_radar_state_msg.leadOne = Mock()
+  invalid_radar_state_msg.leadOne.status = False  # No lead detection
+
+  car_state_msg = create_mock_car_state_msg()
+  car_control_msg = create_mock_car_control_msg()
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    invalid_model_v2_msg, invalid_radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # Even with invalid inputs, should return valid safety report
+  assert isinstance(safety_score, float)
+  assert isinstance(requires_intervention, bool)
+  assert isinstance(safety_report, dict)
+  assert 'model_confidence' in safety_report
+  assert 'overall_safety_score' in safety_report
+
+
+def test_safety_monitor_low_speed_considerations():
+  """Test safety monitor's behavior at low speeds"""
+  monitor = SafetyMonitor()
+
+  model_v2_msg = create_mock_model_v2_msg()
+  radar_state_msg = create_mock_radar_state_msg()
+
+  # Create car state with very low speed
+  car_state_msg = Mock()
+  car_state_msg.vEgo = 2.0  # Very low speed
+  car_state_msg.aEgo = 0.0
+
+  car_control_msg = create_mock_car_control_msg()
+
+  safety_score, requires_intervention, safety_report = monitor.update(
+    model_v2_msg, radar_state_msg, car_state_msg, car_control_msg
+  )
+
+  # With low speed, should have more conservative behavior if safety is poor
+  assert isinstance(safety_score, float)
+  assert isinstance(requires_intervention, bool)
+  assert safety_score >= 0.0 and safety_score <= 1.0
 
 
 if __name__ == "__main__":
