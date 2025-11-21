@@ -59,13 +59,13 @@ class Controls(ControlsExt, ModelStateBase):
     # Initialize configurable safety thresholds
     try:
         critical_threshold_param = self.params.get("SafetyCriticalThreshold")
-        self.safety_critical_threshold = float(critical_threshold_param) if critical_threshold_param else 0.2
+        self.safety_critical_threshold = float(critical_threshold_param) if critical_threshold_param else 0.3
         # Add range validation: critical threshold should be between 0 and 1
         if self.safety_critical_threshold < 0.0 or self.safety_critical_threshold > 1.0:
-            cloudlog.warning(f"Invalid SafetyCriticalThreshold: {self.safety_critical_threshold}, using default 0.2")
-            self.safety_critical_threshold = 0.2
+            cloudlog.warning(f"Invalid SafetyCriticalThreshold: {self.safety_critical_threshold}, using default 0.3")
+            self.safety_critical_threshold = 0.3
     except (TypeError, ValueError):
-        self.safety_critical_threshold = 0.2  # Default value if parameter is invalid type
+        self.safety_critical_threshold = 0.3  # Default value if parameter is invalid type
 
     try:
         high_risk_threshold_param = self.params.get("SafetyHighRiskThreshold")
@@ -74,7 +74,7 @@ class Controls(ControlsExt, ModelStateBase):
         if not (0.0 <= self.safety_high_risk_threshold <= 1.0):
             cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} is out of range [0, 1]. Using default 0.4")
             self.safety_high_risk_threshold = 0.4
-        elif self.safety_high_risk_threshold <= (self.safety_critical_threshold + 0.1):
+        elif self.safety_high_risk_threshold <= (self.safety_critical_threshold + 0.15):
             cloudlog.warning(f"SafetyHighRiskThreshold {self.safety_high_risk_threshold} must be at least 0.1 greater than SafetyCriticalThreshold {self.safety_critical_threshold}. Using default 0.4")
             self.safety_high_risk_threshold = 0.4
     except (TypeError, ValueError):

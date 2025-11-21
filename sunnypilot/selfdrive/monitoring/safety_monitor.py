@@ -110,13 +110,11 @@ class SafetyMonitor:
 
     try:
         velocity_confidence_scale_param = self.params.get("VelocityConfidenceScale")
-        self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 100.0
-    except UnknownKeyName:
-        self.velocity_confidence_scale = 100.0
-    except (TypeError, ValueError):
-        self.velocity_confidence_scale = 100.0
-    
-    # Environmental condition detection
+                    self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 30.0
+                        except UnknownKeyName:
+                            self.velocity_confidence_scale = 30.0
+                        except (TypeError, ValueError):
+                            self.velocity_confidence_scale = 30.0    # Environmental condition detection
     self.lighting_condition = "night"  # "night", "dawn_dusk", "normal", "tunnel"
     self.weather_condition = "rain"    # "clear", "rain", "snow", "fog"
     self.road_condition = "wet"         # "dry", "wet", "icy", "snow"
@@ -155,8 +153,9 @@ class SafetyMonitor:
       # Also store raw confidence for immediate safety decisions
       self.raw_model_confidence = raw_confidence
     else:
-      self.model_confidence = 0.5  # Fallback to moderate confidence
-      self.raw_model_confidence = 0.5  # Fallback to moderate confidence
+      logging.warning("modelV2 data not available. Defaulting model confidence to a conservative 0.1.")
+      self.model_confidence = 0.1  # Fallback to conservative confidence
+      self.raw_model_confidence = 0.1  # Fallback to conservative confidence
 
   def update_radar_confidence(self, radar_state_msg) -> None:
     """Update radar confidence based on lead detection reliability"""
@@ -171,13 +170,14 @@ class SafetyMonitor:
       # Assuming lead.aRel exists and is populated in radar_state_msg.leadOne
       # Add acceleration-based confidence component
       # The critical review suggests a fallback of 0.7 if aRel is not available.
-      acceleration_confidence = 0.7 # Default if aRel is not available
+      acceleration_confidence = 0.5 # Conservative default if aRel is not available
       if hasattr(lead, 'aRel') and lead.aRel is not None:
         acceleration_confidence = min(1.0, max(0.0, (5.0 - abs(lead.aRel)) / 5.0))
       else:
         # Use alternative metrics like lead position stability or a default value
         # if actual acceleration is not available.
-        acceleration_confidence = 0.7
+        logging.warning("aRel not available for radar acceleration confidence. Defaulting to a conservative 0.5.")
+        acceleration_confidence = 0.5
       self.radar_confidence = self.radar_confidence_filter.update(
         (distance_confidence * 0.5 + velocity_confidence * 0.3 + acceleration_confidence * 0.2)
       )
@@ -221,8 +221,8 @@ class SafetyMonitor:
     # Future integration should consider:
     # 1. Camera-based luminance estimation (e.g., from image statistics or model outputs).
     # 2. Dedicated ambient light sensors.
-    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'night' lighting condition.")
-    self.lighting_condition = "night"
+    logging.warning("Luminance data for lighting condition detection is not available. Defaulting to 'normal' lighting condition.")
+    self.lighting_condition = "normal"
     # TODO: Implement robust tunnel detection.
     # Tunnel detection requires specific visual cues (consistent lane markings, absence of sky, specific lighting patterns).
     # This cannot be reliably inferred without proper camera-based analysis or dedicated sensors.
@@ -230,7 +230,7 @@ class SafetyMonitor:
     # 1. Analyze 'modelV2.laneLines' for consistent, strong lane detections without 'roadEdges' or 'sky' probabilities.
     # 2. Integrate with lighting condition estimation (once available) for sudden drops in luminance.
     # 3. Utilize GPS data if available for known tunnel locations.
-    self.in_tunnel = True # Default to in tunnel
+    self.in_tunnel = False # Default to not in tunnel
     # Placeholder for future tunnel detection logic
     # if (model_v2_msg and model_v2_msg.laneLines and
     #     not model_v2_msg.roadEdges and not model_v2_msg.skyProbability):
@@ -251,21 +251,20 @@ class SafetyMonitor:
       roll = live_pose_msg.orientationNED[0]
       orientation_available = True
 
-    if orientation_available:
-      # TODO: Implement robust weather and road condition detection using multiple sensor inputs.
-      # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
-      # Future integration should consider:
-      # - Rain: Wiper status (from carState if available), dedicated precipitation sensors, camera visibility metrics.
-      # - Snow: Ambient temperature (from external sensor or refined thermal model), wheel slip detection.
-      # - Fog: Camera visibility metrics, radar attenuation (if available).
-      # For now, default to dry and clear conditions, as accurate multi-sensor fusion is not yet implemented for weather/road.
-      self.road_condition = "dry"
-      self.weather_condition = "clear"
-    else:
-      # Default to safe assumption if we can't get reliable IMU data
-      self.road_condition = "wet"
-      self.weather_condition = "rain"
-
+            if orientation_available:
+              # TODO: Implement robust weather and road condition detection using multiple sensor inputs.
+              # Current limitation: Relies primarily on IMU data (via live_pose_msg orientation) which is a proxy.
+              # Future integration should consider:
+              # - Rain: Wiper status (from carState if available), dedicated precipitation sensors, camera visibility metrics.
+              # - Snow: Ambient temperature (from external sensor or refined thermal model), wheel slip detection.
+              # - Fog: Camera visibility metrics, radar attenuation (if available).
+              # For now, default to dry and clear conditions, as accurate multi-sensor fusion is not yet implemented for weather/road.
+              self.road_condition = "dry"
+              self.weather_condition = "clear"
+            else:
+              # If IMU data is not available, log a warning but maintain the previous state of
+              # road and weather conditions instead of defaulting to a potentially incorrect "worst-case".
+              logging.warning("IMU data for weather/road condition detection is not available. Maintaining previous environmental conditions.")
   def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
     if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
@@ -342,6 +341,13 @@ class SafetyMonitor:
     """Calculate overall safety score based on all inputs"""
     # Weighted combination of all confidence measures
     # Adjust weights based on environmental conditions
+    # These weights are chosen based on the assumed reliability and criticality of each sensor
+    # in an autonomous driving context. They can be adjusted based on empirical testing and
+    # system requirements.
+    # - Model (0.4): High weight due to its comprehensive understanding of the driving scene.
+    # - Camera (0.3): Significant weight for lane detection, object classification, and visual cues.
+    # - Radar (0.2): Moderate weight for precise distance and velocity measurements, especially for lead vehicles.
+    # - IMU (0.1): Lower weight for general vehicle dynamics and environmental condition estimation.
     base_weights = {
       'model': 0.4,
       'camera': 0.3,

@@ -43,7 +43,8 @@ def default_safety_monitor_instance():
         "MaxLateralAcceleration": 2.0,
         "CurveDetectionThreshold": 0.5,
         "MaxRadarDistanceForConfidence": 150.0,
-        "VelocityConfidenceScale": 100.0,
+        "VelocityConfidenceScale": 30.0,  # Changed from 100.0 to 30.0
+        "SafetyCriticalThreshold": 0.3,   # Added new parameter
     }
     with patch('openpilot.common.params.Params', MockParams):
         # Override the Params.get method for precise control over return values
@@ -109,7 +110,8 @@ def test_safety_monitor_initialization(default_safety_monitor_instance):
     assert monitor.max_lat_accel == 2.0
     assert monitor.curve_detection_threshold == 0.5
     assert monitor.max_radar_distance_for_confidence == 150.0
-    assert monitor.velocity_confidence_scale == 100.0
+    assert monitor.velocity_confidence_scale == 30.0
+    assert monitor.safety_critical_threshold == 0.3
     assert monitor.lighting_condition == "normal"
     assert monitor.weather_condition == "clear"
     assert monitor.road_condition == "dry"
@@ -171,6 +173,7 @@ def test_environmental_detection_no_orientation(default_safety_monitor_instance)
     with patch('logging.warning') as mock_warning:
         monitor.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg)
         mock_warning.assert_any_call("Luminance data for lighting condition detection is not available. Defaulting to 'normal' lighting condition.")
+        mock_warning.assert_any_call("IMU data for weather/road condition detection is not available. Maintaining previous environmental conditions.")
         assert monitor.lighting_condition == "normal"
         assert monitor.weather_condition == "clear"
         assert monitor.road_condition == "dry"
@@ -183,21 +186,23 @@ def test_radar_confidence_with_a_rel(default_safety_monitor_instance):
     radar_state_msg = create_mock_radar_state_msg(lead_status=True, d_rel=25.0, v_rel=-5.0, a_rel=-1.0)
     monitor.update_radar_confidence(radar_state_msg)
     # Expected: distance_confidence = 1 - (25/150) = 0.8333...
-    #           velocity_confidence = (100 - |-5.0|) / 100 = 0.95
+    #           velocity_confidence = (30.0 - abs(-5.0)) / 30.0 = 0.8333... (since velocity_confidence_scale is now 30.0)
     #           acceleration_confidence = (5.0 - |-1.0|) / 5.0 = 0.8
-    #           radar_confidence = (0.8333 * 0.5 + 0.95 * 0.3 + 0.8 * 0.2) = 0.41665 + 0.285 + 0.16 = 0.86165
-    assert monitor.radar_confidence == pytest.approx(0.86165, abs=1e-5)
+    #           radar_confidence = (0.8333 * 0.5 + 0.8333 * 0.3 + 0.8 * 0.2) = 0.41665 + 0.25 + 0.16 = 0.82665
+    assert monitor.radar_confidence == pytest.approx(0.82665, abs=1e-5)
 
 def test_radar_confidence_without_a_rel(default_safety_monitor_instance):
     monitor = default_safety_monitor_instance
-    # Without aRel (should default to 0.7 for acceleration_confidence)
+    # Without aRel (should default to 0.5 for acceleration_confidence)
     radar_state_msg = create_mock_radar_state_msg(lead_status=True, d_rel=25.0, v_rel=-5.0, lead_one_has_a_rel=False)
-    monitor.update_radar_confidence(radar_state_msg)
-    # Expected: distance_confidence = 1 - (25/150) = 0.8333...
-    #           velocity_confidence = (100 - |-5.0|) / 100 = 0.95
-    #           acceleration_confidence = 0.7 (fallback)
-    #           radar_confidence = (0.8333 * 0.5 + 0.95 * 0.3 + 0.7 * 0.2) = 0.41665 + 0.285 + 0.14 = 0.84165
-    assert monitor.radar_confidence == pytest.approx(0.84165, abs=1e-5)
+    with patch('logging.warning') as mock_warning:
+        monitor.update_radar_confidence(radar_state_msg)
+        mock_warning.assert_any_call("aRel not available for radar acceleration confidence. Defaulting to a conservative 0.5.")
+        # Expected: distance_confidence = 1 - (25/150) = 0.8333...
+        #           velocity_confidence = (30.0 - abs(-5.0)) / 30.0 = 0.8333...
+        #           acceleration_confidence = 0.5 (fallback)
+        #           radar_confidence = (0.8333 * 0.5 + 0.8333 * 0.3 + 0.5 * 0.2) = 0.41665 + 0.25 + 0.1 = 0.76665
+        assert monitor.radar_confidence == pytest.approx(0.76665, abs=1e-5)
 
 def test_radar_confidence_no_lead(default_safety_monitor_instance):
     monitor = default_safety_monitor_instance
@@ -268,6 +273,16 @@ def test_overall_safety_score_high_lane_deviation(default_safety_monitor_instanc
     # base safety score = (1.0*0.4 + 1.0*0.3 + 1.0*0.2 + 1.0*0.1) = 1.0
     # final safety score = 1.0 * deviation_penalty = 1.0 * 0.1 = 0.1
     assert safety_score == pytest.approx(0.1, abs=1e-5)
+
+def test_update_model_confidence_missing_data(default_safety_monitor_instance):
+    monitor = default_safety_monitor_instance
+    model_v2_msg = create_mock_model_v2_msg(meta_confidence=None) # Simulate missing confidence
+    
+    with patch('logging.warning') as mock_warning:
+        monitor.update_model_confidence(model_v2_msg)
+        mock_warning.assert_any_call("modelV2 data not available. Defaulting model confidence to a conservative 0.1.")
+        assert monitor.model_confidence == pytest.approx(0.1)
+        assert monitor.raw_model_confidence == pytest.approx(0.1)
     
 # Test intervention logic
 def test_intervention_low_safety_score(default_safety_monitor_instance):
@@ -309,17 +324,20 @@ def test_missing_model_v2_data(default_safety_monitor_instance):
     car_control_msg = create_mock_car_control_msg()
     live_pose_msg = create_mock_live_pose_msg()
 
-    with patch('logging.error') as mock_error:
+    with patch('logging.error') as mock_error, patch('logging.warning') as mock_warning:
         safety_score, intervention_needed, safety_report = monitor.update(
             model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg
         )
         # Check that errors were logged for model_v2 related updates
-        mock_error.assert_any_call(f"Error in update_model_confidence: 'NoneType' object has no attribute 'meta'")
+        # update_model_confidence now logs a warning for missing data
+        mock_warning.assert_any_call("modelV2 data not available. Defaulting model confidence to a conservative 0.1.")
         mock_error.assert_any_call(f"Error in update_camera_confidence: 'NoneType' object has no attribute 'lateralPlan'")
         mock_error.assert_any_call(f"Error in detect_curve_anticipation: 'NoneType' object has no attribute 'path'")
         
         # Expect a lower safety score and intervention
-        assert safety_score < 1.0
+        # With model confidence at 0.1, the overall score should be significantly low.
+        # Using conservative lower bound for assertion.
+        assert safety_score < 0.3 # Significantly reduced due to critical model data missing
         assert intervention_needed
         assert safety_report['error_occurred']
 
