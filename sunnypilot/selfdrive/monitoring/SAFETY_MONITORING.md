@@ -16,14 +16,14 @@ This document describes the enhanced safety monitoring system for sunnypilot aut
 - Sets safety thresholds for intervention
 
 ### 3. Environmental Condition Detection
-- Improved lighting condition detection (night, dawn/dusk, tunnel, normal) with enhanced tunnel detection logic
-- Multi-indicator weather condition estimation (clear, rain, snow, fog) using IMU, acceleration, and jerk data
-- Advanced road condition assessment using IMU data with multiple indicator fusion
+- Initial framework for lighting condition detection, currently defaulting to 'normal' due to lack of direct luminance data.
+- Placeholder for robust tunnel detection, awaiting integration of camera-based analysis or dedicated sensors.
+- Basic weather and road condition estimation primarily based on IMU data as a proxy; defaults to 'clear' and 'dry' conditions.
 
 ### 4. Curve Anticipation Enhancement
-- Analyzes path curvature up to 200m ahead using proper path parameterization
-- Calculates safe speed based on curvature and vehicle dynamics with improved accuracy
-- Applies conservative driving when approaching curves at high speed
+- Analyzes path curvature up to 200m ahead using proper path parameterization; note: the curvature calculation is mathematically correct but computationally intensive.
+- Calculates safe speed based on curvature and vehicle dynamics. Current limitation: no explicit consideration for road grade (elevation changes).
+- Applies conservative driving when approaching curves at high speed.
 
 ### 5. Lane Deviation Monitoring
 - Tracks vehicle position relative to lane center
@@ -111,9 +111,31 @@ The safety monitor has been tested for:
 - Efficient filtering using FirstOrderFilter
 - Pre-allocated arrays to minimize memory allocation
 
+## Current Limitations
+
+### Environmental Detection
+- **Lighting Condition Detection:** Currently relies on proxy information and defaults to 'normal' due to the absence of direct luminance data. Robust detection requires integration of camera luminance measurements or dedicated lighting sensors.
+- **Tunnel Detection:** Implemented as a placeholder. Reliable tunnel detection necessitates specific visual cues from camera-based analysis (e.g., consistent lane markings, absence of sky, specific lighting patterns) or GPS data for known tunnel locations.
+- **Weather and Road Condition Detection:** Primarily uses IMU data as a proxy for estimation, often defaulting to 'clear' and 'dry'. Comprehensive multi-sensor fusion for accurate detection of rain, snow, fog, wet, or icy roads is not yet implemented. Future enhancements require integrating data such as wiper status, precipitation sensors, camera visibility metrics, ambient temperature, wheel slip detection, or radar attenuation.
+
+### Curve Anticipation
+- **Road Grade:** No explicit consideration for road grade (elevation changes) in curvature calculations, which can significantly impact curve safety.
+- **`min_points_needed` Calculation:** The path length validation uses a fixed `min_points_needed` calculation that may not be appropriate for all vehicles or speeds. Dynamic adjustment or justification for this parameter is needed.
+- **Computational Expense:** The curvature calculation, while mathematically correct, can be computationally expensive. Optimization may be required for performance-critical applications.
+
 ## Future Enhancements
 
 - Integration with weather APIs for more accurate weather detection
 - Enhanced road surface condition detection
 - Advanced multi-modal sensor fusion algorithms
 - Machine learning-based safety assessment
+
+## Real-World Validation and Future Testing
+
+While comprehensive unit tests have been developed, the system would benefit significantly from real-world validation. This includes:
+
+- **On-Road Vehicle Testing:** Conducting extensive testing on physical vehicles across diverse environments and driving conditions (e.g., varying lighting, weather, road types, traffic densities) to evaluate system performance and identify unforeseen edge cases.
+- **Failure Mode and Effects Analysis (FMEA):** Systematically analyzing potential failure modes, their causes, effects, and criticality within the safety monitoring system, and designing corresponding mitigation strategies.
+- **Edge Case Coverage:** Deliberately testing scenarios that represent rare or challenging driving situations not easily simulated or covered by unit tests, such as sudden sensor dropouts, conflicting sensor data under specific conditions, or extreme environmental shifts.
+- **Data-Driven Tuning:** Using real-world driving data to further refine and validate safety thresholds, sensor fusion weights, and environmental adaptation logic to optimize both safety and driving comfort.
+- **Human-in-the-Loop Evaluation:** Assessing the system's interaction with human drivers, including the clarity of warnings, the appropriateness of interventions, and overall driver trust and acceptance.

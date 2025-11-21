@@ -36,6 +36,8 @@ class SafetyMonitor:
 
     # Confidence thresholds for safety decisions - with configurable defaults
     # Use proper UnknownKeyName handling for missing parameters
+    # Justification: This threshold is set to a relatively high value (0.7) to ensure that the system operates only when the model's prediction
+    # is sufficiently reliable. Lower values could lead to unsafe maneuvers. This value is subject to empirical tuning.
     try:
         model_confidence_param = self.params.get("ModelConfidenceThreshold")
         self.model_confidence_threshold = float(model_confidence_param) if model_confidence_param else 0.7
@@ -44,6 +46,8 @@ class SafetyMonitor:
     except (TypeError, ValueError):
         self.model_confidence_threshold = 0.7  # Default value if parameter is invalid type
 
+    # Justification: This threshold (0.6) balances responsiveness to radar data with robustness against noise or false positives.
+    # It allows for some uncertainty but demands a reasonable level of confidence from the radar system. Subject to empirical tuning.
     try:
         radar_confidence_param = self.params.get("RadarConfidenceThreshold")
         self.radar_confidence_threshold = float(radar_confidence_param) if radar_confidence_param else 0.6
@@ -52,6 +56,9 @@ class SafetyMonitor:
     except (TypeError, ValueError):
         self.radar_confidence_threshold = 0.6  # Default value if parameter is invalid type
 
+    # Justification: This threshold (0.8m) defines the maximum allowable deviation from the lane center before a safety concern is raised.
+    # It's a balance between comfort and safety, preventing excessive weaving while allowing for normal driving adjustments.
+    # This value needs to be tuned considering vehicle dynamics and typical lane widths.
     try:
         lane_deviation_param = self.params.get("LaneDeviationThreshold")
         self.lane_deviation_threshold = float(lane_deviation_param) if lane_deviation_param else 0.8
@@ -61,6 +68,8 @@ class SafetyMonitor:
         self.lane_deviation_threshold = 0.8  # Default value if parameter is invalid type
 
     # Low speed safety threshold for conservative behavior
+    # Justification: At low speeds (below ~20 km/h), control can be more sensitive, and immediate intervention might be critical.
+    # A higher threshold (0.4) at low speeds prioritizes safety over smoothness in tight maneuvers.
     try:
         low_speed_safety_param = self.params.get("LowSpeedSafetyThreshold")
         self.low_speed_safety_threshold = float(low_speed_safety_param) if low_speed_safety_param else 0.4
@@ -70,6 +79,8 @@ class SafetyMonitor:
         self.low_speed_safety_threshold = 0.4  # Default value if parameter is invalid type  # meters from center
 
     # Model confidence threshold multiplier for critical safety checks
+    # Justification: This multiplier (0.8) reduces the effective model confidence threshold during critical safety checks,
+    # making the system more sensitive to low confidence situations. This creates a buffer for intervention.
     try:
         model_confidence_multiplier_param = self.params.get("ModelConfidenceThresholdMultiplier")
         self.model_confidence_threshold_multiplier = float(model_confidence_multiplier_param) if model_confidence_multiplier_param else 0.8
@@ -83,6 +94,8 @@ class SafetyMonitor:
         self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter is invalid type
     
     # Curve anticipation parameters
+    # Justification: This value (2.0 m/s^2) represents a conservative maximum lateral acceleration the vehicle is allowed to experience.
+    # It's a key parameter for calculating safe speeds around curves. This value should be tuned based on vehicle dynamics and comfort.
     try:
         max_lat_accel_param = self.params.get("MaxLateralAcceleration")
         self.max_lat_accel = float(max_lat_accel_param) if max_lat_accel_param else 2.0
@@ -91,6 +104,9 @@ class SafetyMonitor:
     except (TypeError, ValueError):
         self.max_lat_accel = 2.0
 
+    # Justification: This threshold (0.5) determines what level of curvature is considered significant enough to trigger curve anticipation logic.
+    # A higher value would mean only sharper curves are detected, while a lower value would trigger for gentler curves.
+    # This needs to be tuned to balance between false positives and missing critical curves.
     try:
         curve_threshold_param = self.params.get("CurveDetectionThreshold")
         self.curve_detection_threshold = float(curve_threshold_param) if curve_threshold_param else 0.5
@@ -100,6 +116,9 @@ class SafetyMonitor:
         self.curve_detection_threshold = 0.5
 
     # Radar confidence parameters
+    # Justification: This parameter (150.0m) defines the maximum range at which radar detections contribute to confidence.
+    # Beyond this distance, the reliability of radar measurements for immediate safety assessment may diminish,
+    # or the relevance to the ego vehicle's immediate safety context decreases.
     try:
         max_radar_distance_param = self.params.get("MaxRadarDistanceForConfidence")
         self.max_radar_distance_for_confidence = float(max_radar_distance_param) if max_radar_distance_param else 150.0
@@ -108,13 +127,30 @@ class SafetyMonitor:
     except (TypeError, ValueError):
         self.max_radar_distance_for_confidence = 150.0
 
+    # Justification: This scale (30.0) is used to calculate confidence based on the relative velocity of lead vehicles.
+    # A larger scale makes the confidence decay slower with increasing relative velocity, implying that even higher relative velocities
+    # can be considered with some confidence. This value needs careful tuning to match real-world radar performance and safety requirements.
     try:
         velocity_confidence_scale_param = self.params.get("VelocityConfidenceScale")
-                    self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 30.0
-                        except UnknownKeyName:
-                            self.velocity_confidence_scale = 30.0
-                        except (TypeError, ValueError):
-                            self.velocity_confidence_scale = 30.0    # Environmental condition detection
+        self.velocity_confidence_scale = float(velocity_confidence_scale_param) if velocity_confidence_scale_param else 30.0
+    except UnknownKeyName:
+        self.velocity_confidence_scale = 30.0
+    except (TypeError, ValueError):
+        self.velocity_confidence_scale = 30.0
+
+    # Radar confidence parameters for acceleration
+    # Justification: This threshold (5.0 m/s^2) determines the maximum acceleration difference considered 'safe' for radar confidence.
+    # It assumes that relative accelerations beyond this value significantly reduce the reliability or safety relevance of lead vehicle data.
+    # This value is critical and should be tuned based on vehicle dynamics and specific radar performance characteristics.
+    try:
+        acceleration_confidence_threshold_param = self.params.get("AccelerationConfidenceThreshold")
+        self.acceleration_confidence_threshold = float(acceleration_confidence_threshold_param) if acceleration_confidence_threshold_param else 5.0
+    except UnknownKeyName:
+        self.acceleration_confidence_threshold = 5.0
+    except (TypeError, ValueError):
+        self.acceleration_confidence_threshold = 5.0
+
+    # Environmental condition detection
     self.lighting_condition = "night"  # "night", "dawn_dusk", "normal", "tunnel"
     self.weather_condition = "rain"    # "clear", "rain", "snow", "fog"
     self.road_condition = "wet"         # "dry", "wet", "icy", "snow"
@@ -172,7 +208,7 @@ class SafetyMonitor:
       # The critical review suggests a fallback of 0.7 if aRel is not available.
       acceleration_confidence = 0.5 # Conservative default if aRel is not available
       if hasattr(lead, 'aRel') and lead.aRel is not None:
-        acceleration_confidence = min(1.0, max(0.0, (5.0 - abs(lead.aRel)) / 5.0))
+        acceleration_confidence = min(1.0, max(0.0, (self.acceleration_confidence_threshold - abs(lead.aRel)) / self.acceleration_confidence_threshold))
       else:
         # Use alternative metrics like lead position stability or a default value
         # if actual acceleration is not available.
@@ -342,12 +378,17 @@ class SafetyMonitor:
     # Weighted combination of all confidence measures
     # Adjust weights based on environmental conditions
     # These weights are chosen based on the assumed reliability and criticality of each sensor
-    # in an autonomous driving context. They can be adjusted based on empirical testing and
-    # system requirements.
+    # in an autonomous driving context. While initial values are set, these require
+    # extensive empirical testing and real-world validation to ensure optimal balance
+    # and performance across diverse driving scenarios.
     # - Model (0.4): High weight due to its comprehensive understanding of the driving scene.
+    #   Assumes the model's outputs are generally robust and accurate.
     # - Camera (0.3): Significant weight for lane detection, object classification, and visual cues.
+    #   Reliability can be affected by lighting and weather conditions.
     # - Radar (0.2): Moderate weight for precise distance and velocity measurements, especially for lead vehicles.
+    #   More robust in adverse weather than camera, but has a narrower field of view.
     # - IMU (0.1): Lower weight for general vehicle dynamics and environmental condition estimation.
+    #   Provides foundational vehicle state but is a proxy for complex environmental factors.
     base_weights = {
       'model': 0.4,
       'camera': 0.3,
