@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
+import json
 from openpilot.common.params import Params
 from opendbc.car import structs
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
@@ -83,6 +84,18 @@ def set_car_specific_params(CP: structs.CarParams, CP_SP: structs.CarParamsSP, p
     if hyundai_cruise_main_toggleable:
       CP_SP.flags |= HyundaiFlagsSP.LONGITUDINAL_MAIN_CRUISE_TOGGLEABLE.value
       CP_SP.safetyParam |= HyundaiSafetyFlagsSP.LONG_MAIN_CRUISE_TOGGLEABLE
+
+  # Load vehicle-specific curvature gain interpolation if available
+  curvature_gain_interp_str = params.get("CurvatureGainInterp", encoding='utf8')
+  if curvature_gain_interp_str:
+    try:
+      curvature_gain_interp = json.loads(curvature_gain_interp_str)
+      # Basic validation: ensure it's a list of two lists of floats
+      if (isinstance(curvature_gain_interp, list) and len(curvature_gain_interp) == 2 and
+          all(isinstance(l, list) and all(isinstance(f, (float, int)) for f in l) for l in curvature_gain_interp)):
+        CP_SP.curvatureGainInterp = curvature_gain_interp
+    except json.JSONDecodeError:
+      cloudlog.error("Failed to decode CurvatureGainInterp from Params")
 
   # Use the new validation system
   validator = ParamsValidator(params)

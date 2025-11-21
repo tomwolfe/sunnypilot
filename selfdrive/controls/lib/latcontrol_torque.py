@@ -27,6 +27,10 @@ KI = 0.5
 KD = 0.0
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
 KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
+# Define the curvature gain interpolation. The first array represents absolute
+# curvature values (in 1/meter), and the second array represents the corresponding
+# gain multipliers for the proportional term.
+# Values outside the defined curvature range will be clamped to the nearest boundary.
 CURVATURE_GAIN_INTERP = [[0.0, 0.02, 0.04, 0.06], [1.0, 1.2, 1.5, 2.0]]
 
 LP_FILTER_CUTOFF_HZ = 1.2
@@ -39,7 +43,8 @@ class LatControlTorque(LatControl):
     self.torque_params = CP.lateralTuning.torque.as_builder()
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
-    self.pid = PIDController([INTERP_SPEEDS, KP_INTERP], KI, KD, rate=1/self.dt, k_curvature=CURVATURE_GAIN_INTERP)
+    k_curvature = CP_SP.curvatureGainInterp if CP_SP.curvatureGainInterp else CURVATURE_GAIN_INTERP
+    self.pid = PIDController([INTERP_SPEEDS, KP_INTERP], KI, KD, rate=1/self.dt, k_curvature=k_curvature)
     self.update_limits()
     self.steering_angle_deadzone_deg = self.torque_params.steeringAngleDeadzoneDeg
     self.lat_accel_request_buffer_len = int(LAT_ACCEL_REQUEST_BUFFER_SECONDS / self.dt)

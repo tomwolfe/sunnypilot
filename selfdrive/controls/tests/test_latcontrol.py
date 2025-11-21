@@ -85,3 +85,73 @@ class TestLatControl:
 
     # Assert that the torque output is higher for high curvature
     assert abs(output_torque_high) > abs(output_torque_low)
+
+  @parameterized.expand([(TOYOTA.TOYOTA_RAV4, LatControlTorque), (GM.CHEVROLET_BOLT_EUV, LatControlTorque)])
+  def test_curvature_gain_boundaries(self, car_name, controller):
+    CarInterface = interfaces[car_name]
+    CP = CarInterface.get_non_essential_params(car_name)
+    CP_SP = CarInterface.get_non_essential_params_sp(CP, car_name)
+    CI = CarInterface(CP, CP_SP)
+    sunnypilot_interfaces.setup_interfaces(CI)
+    CP_SP = convert_to_capnp(CP_SP)
+    VM = VehicleModel(CP)
+
+    controller = controller(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+
+    CS = car.CarState.new_message()
+    CS.vEgo = 15  # 15 m/s, a moderate speed
+    CS.steeringPressed = False
+
+    params = log.LiveParametersData.new_message()
+
+    lp = generate_livePose()
+    pose = Pose.from_live_pose(lp.livePose)
+
+    # To ensure a non-zero error for proportional gain calculation
+    # We set a desired lateral accel and a zero measured curvature initially.
+    # This ensures lac_log.error is non-zero and lac_log.p is proportional to k_p.
+    setpoint_error_value = 1.0 # arbitrary non-zero error value
+    controller.lat_accel_request_buffer.append(setpoint_error_value) # Sets expected_lateral_accel
+    
+    # Dictionary to store proportional gains at different curvatures
+    p_gains_at_curvatures = {}
+
+    curvatures_to_test = [0.0, 0.02, 0.04, 0.06, 0.07] # 0.07 to test clamping
+    expected_gain_multipliers = [1.0, 1.2, 1.5, 2.0, 2.0] # From CURVATURE_GAIN_INTERP and clamping
+
+    for i, curvature in enumerate(curvatures_to_test):
+      controller.pid.reset() # Reset integrator and derivative for clean proportional term check
+
+      # Simulate an update call where desired_curvature drives the PID's curvature,
+      # and the error leads to a proportional output.
+      # We need to manually set the error for the PID controller to be non-zero
+      # and consistent across tests to isolate the curvature gain.
+      # The `update` method of LatControlTorque calculates its own error.
+      # We need to ensure that `lac_log.error` is constant and non-zero.
+      # `setpoint` is effectively `setpoint_error_value` and `measurement` is 0 if `CS.steeringAngleDeg` and `params.roll` are 0.
+      # This means `error = setpoint_error_value`.
+      CS.steeringAngleDeg = 0.0 # Make measured_curvature zero
+      params.roll = 0.0 # Make roll_compensation zero
+      
+      _, _, lac_log = controller.update(True, CS, VM, params, False, curvature, pose, False, 0.2)
+      
+      # lac_log.error should be non-zero and consistent due to our setup
+      assert lac_log.error != 0, f"Error is zero at curvature {curvature}"
+      
+      # Calculate the actual effective k_p
+      actual_k_p_effective = lac_log.p / lac_log.error
+      p_gains_at_curvatures[curvature] = actual_k_p_effective
+
+    # Verify the proportional gains based on expected multipliers
+    base_k_p = p_gains_at_curvatures[0.0] # This is k_p when curvature gain is 1.0x
+
+    for i, curvature in enumerate(curvatures_to_test):
+      expected_k_p = base_k_p * expected_gain_multipliers[i]
+      assert abs(p_gains_at_curvatures[curvature] - expected_k_p) < 1e-6, \
+        f"Curvature: {curvature}, Expected k_p: {expected_k_p}, Actual k_p: {p_gains_at_curvatures[curvature]}"
+
+    # Also assert the monotonicity of gains for sanity check
+    assert p_gains_at_curvatures[0.0] < p_gains_at_curvatures[0.02]
+    assert p_gains_at_curvatures[0.02] < p_gains_at_curvatures[0.04]
+    assert p_gains_at_curvatures[0.04] < p_gains_at_curvatures[0.06]
+    assert p_gains_at_curvatures[0.06] == p_gains_at_curvatures[0.07] # Clamping

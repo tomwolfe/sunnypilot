@@ -47,6 +47,8 @@ class PIDController:
     
     if self._k_curvature is not None:
       curvature_gain = np.interp(abs(self.curvature), self._k_curvature[0], self._k_curvature[1])
+      # Increase proportional gain with curvature to enhance path tracking during
+      # high-curvature maneuvers, providing a more aggressive response where needed.
       k_p *= curvature_gain
       
     return k_p

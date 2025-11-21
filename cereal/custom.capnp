@@ -355,6 +355,7 @@ struct CarParamsSP @0x80ae746ee2596b11 {
   enableGasInterceptor @5 :Bool;
 
   neuralNetworkLateralControl @2 :NeuralNetworkLateralControl;
+  curvatureGainInterp @6 :List(List(Float32));
 
   struct NeuralNetworkLateralControl {
     model @0 :Model;
