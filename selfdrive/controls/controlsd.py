@@ -100,7 +100,6 @@ class Controls(ControlsExt, ModelStateBase):
     except (UnknownKeyName, ValueError):
         self.performance_degradation_consecutive_frames = 50 # Default to 50 frames (~0.5s at 100Hz)
 
-    self.performance_degradation_start_time = 0.0 # Tracks when degradation started
     self.degradation_consecutive_count = 0 # Tracks consecutive frames of degradation
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
