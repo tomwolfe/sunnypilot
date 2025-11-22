@@ -329,14 +329,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     accel_rate_limit = 0.05
 
     # Adjust rate limit based on environmental conditions
-    if hasattr(cached_model_v2, 'orientationNED') and len(cached_model_v2.orientationNED.x) > 0:
+    if len(cached_model_v2.orientationNED.x) > 0:  # cached_model_v2 is already assigned, just check length
       road_pitch = cached_model_v2.orientationNED.x[0]
       # Reduce rate limit when on hills
       if abs(road_pitch) > 0.05:  # More than 5% grade
         accel_rate_limit = 0.03  # More conservative acceleration rate
 
     # ENHANCED: Additional constraint based on safety monitor state
-    if cached_safety_monitor and hasattr(cached_safety_monitor, 'overall_safety_score'):
+    if cached_safety_monitor:  # Already retrieved with getattr, just check if not None
       safety_score = getattr(cached_safety_monitor, 'overall_safety_score', 1.0)
       if safety_score < 0.6:  # If safety score is degraded
         # Further reduce the acceleration rate limit for safety
@@ -348,7 +348,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           accel_rate_limit *= 0.8  # Slightly more conservative
 
     # ENHANCED: Additional constraints based on model confidence and road conditions
-    if hasattr(cached_model_v2, 'meta') and hasattr(cached_model_v2.meta, 'confidence'):
+    if cached_model_v2.meta.confidence is not None:  # cached_model_v2 is already assigned, check directly
       model_confidence = cached_model_v2.meta.confidence if cached_model_v2.meta.confidence else 1.0
       if model_confidence < 0.6:  # Low model confidence
         accel_rate_limit *= 0.7  # Be more conservative
@@ -357,7 +357,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # PERFORMANCE OPTIMIZATION: Reduced computation for environmental condition checks
     # Cache environmental conditions to reduce repeated attribute access
-    if cached_safety_monitor:
+    if cached_safety_monitor:  # Already retrieved with getattr, just check if not None
       road_condition = getattr(cached_safety_monitor, 'road_condition', 'unknown')
       weather_condition = getattr(cached_safety_monitor, 'weather_condition', 'unknown')
       lighting_condition = getattr(cached_safety_monitor, 'lighting_condition', 'normal')
@@ -424,11 +424,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Calculate upcoming road features for energy efficiency
     upcoming_features = self.calculate_upcoming_road_features(sm['modelV2'], v_ego)
 
-    # Adjust acceleration profile for energy efficiency if upcoming features allow
-    if upcoming_features['downhill_distance'] > 20.0:  # More than 20m of downhill ahead
-      # Allow slightly higher acceleration before downhill to take advantage of potential energy
-      if self.output_a_target > 0:  # Only if accelerating
-        self.output_a_target = min(self.output_a_target * 1.1, accel_clip[1])  # Increase by 10% for efficiency
+    # NEW: Conservative energy efficiency approach - reduce deceleration target before downhill
+    # Apply conservative approach: reduce the minimum acceleration bound (allow more coasting) when approaching downhill
+    # Only if uphill distance is zero and downhill distance is significant
+    if upcoming_features['uphill_distance'] == 0.0 and upcoming_features['downhill_distance'] > 20.0:  # Significant downhill ahead with no uphill sections
+      # Reduce the minimum acceleration bound by 10% to allow more coasting (conservative approach)
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # More conservative deceleration limit
 
     # For uphill sections, be more conservative about acceleration
     if upcoming_features['uphill_distance'] > 20.0:  # More than 20m of uphill ahead
@@ -448,6 +449,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       'elevation_change': 0.0
     }
 
+    # Calculate actual distance per point using vehicle speed and DT_MDL
+    distance_per_point = v_ego * DT_MDL  # Actual distance traveled per model time step
+
     # Check upcoming road elevation using modelV2 orientation data
     if hasattr(model_v2, 'orientationNED') and len(model_v2.orientationNED.x) > 1:
       # Look at the upcoming pitch angles to identify hills
@@ -455,7 +459,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       if len(pitch_values) > 0:
         # Calculate total distance for uphill/downhill sections
-        distance_per_point = 1.0  # Approximate distance per model point in meters
         uphill_distance = 0
         downhill_distance = 0
 
@@ -471,13 +474,34 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         features['downhill_distance'] = downhill_distance
         features['elevation_change'] = sum(pitch_values[:10])  # Sum of first 10 pitch values as indicator
 
-    # Check for upcoming curves using path curvature
-    if hasattr(model_v2, 'path') and hasattr(model_v2.path, 'y') and len(model_v2.path.y) > 10:
-      # Look for significant curvature that indicates curves
-      path_curvatures = model_v2.path.y[:20]  # First 20 path points
-      significant_curves = [curv for curv in path_curvatures if abs(curv) > 0.002]  # Curvature above threshold
+    # Check for upcoming curves using proper curvature calculation
+    if (hasattr(model_v2, 'path') and hasattr(model_v2.path, 'y') and
+        hasattr(model_v2.path, 'x') and len(model_v2.path.y) > 10 and len(model_v2.path.x) > 10):
+      # Calculate curvature from path points (y vs x) - using numerical differentiation
+      path_y = model_v2.path.y[:20]  # First 20 path points
+      path_x = model_v2.path.x[:20]  # First 20 x positions
 
-      if len(significant_curves) > 0:
-        features['curve_distance'] = len(significant_curves) * 1.0  # Estimate based on number of points
+      if len(path_y) > 2:
+        # Calculate curvature using the formula: curvature = |d²y/dx²| / (1 + (dy/dx)²)^(3/2)
+        # For simplicity, we'll calculate the second derivative approximation
+        curve_distances = []
+        for i in range(1, len(path_y) - 1):
+          if i < len(path_x) - 1:
+            # Calculate first derivatives at adjacent points
+            dy_dx_prev = (path_y[i] - path_y[i-1]) / (path_x[i] - path_x[i-1]) if (path_x[i] - path_x[i-1]) != 0 else 0
+            dy_dx_next = (path_y[i+1] - path_y[i]) / (path_x[i+1] - path_x[i]) if (path_x[i+1] - path_x[i]) != 0 else 0
+
+            # Calculate second derivative approximation
+            dx_avg = (path_x[i+1] - path_x[i-1]) / 2.0 if (path_x[i+1] - path_x[i-1]) != 0 else 1.0
+            d2y_dx2 = (dy_dx_next - dy_dx_prev) / dx_avg if dx_avg != 0 else 0
+
+            # Calculate curvature magnitude
+            curvature = abs(d2y_dx2)  # / (1 + ((dy_dx_prev + dy_dx_next) / 2.0) ** 2) ** 1.5  # Simplified: just use second derivative
+
+            # Check if curvature exceeds threshold (0.002 rad/m)
+            if curvature > 0.002:
+              curve_distances.append(distance_per_point)
+
+        features['curve_distance'] = len(curve_distances) * distance_per_point
 
     return features

@@ -1140,9 +1140,8 @@ class SafetyMonitor:
           base_steering_rate_threshold = 150.0
 
           # Adjust thresholds based on environmental conditions
-          environment_factor = 1.0 / max(0.5, adaptive_thresholds.get('model_confidence', 0.5) / (self.model_confidence_threshold * self.model_confidence_threshold_multiplier))
-          # In poor conditions (low confidence), be more tolerant (higher thresholds)
-          # In good conditions (high confidence), be less tolerant (lower thresholds)
+          # Make thresholds more lenient as model confidence decreases
+          environment_factor = 1.0 / adaptive_thresholds.get('model_confidence', 0.5)
 
           adjusted_jerk_threshold = base_jerk_threshold * environment_factor
           adjusted_velocity_threshold = base_velocity_threshold * environment_factor
