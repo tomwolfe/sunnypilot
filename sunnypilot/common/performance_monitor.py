@@ -142,7 +142,7 @@ class PerformanceMonitor:
             desired_lateral_pos = model_output.path.y[0]
 
         # The actual lateral error should be calculated as the deviation from the path
-        # The lateral_deviation is now the actual deviation of the vehicle from the desired path
+        # The actual lateral deviation represents the true deviation of the vehicle from the desired path
         actual_lateral_deviation = actual_state.get('lateral_deviation', 0)
         lateral_error = abs(actual_lateral_deviation)  # The deviation of the vehicle from the path in meters
 

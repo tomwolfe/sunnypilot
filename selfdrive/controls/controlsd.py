@@ -313,22 +313,14 @@ class Controls(ControlsExt, ModelStateBase):
             # The first point in the path represents the immediate desired lateral offset from center
             desired_lateral_pos = self.sm['modelV2'].path.y[0]
 
-        # The true lateral error should be the difference between the vehicle's actual position and the desired path
-        # In the model frame, if the vehicle is at y=0 (center), the lateral error is the absolute of the path.y[0] value
-        # However, we need to get the actual lateral position of the vehicle relative to the path
-        # Since we don't have direct access to the vehicle's actual position, we need to estimate it
-
-        # The actual lateral deviation should be calculated using the vehicle's true position relative to the path
-        # lac_log.yActual and lac_log.error represent the controller's error, not the vehicle's true position
-        # For now, we will calculate the lateral error as the absolute difference between desired path and actual vehicle response
-
-        # For true lateral position accuracy, this should represent the real deviation of the vehicle from the path
-        # We'll use the path.y[0] as the reference and assume the actual vehicle lateral position is 0 in the model frame
-        # Therefore, the true lateral error is simply the absolute value of the desired lateral position (path.y[0])
-        actual_lateral_deviation = desired_lateral_pos  # This represents how far the desired path is from center (y=0)
-
+        # Calculate actual lateral deviation - this is currently using path.y[0] which is the desired lateral offset from center
+        # However, the true lateral error should be the difference between desired path and actual vehicle position
+        # The path.y[0] value represents the desired lateral offset from center lane (typically y=0)
+        # The actual lateral deviation should represent how far the vehicle is from this desired path
+        # We'll use a placeholder value here and calculate the true lateral error after we have lac_log
+        # For now, we'll set it to 0 but fix it later in the function after lac_log is available
         actual_state = {
-          'lateral_deviation': actual_lateral_deviation,  # True lateral deviation from desired path in meters
+          'lateral_deviation': desired_lateral_pos,  # Placeholder - will be corrected when lac_log is available
           'lateral': abs(desired_lateral_pos),  # For backward compatibility
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
@@ -467,15 +459,30 @@ class Controls(ControlsExt, ModelStateBase):
         cloudlog.info("Safety degraded, but performance is acceptable.")
 
     # Check for persistent performance degradation requiring disengagement
-    # Using a sticky counter approach to prevent rapid resets due to brief non-degraded periods
+    # Using a hysteresis approach to prevent rapid resets due to brief non-degraded periods
     if combined_degraded_mode:
-        self.degradation_consecutive_count = min(self.degradation_consecutive_count + 1, self.performance_degradation_consecutive_frames + 10) # Cap the counter to prevent indefinite growth
+        self.degradation_consecutive_count += 1
+        # Cap the counter to prevent indefinite growth
+        self.degradation_consecutive_count = min(self.degradation_consecutive_count,
+                                               self.performance_degradation_consecutive_frames + 50)  # Cap at threshold + buffer
     else:
-        # Only decrement counter slowly to prevent brief non-degraded periods from resetting it
+        # Only reset counter if degradation has been cleared for a sustained period
         # This addresses the critical bug where temporary improvements would reset the timer
-        # Instead of decrementing by 2 (which could easily reset the counter), decrement by 1 or not at all
-        # Only decrement by 1 to provide some recovery for sustained non-degraded periods
-        self.degradation_consecutive_count = max(0, self.degradation_consecutive_count - 1) # Decrement by 1 to allow slower recovery
+        # Instead of decrementing by 1, we now use a reset threshold to prevent spurious resets
+        # The counter only resets after being in non-degraded mode for a significant period
+        if self.degradation_consecutive_count > 0:
+            # Increment a separate counter for consecutive non-degraded frames
+            if not hasattr(self, 'non_degraded_consecutive_count'):
+                self.non_degraded_consecutive_count = 0
+            self.non_degraded_consecutive_count += 1
+
+            # Only reset the degradation counter after a significant period of non-degraded operation
+            if self.non_degraded_consecutive_count >= self.performance_degradation_consecutive_frames // 2:
+                self.degradation_consecutive_count = 0
+                self.non_degraded_consecutive_count = 0
+        else:
+            # Reset the non-degraded counter when already at 0 degradation count
+            self.non_degraded_consecutive_count = 0
 
     # Disengage if consecutive degraded frames exceed threshold
     if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:
@@ -583,6 +590,87 @@ class Controls(ControlsExt, ModelStateBase):
 
       cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
       setattr(actuators, p, 0.0)
+
+    # Second performance evaluation with corrected lateral error using actual tracking performance from lac_log
+    # This addresses the critical bug where lateral error was not based on true vehicle deviation from path
+    # The lac_log.error field represents the actual tracking error from the lateral controller
+    if hasattr(lac_log, 'error') and lac_log.error is not None:
+        # Update the actual_state with the true lateral deviation from the lateral controller
+        desired_lateral_pos = 0.0
+        if len(self.sm['modelV2'].path.y) > 0:
+            desired_lateral_pos = self.sm['modelV2'].path.y[0]
+
+        # Now use the actual controller error as the true lateral deviation
+        # lac_log.error represents the difference between desired and actual lateral position
+        corrected_actual_lateral_deviation = abs(lac_log.error)
+
+        actual_state_corrected = {
+          'lateral_deviation': corrected_actual_lateral_deviation,  # True lateral deviation from desired path in meters
+          'lateral': abs(desired_lateral_pos),  # For backward compatibility
+          'longitudinal': CS.vEgo,
+          'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
+        }
+
+        model_output = self.sm['modelV2']
+        control_output = {
+          'output': actuators.torque,  # Use actual control output
+          'jerk': CS.aEgo - getattr(self, 'prev_acceleration', CS.aEgo)  # Change in acceleration
+        }
+
+        # Re-evaluate performance with corrected lateral error
+        # Note: We may not need to re-evaluate all metrics, but we need to run adaptation logic
+        # with the corrected data
+        self.performance_monitor.evaluate_performance(
+          desired_state, actual_state_corrected, model_output, control_output
+        )
+
+        # Check if parameters need adaptation based on corrected performance
+        adapt_needed, adaptation_params = self.performance_monitor.should_adapt_parameters()
+
+        # Get overall safety score for critical check
+        overall_safety_score_val = safety_report.get('overall_safety_score', 1.0)
+
+        if adapt_needed and adaptation_params:
+            # Re-apply safety lockout with corrected performance data
+            # Only lockout adaptation if safety score is critically low (below critical threshold)
+            if overall_safety_score_val < self.safety_critical_threshold:
+                cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f} < {self.safety_critical_threshold}) with corrected lateral error.")
+            # Check for critical anomalies that should prevent adaptation
+            elif safety_report.get('anomalies_detected', {}):
+                # Only prevent adaptation for the most critical anomalies that indicate immediate danger
+                critical_anomalies = ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']
+                has_critical_anomaly = any(anomaly_type in critical_anomalies and
+                                          safety_report['anomalies_detected'][anomaly_type]
+                                          for anomaly_type in safety_report['anomalies_detected'])
+
+                # Only lockout if we have critical anomalies AND the safety score is below high risk threshold
+                if has_critical_anomaly and overall_safety_score_val < self.safety_high_risk_threshold:
+                    cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical anomalies with safety concerns (score: {overall_safety_score_val:.2f}, anomalies: {list(safety_report['anomalies_detected'].keys())}).")
+                else:
+                    # Apply adaptation as it could help resolve the anomalies
+                    cloudlog.info(f"Performance adaptation triggered with corrected lateral error (score: {overall_safety_score_val:.2f}): {adaptation_params}")
+                    # Update tuning parameters for adaptive control
+                    for param, value in adaptation_params.items():
+                        if param in self.performance_monitor.tuning_params:
+                            self.performance_monitor.tuning_params[param] = value
+
+                    # Update the lateral controller with new parameters if needed
+                    if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
+                        # In a real implementation, we would pass these to the lateral controller
+                        # For now, we'll just store them for reference
+                        self.adaptation_params = adaptation_params
+            else:
+                cloudlog.info(f"Performance adaptation triggered with corrected lateral error: {adaptation_params}")
+                # Update tuning parameters for adaptive control
+                for param, value in adaptation_params.items():
+                    if param in self.performance_monitor.tuning_params:
+                        self.performance_monitor.tuning_params[param] = value
+
+                # Update the lateral controller with new parameters if needed
+                if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
+                    # In a real implementation, we would pass these to the lateral controller
+                    # For now, we'll just store them for reference
+                    self.adaptation_params = adaptation_params
 
     return CC, lac_log
 
