@@ -193,7 +193,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0) if hasattr(self, 'safety_monitor') else 1.0
     safety_factor = self._calculate_safety_factor(sm, overall_safety_score, path_reliability)
     
-    # Initialize accel_rate_limit with its default value
     # Initialize accel_rate_limit with its default value for the "acc" mode. This can be further adjusted by safety factors.
     accel_rate_limit = 0.05
 
@@ -235,6 +234,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # Consolidate all confidence and reliability-based accel_clip and accel_rate_limit adjustments
       accel_clip, accel_rate_limit = self._adjust_accel_clip_for_confidence_and_reliability(accel_clip, accel_rate_limit, path_reliability)
+
+      # TODO: Environmental awareness for "icy" or "wet" road conditions.
+      # The previous implementation contained logic to reduce accel_rate_limit for these conditions.
+      # This logic should be re-integrated if reliable detection of such conditions is available
+      # (e.g., from model outputs, external sensors, or map data).
+      # Currently, pathReliability might partially capture poor visibility, but not necessarily
+      # low friction. A dedicated mechanism is needed for robust safety in adverse weather.
+      # Example: if sm['carState'].is_road_icy:
+      #            accel_rate_limit = min(accel_rate_limit, ICY_ROAD_ACCEL_RATE_LIMIT)
+      #            accel_clip[1] = min(accel_clip[1], ICY_ROAD_ACCEL_MAX)
+      #            accel_clip[0] = max(accel_clip[0], ICY_ROAD_BRAKE_MAX)
 
 
 
