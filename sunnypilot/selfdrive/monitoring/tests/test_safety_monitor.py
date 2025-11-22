@@ -9,6 +9,7 @@ import os
 import pytest
 import numpy as np
 from unittest.mock import Mock
+from openpilot.common.realtime import monotonic_time
 from sunnypilot.selfdrive.monitoring.safety_monitor import SafetyMonitor
 
 
