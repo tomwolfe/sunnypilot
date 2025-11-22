@@ -80,9 +80,19 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 class LongitudinalPlanner(LongitudinalPlannerSP):
   def _get_model_confidence_values(self, sm):
     path_reliability = 1.0
+    
+    # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
+    MAX_MODEL_V2_AGE = 0.2  # seconds
 
-    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathReliability'):
-      path_reliability = sm['modelV2'].meta.pathReliability if sm['modelV2'].meta.pathReliability else 1.0
+    if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
+      model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9 # Convert to seconds
+      if model_v2_age > MAX_MODEL_V2_AGE:
+        # If modelV2 message is stale, path_reliability should be 0 to force conservative behavior
+        # cloudlog.warning(f"modelV2 message is stale! Age: {model_v2_age:.3f}s") # Optional: add logging
+        return 0.0
+
+      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathReliability'):
+        path_reliability = sm['modelV2'].meta.pathReliability if sm['modelV2'].meta.pathReliability else 1.0
     return path_reliability
 
   def __init__(self, CP, CP_SP, init_v=0.0, init_a=0.0, dt=DT_MDL):
@@ -215,8 +225,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # TODO: Environmental awareness for "icy" or "wet" road conditions.
       # The previous implementation contained logic to reduce accel_rate_limit for these conditions.
-      # This logic should be re-integrated if reliable detection of such conditions is available
-      # (e.g., from model outputs, external sensors, or map data).
+      # This logic should be re-integrated if reliable detection of such conditions is available.
+      # This would likely involve dedicated sensor fusion for a `roadCondition` metric,
+      # potentially using vision-based slip detection, external weather APIs, or advanced model outputs.
       # Currently, pathReliability might partially capture poor visibility, but not necessarily
       # low friction. A dedicated mechanism is needed for robust safety in adverse weather.
       # A `roadConditionFactor` could be introduced here and multiplied with the `safety_factor`.

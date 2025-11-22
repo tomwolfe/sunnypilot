@@ -1,4 +1,8 @@
 class PathReliabilityParams:
+    # All parameters within this class are heuristic values that require extensive real-world validation
+    # across diverse driving conditions (e.g., snow, heavy rain, urban canyons) to ensure optimal robustness
+    # and safety. These values may need tuning based on further testing and data analysis.
+
     # from selfdrive/modeld/fill_model_msg.py
     LANE_RELIABILITY_SCALE = 1.5
     LANE_LINES_BOOST = 1.2
@@ -7,6 +11,9 @@ class PathReliabilityParams:
     LANE_LINES_MIN_PROB_ONE = 0.3
     LANE_LINES_MIN_PROB_NONE = 0.1
 
+    # Parameters for longitudinal control based on path reliability. These are heuristic and require
+    # thorough validation to ensure appropriate acceleration/braking adjustments across varying
+    # environmental uncertainties.
     # from selfdrive/controls/lib/longitudinal_planner.py
     PATH_RELIABILITY_MODERATE = 0.7
     ACCEL_REDUCTION_MODERATE = 0.85

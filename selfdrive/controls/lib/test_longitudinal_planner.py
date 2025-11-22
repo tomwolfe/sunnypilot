@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from unittest.mock import Mock
+import time # Import time for monotonic()
 
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner, ACCEL_MIN, ACCEL_MAX
 from openpilot.selfdrive.controls.lib.path_reliability_params import PathReliabilityParams
@@ -22,21 +23,31 @@ class TestLongitudinalPlanner(unittest.TestCase):
         'modelV2': Mock()
     }
     sm['modelV2'].meta = Mock()
+    sm['logMonoTime'] = {'carState': int(time.monotonic() * 1e9)} # Corrected: Mock current time
 
-    # Test case 1: pathReliability exists and is valid
+    # Test case 1: pathReliability exists and is valid, not stale
     sm['modelV2'].meta.pathReliability = 0.8
+    sm['modelV2'].logMonoTime = int(time.monotonic() * 1e9) # Not stale
     path_reliability = self.planner._get_model_confidence_values(sm)
     self.assertEqual(path_reliability, 0.8)
 
-    # Test case 2: pathReliability exists but is None (should default to 1.0)
+    # Test case 2: pathReliability exists but is None (should default to 1.0), not stale
     sm['modelV2'].meta.pathReliability = None
+    sm['modelV2'].logMonoTime = int(time.monotonic() * 1e9) # Not stale
     path_reliability = self.planner._get_model_confidence_values(sm)
     self.assertEqual(path_reliability, 1.0)
 
-    # Test case 3: pathReliability does not exist
+    # Test case 3: pathReliability does not exist, not stale
     del sm['modelV2'].meta.pathReliability
+    sm['modelV2'].logMonoTime = int(time.monotonic() * 1e9) # Not stale
     path_reliability = self.planner._get_model_confidence_values(sm)
     self.assertEqual(path_reliability, 1.0)
+
+    # Test case 4: modelV2 message is stale
+    sm['modelV2'].meta.pathReliability = 0.8 # Value doesn't matter if stale
+    sm['modelV2'].logMonoTime = int((time.monotonic() - 0.5) * 1e9) # 0.5 seconds old, which is stale
+    path_reliability = self.planner._get_model_confidence_values(sm)
+    self.assertEqual(path_reliability, 0.0) # Should return 0.0 due to staleness
 
   def test_adjust_accel_clip_for_confidence_and_reliability(self):
     base_accel_clip = [ACCEL_MIN, ACCEL_MAX]

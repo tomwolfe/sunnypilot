@@ -96,14 +96,23 @@ class LatControlPID(LatControl):
     pid_log.angleError = error
 
     # NEW: Enhanced safety based on path/model reliability for lateral control
-    reliability_factor = 1.0  # Default to no adjustment
-    if 'modelV2' in sm:
-      model_v2 = sm['modelV2']
-      if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
-        path_reliability = model_v2.meta.pathReliability
-        if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
-          # Reduce lateral control aggressiveness when path is unreliable
-          reliability_factor = PathReliabilityParams.RELIABILITY_FACTOR_BASE + PathReliabilityParams.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
+        reliability_factor = 1.0  # Default to no adjustment
+        # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
+        MAX_MODEL_V2_AGE = 0.2  # seconds
+    
+        if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
+          model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9 # Convert to seconds
+          if model_v2_age > MAX_MODEL_V2_AGE:
+            # If modelV2 message is stale, set reliability_factor to 0.0 to essentially disable lateral control
+            # cloudlog.warning(f"modelV2 message is stale in latcontrol_pid! Age: {model_v2_age:.3f}s") # Optional: add logging
+            reliability_factor = 0.0
+          else:
+            model_v2 = sm['modelV2']
+            if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
+              path_reliability = model_v2.meta.pathReliability
+              if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
+                # Reduce lateral control aggressiveness when path is unreliable
+                reliability_factor = PathReliabilityParams.RELIABILITY_FACTOR_BASE + PathReliabilityParams.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
 
 
     # Add curvature gain specific monitoring
