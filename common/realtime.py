@@ -9,6 +9,8 @@ from setproctitle import getproctitle
 from openpilot.common.util import MovingAverage
 from openpilot.system.hardware import PC
 
+from time import monotonic as monotonic_time
+
 
 # time step for each process
 DT_CTRL = 0.01  # controlsd
