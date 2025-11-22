@@ -439,7 +439,7 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Disengage if consecutive degraded frames exceed threshold
     if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:
-        cloudlog.error(f"Persistent performance degradation for {self.degradation_consecutive_count} frames. Requesting disengagement.")
+        cloudlog.error(f"Persistent performance degradation for {self.degradation_consecutive_count} consecutive frames. Requesting disengagement.")
         requires_intervention = True # Force disengagement
         self.degradation_consecutive_count = 0 # Reset counter after disengagement
 

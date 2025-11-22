@@ -130,21 +130,11 @@ class PerformanceMonitor:
         """Evaluate system performance metrics in real-time"""
 
         # Calculate performance metrics
-        # The lateral error should be the difference between the vehicle's actual position
-        # in the model's coordinate frame and the desired path position (model_v2.path.y[0])
-        # The actual lateral deviation should come from the path following error
-        # The desired lateral position in the model frame is typically at y=0 (center of lane)
-        # The actual lateral error is the difference between the desired path position and actual vehicle position
-
-        # Get desired lateral position from model (typically this is model_v2.path.y[0] which represents the immediate desired lateral offset)
-        desired_lateral_pos = 0.0  # Default to center of path
-        if model_output and hasattr(model_output, 'path') and len(model_output.path.y) > 0:
-            desired_lateral_pos = model_output.path.y[0]
-
-        # The actual lateral error should be calculated as the deviation from the path
+        # The lateral error should be the true lateral deviation of the vehicle from the desired path
         # The actual lateral deviation represents the true deviation of the vehicle from the desired path
+        # Use the actual state's lateral_deviation which should be the absolute deviation from path in meters
         actual_lateral_deviation = actual_state.get('lateral_deviation', 0)
-        lateral_error = abs(actual_lateral_deviation - desired_lateral_pos)  # The deviation of the vehicle from the path in meters
+        lateral_error = abs(actual_lateral_deviation)  # The deviation of the vehicle from the path in meters
 
         longitudinal_error = abs(desired_state.get('longitudinal', 0) - actual_state.get('longitudinal', 0))
 
@@ -168,8 +158,8 @@ class PerformanceMonitor:
         self.performance_metrics['tracking_stability'].update(stability_metric)
 
         # Store model confidence if available
-        if model_output and 'meta' in model_output and 'confidence' in model_output['meta']:
-            model_confidence = model_output['meta']['confidence']
+        if model_output and hasattr(model_output, 'meta') and hasattr(model_output.meta, 'confidence'):
+            model_confidence = model_output.meta.confidence
             self.performance_metrics['model_confidence_trend'].update(model_confidence)
 
         # Add to history for trend analysis
