@@ -169,9 +169,31 @@ class EnvironmentalConditionDetector:
         total_confidence += time_based_confidence * 0.5  # Increased weight to 50%
         valid_indicators += 1
 
-        # Indicator 2: GPS-based sunrise/sunset calculation (placeholder, now potentially more accurate time)
-        # This would require GPS coordinates and date for accurate calculation
-        # For now, we'll continue using this as a confidence booster, relying on the time-of-day for primary
+        # Indicator 2: Vision-based lighting analysis using modelV2 scene data
+        # Check for absence of sky as an indicator of tunnels (important for tunnel detection)
+        sky_present = False
+        sky_confidence = 0.0
+        if hasattr(model_v2, 'roadEdges') and len(model_v2.roadEdges) > 1:
+            # If we have both left and right road edges, we might be in an enclosed area like a tunnel
+            # The absence of upper visual cues like sky can indicate tunnel
+            if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'upperLaneLineProbs'):
+                # If upper lane line probabilities are consistently high, it might indicate absence of sky
+                # This can be a tunnel indicator
+                if len(model_v2.meta.upperLaneLineProbs) > 0:
+                    avg_upper_line_prob = sum(model_v2.meta.upperLaneLineProbs) / len(model_v2.meta.upperLaneLineProbs)
+                    # Higher upper line probabilities might indicate less sky visibility (potential tunnel)
+                    if avg_upper_line_prob > 0.8:  # Threshold for potential tunnel indicator
+                        sky_confidence = 0.7
+                        sky_present = False  # No sky visible
+                        # This is a strong indicator for tunnel when combined with other factors
+                        if lighting_confidence > 0.6 and time_based_confidence > 0.6:
+                            lighting_confidence = min(0.9, lighting_confidence + 0.1)  # Increase confidence in dark classification if sky not visible
+
+        total_confidence += sky_confidence * 0.3  # Significant weight for sky detection
+        if sky_confidence > 0.0:  # Only increment if we got a valid sky assessment
+            valid_indicators += 1
+
+        # Indicator 3: GPS-based lighting consistency check
         gps_based_confidence = 0.4 # Increased from 0.3 for consistency
         total_confidence += gps_based_confidence * 0.1  # Reduced weight, as time-based is now more robust
         valid_indicators += 1
@@ -723,19 +745,55 @@ class SafetyMonitor:
           # Improved tunnel detection logic:
           # A tunnel is primarily identified by GPS signal loss combined with other indicators
           # and especially by the contradiction between GPS daylight and dark lighting conditions
-          if gps_signal_lost and (lighting_appears_dark or gps_dark_lighting_conflict):
+
+          # Check for vision-based tunnel indicators (absence of sky)
+          vision_tunnel_indicators = 0
+          if hasattr(model_v2_msg, 'meta') and hasattr(model_v2_msg.meta, 'upperLaneLineProbs'):
+              if len(model_v2_msg.meta.upperLaneLineProbs) > 0:
+                  avg_upper_line_prob = sum(model_v2_msg.meta.upperLaneLineProbs) / len(model_v2_msg.meta.upperLaneLineProbs)
+                  # Higher upper line probabilities indicate less sky visibility (potential tunnel)
+                  if avg_upper_line_prob > 0.8:
+                      vision_tunnel_indicators += 1
+
+          # Additional vision-based tunnel detection: consistent lighting/poor sky visibility
+          if hasattr(model_v2_msg, 'frame') and hasattr(model_v2_msg.frame, 'mod') and hasattr(model_v2_msg.frame.mod, 'lightness'):
+              # If available, use frame lightness to detect consistent low light conditions
+              # This could be an indicator of tunnel (consistent lighting)
+              pass  # Placeholder for future frame-based lightness analysis
+
+          # Enhanced tunnel detection combining GPS, lighting, road conditions and vision indicators
+          tunnel_conditions = 0
+
+          # GPS signal loss is a strong indicator
+          if gps_signal_lost:
+              tunnel_conditions += 1
+
+          # Lighting contradiction (GPS says daylight but appears dark)
+          if gps_dark_lighting_conflict:
+              tunnel_conditions += 1
+
+          # Dark lighting with high confidence
+          if lighting_appears_dark:
+              tunnel_conditions += 1
+
+          # Road confidence being high is normal in tunnels
+          if road_confidence_high:
+              tunnel_conditions += 1
+
+          # Vision-based tunnel indicators
+          if vision_tunnel_indicators > 0:
+              tunnel_conditions += 1
+
+          # Set tunnel state based on multiple indicators
+          if tunnel_conditions >= 3:  # At least 3 out of 5 indicators
               self.in_tunnel = True
-          # Additionally, if GPS suggests daylight but we have low lighting confidence and GPS signal loss, likely tunnel
-          elif gps_signal_lost and gps_dark_lighting_conflict and road_confidence_high:
+          elif tunnel_conditions >= 2 and gps_signal_lost:
+              # If at least 2 indicators AND GPS signal lost, likely tunnel
               self.in_tunnel = True
-          # If GPS signal is good and conditions match expected daytime, definitely not a tunnel
-          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7 and not gps_dark_lighting_conflict:
+          elif tunnel_conditions == 0 and not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7:
+              # If no indicators and GPS signal is good, definitely not a tunnel
               self.in_tunnel = False
-          # If GPS indicates daylight but signal is not lost and lighting is normal, not a tunnel
-          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7 and not lighting_appears_dark:
-              self.in_tunnel = False
-          # If we reach here, we maintain the previous state to avoid flickering.
-          # This provides hysteresis for ambiguous situations.
+          # Otherwise, maintain previous state to avoid flickering (hysteresis)
 
     def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
         """Enhanced curve anticipation with improved safety margins"""

@@ -231,6 +231,17 @@ class PerformanceMonitor:
         # Determine performance health status (for combined monitoring)
         self.update_performance_health_status(lat_acc_mean, long_acc_mean, comfort_mean)
 
+        # Calculate a performance degradation score (0.0 to 1.0)
+        # Higher values indicate more degradation
+        lat_degradation_score = max(0.0, min(1.0, (lat_acc_mean - self.performance_baseline['lateral_accuracy']) / 0.5))
+        long_degradation_score = max(0.0, min(1.0, (long_acc_mean - self.performance_baseline['longitudinal_accuracy']) / 0.5))
+        comfort_degradation_score = max(0.0, min(1.0, (self.performance_baseline['ride_comfort'] - comfort_mean) / 0.5))
+
+        # Overall performance degradation score (weighted average)
+        overall_degradation_score = (lat_degradation_score * 0.4 +
+                                   long_degradation_score * 0.3 +
+                                   comfort_degradation_score * 0.3)
+
         if lat_degraded or long_degraded or comfort_degraded:
             self.performance_degraded_count += 1
             self.performance_improved_count = max(0, self.performance_improved_count - 1)  # Decay improvement count
@@ -269,7 +280,12 @@ class PerformanceMonitor:
             # Apply safety validation to proposed parameters
             if adaptation_needed and adaptation_params:
                 validated_params = self.validate_safety_constraints(adaptation_params)
-                return adaptation_needed, validated_params
+                # Only return adaptation parameters if the degradation score is above a minimum threshold
+                # This prevents excessive adaptation for minor issues
+                if overall_degradation_score > 0.1:  # Only adapt if degradation score > 0.1
+                    return adaptation_needed, validated_params
+                else:
+                    return False, {}
 
             return adaptation_needed, adaptation_params
         else:
