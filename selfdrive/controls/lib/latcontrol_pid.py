@@ -3,8 +3,8 @@ import time
 
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
-from openpilot.common.filter_simple import FirstOrderFilter # Import FirstOrderFilter
-from openpilot.common.swaglog import cloudlog # Import cloudlog
+from openpilot.common.filter_simple import FirstOrderFilter  # Import FirstOrderFilter
+from openpilot.common.swaglog import cloudlog  # Import cloudlog
 from cereal import log
 
 from openpilot.selfdrive.controls.lib.path_reliability_params import PathReliabilityParams
@@ -28,24 +28,27 @@ class LatControlPID(LatControl):
     oscillation_variance_threshold = getattr(CP_SP, 'oscillationVarianceThreshold', 0.8)
     oscillation_zero_crossing_threshold = getattr(CP_SP, 'oscillationZeroCrossingThreshold', 0.5)
 
-    self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
-                             (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
-                             k_curvature=curvature_gain_interp,
-                             max_curvature_gain_multiplier=max_curvature_gain_multiplier,
-                             safety_limit_threshold=safety_limit_threshold,
-                             safety_limit_time_window=safety_limit_time_window,
-                             safe_mode_recovery_time=safe_mode_recovery_time,
-                             pos_limit=self.steer_max, neg_limit=-self.steer_max,
-                             oscillation_sign_change_threshold=oscillation_sign_change_threshold,
-                             oscillation_variance_threshold=oscillation_variance_threshold,
-                             oscillation_zero_crossing_threshold=oscillation_zero_crossing_threshold,
-                             vehicle_mass=CP.mass,  # Pass vehicle mass for adaptive oscillation thresholds
-                             vehicle_wheelbase=CP.wheelbase)  # Pass vehicle wheelbase for adaptive oscillation thresholds
+    self.pid = PIDController(
+      (CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
+      (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
+      k_curvature=curvature_gain_interp,
+      max_curvature_gain_multiplier=max_curvature_gain_multiplier,
+      safety_limit_threshold=safety_limit_threshold,
+      safety_limit_time_window=safety_limit_time_window,
+      safe_mode_recovery_time=safe_mode_recovery_time,
+      pos_limit=self.steer_max,
+      neg_limit=-self.steer_max,
+      oscillation_sign_change_threshold=oscillation_sign_change_threshold,
+      oscillation_variance_threshold=oscillation_variance_threshold,
+      oscillation_zero_crossing_threshold=oscillation_zero_crossing_threshold,
+      vehicle_mass=CP.mass,  # Pass vehicle mass for adaptive oscillation thresholds
+      vehicle_wheelbase=CP.wheelbase,
+    )  # Pass vehicle wheelbase for adaptive oscillation thresholds
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
     # Initialize FirstOrderFilter with base time constant and consider adaptive filtering
     self.base_time_constant = 0.1  # Base filter time constant (100ms)
-    self.curvature_filter = FirstOrderFilter(0., self.base_time_constant, dt)
+    self.curvature_filter = FirstOrderFilter(0.0, self.base_time_constant, dt)
     # Add monitoring variables for field validation
     self.monitoring_initialized = False
     self.last_monitoring_log_time = 0
@@ -61,15 +64,15 @@ class LatControlPID(LatControl):
 
     # Adjust based on speed: at higher speeds, we may want slightly faster response
     if v_ego > 25.0:  # Above ~55 mph
-        time_constant *= 0.8  # Slightly faster response
+      time_constant *= 0.8  # Slightly faster response
     elif v_ego < 5.0:  # At very low speeds
-        time_constant *= 1.5  # More smoothing at low speeds
+      time_constant *= 1.5  # More smoothing at low speeds
 
     # Adjust based on curvature: at higher curvature, maintain more smoothing to reduce noise impact
     if curvature > 0.05:  # High curvature turn
-        time_constant = max(time_constant, 0.05)  # Maintain minimum smoothing
+      time_constant = max(time_constant, 0.05)  # Maintain minimum smoothing
     elif curvature < 0.005:  # Nearly straight
-        time_constant = min(time_constant, 0.15)  # Allow more responsiveness
+      time_constant = min(time_constant, 0.15)  # Allow more responsiveness
 
     # Ensure time constant stays within reasonable bounds
     return max(0.02, min(0.2, time_constant))  # Clamp between 20ms and 200ms
@@ -82,7 +85,9 @@ class LatControlPID(LatControl):
     if abs(self.curvature_filter.rc - adaptive_time_constant) > 0.001:
       self.curvature_filter.update_alpha(adaptive_time_constant)  # Update filter time constant if needed
     desired_curvature = self.curvature_filter.update(desired_curvature)
-    cloudlog.debug(f"Desired Curvature: {desired_curvature:.4f}, Adaptive Time Constant: {adaptive_time_constant:.3f}") # Log desired curvature and time constant
+    cloudlog.debug(
+      f"Desired Curvature: {desired_curvature:.4f}, Adaptive Time Constant: {adaptive_time_constant:.3f}"
+    )  # Log desired curvature and time constant
 
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
@@ -96,24 +101,24 @@ class LatControlPID(LatControl):
     pid_log.angleError = error
 
     # NEW: Enhanced safety based on path/model reliability for lateral control
-        reliability_factor = 1.0  # Default to no adjustment
-        # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
-        MAX_MODEL_V2_AGE = 0.2  # seconds
-    
-        if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
-          model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9 # Convert to seconds
-          if model_v2_age > MAX_MODEL_V2_AGE:
-            # If modelV2 message is stale, set reliability_factor to 0.0 to essentially disable lateral control
-            # cloudlog.warning(f"modelV2 message is stale in latcontrol_pid! Age: {model_v2_age:.3f}s") # Optional: add logging
-            reliability_factor = 0.0
-          else:
-            model_v2 = sm['modelV2']
-            if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
-              path_reliability = model_v2.meta.pathReliability
-              if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
-                # Reduce lateral control aggressiveness when path is unreliable
-                reliability_factor = PathReliabilityParams.RELIABILITY_FACTOR_BASE + PathReliabilityParams.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
+    reliability_factor = 1.0  # Default to no adjustment
+    # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
+    MAX_MODEL_V2_AGE = 0.2  # seconds
 
+    if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
+      model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9  # Convert to seconds
+      if model_v2_age > MAX_MODEL_V2_AGE:
+        # If modelV2 message is stale, set reliability_factor to 0.0 to essentially disable lateral control
+        reliability_factor = 0.0
+      else:
+        model_v2 = sm['modelV2']
+        if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
+          path_reliability = model_v2.meta.pathReliability
+          if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
+            # Reduce lateral control aggressiveness when path is unreliable
+            reliability_factor = (
+              PathReliabilityParams.RELIABILITY_FACTOR_BASE + PathReliabilityParams.RELIABILITY_FACTOR_MULTIPLIER * path_reliability
+            )  # Gradually reduce from 0.8 to 0.2 as reliability decreases
 
     # Add curvature gain specific monitoring
     current_time = time.time()  # Use proper time source instead of CS.aEgo which is acceleration
@@ -174,11 +179,7 @@ class LatControlPID(LatControl):
         # Increment safe mode trigger count in PID
         self.pid.safe_mode_trigger_count += 1
 
-      output_torque = self.pid.update(error,
-                                feedforward=ff,
-                                speed=CS.vEgo,
-                                curvature=safe_curvature,
-                                freeze_integrator=freeze_integrator)
+      output_torque = self.pid.update(error, feedforward=ff, speed=CS.vEgo, curvature=safe_curvature, freeze_integrator=freeze_integrator)
 
       # Apply reliability factor to the final output torque when path/model is unreliable
       if reliability_factor < 1.0:
@@ -194,38 +195,44 @@ class LatControlPID(LatControl):
     # Add periodic monitoring logging for field validation
     current_time_monitoring = time.time()
     if not hasattr(self, 'last_monitoring_log_time'):
-        self.last_monitoring_log_time = 0
+      self.last_monitoring_log_time = 0
 
     # Log monitoring data every 30 seconds
     if current_time_monitoring - self.last_monitoring_log_time > 30.0:
       try:
-        cloudlog.event("Curvature Gain Monitoring",
-                      curvature_gain_factor=curvature_gain_factor,
-                      oscillation_detected=oscillation_detected,
-                      oscillation_damping_active=oscillation_damping_active,
-                      oscillation_detection_count=oscillation_detection_count,
-                      oscillation_recovery_count=oscillation_recovery_count,
-                      safe_mode_active=getattr(self.pid, 'safe_mode_active', False),
-                      safe_mode_trigger_count=getattr(self.pid, 'safe_mode_trigger_count', 0),
-                      safety_limit_trigger_count=getattr(self.pid, 'safety_limit_trigger_count', 0),
-                      desired_curvature=desired_curvature,
-                      vEgo=CS.vEgo,
-                      error=error,
-                      output=output_torque)
+        cloudlog.event(
+          "Curvature Gain Monitoring",
+          curvature_gain_factor=curvature_gain_factor,
+          oscillation_detected=oscillation_detected,
+          oscillation_damping_active=oscillation_damping_active,
+          oscillation_detection_count=oscillation_detection_count,
+          oscillation_recovery_count=oscillation_recovery_count,
+          safe_mode_active=getattr(self.pid, 'safe_mode_active', False),
+          safe_mode_trigger_count=getattr(self.pid, 'safe_mode_trigger_count', 0),
+          safety_limit_trigger_count=getattr(self.pid, 'safety_limit_trigger_count', 0),
+          desired_curvature=desired_curvature,
+          vEgo=CS.vEgo,
+          error=error,
+          output=output_torque,
+        )
         # If safety limits are being hit frequently, log a warning
         if getattr(self.pid, 'safety_limit_trigger_count', 0) > 50:
-          cloudlog.warning(f"Safety limits triggered frequently: {getattr(self.pid, 'safety_limit_trigger_count', 0)} times",
-                          curvature_gain_factor=curvature_gain_factor,
-                          desired_curvature=desired_curvature,
-                          vEgo=CS.vEgo,
-                          error=error,
-                          output=output_torque)
+          cloudlog.warning(
+            f"Safety limits triggered frequently: {getattr(self.pid, 'safety_limit_trigger_count', 0)} times",
+            curvature_gain_factor=curvature_gain_factor,
+            desired_curvature=desired_curvature,
+            vEgo=CS.vEgo,
+            error=error,
+            output=output_torque,
+          )
         # If safe mode is active, log an info message
         if getattr(self.pid, 'safe_mode_active', False):
-          cloudlog.info(f"Curvature gain safe mode activated: {getattr(self.pid, 'safe_mode_trigger_count', 0)} triggers",
-                       desired_curvature=desired_curvature,
-                       vEgo=CS.vEgo,
-                       curvature_gain_interp=getattr(CP_SP, 'curvatureGainInterp', None))
+          cloudlog.info(
+            f"Curvature gain safe mode activated: {getattr(self.pid, 'safe_mode_trigger_count', 0)} triggers",
+            desired_curvature=desired_curvature,
+            vEgo=CS.vEgo,
+            curvature_gain_interp=getattr(CP_SP, 'curvatureGainInterp', None),
+          )
         self.last_monitoring_log_time = current_time
       except Exception as e:
         cloudlog.error(f"Error in curvature gain monitoring log: {e}")

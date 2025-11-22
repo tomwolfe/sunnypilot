@@ -20,18 +20,18 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 
 LON_MPC_STEP = 0.2  # first step is 0.2s
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
-A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+A_CRUISE_MAX_BP = [0.0, 10.0, 25.0, 40.0]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
-_A_TOTAL_MAX_BP = [20., 40.]
+_A_TOTAL_MAX_BP = [20.0, 40.0]
 
 # Enhanced safety-based acceleration limits
 A_CRUISE_MAX_SAFETY_VALS = [1.0, 0.9, 0.7, 0.5]  # Reduced acceleration limits for safety
-A_CRUISE_MAX_SAFETY_BP = [0., 10.0, 25., 40.]
+A_CRUISE_MAX_SAFETY_BP = [0.0, 10.0, 25.0, 40.0]
 
 
 def get_max_accel(v_ego, experimental_mode=False, safety_factor=1.0):
@@ -59,6 +59,7 @@ def get_max_accel(v_ego, experimental_mode=False, safety_factor=1.0):
   else:
     return base_max
 
+
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
 
@@ -71,8 +72,8 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
   # FIXME: This function to calculate lateral accel is incorrect and should use the VehicleModel
   # The lookup table for turns should also be updated if we do this
   a_total_max = np.interp(v_ego, _A_TOTAL_MAX_BP, _A_TOTAL_MAX_V)
-  a_y = v_ego ** 2 * angle_steers * CV.DEG_TO_RAD / (CP.steerRatio * CP.wheelbase)
-  a_x_allowed = math.sqrt(max(a_total_max ** 2 - a_y ** 2, 0.))
+  a_y = v_ego**2 * angle_steers * CV.DEG_TO_RAD / (CP.steerRatio * CP.wheelbase)
+  a_x_allowed = math.sqrt(max(a_total_max**2 - a_y**2, 0.0))
 
   return [a_target[0], min(a_target[1], a_x_allowed)]
 
@@ -80,15 +81,14 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 class LongitudinalPlanner(LongitudinalPlannerSP):
   def _get_model_confidence_values(self, sm):
     path_reliability = 1.0
-    
+
     # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
     MAX_MODEL_V2_AGE = 0.2  # seconds
 
     if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
-      model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9 # Convert to seconds
+      model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9  # Convert to seconds
       if model_v2_age > MAX_MODEL_V2_AGE:
         # If modelV2 message is stale, path_reliability should be 0 to force conservative behavior
-        # cloudlog.warning(f"modelV2 message is stale! Age: {model_v2_age:.3f}s") # Optional: add logging
         return 0.0
 
       if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathReliability'):
@@ -118,9 +118,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   @staticmethod
   def parse_model(model_msg):
-    if (len(model_msg.position.x) == ModelConstants.IDX_N and
-      len(model_msg.velocity.x) == ModelConstants.IDX_N and
-      len(model_msg.acceleration.x) == ModelConstants.IDX_N):
+    if (
+      len(model_msg.position.x) == ModelConstants.IDX_N
+      and len(model_msg.velocity.x) == ModelConstants.IDX_N
+      and len(model_msg.acceleration.x) == ModelConstants.IDX_N
+    ):
       x = np.interp(T_IDXS_MPC, ModelConstants.T_IDXS, model_msg.position.x)
       v = np.interp(T_IDXS_MPC, ModelConstants.T_IDXS, model_msg.velocity.x)
       a = np.interp(T_IDXS_MPC, ModelConstants.T_IDXS, model_msg.acceleration.x)
@@ -140,11 +142,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Path reliability adjustment
     if path_reliability < PathReliabilityParams.PATH_RELIABILITY_MODERATE:  # Moderate path reliability
       accel_clip[1] = min(accel_clip[1], accel_clip[1] * PathReliabilityParams.ACCEL_REDUCTION_MODERATE)  # Reduce max acceleration
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_MODERATE)  # Make braking more aggressive
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_MODERATE)  # Make braking less aggressive
 
     if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LOW:  # Low path reliability
       accel_clip[1] = min(accel_clip[1], accel_clip[1] * PathReliabilityParams.ACCEL_REDUCTION_LOW)  # Reduce max acceleration further
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_LOW)  # Make braking more aggressive further
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_LOW)  # Make braking less aggressive further
       accel_rate_limit = min(accel_rate_limit, PathReliabilityParams.ACCEL_RATE_LIMIT_LOW_RELIABILITY)  # More conservative rate limit
 
     return accel_clip, accel_rate_limit
@@ -180,7 +182,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Calculate overall safety factor
     overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0) if hasattr(self, 'safety_monitor') else 1.0
     safety_factor = self._calculate_safety_factor(sm, overall_safety_score, path_reliability)
-    
+
     # Initialize accel_rate_limit with its default value for the "acc" mode. This can be further adjusted by safety factors.
     accel_rate_limit = 0.05
 
@@ -213,9 +215,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if mode == 'acc':
       # Calculate safety factor based on safety monitor state
 
-
-
-
       accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode, safety_factor)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
@@ -237,10 +236,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       #            accel_rate_limit = min(accel_rate_limit, ICY_ROAD_ACCEL_RATE_LIMIT)
       #            accel_clip[1] = min(accel_clip[1], ICY_ROAD_ACCEL_MAX)
       #            accel_clip[0] = max(accel_clip[0], ICY_ROAD_BRAKE_MAX)
-
-
-
-
 
       # Additional environmental awareness for safe acceleration
       # Adjust acceleration based on road conditions from model data
@@ -282,7 +277,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             if max_curve > 0.008:  # Very sharp curve ahead
               accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.85, -0.5))  # More conservative braking
 
-      
       # NEW: Additional safety check for vehicle speed relative to curvature
       if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10 and v_ego > 5.0:
         # Calculate safe speed based on maximum anticipated curvature
@@ -301,8 +295,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Be more conservative if current speed is approach safe speed for upcoming curve
           if v_ego > safe_speed * 0.8:  # Within 20% of safe speed
             accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
-
-      
 
     else:
       # In blended mode, still apply reasonable limits for experimental mode
@@ -340,7 +332,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if not self.allow_throttle:
       clipped_accel_coast = max(accel_coast, accel_clip[0])
-      clipped_accel_coast_interp = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED*2], [accel_clip[1], clipped_accel_coast])
+      clipped_accel_coast_interp = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THROTTLE_SPEED * 2], [accel_clip[1], clipped_accel_coast])
       accel_clip[1] = min(accel_clip[1], clipped_accel_coast_interp)
 
     # Get new v_cruise and a_desired from Smart Cruise Control and Speed Limit Assist
@@ -367,9 +359,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_desired = float(np.interp(self.dt, CONTROL_N_T_IDX, self.a_desired_trajectory))
     self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.a_desired + a_prev) / 2.0
 
-    action_t =  self.CP.longitudinalActuatorDelay + DT_MDL
-    output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
-                                                                        action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
+    action_t = self.CP.longitudinalActuatorDelay + DT_MDL
+    output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(
+      self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX, action_t=action_t, vEgoStopping=self.CP.vEgoStopping
+    )
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
@@ -379,8 +372,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     else:
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
-
-
 
     # NEW: Performance optimization - use local variables to reduce attribute access
     prev_accel_clip = self.prev_accel_clip
