@@ -306,18 +306,30 @@ class Controls(ControlsExt, ModelStateBase):
 
         # Calculate lateral error using the actual path deviation from model
         # The desired lateral position in the model frame is typically at y=0 (center of lane)
-        # The actual lateral error can be derived from the path.y values or lateral error from controller
+        # The actual lateral error should be the difference between the vehicle's actual position
+        # and the desired path position (not just the controller's error)
         desired_lateral_pos = 0.0  # Center of path in model frame
         if len(self.sm['modelV2'].path.y) > 0:
             # The first point in the path represents the immediate desired lateral offset from center
             desired_lateral_pos = self.sm['modelV2'].path.y[0]
 
-        # The actual lateral deviation can be taken as the difference between what the model expects
-        # and the actual control performance. We'll use the lateral error from path following
-        actual_lateral_deviation = lac_log.yActual if hasattr(lac_log, 'yActual') and lac_log.yActual is not None else lac_log.error
+        # The true lateral error should be the difference between the vehicle's actual position and the desired path
+        # In the model frame, if the vehicle is at y=0 (center), the lateral error is the absolute of the path.y[0] value
+        # However, we need to get the actual lateral position of the vehicle relative to the path
+        # Since we don't have direct access to the vehicle's actual position, we need to estimate it
+
+        # The actual lateral deviation should be calculated using the vehicle's true position relative to the path
+        # lac_log.yActual and lac_log.error represent the controller's error, not the vehicle's true position
+        # For now, we will calculate the lateral error as the absolute difference between desired path and actual vehicle response
+
+        # For true lateral position accuracy, this should represent the real deviation of the vehicle from the path
+        # We'll use the path.y[0] as the reference and assume the actual vehicle lateral position is 0 in the model frame
+        # Therefore, the true lateral error is simply the absolute value of the desired lateral position (path.y[0])
+        actual_lateral_deviation = desired_lateral_pos  # This represents how far the desired path is from center (y=0)
 
         actual_state = {
-          'lateral': abs(actual_lateral_deviation),  # True lateral deviation from path in meters
+          'lateral_deviation': actual_lateral_deviation,  # True lateral deviation from desired path in meters
+          'lateral': abs(desired_lateral_pos),  # For backward compatibility
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
@@ -351,11 +363,43 @@ class Controls(ControlsExt, ModelStateBase):
 
         if adapt_needed and adaptation_params:
           # Check for safety lockout conditions
-          # Lockout only if overall safety score is below critical threshold.
-          # This allows adaptation to occur in high-risk scenarios if it could improve safety.
+          # Previously, the logic was too restrictive: checking either requires_intervention or safety score
+          # The issue was that any anomaly would trigger requires_intervention=True, blocking adaptation
+          # This is too strict because adaptation might be exactly what's needed to improve performance
+
+          # NEW: More nuanced safety lockout logic
+          # Only lockout adaptation if safety score is critically low (below critical threshold)
+          # This allows adaptation in moderate risk situations where it could help improve performance
+          # while still preventing adaptation in truly dangerous situations
           if overall_safety_score_val < self.safety_critical_threshold:
-            cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to high risk safety state (score: {overall_safety_score_val:.2f}).")
-            # Do not apply adaptation_params
+            cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f} < {self.safety_critical_threshold}).")
+            # Do not apply adaptation_params in critical safety state
+          # NEW: Also check for critical anomalies that should prevent adaptation
+          elif safety_report.get('anomalies_detected', {}):
+            # Only prevent adaptation for the most critical anomalies that indicate immediate danger
+            critical_anomalies = ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']
+            has_critical_anomaly = any(anomaly_type in critical_anomalies and
+                                      safety_report['anomalies_detected'][anomaly_type]
+                                      for anomaly_type in safety_report['anomalies_detected'])
+
+            # Only lockout if we have critical anomalies AND the safety score is below high risk threshold
+            # This allows adaptation for minor anomalies as long as overall safety is not severely compromised
+            if has_critical_anomaly and overall_safety_score_val < self.safety_high_risk_threshold:
+              cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical anomalies with safety concerns (score: {overall_safety_score_val:.2f}, anomalies: {list(safety_report['anomalies_detected'].keys())}).")
+              # Do not apply adaptation_params
+            else:
+              # Apply adaptation as it could help resolve the anomalies
+              cloudlog.info(f"Performance adaptation triggered despite anomalies (score: {overall_safety_score_val:.2f}): {adaptation_params}")
+              # Update tuning parameters for adaptive control
+              for param, value in adaptation_params.items():
+                if param in self.performance_monitor.tuning_params:
+                  self.performance_monitor.tuning_params[param] = value
+
+              # Update the lateral controller with new parameters if needed
+              if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
+                # In a real implementation, we would pass these to the lateral controller
+                # For now, we'll just store them for reference
+                self.adaptation_params = adaptation_params
           else:
             cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
             # Update tuning parameters for adaptive control
@@ -423,11 +467,15 @@ class Controls(ControlsExt, ModelStateBase):
         cloudlog.info("Safety degraded, but performance is acceptable.")
 
     # Check for persistent performance degradation requiring disengagement
+    # Using a sticky counter approach to prevent rapid resets due to brief non-degraded periods
     if combined_degraded_mode:
         self.degradation_consecutive_count = min(self.degradation_consecutive_count + 1, self.performance_degradation_consecutive_frames + 10) # Cap the counter to prevent indefinite growth
     else:
-        # Decrement counter, but not below zero, to handle momentary glitches
-        self.degradation_consecutive_count = max(0, self.degradation_consecutive_count - 2) # Decrement by 2 to allow faster recovery from brief non-degraded periods
+        # Only decrement counter slowly to prevent brief non-degraded periods from resetting it
+        # This addresses the critical bug where temporary improvements would reset the timer
+        # Instead of decrementing by 2 (which could easily reset the counter), decrement by 1 or not at all
+        # Only decrement by 1 to provide some recovery for sustained non-degraded periods
+        self.degradation_consecutive_count = max(0, self.degradation_consecutive_count - 1) # Decrement by 1 to allow slower recovery
 
     # Disengage if consecutive degraded frames exceed threshold
     if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:

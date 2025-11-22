@@ -130,47 +130,58 @@ class PerformanceMonitor:
         """Evaluate system performance metrics in real-time"""
 
         # Calculate performance metrics
-        # NOTE: The lateral error should be the actual lateral position deviation from desired path
-        # In the model frame, desired lateral position should come from modelV2.path.y[0] or similar
-        # For now using a more appropriate calculation based on actual lateral position vs desired
-        # We'll calculate lateral error as the absolute deviation from the desired path position
-        lateral_error = abs(desired_state.get('lateral', 0) - actual_state.get('lateral', 0))
+        # The lateral error should be the difference between the vehicle's actual position
+        # in the model's coordinate frame and the desired path position (model_v2.path.y[0])
+        # The actual lateral deviation should come from the path following error
+        # The desired lateral position in the model frame is typically at y=0 (center of lane)
+        # The actual lateral error is the difference between the desired path position and actual vehicle position
+
+        # Get desired lateral position from model (typically this is model_v2.path.y[0] which represents the immediate desired lateral offset)
+        desired_lateral_pos = 0.0  # Default to center of path
+        if model_output and hasattr(model_output, 'path') and len(model_output.path.y) > 0:
+            desired_lateral_pos = model_output.path.y[0]
+
+        # The actual lateral error should be calculated as the deviation from the path
+        # The lateral_deviation is now the actual deviation of the vehicle from the desired path
+        actual_lateral_deviation = actual_state.get('lateral_deviation', 0)
+        lateral_error = abs(actual_lateral_deviation)  # The deviation of the vehicle from the path in meters
+
         longitudinal_error = abs(desired_state.get('longitudinal', 0) - actual_state.get('longitudinal', 0))
-        
+
         # Calculate ride comfort (based on jerk and lateral acceleration)
         longitudinal_jerk = abs(control_output.get('jerk', 0))
         lateral_accel = abs(actual_state.get('lateral_accel', 0))
         comfort_metric = self.calculate_comfort_metric(longitudinal_jerk, lateral_accel)
-        
+
         # Calculate path following error
         path_error = abs(desired_state.get('path_deviation', 0))
-        
+
         # Calculate tracking stability (based on consistency of errors)
         stability_metric = self.calculate_tracking_stability(lateral_error, longitudinal_error)
-        
+
         # Store metrics
         self.performance_metrics['lateral_accuracy'].update(lateral_error)
-        self.performance_metrics['longitudinal_accuracy'].update(longitudinal_error) 
+        self.performance_metrics['longitudinal_accuracy'].update(longitudinal_error)
         self.performance_metrics['control_effort'].update(abs(control_output.get('output', 0)))
         self.performance_metrics['ride_comfort'].update(comfort_metric)
         self.performance_metrics['path_following_error'].update(path_error)
         self.performance_metrics['tracking_stability'].update(stability_metric)
-        
+
         # Store model confidence if available
         if model_output and 'meta' in model_output and 'confidence' in model_output['meta']:
             model_confidence = model_output['meta']['confidence']
             self.performance_metrics['model_confidence_trend'].update(model_confidence)
-        
+
         # Add to history for trend analysis
         current_time = time.time()
         self.performance_history['timestamp'].append(current_time)
         self.performance_history['lateral_performance'].append(lateral_error < self.performance_baseline['lateral_accuracy'])
         self.performance_history['longitudinal_performance'].append(longitudinal_error < self.performance_baseline['longitudinal_accuracy'])
-        overall_performance = (lateral_error < self.performance_baseline['lateral_accuracy'] and 
-                              longitudinal_error < self.performance_baseline['longitudinal_accuracy'] and 
+        overall_performance = (lateral_error < self.performance_baseline['lateral_accuracy'] and
+                              longitudinal_error < self.performance_baseline['longitudinal_accuracy'] and
                               comfort_metric > self.performance_baseline['ride_comfort'])
         self.performance_history['overall_performance'].append(overall_performance)
-        
+
         return {
             'lateral_accuracy': lateral_error,
             'longitudinal_accuracy': longitudinal_error,

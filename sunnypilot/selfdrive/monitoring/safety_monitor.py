@@ -729,9 +729,27 @@ class SafetyMonitor:
           gps_signal_lost = self.environmental_detector.gps_signal_lost
           gps_confidence_low = self.environmental_detector.gps_confidence < 0.5
 
-          # Check if lighting is dark, but we need to be more careful not to rely solely on lane line strength
-          lighting_is_dark = (self.lighting_condition in ['dark', 'unknown'] and
-                             self.lighting_confidence > self.lighting_confidence_threshold)
+          # Check if lighting is dark, but we need to be more careful not to rely on lane line strength
+          # Since lane line strength can be misleading in tunnels, we'll use GPS-based lighting condition
+          # instead of relying on the lighting_condition that could be influenced by lane lines
+          # Check if GPS suggests we're in a daylight area but lighting is still showing as dark/unknown
+          is_night_time = False
+          if gps_location_msg is not None and gps_location_msg.unixTimestampMillis > 0:
+              import datetime
+              gps_time = datetime.datetime.fromtimestamp(gps_location_msg.unixTimestampMillis / 1000)
+              hour = gps_time.hour
+              is_night_time = hour >= 19 or hour <= 6
+
+          # We'll consider lighting as genuinely dark if it's dark and it's either night time or the confidence is high
+          # But we'll also check if this conflicts with GPS time (daylight time but lighting is dark = potential tunnel)
+          lighting_appears_dark = (self.lighting_condition in ['dark', 'unknown'] and
+                                  self.lighting_confidence > self.lighting_confidence_threshold)
+
+          # More robust lighting condition for tunnel detection:
+          # If it's GPS daytime but lighting system says it's dark, that's a strong tunnel indicator
+          gps_suggests_daylight = not is_night_time
+          lighting_suggests_darkness = lighting_appears_dark
+          gps_dark_lighting_conflict = gps_suggests_daylight and lighting_suggests_darkness
 
           # Road confidence being high is normal in tunnels (surface is often smooth and clear)
           road_confidence_high = self.road_confidence > self.road_confidence_threshold
@@ -741,16 +759,18 @@ class SafetyMonitor:
           model_confidence_low = self.raw_model_confidence < self.model_confidence_threshold
 
           # Improved tunnel detection logic:
-          # A tunnel is primarily identified by GPS signal loss (which happens in tunnels) combined with other indicators
-          # GPS loss + dark conditions (not just lane line strength) indicates a tunnel
-          if gps_signal_lost and lighting_is_dark:
+          # A tunnel is primarily identified by GPS signal loss combined with other indicators
+          # and especially by the contradiction between GPS daylight and dark lighting conditions
+          if gps_signal_lost and (lighting_appears_dark or gps_dark_lighting_conflict):
               self.in_tunnel = True
-          # Additionally, if we have GPS signal loss and road conditions appear good (indicating we're moving on a clear road)
-          # but lighting is unknown and model confidence is low, it might be a tunnel
-          elif gps_signal_lost and road_confidence_high and (self.lighting_condition == 'unknown' or model_confidence_low):
+          # Additionally, if GPS suggests daylight but we have low lighting confidence and GPS signal loss, likely tunnel
+          elif gps_signal_lost and gps_dark_lighting_conflict and road_confidence_high:
               self.in_tunnel = True
-          # If GPS signal is good, we are definitely not in a tunnel
-          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7:
+          # If GPS signal is good and conditions match expected daytime, definitely not a tunnel
+          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7 and not gps_dark_lighting_conflict:
+              self.in_tunnel = False
+          # If GPS indicates daylight but signal is not lost and lighting is normal, not a tunnel
+          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7 and not lighting_appears_dark:
               self.in_tunnel = False
           # If we reach here, we maintain the previous state to avoid flickering.
           # This provides hysteresis for ambiguous situations.
@@ -1744,139 +1764,74 @@ class SafetyMonitor:
         """Main update function - processes all inputs and returns safety assessment"""
         current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
         start_time_update = time.monotonic() # Start timing for the entire update method
-    
-        
-    
-            
-    
-        
-    
-                
-    
-        
-    
-            
-    
-        
-    
-                    self._initialize_health_flags() # Initialize health flags
-    
-        
-    
-            
-    
-        
-    
-                    self._perform_staleness_checks(current_time, model_v2_mono_time, radar_state_mono_time, car_state_mono_time, live_pose_mono_time, driver_monitoring_state_mono_time, gps_location_mono_time)
-    
-        
-    
-            
-    
-        
-    
-                
-    
-        
-    
-            
-    
-        
-    
-                    self._run_anomaly_detection(car_state_msg, model_v2_msg, radar_state_msg)
-    
-        
-    
-            
-    
-        
-    
-                
-    
-        
-    
-            
-    
-        
-    
-                    # --- Update Confidence Measures with Error Handling and Decay ---
-    
-        
-    
-            
-    
-        
-    
-                    self._update_all_confidences(current_time, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg, gps_location_mono_time)
-    
-        
-    
-            
-    
-        
-    
-                
-    
-        
-    
-            
-    
-        
-    
-                    self._calculate_safety_outputs(model_v2_msg, car_state_msg, driver_monitoring_state_msg)
-    
-        
-    
-            
-    
-        
-    
-                
-    
-        
-    
-            
-    
-        
-    
-                    # Return the safety assessment and report
-    
-        
-    
-            
-    
-        
-    
-                    return self._prepare_safety_report()
 
-  except Exception as e:
-    import logging
-    import traceback
-    logging.error(f"Critical error in SafetyMonitor.update: {e}")
-    logging.error(f"Traceback: {traceback.format_exc()}")
 
-    # Return safe defaults in case of critical error
-    safety_report = {
-      'model_confidence': 0.1,
-      'radar_confidence': 0.1,
-      'camera_confidence': 0.1,
-      'imu_confidence': 0.1,
-      'lighting_condition': 'normal',
-      'weather_condition': 'clear',
-      'road_condition': 'dry',
-      'curve_anticipation_active': False,
-      'curve_anticipation_score': 0.0,
-      'lane_deviation': 0.0,
-      'overall_safety_score': 0.1,  # Critical low safety score
-      'confidence_degraded': True,
-      'monitoring_cycles': self.monitoring_cycles,
-      'error_occurred': True,
-      'error_details': str(e),
-      'anomalies_detected': {}
-    }
-    self.overall_safety_score = 0.1
-    self.requires_intervention = True
-    self.confidence_degraded = True
-    self.monitoring_cycles += 1
+        try:
+            self._initialize_health_flags() # Initialize health flags
 
-    return self.overall_safety_score, self.requires_intervention, safety_report
+
+            self._perform_staleness_checks(current_time, model_v2_mono_time, radar_state_mono_time, car_state_mono_time, live_pose_mono_time, driver_monitoring_state_mono_time, gps_location_mono_time)
+
+
+            self._run_anomaly_detection(car_state_msg, model_v2_msg, radar_state_msg)
+
+
+            # --- Update Confidence Measures with Error Handling and Decay ---
+
+
+            self._update_all_confidences(current_time, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg, gps_location_mono_time)
+
+
+            self._calculate_safety_outputs(model_v2_msg, car_state_msg, driver_monitoring_state_msg)
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+            # Return the safety assessment and report
+
+
+            return self._prepare_safety_report()
+
+
+        except Exception as e:
+            import logging
+            import traceback
+            logging.error(f"Critical error in SafetyMonitor.update: {e}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+
+            # Return safe defaults in case of critical error
+            safety_report = {
+            'model_confidence': 0.1,
+            'radar_confidence': 0.1,
+            'camera_confidence': 0.1,
+            'imu_confidence': 0.1,
+            'lighting_condition': 'normal',
+            'weather_condition': 'clear',
+            'road_condition': 'dry',
+            'curve_anticipation_active': False,
+            'curve_anticipation_score': 0.0,
+            'lane_deviation': 0.0,
+            'overall_safety_score': 0.1,  # Critical low safety score
+            'confidence_degraded': True,
+            'monitoring_cycles': self.monitoring_cycles,
+            'error_occurred': True,
+            'error_details': str(e),
+            'anomalies_detected': {}
+            }
+            self.overall_safety_score = 0.1
+            self.requires_intervention = True
+            self.confidence_degraded = True
+            self.monitoring_cycles += 1
+
+            return self.overall_safety_score, self.requires_intervention, safety_report
