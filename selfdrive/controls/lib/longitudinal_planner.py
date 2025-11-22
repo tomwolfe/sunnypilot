@@ -15,6 +15,7 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
+from openpilot.selfdrive.controls.lib.path_reliability_params import PathReliabilityParams
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
 LON_MPC_STEP = 0.2  # first step is 0.2s
@@ -77,29 +78,6 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 
 
 class LongitudinalPlanner(LongitudinalPlannerSP):
-  # Constants for path reliability adjustments
-  PATH_RELIABILITY_MODERATE = 0.7
-  ACCEL_REDUCTION_MODERATE = 0.85
-  BRAKE_AGGRESSION_MODERATE = 0.90
-  PATH_RELIABILITY_LOW = 0.5
-  ACCEL_REDUCTION_LOW = 0.7
-  BRAKE_AGGRESSION_LOW = 0.8
-  ACCEL_RATE_LIMIT_LOW_RELIABILITY = 0.03
-  # These thresholds and multipliers are critical for safety and system behavior.
-  # Their current values are based on initial tuning and require extensive real-world
-  # validation to ensure optimal performance across various driving conditions and
-  # edge cases. Ongoing monitoring and fine-tuning are essential.
-
-  # Constants for safety factor calculations
-  SAFETY_SCORE_DEGRADED = 0.6
-  SAFETY_SCORE_CRITICAL = 0.3
-  SAFETY_FACTOR_CRITICAL = 0.5
-  SAFETY_SCORE_HIGH_RISK = 0.5
-  SAFETY_FACTOR_HIGH_RISK = 0.65
-  SAFETY_FACTOR_MODERATE_RISK = 0.8
-  SAFETY_FACTOR_PATH_RELIABILITY_LOW = 0.7
-  SAFETY_FACTOR_PATH_RELIABILITY_VERY_LOW = 0.5
-
   def _get_model_confidence_values(self, sm):
     path_reliability = 1.0
 
@@ -150,33 +128,33 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _adjust_accel_clip_for_confidence_and_reliability(self, accel_clip, accel_rate_limit, path_reliability):
     # Path reliability adjustment
-    if path_reliability < self.PATH_RELIABILITY_MODERATE:  # Moderate path reliability
-      accel_clip[1] = min(accel_clip[1], accel_clip[1] * self.ACCEL_REDUCTION_MODERATE)  # Reduce max acceleration
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * self.BRAKE_AGGRESSION_MODERATE)  # Make braking more aggressive
+    if path_reliability < PathReliabilityParams.PATH_RELIABILITY_MODERATE:  # Moderate path reliability
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * PathReliabilityParams.ACCEL_REDUCTION_MODERATE)  # Reduce max acceleration
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_MODERATE)  # Make braking more aggressive
 
-    if path_reliability < self.PATH_RELIABILITY_LOW:  # Low path reliability
-      accel_clip[1] = min(accel_clip[1], accel_clip[1] * self.ACCEL_REDUCTION_LOW)  # Reduce max acceleration further
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * self.BRAKE_AGGRESSION_LOW)  # Make braking more aggressive further
-      accel_rate_limit = min(accel_rate_limit, self.ACCEL_RATE_LIMIT_LOW_RELIABILITY)  # More conservative rate limit
+    if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LOW:  # Low path reliability
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * PathReliabilityParams.ACCEL_REDUCTION_LOW)  # Reduce max acceleration further
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * PathReliabilityParams.BRAKE_AGGRESSION_LOW)  # Make braking more aggressive further
+      accel_rate_limit = min(accel_rate_limit, PathReliabilityParams.ACCEL_RATE_LIMIT_LOW_RELIABILITY)  # More conservative rate limit
 
     return accel_clip, accel_rate_limit
 
   def _calculate_safety_factor(self, sm, overall_safety_score, path_reliability):
     safety_factor = 1.0
 
-    if overall_safety_score < self.SAFETY_SCORE_DEGRADED:  # If safety score is degraded
-      if overall_safety_score < self.SAFETY_SCORE_CRITICAL:  # Critical safety level
-        safety_factor = self.SAFETY_FACTOR_CRITICAL  # Very conservative
-      elif overall_safety_score < self.SAFETY_SCORE_HIGH_RISK:  # High risk level
-        safety_factor = self.SAFETY_FACTOR_HIGH_RISK  # More conservative
+    if overall_safety_score < PathReliabilityParams.SAFETY_SCORE_DEGRADED:  # If safety score is degraded
+      if overall_safety_score < PathReliabilityParams.SAFETY_SCORE_CRITICAL:  # Critical safety level
+        safety_factor = PathReliabilityParams.SAFETY_FACTOR_CRITICAL  # Very conservative
+      elif overall_safety_score < PathReliabilityParams.SAFETY_SCORE_HIGH_RISK:  # High risk level
+        safety_factor = PathReliabilityParams.SAFETY_FACTOR_HIGH_RISK  # More conservative
       else:  # Moderate risk level
-        safety_factor = self.SAFETY_FACTOR_MODERATE_RISK  # Slightly more conservative
+        safety_factor = PathReliabilityParams.SAFETY_FACTOR_MODERATE_RISK  # Slightly more conservative
 
     # Apply additional conservatism based on path reliability
-    if path_reliability < self.PATH_RELIABILITY_MODERATE:  # Low path reliability
-      safety_factor = min(safety_factor, self.SAFETY_FACTOR_PATH_RELIABILITY_LOW)  # Be more conservative
-    if path_reliability < self.PATH_RELIABILITY_LOW:  # Very low path reliability
-      safety_factor = min(safety_factor, self.SAFETY_FACTOR_PATH_RELIABILITY_VERY_LOW)  # Be even more conservative
+    if path_reliability < PathReliabilityParams.PATH_RELIABILITY_MODERATE:  # Low path reliability
+      safety_factor = min(safety_factor, PathReliabilityParams.SAFETY_FACTOR_PATH_RELIABILITY_LOW)  # Be more conservative
+    if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LOW:  # Very low path reliability
+      safety_factor = min(safety_factor, PathReliabilityParams.SAFETY_FACTOR_PATH_RELIABILITY_VERY_LOW)  # Be even more conservative
 
     return safety_factor
 
@@ -241,7 +219,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # (e.g., from model outputs, external sensors, or map data).
       # Currently, pathReliability might partially capture poor visibility, but not necessarily
       # low friction. A dedicated mechanism is needed for robust safety in adverse weather.
+      # A `roadConditionFactor` could be introduced here and multiplied with the `safety_factor`.
       # Example: if sm['carState'].is_road_icy:
+      #            roadConditionFactor = ICY_ROAD_FACTOR
+      #            safety_factor = min(safety_factor, roadConditionFactor)
       #            accel_rate_limit = min(accel_rate_limit, ICY_ROAD_ACCEL_RATE_LIMIT)
       #            accel_clip[1] = min(accel_clip[1], ICY_ROAD_ACCEL_MAX)
       #            accel_clip[0] = max(accel_clip[0], ICY_ROAD_BRAKE_MAX)

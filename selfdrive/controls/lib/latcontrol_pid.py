@@ -7,16 +7,10 @@ from openpilot.common.filter_simple import FirstOrderFilter # Import FirstOrderF
 from openpilot.common.swaglog import cloudlog # Import cloudlog
 from cereal import log
 
+from openpilot.selfdrive.controls.lib.path_reliability_params import PathReliabilityParams
+
 
 class LatControlPID(LatControl):
-  # Constants for path reliability adjustments
-  PATH_RELIABILITY_LAT_THRESHOLD = 0.7
-  RELIABILITY_FACTOR_BASE = 0.8
-  RELIABILITY_FACTOR_MULTIPLIER = 0.2
-  # These thresholds and multipliers are critical for safety and system behavior.
-  # Their current values are based on initial tuning and require extensive real-world
-  # validation to ensure optimal performance across various driving conditions and
-  # edge cases. Ongoing monitoring and fine-tuning are essential.
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
     # Use curvature gain interpolation from car params if available, otherwise use default
@@ -107,9 +101,9 @@ class LatControlPID(LatControl):
       model_v2 = sm['modelV2']
       if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
         path_reliability = model_v2.meta.pathReliability
-        if path_reliability < self.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
+        if path_reliability < PathReliabilityParams.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
           # Reduce lateral control aggressiveness when path is unreliable
-          reliability_factor = self.RELIABILITY_FACTOR_BASE + self.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
+          reliability_factor = PathReliabilityParams.RELIABILITY_FACTOR_BASE + PathReliabilityParams.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
 
 
     # Add curvature gain specific monitoring

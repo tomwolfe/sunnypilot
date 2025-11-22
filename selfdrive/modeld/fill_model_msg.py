@@ -3,6 +3,7 @@ import capnp
 import numpy as np
 from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
+from openpilot.selfdrive.controls.lib.path_reliability_params import PathReliabilityParams
 from openpilot.sunnypilot.models.helpers import plan_x_idxs_helper
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
@@ -152,15 +153,15 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
     # - Significantly reduce reliability when no valid lanes are detected, prompting
     #   a cautious system response due to high uncertainty.
     # These values are subject to ongoing tuning and validation with real-world data.
-    lane_reliability = min(1.0, avg_lane_confidence * 1.5)  # Scale up to account for conservative baseline values
+    lane_reliability = min(1.0, avg_lane_confidence * PathReliabilityParams.LANE_RELIABILITY_SCALE)  # Scale up to account for conservative baseline values
 
     # Enhance path reliability based on number of valid lanes detected
     if num_valid_lanes >= 2:  # We have at least 2 good lane lines
-      path_reliability = min(1.0, lane_reliability * 1.2)  # Boost reliability
+      path_reliability = min(1.0, lane_reliability * PathReliabilityParams.LANE_LINES_BOOST)  # Boost reliability
     elif num_valid_lanes == 1:  # Only one lane line
-      path_reliability = max(0.3, lane_reliability * 0.8)  # Reduce reliability moderately
+      path_reliability = max(PathReliabilityParams.LANE_LINES_MIN_PROB_ONE, lane_reliability * PathReliabilityParams.LANE_LINES_REDUCE_ONE)  # Reduce reliability moderately
     else:  # No good lane lines
-      path_reliability = max(0.1, lane_reliability * 0.5)  # Significantly reduce reliability
+      path_reliability = max(PathReliabilityParams.LANE_LINES_MIN_PROB_NONE, lane_reliability * PathReliabilityParams.LANE_LINES_REDUCE_NONE)  # Significantly reduce reliability
 
   # meta
   meta = modelV2.meta
