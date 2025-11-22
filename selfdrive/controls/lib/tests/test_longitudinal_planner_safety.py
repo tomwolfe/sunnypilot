@@ -111,8 +111,7 @@ class TestLongitudinalPlannerSafetyConstraints:
              patch('openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner.LongitudinalPlannerSP'):
             
             from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
-            from opendbc.car.interfaces import _FINGERPRINTS
-            from opendbc.car.values import PLATFORMS
+
             
             # Create minimal mock car params
             mock_cp = Mock()

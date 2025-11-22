@@ -77,6 +77,17 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 
 
 class LongitudinalPlanner(LongitudinalPlannerSP):
+  def _get_model_confidence_values(self, sm):
+    model_confidence = 1.0
+    path_reliability = 1.0
+
+    if hasattr(sm['modelV2'], 'meta'):
+      if hasattr(sm['modelV2'].meta, 'pathPredictionConfidence'):
+        model_confidence = sm['modelV2'].meta.pathPredictionConfidence if sm['modelV2'].meta.pathPredictionConfidence else 1.0
+      if hasattr(sm['modelV2'].meta, 'pathReliability'):
+        path_reliability = sm['modelV2'].meta.pathReliability if sm['modelV2'].meta.pathReliability else 1.0
+    return model_confidence, path_reliability
+
   def __init__(self, CP, CP_SP, init_v=0.0, init_a=0.0, dt=DT_MDL):
     self.CP = CP
     self.mpc = LongitudinalMpc(dt=dt)
@@ -118,6 +129,47 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       throttle_prob = 1.0
     return x, v, a, j, throttle_prob
 
+  def _adjust_accel_clip_for_confidence_and_reliability(self, accel_clip, accel_rate_limit, model_confidence, path_reliability):
+    # Environmental confidence adjustment
+    if model_confidence < 0.7:  # Low model confidence
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.85)  # Be 15% more conservative
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.90)  # Be more conservative on braking too
+
+    # Path reliability adjustment
+    if path_reliability < 0.6:  # Low path reliability detected
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.8)  # Reduce max acceleration by 20%
+      if path_reliability < 0.3:  # Very low path reliability
+        accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # Reduce braking by 10% (make less negative)
+
+    # Combined low model confidence and low path reliability
+    if model_confidence < 0.7 and path_reliability < 0.7:
+      combined_safety_factor = min(model_confidence, path_reliability)
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * (0.7 + 0.3 * combined_safety_factor))  # More conservative
+      # Reduce rate of acceleration changes (jerk) when both measures are low
+      accel_rate_limit = min(accel_rate_limit, 0.03)  # More conservative rate limit
+    return accel_clip, accel_rate_limit
+
+  def _calculate_safety_factor(self, sm, overall_safety_score, model_confidence, path_reliability):
+    safety_factor = 1.0
+
+    if overall_safety_score < 0.6:  # If safety score is degraded
+      if overall_safety_score < 0.3:  # Critical safety level
+        safety_factor = 0.5  # Very conservative
+      elif overall_safety_score < 0.5:  # High risk level
+        safety_factor = 0.65  # More conservative
+      else:  # Moderate risk level
+        safety_factor = 0.8  # Slightly more conservative
+
+    # Apply additional conservatism based on model confidence
+    if model_confidence < 0.6:  # Low model confidence
+      safety_factor = min(safety_factor, 0.7)  # Be more conservative
+
+    # Apply additional conservatism based on path reliability
+    if path_reliability < 0.6:  # Low path reliability
+      safety_factor = min(safety_factor, 0.7)  # Be more conservative, matching model_confidence
+
+    return safety_factor
+
   def update(self, sm):
     # Experimental mode uses different acceleration behavior
     # Using 'acc' mode but with expanded limits when experimental mode is enabled
@@ -125,6 +177,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if not self.mlsim:
       self.mpc.mode = mode
     LongitudinalPlannerSP.update(self, sm)
+    model_confidence, path_reliability = self._get_model_confidence_values(sm)
+
+    # Calculate overall safety factor
+    overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0) if hasattr(self, 'safety_monitor') else 1.0
+    safety_factor = self._calculate_safety_factor(sm, overall_safety_score, model_confidence, path_reliability)
+    
+    # Initialize accel_rate_limit with its default value
+    # Initialize accel_rate_limit with its default value for the "acc" mode. This can be further adjusted by safety factors.
+    accel_rate_limit = 0.05
+
     if dec_mpc_mode := self.get_mpc_mode():
       mode = dec_mpc_mode
       if not self.mlsim:
@@ -153,27 +215,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if mode == 'acc':
       # Calculate safety factor based on safety monitor state
-      safety_factor = 1.0
-      if hasattr(self, 'safety_monitor'):
-        overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
-        if overall_safety_score < 0.6:  # If safety score is degraded
-          # Calculate safety factor based on safety score
-          if overall_safety_score < 0.3:  # Critical safety level
-            safety_factor = 0.5  # Very conservative
-          elif overall_safety_score < 0.5:  # High risk level
-            safety_factor = 0.65  # More conservative
-          else:  # Moderate risk level
-            safety_factor = 0.8  # Slightly more conservative
 
-      # Enhanced safety: also check model confidence
-      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathPredictionConfidence'):
-        model_confidence = sm['modelV2'].meta.pathPredictionConfidence if sm['modelV2'].meta.pathPredictionConfidence else 1.0
-        if model_confidence < 0.6:  # Low model confidence
-          safety_factor = min(safety_factor, 0.7)  # Be more conservative
+
+
 
       accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode, safety_factor)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
+
+      # Consolidate all confidence and reliability-based accel_clip and accel_rate_limit adjustments
+      accel_clip, accel_rate_limit = self._adjust_accel_clip_for_confidence_and_reliability(accel_clip, accel_rate_limit, model_confidence, path_reliability)
+
+
+
+
 
       # Additional environmental awareness for safe acceleration
       # Adjust acceleration based on road conditions from model data
@@ -215,15 +270,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             if max_curve > 0.008:  # Very sharp curve ahead
               accel_clip[0] = max(accel_clip[0], min(accel_clip[0] * 0.85, -0.5))  # More conservative braking
 
-      # NEW: Environmental confidence adjustment based on weather/lighting conditions
-      # Apply confidence-based adjustments to acceleration limits
-      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathPredictionConfidence'):
-        # Adjust based on model confidence (lower confidence = more conservative)
-        model_confidence = sm['modelV2'].meta.pathPredictionConfidence if sm['modelV2'].meta.pathPredictionConfidence else 1.0
-        if model_confidence < 0.7:  # Low model confidence
-          accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.85)  # Be 15% more conservative
-          accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.90)  # Be more conservative on braking too
-
+      
       # NEW: Additional safety check for vehicle speed relative to curvature
       if hasattr(sm['modelV2'], 'path') and len(sm['modelV2'].path.y) > 10 and v_ego > 5.0:
         # Calculate safe speed based on maximum anticipated curvature
@@ -243,30 +290,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           if v_ego > safe_speed * 0.8:  # Within 20% of safe speed
             accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
 
-      # NEW: Enhanced safety based on path reliability from model
-      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathReliability'):
-        path_reliability = sm['modelV2'].meta.pathReliability
-        if path_reliability < 0.6:  # Low path reliability detected
-          # Be more conservative in acceleration when path reliability is low
-          accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.8)  # Reduce max acceleration by 20%
+      
 
-          # Also reduce deceleration rate to be more conservative
-          if path_reliability < 0.3:  # Very low path reliability
-            accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # Reduce braking by 10% (make less negative)
-
-      # NEW: Additional conservative measures for low model confidence combined with low path reliability
-      if (hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathPredictionConfidence') and
-          hasattr(sm['modelV2'].meta, 'pathReliability')):
-        model_confidence = sm['modelV2'].meta.pathPredictionConfidence
-        path_reliability = sm['modelV2'].meta.pathReliability
-
-        # Combined safety factor when both model confidence and path reliability are low
-        if model_confidence < 0.7 and path_reliability < 0.7:
-          combined_safety_factor = min(model_confidence, path_reliability)
-          accel_clip[1] = min(accel_clip[1], accel_clip[1] * (0.7 + 0.3 * combined_safety_factor))  # More conservative
-
-          # Reduce rate of acceleration changes (jerk) when both measures are low
-          accel_rate_limit = min(accel_rate_limit, 0.03)  # More conservative rate limit
     else:
       # In blended mode, still apply reasonable limits for experimental mode
       # Calculate safety factor for blended mode as well
@@ -343,39 +368,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
-    # NEW: Adaptive acceleration rate limiting based on driving conditions
-    # Base acceleration rate limit (0.05 m/s^2 per DT_MDL) - original value was too aggressive
-    accel_rate_limit = 0.05
 
-    # Adjust rate limit based on environmental conditions
-    if hasattr(sm['modelV2'], 'orientationNED') and len(sm['modelV2'].orientationNED.x) > 0:
-      road_pitch = sm['modelV2'].orientationNED.x[0]
-      # Reduce rate limit when on hills
-      if abs(road_pitch) > 0.05:  # More than 5% grade
-        accel_rate_limit = 0.03  # More conservative acceleration rate
-
-    # ENHANCED: Additional constraint based on safety monitor state
-    if hasattr(self, 'safety_monitor') and hasattr(self.safety_monitor, 'overall_safety_score'):
-      safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
-      if safety_score < 0.6:  # If safety score is degraded
-        # Further reduce the acceleration rate limit for safety
-        if safety_score < 0.3:  # Critical safety level
-          accel_rate_limit *= 0.4  # Very conservative
-        elif safety_score < 0.5:  # High risk level
-          accel_rate_limit *= 0.6  # More conservative
-        else:  # Moderate risk level
-          accel_rate_limit *= 0.8  # Slightly more conservative
-
-    # ENHANCED: Additional constraints based on model confidence and road conditions
-    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
-      model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
-      if model_confidence < 0.6:  # Low model confidence
-        accel_rate_limit *= 0.7  # Be more conservative
-
-    # ENHANCED: Road condition-based constraints (integrated with safety monitor data)
-    # In a real system, this would come from the safety monitor's environmental assessment
-    if hasattr(self, 'road_conditions') and self.road_conditions in ['icy', 'wet']:
-      accel_rate_limit *= 0.5  # Very conservative in slippery conditions
 
     # NEW: Performance optimization - use local variables to reduce attribute access
     prev_accel_clip = self.prev_accel_clip
