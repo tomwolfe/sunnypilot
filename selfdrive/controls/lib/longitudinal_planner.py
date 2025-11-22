@@ -329,11 +329,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     accel_rate_limit = 0.05
 
     # Adjust rate limit based on environmental conditions
-    if len(cached_model_v2.orientationNED.x) > 0:  # cached_model_v2 is already assigned, just check length
-      road_pitch = cached_model_v2.orientationNED.x[0]
-      # Reduce rate limit when on hills
-      if abs(road_pitch) > 0.05:  # More than 5% grade
-        accel_rate_limit = 0.03  # More conservative acceleration rate
+    # Use defensive programming to check if orientationNED and x exist
+    orientation_ned = getattr(cached_model_v2, 'orientationNED', None)
+    if orientation_ned is not None:
+      orientation_x = getattr(orientation_ned, 'x', None)
+      if orientation_x is not None and len(orientation_x) > 0:
+        road_pitch = orientation_x[0]
+        # Reduce rate limit when on hills
+        if abs(road_pitch) > 0.05:  # More than 5% grade
+          accel_rate_limit = 0.03  # More conservative acceleration rate
 
     # ENHANCED: Additional constraint based on safety monitor state
     if cached_safety_monitor:  # Already retrieved with getattr, just check if not None
@@ -348,8 +352,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           accel_rate_limit *= 0.8  # Slightly more conservative
 
     # ENHANCED: Additional constraints based on model confidence and road conditions
-    if cached_model_v2.meta.confidence is not None:  # cached_model_v2 is already assigned, check directly
-      model_confidence = cached_model_v2.meta.confidence if cached_model_v2.meta.confidence else 1.0
+    # Use defensive programming to check if meta and confidence exist
+    model_confidence = getattr(getattr(cached_model_v2, 'meta', None), 'confidence', None)
+    if model_confidence is not None:
+      model_confidence = model_confidence if model_confidence else 1.0
       if model_confidence < 0.6:  # Low model confidence
         accel_rate_limit *= 0.7  # Be more conservative
 
@@ -449,7 +455,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       'elevation_change': 0.0
     }
 
-    # Calculate actual distance per point using vehicle speed and DT_MDL
+    # NOTE: This function assumes that DT_MDL represents a constant, known time step
+    # and that distance_per_point = v_ego * DT_MDL is a valid approximation.
+    # This assumption is critical for the accuracy of the distance calculations.
     distance_per_point = v_ego * DT_MDL  # Actual distance traveled per model time step
 
     # Check upcoming road elevation using modelV2 orientation data
@@ -457,18 +465,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # Look at the upcoming pitch angles to identify hills
       pitch_values = model_v2.orientationNED.x[:20]  # Look at first 20 points (roughly 100m at highway speeds)
 
-      if len(pitch_values) > 0:
-        # Calculate total distance for uphill/downhill sections
-        uphill_distance = 0
-        downhill_distance = 0
+      if len(pitch_values) > 1:  # Need at least 2 elements to skip the first and process others
+        # Use NumPy for vectorized operations to improve performance
+        pitch_array = np.array(pitch_values[1:])  # Skip current position (index 0)
 
-        for i, pitch in enumerate(pitch_values):
-          if i == 0:
-            continue  # Skip current position
-          if pitch > 0.05:  # Uphill (more than 5% grade)
-            uphill_distance += distance_per_point
-          elif pitch < -0.05:  # Downhill (more than 5% grade)
-            downhill_distance += distance_per_point
+        # Calculate total distance for uphill/downhill sections using boolean indexing
+        uphill_mask = pitch_array > 0.05
+        downhill_mask = pitch_array < -0.05
+
+        uphill_distance = np.sum(uphill_mask) * distance_per_point
+        downhill_distance = np.sum(downhill_mask) * distance_per_point
 
         features['uphill_distance'] = uphill_distance
         features['downhill_distance'] = downhill_distance
@@ -478,30 +484,56 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if (hasattr(model_v2, 'path') and hasattr(model_v2.path, 'y') and
         hasattr(model_v2.path, 'x') and len(model_v2.path.y) > 10 and len(model_v2.path.x) > 10):
       # Calculate curvature from path points (y vs x) - using numerical differentiation
-      path_y = model_v2.path.y[:20]  # First 20 path points
-      path_x = model_v2.path.x[:20]  # First 20 x positions
+      path_y = np.array(model_v2.path.y[:20])  # First 20 path points as NumPy array
+      path_x = np.array(model_v2.path.x[:20])  # First 20 x positions as NumPy array
 
       if len(path_y) > 2:
-        # Calculate curvature using the formula: curvature = |d²y/dx²| / (1 + (dy/dx)²)^(3/2)
-        # For simplicity, we'll calculate the second derivative approximation
-        curve_distances = []
-        for i in range(1, len(path_y) - 1):
-          if i < len(path_x) - 1:
-            # Calculate first derivatives at adjacent points
-            dy_dx_prev = (path_y[i] - path_y[i-1]) / (path_x[i] - path_x[i-1]) if (path_x[i] - path_x[i-1]) != 0 else 0
-            dy_dx_next = (path_y[i+1] - path_y[i]) / (path_x[i+1] - path_x[i]) if (path_x[i+1] - path_x[i]) != 0 else 0
+        # Calculate curvature using vectorized NumPy operations for better performance
+        try:
+          # Calculate first derivatives using vectorized approach
+          dx_diff = np.diff(path_x)  # Calculate all x differences at once
+          dy_diff = np.diff(path_y)  # Calculate all y differences at once
 
-            # Calculate second derivative approximation
-            dx_avg = (path_x[i+1] - path_x[i-1]) / 2.0 if (path_x[i+1] - path_x[i-1]) != 0 else 1.0
-            d2y_dx2 = (dy_dx_next - dy_dx_prev) / dx_avg if dx_avg != 0 else 0
+          # Calculate first derivatives for previous and next points
+          # dy_dx_prev: derivative from point i-1 to i
+          # dy_dx_next: derivative from point i to i+1
+          dy_dx_prev = np.zeros(len(path_y) - 1)
+          dy_dx_next = np.zeros(len(path_y) - 1)
 
-            # Calculate curvature magnitude
-            curvature = abs(d2y_dx2)  # / (1 + ((dy_dx_prev + dy_dx_next) / 2.0) ** 2) ** 1.5  # Simplified: just use second derivative
+          # Only calculate where dx_diff is not zero to avoid division by zero
+          valid_prev = dx_diff != 0
+          dy_dx_prev[1:] = np.divide(dy_diff, dx_diff, out=np.zeros_like(dy_diff), where=valid_prev)
 
-            # Check if curvature exceeds threshold (0.002 rad/m)
-            if curvature > 0.002:
-              curve_distances.append(distance_per_point)
+          # Calculate next derivatives (dy/dx from i to i+1)
+          if len(dx_diff) > 0:
+            dx_next = dx_diff  # dx_diff is already the difference from i to i+1
+            dy_next = dy_diff
+            valid_next = dx_next != 0
+            dy_dx_next[:-1] = np.divide(dy_next, dx_next, out=np.zeros_like(dy_next), where=valid_next)
 
-        features['curve_distance'] = len(curve_distances) * distance_per_point
+          # Calculate second derivative approximation using vectorized operations
+          dx_avg = (path_x[2:] - path_x[:-2]) / 2.0  # Average dx for central difference
+
+          # Calculate second derivatives
+          d2y_dx2 = np.zeros(len(path_y) - 2)
+          valid_avg = dx_avg != 0
+          if len(dy_dx_next[1:]) == len(dy_dx_prev[:-1]) and len(dx_avg) > 0:
+            d2y_dx2 = np.divide(dy_dx_next[1:] - dy_dx_prev[:-1], dx_avg,
+                               out=np.zeros_like(dx_avg), where=valid_avg)
+
+          # Calculate curvature magnitudes
+          curvatures = np.abs(d2y_dx2)
+
+          # Check which curvatures exceed threshold (0.002 rad/m)
+          high_curvature_mask = curvatures > 0.002
+
+          # Count how many points have high curvature
+          high_curvature_count = np.sum(high_curvature_mask)
+
+          features['curve_distance'] = high_curvature_count * distance_per_point
+        except (ZeroDivisionError, ValueError):
+          # Handle any unexpected division by zero or value errors gracefully
+          cloudlog.warning("Error encountered in curvature calculation, using default values")
+          features['curve_distance'] = 0.0
 
     return features
