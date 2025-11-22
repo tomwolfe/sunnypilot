@@ -28,9 +28,24 @@ MIN_ALLOW_THROTTLE_SPEED = 2.5
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
+# Enhanced safety-based acceleration limits
+A_CRUISE_MAX_SAFETY_VALS = [1.0, 0.9, 0.7, 0.5]  # Reduced acceleration limits for safety
+A_CRUISE_MAX_SAFETY_BP = [0., 10.0, 25., 40.]
 
-def get_max_accel(v_ego, experimental_mode=False):
+
+def get_max_accel(v_ego, experimental_mode=False, safety_factor=1.0):
+  """
+  Calculate maximum acceleration based on vehicle speed, mode, and safety factor
+  :param v_ego: Vehicle speed in m/s
+  :param experimental_mode: Whether in experimental mode
+  :param safety_factor: Factor to reduce acceleration for safety (0.0 to 1.0)
+  :return: Maximum acceleration limit
+  """
   base_max = np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+
+  # Apply safety factor if provided (for conservative driving under poor conditions)
+  if safety_factor < 1.0:
+    base_max = base_max * safety_factor
 
   # Enhanced safety: adjust acceleration based on environmental conditions
   # Check for adverse conditions that would require more conservative acceleration
@@ -137,7 +152,26 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
     if mode == 'acc':
-      accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode)]
+      # Calculate safety factor based on safety monitor state
+      safety_factor = 1.0
+      if hasattr(self, 'safety_monitor'):
+        overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+        if overall_safety_score < 0.6:  # If safety score is degraded
+          # Calculate safety factor based on safety score
+          if overall_safety_score < 0.3:  # Critical safety level
+            safety_factor = 0.5  # Very conservative
+          elif overall_safety_score < 0.5:  # High risk level
+            safety_factor = 0.65  # More conservative
+          else:  # Moderate risk level
+            safety_factor = 0.8  # Slightly more conservative
+
+      # Enhanced safety: also check model confidence
+      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
+        model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
+        if model_confidence < 0.6:  # Low model confidence
+          safety_factor = min(safety_factor, 0.7)  # Be more conservative
+
+      accel_clip = [ACCEL_MIN, get_max_accel(v_ego, sm['selfdriveState'].experimentalMode, safety_factor)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
 
@@ -210,7 +244,25 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.75)  # Reduce acceleration by 25%
     else:
       # In blended mode, still apply reasonable limits for experimental mode
-      max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode) if sm['selfdriveState'].experimentalMode else ACCEL_MAX
+      # Calculate safety factor for blended mode as well
+      safety_factor = 1.0
+      if hasattr(self, 'safety_monitor'):
+        overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+        if overall_safety_score < 0.6:
+          if overall_safety_score < 0.3:
+            safety_factor = 0.5
+          elif overall_safety_score < 0.5:
+            safety_factor = 0.65
+          else:
+            safety_factor = 0.8
+
+      # Check model confidence as well
+      if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
+        model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
+        if model_confidence < 0.6:
+          safety_factor = min(safety_factor, 0.7)
+
+      max_accel = get_max_accel(v_ego, sm['selfdriveState'].experimentalMode, safety_factor) if sm['selfdriveState'].experimentalMode else ACCEL_MAX
       accel_clip = [ACCEL_MIN, min(max_accel, ACCEL_MAX)]
 
     if reset_state:
@@ -277,6 +329,29 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       if abs(road_pitch) > 0.05:  # More than 5% grade
         accel_rate_limit = 0.03  # More conservative acceleration rate
 
+    # ENHANCED: Additional constraint based on safety monitor state
+    if hasattr(self, 'safety_monitor') and hasattr(self.safety_monitor, 'overall_safety_score'):
+      safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+      if safety_score < 0.6:  # If safety score is degraded
+        # Further reduce the acceleration rate limit for safety
+        if safety_score < 0.3:  # Critical safety level
+          accel_rate_limit *= 0.4  # Very conservative
+        elif safety_score < 0.5:  # High risk level
+          accel_rate_limit *= 0.6  # More conservative
+        else:  # Moderate risk level
+          accel_rate_limit *= 0.8  # Slightly more conservative
+
+    # ENHANCED: Additional constraints based on model confidence and road conditions
+    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
+      model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
+      if model_confidence < 0.6:  # Low model confidence
+        accel_rate_limit *= 0.7  # Be more conservative
+
+    # ENHANCED: Road condition-based constraints (integrated with safety monitor data)
+    # In a real system, this would come from the safety monitor's environmental assessment
+    if hasattr(self, 'road_conditions') and self.road_conditions in ['icy', 'wet']:
+      accel_rate_limit *= 0.5  # Very conservative in slippery conditions
+
     # NEW: Performance optimization - use local variables to reduce attribute access
     prev_accel_clip = self.prev_accel_clip
     # NEW: Optimize clipping operations by calculating bounds once
@@ -285,6 +360,22 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], lower_bounds[idx], upper_bounds[idx])
+
+    # ENHANCED: Apply jerk constraints to prevent harsh acceleration changes
+    # Calculate desired acceleration change
+    if hasattr(self, 'last_output_a_target'):
+      acceleration_change = abs(output_a_target - self.last_output_a_target)
+      max_allowable_change = accel_rate_limit * 5  # Allow 5x rate limit for jerk, but cap it
+      if acceleration_change > max_allowable_change:
+        # Limit the acceleration change to prevent jerk
+        if output_a_target > self.last_output_a_target:
+          output_a_target = min(output_a_target, self.last_output_a_target + max_allowable_change)
+        else:
+          output_a_target = max(output_a_target, self.last_output_a_target - max_allowable_change)
+
+    # Store the current value for next iteration
+    self.last_output_a_target = output_a_target
+
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 

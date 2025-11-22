@@ -53,7 +53,11 @@ class LatControlTorque(LatControl):
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
     k_curvature = CP_SP.curvatureGainInterp if CP_SP.curvatureGainInterp else CURVATURE_GAIN_INTERP
+
+    # Initialize PID controller with original parameters
     self.pid = PIDController([INTERP_SPEEDS, KP_INTERP], KI, KD, rate=1/self.dt, k_curvature=k_curvature)
+
+    # Initialize adaptive control components
     self.update_limits()
     self.steering_angle_deadzone_deg = self.torque_params.steeringAngleDeadzoneDeg
     self.lat_accel_request_buffer_len = int(LAT_ACCEL_REQUEST_BUFFER_SECONDS / self.dt)
@@ -61,7 +65,69 @@ class LatControlTorque(LatControl):
     self.previous_measurement = 0.0
     self.measurement_rate_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
+    # Adaptive control parameters
+    self.base_gains = {'kp': KP, 'ki': KI, 'kd': KD}
+    self.previous_curvature = 0.0
+    self.steering_effort_history = deque(maxlen=20)  # Store recent steering efforts
+    self.lateral_accel_history = deque(maxlen=20)    # Store recent lateral accelerations
+
+    # Road condition estimation
+    self.road_condition = 'normal'  # 'normal', 'icy', 'wet', 'rough'
+
+    # Environmental condition estimator
+    self.environmental_condition = 'normal'  # To track environmental conditions from external sources
+
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
+
+  def estimate_environmental_conditions(self, CS, params, sm):
+    """Estimate environmental conditions based on car state and sensor data"""
+    # This method would integrate with the safety monitoring system
+    # For now, we'll use a placeholder that could be updated with actual data from the safety monitor
+
+    # Check for environmental conditions from external sources if available
+    if hasattr(sm, 'safety_monitor_state') and sm.safety_monitor_state is not None:
+      # Use safety monitor report to determine environmental conditions
+      if hasattr(sm.safety_monitor_state, 'road_condition'):
+        self.road_condition = sm.safety_monitor_state.get('road_condition', 'normal')
+      if hasattr(sm.safety_monitor_state, 'weather_condition'):
+        self.environmental_condition = sm.safety_monitor_state.get('weather_condition', 'normal')
+
+    # Also estimate based on car behavior
+    if CS.vEgo > 5.0 and abs(CS.aEgo) > 0.5:  # Vehicle is moving and accelerating/decelerating
+      # Check for signs of slippery conditions based on steering vs lateral acceleration
+      # This is a simplified approach - real implementation would be more sophisticated
+      pass
+
+    return self.road_condition, self.environmental_condition
+
+  def calculate_adaptive_gains(self, v_ego, curvature, environmental_conditions):
+    """Calculate adaptive PID gains based on speed, curvature, and environmental conditions"""
+    # Base adaptive factors
+    speed_factor = np.interp(v_ego, [5, 15, 30], [1.5, 1.0, 0.8])  # Higher gains at low speeds
+    curvature_factor = min(1.5, 1.0 + abs(curvature) * 100)  # Higher gains for higher curvature
+
+    # Environmental condition adjustments
+    condition_factor = 1.0
+
+    if environmental_conditions.get('road_condition', 'normal') in ['icy', 'wet']:
+      condition_factor = 0.6  # Reduce gains in slippery conditions
+    elif environmental_conditions.get('road_condition', 'normal') == 'rough':
+      condition_factor = 0.8  # Moderate reduction for bumpy roads
+    elif environmental_conditions.get('weather_condition', 'normal') in ['rain', 'snow', 'fog']:
+      condition_factor = 0.75  # Reduce gains in poor weather
+
+    # Calculate adaptive gains
+    kp = self.base_gains['kp'] * speed_factor * curvature_factor * condition_factor
+    ki = self.base_gains['ki'] * speed_factor * curvature_factor * condition_factor * 0.7  # Reduce integral action in challenging conditions
+    kd = self.base_gains['kd'] * speed_factor * curvature_factor * condition_factor
+
+    return kp, ki, kd
+
+  def update_pid_gains(self, new_kp, new_ki, new_kd):
+    """Update PID controller gains"""
+    self.pid.k_p = new_kp
+    self.pid.k_i = new_ki
+    self.pid.k_d = new_kd
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -73,10 +139,22 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, sm=None):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()
+
+    # Estimate environmental conditions
+    env_conditions = {}
+    if sm is not None:
+      road_condition, weather_condition = self.estimate_environmental_conditions(CS, params, sm)
+      env_conditions = {'road_condition': road_condition, 'weather_condition': weather_condition}
+    else:
+      env_conditions = {'road_condition': 'normal', 'weather_condition': 'normal'}
+
+    # Calculate adaptive gains based on current conditions and update PID
+    adaptive_kp, adaptive_ki, adaptive_kd = self.calculate_adaptive_gains(CS.vEgo, desired_curvature, env_conditions)
+    self.update_pid_gains(adaptive_kp, adaptive_ki, adaptive_kd)
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
@@ -142,6 +220,11 @@ class LatControlTorque(LatControl):
       pid_log.desiredLateralAccel = float(setpoint)
       pid_log.desiredLateralJerk = float(desired_lateral_jerk)
       pid_log.saturated = bool(self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited_by_safety, curvature_limited))
+
+      # Store recent values for adaptive control
+      if active:
+        self.steering_effort_history.append(abs(output_torque))
+        self.lateral_accel_history.append(abs(measurement))
 
     # TODO left is positive in this convention
     return -output_torque, 0.0, pid_log

@@ -26,6 +26,7 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.sunnypilot.selfdrive.monitoring.safety_monitor import SafetyMonitor
+from openpilot.sunnypilot.common.performance_monitor import PerformanceMonitor
 from openpilot.common.performance_monitor import PerfTrack, perf_monitor
 
 State = log.SelfdriveState.OpenpilotState
@@ -154,6 +155,10 @@ class Controls(ControlsExt, ModelStateBase):
     self.safety_monitor = SafetyMonitor()
     self.safety_degraded_mode = False
 
+    # Initialize performance monitor for real-time performance evaluation
+    self.performance_monitor = PerformanceMonitor()
+    self.performance_degraded_mode = False
+
   def update(self):
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
@@ -239,6 +244,58 @@ class Controls(ControlsExt, ModelStateBase):
         safety_report['error_occurred'] = True
         safety_report['error_details'] = str(e)
 
+    # Performance monitoring - evaluate real-time driving performance
+    if self.sm.all_checks(['modelV2', 'carState', 'controlsState']):
+      try:
+        # Prepare data for performance evaluation
+        desired_state = {
+          'lateral': self.sm['modelV2'].position.y[0] if len(self.sm['modelV2'].position.y) > 0 else 0.0,
+          'longitudinal': self.sm['modelV2'].velocity.x[0] if len(self.sm['modelV2'].velocity.x) > 0 else CS.vEgo,
+          'path_deviation': self.desired_curvature - self.curvature if hasattr(self, 'desired_curvature') and hasattr(self, 'curvature') else 0.0
+        }
+
+        actual_state = {
+          'lateral': CS.steeringAngleDeg,  # Using steering as proxy for lateral state
+          'longitudinal': CS.vEgo,
+          'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
+        }
+
+        model_output = self.sm['modelV2']
+        control_output = {
+          'output': 0.0,  # Placeholder - will be actual control output
+          'jerk': CS.aEgo - getattr(self, 'prev_acceleration', CS.aEgo)  # Change in acceleration
+        }
+        self.prev_acceleration = CS.aEgo  # Store for next iteration
+
+        # Evaluate current performance
+        performance_metrics = self.performance_monitor.evaluate_performance(
+          desired_state, actual_state, model_output, control_output
+        )
+
+        # Check if parameters need adaptation based on performance
+        adapt_needed, adaptation_params = self.performance_monitor.should_adapt_parameters()
+
+        if adapt_needed and adaptation_params:
+          cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
+          # Update tuning parameters for adaptive control
+          for param, value in adaptation_params.items():
+            if param in self.performance_monitor.tuning_params:
+              self.performance_monitor.tuning_params[param] = value
+
+          # Update the lateral controller with new parameters if needed
+          if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
+            # In a real implementation, we would pass these to the lateral controller
+            # For now, we'll just store them for reference
+            self.adaptation_params = adaptation_params
+
+          # Update performance degraded mode if needed
+          self.performance_degraded_mode = True
+
+      except Exception as e:
+        cloudlog.error(f"Performance monitor update failed: {e}")
+        import traceback
+        cloudlog.error(f"Performance monitor error traceback: {traceback.format_exc()}")
+
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
 
@@ -275,7 +332,7 @@ class Controls(ControlsExt, ModelStateBase):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
 
     # Apply safety-based acceleration limits if in degraded mode
-    if self.safety_degraded_mode:
+    if self.safety_degraded_mode or self.performance_degraded_mode:
       # Get overall safety score
       overall_safety_score = safety_report.get('overall_safety_score', 1.0)
 
@@ -295,6 +352,13 @@ class Controls(ControlsExt, ModelStateBase):
       else:  # Lower risk but still degraded
         acceleration_safety_factor = 0.85
         braking_safety_factor = 1.0
+
+      # Incorporate performance-based adjustments
+      if self.performance_degraded_mode:
+        # Get performance-based factors from performance monitor
+        performance_factor = self.performance_monitor.tuning_params.get('longitudinal_accel_limit_factor', 1.0)
+        # Adjust safety factor based on performance (more conservative if performance is poor)
+        acceleration_safety_factor *= performance_factor
 
       # Apply safety factors to acceleration limits while preserving braking capability
       # Note: pid_accel_limits[0] is typically the minimum (braking) value (negative)
@@ -341,9 +405,21 @@ class Controls(ControlsExt, ModelStateBase):
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
     actuators.curvature = self.desired_curvature
+    # Pass safety monitor state to lateral controller for adaptive control
+    safety_monitor_state = None
+    if hasattr(self, 'safety_monitor') and hasattr(self.safety_monitor, 'anomalies'):
+      safety_monitor_state = {
+        'road_condition': getattr(self.safety_monitor, 'road_condition', 'normal'),
+        'weather_condition': getattr(self.safety_monitor, 'weather_condition', 'normal'),
+        'lighting_condition': getattr(self.safety_monitor, 'lighting_condition', 'normal'),
+        'anomalies_detected': getattr(self.safety_monitor, 'anomalies', {}),
+        'overall_safety_score': getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+      }
+
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
-                                                       self.calibrated_pose, curvature_limited)  # TODO what if not available
+                                                       self.calibrated_pose, curvature_limited, self.lat_delay,
+                                                       sm={'safety_monitor_state': safety_monitor_state})  # TODO what if not available
     actuators.torque = steer  # removed float() wrapper for performance
     actuators.steeringAngleDeg = steeringAngleDeg  # removed float() wrapper for performance
 

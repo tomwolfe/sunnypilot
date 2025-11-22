@@ -787,34 +787,37 @@ class SafetyMonitor:
         self.model_healthy = False
         logging.warning(f"Model data is stale. Last update: {(current_time - model_v2_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
 
-    # Radar Staleness
-    if (current_time * 1e-9 - radar_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      # Radar Staleness
+      if (current_time * 1e-9 - radar_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
         self.radar_healthy = False
         logging.warning(f"Radar data is stale. Last update: {(current_time - radar_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
 
-    # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
-    if (current_time * 1e-9 - car_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
+      if (current_time * 1e-9 - car_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
         self.camera_healthy = False
         logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {(current_time - car_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
 
-    # IMU Staleness (livePose)
-    if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      # IMU Staleness (livePose)
+      if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
         self.imu_healthy = False
         logging.warning(f"IMU data (livePose) is stale. Last update: {(current_time - live_pose_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
-    elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
+      elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
         self.imu_healthy = False
         logging.warning("LivePose message is not available. IMU data confidence reduced.")
 
 
 
-    # Driver Monitoring Staleness
-    if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+      # Driver Monitoring Staleness
+      if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
         self.driver_monitoring_healthy = False
         logging.warning(f"Driver Monitoring data is stale. Last update: {(current_time - driver_monitoring_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
-    elif driver_monitoring_state_mono_time is None:
+      elif driver_monitoring_state_mono_time is None:
         self.driver_monitoring_healthy = False
         logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
 
+
+      # Main processing with comprehensive error handling
+      try:
 
       try:
         self.anomalies = self.anomaly_detector.detect_anomalies(car_state_msg, model_v2_msg, radar_state_msg)
