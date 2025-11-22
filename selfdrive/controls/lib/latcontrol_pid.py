@@ -1,3 +1,9 @@
+# TODO: This file contains adaptive control parameters that have been noted in a critical
+# review as lacking comprehensive empirical validation. Rigorous simulation,
+# real-world data collection, and quantitative validation are mandatory to ensure
+# the safety, performance, and robustness of these parameters across all driving
+# scenarios and vehicle types. Prioritize the development of a robust testing
+# framework and validation suite for these adaptive components.
 import math
 import time
 
@@ -280,6 +286,11 @@ class LatControlPID(LatControl):
     # When transitioning from inactive to active, start more gently
     if active and not self.active_prev:
       # Apply a gentle start by limiting the initial torque
+      # CRITICAL REVIEW NOTE: The hard-coded limit of `0.2` for initial torque is arbitrary
+      # and lacks empirical validation. Its optimality is unproven and requires rigorous
+      # testing to ensure it provides a smooth user experience without causing dangerous
+      # delays in critical situations (e.g., high-speed lane change). This value may
+      # need to be configurable or adapt dynamically based on vehicle state.
       output_torque = min(max(output_torque, -0.2), 0.2)
 
     # Store values for next iteration

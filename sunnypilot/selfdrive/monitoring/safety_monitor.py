@@ -1,3 +1,11 @@
+# TODO: This file is a critical safety component containing adaptive algorithms with
+# numerous empirically tuned parameters. As noted in a critical review, many
+# of these parameters and their interactions lack comprehensive empirical
+# validation. Rigorous simulation, real-world data collection, and quantitative
+# validation are mandatory to ensure the safety, performance, and robustness of
+# these adaptive components across all driving scenarios and vehicle types.
+# Prioritize the development of a robust testing framework and validation suite
+# for all adaptive parameters and their dynamic adjustments.
 """
 Enhanced Safety Monitoring for sunnypilot - Implements sophisticated safety checks
 
@@ -988,10 +996,12 @@ class SafetyMonitor:
           # of human behavior in challenging scenarios, reducing unnecessary interventions and
           # improving user trust. In contrast, in ideal conditions, anomalies are penalized more
           # severely as they are less justifiable.
-          environmental_severity_factor = 1.0
-
-          # In poor environmental conditions, be more forgiving (reduce penalties)
-          # In good environmental conditions, be less forgiving (increase penalties)
+          # CRITICAL REVIEW NOTE: The specific values of these environmental severity
+          # factor multipliers (0.7, 0.8, 0.75 for reduction; 1.2 for increase) are
+          # empirically tuned and unproven. Their impact on safety, driver comfort,
+          # and the system's overall robustness in diverse real-world conditions
+          # requires rigorous, quantitative validation. These values should ideally
+          # be derived from extensive data analysis and safety-critical parameter tuning.
           if self.weather_condition in ["rain", "snow", "fog", "poor_visibility"]:
               environmental_severity_factor = 0.7  # Reduce penalties by 30% in bad weather
           elif self.lighting_condition in ["night", "dark", "tunnel"]:
@@ -1096,14 +1106,15 @@ class SafetyMonitor:
             if self.lighting_confidence > 0.5:
                 # Replaced non-linear exponent with a linear interpolation for transparency.
                 # Effect is proportional to confidence, moving from 1.0 (no effect) towards lighting_multiplier.
-                combined_multiplier *= (1.0 + (lighting_multiplier - 1.0) * self.lighting_confidence)    if self.weather_confidence > 0.5:
-        # Replaced non-linear exponent with a linear interpolation for transparency.
-        # Effect is proportional to confidence, moving from 1.0 (no effect) towards weather_multiplier.
-        combined_multiplier *= (1.0 + (weather_multiplier - 1.0) * self.weather_confidence)
-    if self.road_confidence > 0.5:
-        # Replaced non-linear exponent with a linear interpolation for transparency.
-        # Effect is proportional to confidence, moving from 1.0 (no effect) towards road_multiplier.
-        combined_multiplier *= (1.0 + (road_multiplier - 1.0) * self.road_confidence)
+                combined_multiplier *= (1.0 + (lighting_multiplier - 1.0) * self.lighting_confidence)
+            if self.weather_confidence > 0.5:
+                # Replaced non-linear exponent with a linear interpolation for transparency.
+                # Effect is proportional to confidence, moving from 1.0 (no effect) towards weather_multiplier.
+                combined_multiplier *= (1.0 + (weather_multiplier - 1.0) * self.weather_confidence)
+            if self.road_confidence > 0.5:
+                # Replaced non-linear exponent with a linear interpolation for transparency.
+                # Effect is proportional to confidence, moving from 1.0 (no effect) towards road_multiplier.
+                combined_multiplier *= (1.0 + (road_multiplier - 1.0) * self.road_confidence)
 
     # Apply combined multiplier to thresholds
     # For confidence thresholds: lower multiplier = more stringent (lower) threshold
@@ -1119,15 +1130,11 @@ class SafetyMonitor:
         if self.current_vEgo > 25.0:  # Above ~90 km/h, be more conservative
             adaptive_thresholds['model_confidence'] *= 0.9
             adaptive_thresholds['lane_deviation'] *= 0.85
-        elif self.current_vEgo < 5.0:  # At very low speed, can be more aggressive if conditions are good
-            if combined_multiplier > 1.0:
-                # Increasing the safety score threshold (e.g., by 1.2) at very low speeds
-                # assumes the driver has more control and allows for more aggressive behavior
-                # from the system. While generally true, this could lead to the system being
-                # too lenient in dangerous low-speed scenarios (e.g., pedestrian crossings,
-                # complex maneuvers). This adjustment needs careful validation to ensure it
-                # doesn't compromise safety for perceived aggressiveness/smoothness.
-                adaptive_thresholds['safety_score'] *= 0.8  # Make safety score threshold higher (more conservative)
+        elif self.current_vEgo < 5.0:  # At very low speed, enhance conservatism for safety
+            # To be more conservative at low speeds, the safety score threshold should be *increased*.
+            # This means a slightly degraded safety score will trigger an intervention sooner.
+            # This is critical for scenarios like pedestrian crossings where hyper-vigilance is required.
+            adaptive_thresholds['safety_score'] *= 1.2  # Increase safety score threshold (more conservative)
 
     return adaptive_thresholds
 
@@ -1190,13 +1197,14 @@ class SafetyMonitor:
           base_velocity_threshold = 2.5
           base_steering_rate_threshold = 150.0
 
-          # Adjust thresholds based on environmental conditions
-          # Make thresholds more lenient as model confidence decreases
-          environment_factor = 1.0 / adaptive_thresholds.get('model_confidence', 0.5)
+          # Adjust thresholds based on model confidence
+          # Lower model confidence should lead to more sensitive anomaly detection (lower thresholds)
+          # Clamp raw_model_confidence to avoid overly aggressive thresholds (min factor 0.5)
+          model_confidence_factor = max(0.5, self.raw_model_confidence)
 
-          adjusted_jerk_threshold = base_jerk_threshold * environment_factor
-          adjusted_velocity_threshold = base_velocity_threshold * environment_factor
-          adjusted_steering_rate_threshold = base_steering_rate_threshold * environment_factor
+          adjusted_jerk_threshold = base_jerk_threshold * model_confidence_factor
+          adjusted_velocity_threshold = base_velocity_threshold * model_confidence_factor
+          adjusted_steering_rate_threshold = base_steering_rate_threshold * model_confidence_factor
 
           if anomaly_type == 'high_jerk' and anomaly_data.get('current_jerk', 0) > adjusted_jerk_threshold:  # Adaptive high jerk threshold
             intervention_needed = True

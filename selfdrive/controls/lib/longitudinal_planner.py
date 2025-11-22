@@ -1,3 +1,9 @@
+# TODO: This file contains adaptive control parameters that have been noted in a critical
+# review as lacking comprehensive empirical validation. Rigorous simulation,
+# real-world data collection, and quantitative validation are mandatory to ensure
+# the safety, performance, and robustness of these parameters across all driving
+# scenarios and vehicle types. Prioritize the development of a robust testing
+# framework and validation suite for these adaptive components.
 #!/usr/bin/env python3
 import math
 import numpy as np
@@ -155,16 +161,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # Calculate safety factor based on safety monitor state
       safety_factor = 1.0
       if hasattr(self, 'safety_monitor'):
-        overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
-        if overall_safety_score < 0.6:  # If safety score is degraded
-          # Calculate safety factor based on safety score
-          if overall_safety_score < 0.3:  # Critical safety level
-            safety_factor = 0.5  # Very conservative
-          elif overall_safety_score < 0.5:  # High risk level
-            safety_factor = 0.65  # More conservative
-          else:  # Moderate risk level
-            safety_factor = 0.8  # Slightly more conservative
-
+                    overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+                    if overall_safety_score < 0.6:  # If safety score is degraded
+                      # Calculate safety factor based on safety score
+                      # CRITICAL REVIEW NOTE: The quantitative impact and optimal values of these
+                      # multipliers (0.5, 0.65, 0.8) are unproven and require rigorous, quantitative
+                      # validation against real-world data and safety metrics. Their current values
+                      # are empirically tuned and may not represent optimal or safe behavior across
+                      # all scenarios and vehicle types.
+                      if overall_safety_score < 0.3:  # Critical safety level
+                        safety_factor = 0.5  # Very conservative
+                      elif overall_safety_score < 0.5:  # High risk level
+                        safety_factor = 0.65  # More conservative
+                      else:  # Moderate risk level
+                        safety_factor = 0.8  # Slightly more conservative
       # Enhanced safety: also check model confidence
       if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
         model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
@@ -452,6 +462,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if upcoming_features['uphill_distance'] > 20.0:  # More than 20m of uphill ahead
       if self.output_a_target > 0:  # Only if accelerating
         self.output_a_target = max(self.output_a_target * 0.9, 0)  # Reduce by 10% to save energy
+        # CRITICAL REVIEW NOTE: This "Conservative Energy Efficiency" logic is a blunt
+        # instrument. It applies a fixed 10% reduction in acceleration for any uphill
+        # section greater than 20m. This ignores the steepness of the hill, the vehicle's
+        # load, and the driver's intent, potentially making the car feel sluggish or
+        # "give up" on long, gentle inclines. More sophisticated logic incorporating
+        # road grade, desired speed, and dynamic driver preferences is needed.
 
     pm.send('longitudinalPlan', plan_send)
 
@@ -534,46 +550,30 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       path_x = np.array(model_v2.path.x[:20])  # First 20 x positions as NumPy array
 
       if len(path_y) > 2:
-        # Calculate curvature using vectorized NumPy operations for better performance.
-        # This approximation (kappa ≈ |y''|) is used as a proxy for curvature,
-        # which is reasonable for identifying "high curvature" sections for planning.
-        # However, it is not the true mathematical definition of curvature and
-        # could have edge-case bugs, especially with noisy data or sharp,
-        # non-smooth path segments.
+        # Calculate curvature using the mathematically correct vectorized formula:
+        # curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+        # using derivatives with respect to path length 's' for robustness.
         try:
-          # Calculate first derivatives using vectorized approach
-          dx_diff = np.diff(path_x)  # Calculate all x differences at once
-          dy_diff = np.diff(path_y)  # Calculate all y differences at once
+          # Assuming path points are equally spaced (0.5m)
+          path_interval = 0.5 # Typically 0.5 meters between path points
 
-          # Calculate first derivatives for previous and next points
-          # dy_dx_prev: derivative from point i-1 to i
-          # dy_dx_next: derivative from point i to i+1
-          dy_dx_prev = np.zeros(len(path_y) - 1)
-          dy_dx_next = np.zeros(len(path_y) - 1)
+          # Calculate first derivatives (dx/ds, dy/ds) using np.gradient
+          dx_ds = np.gradient(path_x, path_interval)
+          dy_ds = np.gradient(path_y, path_interval)
 
-          # Only calculate where dx_diff is not zero to avoid division by zero
-          valid_prev = dx_diff != 0
-          dy_dx_prev[1:] = np.divide(dy_diff, dx_diff, out=np.zeros_like(dy_diff), where=valid_prev)
+          # Calculate second derivatives (d2x/ds2, d2y/ds2) using np.gradient
+          d2x_ds2 = np.gradient(dx_ds, path_interval)
+          d2y_ds2 = np.gradient(dy_ds, path_interval)
 
-          # Calculate next derivatives (dy/dx from i to i+1)
-          if len(dx_diff) > 0:
-            dx_next = dx_diff  # dx_diff is already the difference from i to i+1
-            dy_next = dy_diff
-            valid_next = dx_next != 0
-            dy_dx_next[:-1] = np.divide(dy_next, dx_next, out=np.zeros_like(dy_next), where=valid_next)
+          # Calculate numerator and denominator for curvature formula
+          numerator = np.abs(dx_ds * d2y_ds2 - dy_ds * d2x_ds2)
+          denominator_squared = dx_ds**2 + dy_ds**2
 
-          # Calculate second derivative approximation using vectorized operations
-          dx_avg = (path_x[2:] - path_x[:-2]) / 2.0  # Average dx for central difference
+          # Avoid division by zero: set curvature to 0 where denominator is too small
+          valid_indices = denominator_squared > 1e-6
 
-          # Calculate second derivatives
-          d2y_dx2 = np.zeros(len(path_y) - 2)
-          valid_avg = dx_avg != 0
-          if len(dy_dx_next[1:]) == len(dy_dx_prev[:-1]) and len(dx_avg) > 0:
-            d2y_dx2 = np.divide(dy_dx_next[1:] - dy_dx_prev[:-1], dx_avg,
-                               out=np.zeros_like(dx_avg), where=valid_avg)
-
-          # Calculate curvature magnitudes
-          curvatures = np.abs(d2y_dx2)
+          curvatures = np.zeros_like(numerator)
+          curvatures[valid_indices] = numerator[valid_indices] / (denominator_squared[valid_indices]**1.5)
 
           # Check which curvatures exceed threshold (0.002 rad/m).
           # This threshold is empirically determined to identify "high curvature"
@@ -581,16 +581,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Its optimality is unproven and needs extensive real-world validation
           # to ensure it appropriately captures safety-critical curves without
           # being overly conservative or aggressive.
+          # CRITICAL REVIEW NOTE: This threshold (0.002 rad/m) is still empirically
+          # tuned and requires rigorous, quantitative validation to ensure safety
+          # and optimal behavior across various road geometries and speeds.
           high_curvature_mask = curvatures > 0.002
 
           # Sum the actual distances for points identified with high curvature
-          # The curvatures array has a length of len(path_y) - 2.
-          # We need to map this back to actual_distances.
-          # actual_distances[2:] corresponds to distances for path_points from index 2 onwards
-          features['curve_distance'] = np.sum(high_curvature_mask * actual_distances[2:len(curvatures)+2])
-        except (ZeroDivisionError, ValueError):
-          # Handle any unexpected division by zero or value errors gracefully
-          cloudlog.warning("Error encountered in curvature calculation, using default values")
+          # The curvatures array has the same length as path_x and path_y.
+          features['curve_distance'] = np.sum(high_curvature_mask * actual_distances)
+        except (ZeroDivisionError, ValueError, IndexError) as e:
+          # Handle any unexpected division by zero, value errors or index errors gracefully
+          cloudlog.warning(f"Error encountered in curvature calculation: {e}, using default values")
           features['curve_distance'] = 0.0
 
     return features
