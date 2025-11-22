@@ -575,6 +575,72 @@ class PIDController:
 
     return int(rate * (base_window_size * total_adjustment))
 
+  @property
+  def k_p(self):
+    return self._get_k_p()
+
+  @k_p.setter
+  def k_p(self, value):
+    # Handle the internal data structure of _k_p which is always [[breakpoints], [values]]
+    if hasattr(self._k_p, '__len__') and len(self._k_p) == 2:
+      # We assume it's in the [breakpoints, values] format
+      if len(self._k_p[1]) > 0:
+        # Update the first value in the values array
+        self._k_p[1][0] = value
+      else:
+        # If the values array is empty, append the value
+        self._k_p[1].append(value)
+    else:
+      # For single values (though this shouldn't happen given the constructor logic)
+      self._k_p = value
+    # Also update the pre-computed arrays if interpolation is used
+    if hasattr(self, '_k_p_array') and len(self._k_p[1]) > 0:
+      self._k_p_interp = np.interp(self._common_speeds, self._k_p[0], self._k_p[1])
+
+  @property
+  def k_i(self):
+    return self._get_k_i()
+
+  @k_i.setter
+  def k_i(self, value):
+    # Handle the internal data structure of _k_i which is always [[breakpoints], [values]]
+    if hasattr(self._k_i, '__len__') and len(self._k_i) == 2:
+      # We assume it's in the [breakpoints, values] format
+      if len(self._k_i[1]) > 0:
+        # Update the first value in the values array
+        self._k_i[1][0] = value
+      else:
+        # If the values array is empty, append the value
+        self._k_i[1].append(value)
+    else:
+      # For single values (though this shouldn't happen given the constructor logic)
+      self._k_i = value
+    # Also update the pre-computed arrays if interpolation is used
+    if hasattr(self, '_k_i_array') and len(self._k_i[1]) > 0:
+      self._k_i_interp = np.interp(self._common_speeds, self._k_i[0], self._k_i[1])
+
+  @property
+  def k_d(self):
+    return self._get_k_d()
+
+  @k_d.setter
+  def k_d(self, value):
+    # Handle the internal data structure of _k_d which is always [[breakpoints], [values]]
+    if hasattr(self._k_d, '__len__') and len(self._k_d) == 2:
+      # We assume it's in the [breakpoints, values] format
+      if len(self._k_d[1]) > 0:
+        # Update the first value in the values array
+        self._k_d[1][0] = value
+      else:
+        # If the values array is empty, append the value
+        self._k_d[1].append(value)
+    else:
+      # For single values (though this shouldn't happen given the constructor logic)
+      self._k_d = value
+    # Also update the pre-computed arrays if interpolation is used
+    if hasattr(self, '_k_d_array') and len(self._k_d[1]) > 0:
+      self._k_d_interp = np.interp(self._common_speeds, self._k_d[0], self._k_d[1])
+
   def reset(self):
     self.p = 0.0
     self.i = 0.0
