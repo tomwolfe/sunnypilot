@@ -6,7 +6,7 @@ import time
 import threading
 import json # Import json for loading performance baselines
 from collections import deque
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params, UnknownKeyName # Import Params and UnknownKeyName
 
