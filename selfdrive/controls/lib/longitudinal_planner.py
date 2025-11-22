@@ -77,16 +77,31 @@ def limit_accel_in_turns(v_ego, angle_steers, a_target, CP):
 
 
 class LongitudinalPlanner(LongitudinalPlannerSP):
+  # Constants for path reliability adjustments
+  PATH_RELIABILITY_MODERATE = 0.7
+  ACCEL_REDUCTION_MODERATE = 0.85
+  BRAKE_AGGRESSION_MODERATE = 0.90
+  PATH_RELIABILITY_LOW = 0.5
+  ACCEL_REDUCTION_LOW = 0.7
+  BRAKE_AGGRESSION_LOW = 0.8
+  ACCEL_RATE_LIMIT_LOW_RELIABILITY = 0.03
+
+  # Constants for safety factor calculations
+  SAFETY_SCORE_DEGRADED = 0.6
+  SAFETY_SCORE_CRITICAL = 0.3
+  SAFETY_FACTOR_CRITICAL = 0.5
+  SAFETY_SCORE_HIGH_RISK = 0.5
+  SAFETY_FACTOR_HIGH_RISK = 0.65
+  SAFETY_FACTOR_MODERATE_RISK = 0.8
+  SAFETY_FACTOR_PATH_RELIABILITY_LOW = 0.7
+  SAFETY_FACTOR_PATH_RELIABILITY_VERY_LOW = 0.5
+
   def _get_model_confidence_values(self, sm):
-    model_confidence = 1.0
     path_reliability = 1.0
 
-    if hasattr(sm['modelV2'], 'meta'):
-      if hasattr(sm['modelV2'].meta, 'pathPredictionConfidence'):
-        model_confidence = sm['modelV2'].meta.pathPredictionConfidence if sm['modelV2'].meta.pathPredictionConfidence else 1.0
-      if hasattr(sm['modelV2'].meta, 'pathReliability'):
-        path_reliability = sm['modelV2'].meta.pathReliability if sm['modelV2'].meta.pathReliability else 1.0
-    return model_confidence, path_reliability
+    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'pathReliability'):
+      path_reliability = sm['modelV2'].meta.pathReliability if sm['modelV2'].meta.pathReliability else 1.0
+    return path_reliability
 
   def __init__(self, CP, CP_SP, init_v=0.0, init_a=0.0, dt=DT_MDL):
     self.CP = CP
@@ -129,44 +144,35 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       throttle_prob = 1.0
     return x, v, a, j, throttle_prob
 
-  def _adjust_accel_clip_for_confidence_and_reliability(self, accel_clip, accel_rate_limit, model_confidence, path_reliability):
-    # Environmental confidence adjustment
-    if model_confidence < 0.7:  # Low model confidence
-      accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.85)  # Be 15% more conservative
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.90)  # Be more conservative on braking too
-
+  def _adjust_accel_clip_for_confidence_and_reliability(self, accel_clip, accel_rate_limit, path_reliability):
     # Path reliability adjustment
-    if path_reliability < 0.6:  # Low path reliability detected
-      accel_clip[1] = min(accel_clip[1], accel_clip[1] * 0.8)  # Reduce max acceleration by 20%
-      if path_reliability < 0.3:  # Very low path reliability
-        accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # Reduce braking by 10% (make less negative)
+    if path_reliability < self.PATH_RELIABILITY_MODERATE:  # Moderate path reliability
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * self.ACCEL_REDUCTION_MODERATE)  # Reduce max acceleration
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * self.BRAKE_AGGRESSION_MODERATE)  # Make braking more aggressive
 
-    # Combined low model confidence and low path reliability
-    if model_confidence < 0.7 and path_reliability < 0.7:
-      combined_safety_factor = min(model_confidence, path_reliability)
-      accel_clip[1] = min(accel_clip[1], accel_clip[1] * (0.7 + 0.3 * combined_safety_factor))  # More conservative
-      # Reduce rate of acceleration changes (jerk) when both measures are low
-      accel_rate_limit = min(accel_rate_limit, 0.03)  # More conservative rate limit
+    if path_reliability < self.PATH_RELIABILITY_LOW:  # Low path reliability
+      accel_clip[1] = min(accel_clip[1], accel_clip[1] * self.ACCEL_REDUCTION_LOW)  # Reduce max acceleration further
+      accel_clip[0] = max(accel_clip[0], accel_clip[0] * self.BRAKE_AGGRESSION_LOW)  # Make braking more aggressive further
+      accel_rate_limit = min(accel_rate_limit, self.ACCEL_RATE_LIMIT_LOW_RELIABILITY)  # More conservative rate limit
+
     return accel_clip, accel_rate_limit
 
-  def _calculate_safety_factor(self, sm, overall_safety_score, model_confidence, path_reliability):
+  def _calculate_safety_factor(self, sm, overall_safety_score, path_reliability):
     safety_factor = 1.0
 
-    if overall_safety_score < 0.6:  # If safety score is degraded
-      if overall_safety_score < 0.3:  # Critical safety level
-        safety_factor = 0.5  # Very conservative
-      elif overall_safety_score < 0.5:  # High risk level
-        safety_factor = 0.65  # More conservative
+    if overall_safety_score < self.SAFETY_SCORE_DEGRADED:  # If safety score is degraded
+      if overall_safety_score < self.SAFETY_SCORE_CRITICAL:  # Critical safety level
+        safety_factor = self.SAFETY_FACTOR_CRITICAL  # Very conservative
+      elif overall_safety_score < self.SAFETY_SCORE_HIGH_RISK:  # High risk level
+        safety_factor = self.SAFETY_FACTOR_HIGH_RISK  # More conservative
       else:  # Moderate risk level
-        safety_factor = 0.8  # Slightly more conservative
-
-    # Apply additional conservatism based on model confidence
-    if model_confidence < 0.6:  # Low model confidence
-      safety_factor = min(safety_factor, 0.7)  # Be more conservative
+        safety_factor = self.SAFETY_FACTOR_MODERATE_RISK  # Slightly more conservative
 
     # Apply additional conservatism based on path reliability
-    if path_reliability < 0.6:  # Low path reliability
-      safety_factor = min(safety_factor, 0.7)  # Be more conservative, matching model_confidence
+    if path_reliability < self.PATH_RELIABILITY_MODERATE:  # Low path reliability
+      safety_factor = min(safety_factor, self.SAFETY_FACTOR_PATH_RELIABILITY_LOW)  # Be more conservative
+    if path_reliability < self.PATH_RELIABILITY_LOW:  # Very low path reliability
+      safety_factor = min(safety_factor, self.SAFETY_FACTOR_PATH_RELIABILITY_VERY_LOW)  # Be even more conservative
 
     return safety_factor
 
@@ -177,11 +183,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if not self.mlsim:
       self.mpc.mode = mode
     LongitudinalPlannerSP.update(self, sm)
-    model_confidence, path_reliability = self._get_model_confidence_values(sm)
+    path_reliability = self._get_model_confidence_values(sm)
 
     # Calculate overall safety factor
     overall_safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0) if hasattr(self, 'safety_monitor') else 1.0
-    safety_factor = self._calculate_safety_factor(sm, overall_safety_score, model_confidence, path_reliability)
+    safety_factor = self._calculate_safety_factor(sm, overall_safety_score, path_reliability)
     
     # Initialize accel_rate_limit with its default value
     # Initialize accel_rate_limit with its default value for the "acc" mode. This can be further adjusted by safety factors.
@@ -224,7 +230,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
 
       # Consolidate all confidence and reliability-based accel_clip and accel_rate_limit adjustments
-      accel_clip, accel_rate_limit = self._adjust_accel_clip_for_confidence_and_reliability(accel_clip, accel_rate_limit, model_confidence, path_reliability)
+      accel_clip, accel_rate_limit = self._adjust_accel_clip_for_confidence_and_reliability(accel_clip, accel_rate_limit, path_reliability)
 
 
 

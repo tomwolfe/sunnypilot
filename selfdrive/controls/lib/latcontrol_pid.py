@@ -9,6 +9,10 @@ from cereal import log
 
 
 class LatControlPID(LatControl):
+  # Constants for path reliability adjustments
+  PATH_RELIABILITY_LAT_THRESHOLD = 0.7
+  RELIABILITY_FACTOR_BASE = 0.8
+  RELIABILITY_FACTOR_MULTIPLIER = 0.2
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
     # Use curvature gain interpolation from car params if available, otherwise use default
@@ -99,15 +103,10 @@ class LatControlPID(LatControl):
       model_v2 = sm['modelV2']
       if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
         path_reliability = model_v2.meta.pathReliability
-        if path_reliability < 0.6:  # Low path reliability
+        if path_reliability < self.PATH_RELIABILITY_LAT_THRESHOLD:  # Low path reliability
           # Reduce lateral control aggressiveness when path is unreliable
-          reliability_factor = 0.8 + 0.2 * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
-        elif hasattr(model_v2.meta, 'pathPredictionConfidence'):
-          model_confidence = model_v2.meta.pathPredictionConfidence
-          if model_confidence < 0.7:  # Low model confidence
-            # Use both path reliability and model confidence
-            combined_reliability = min(path_reliability, model_confidence)
-            reliability_factor = 0.7 + 0.3 * combined_reliability  # Even more conservative with low confidence
+          reliability_factor = self.RELIABILITY_FACTOR_BASE + self.RELIABILITY_FACTOR_MULTIPLIER * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
+
 
     # Add curvature gain specific monitoring
     current_time = time.time()  # Use proper time source instead of CS.aEgo which is acceleration
