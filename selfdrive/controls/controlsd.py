@@ -69,8 +69,32 @@ class Controls(ControlsExt, ModelStateBase):
     # These defaults are for general applicability and should be overridden with vehicle-specific values when possible.
 
     # Initialize sunnypilot controlsd extension and base model state
-    ControlsExt.__init__(self, self.CP, self.params)
+    ControlsExt.__init__(self, self.CP, self.CP_SP)
     ModelStateBase.__init__(self)
+
+    # Performance monitoring parameters
+    try:
+        sampling_skip_factor_param = self.params.get("PerformanceSamplingSkipFactor")
+        self.performance_sampling_skip_factor = int(float(sampling_skip_factor_param)) if sampling_skip_factor_param else 1 # default to no skip
+    except (UnknownKeyName, ValueError):
+        self.performance_sampling_skip_factor = 1
+    
+    try:
+        sampling_cpu_threshold_param = self.params.get("PerformanceSamplingCpuThreshold")
+        self.performance_sampling_cpu_threshold = float(sampling_cpu_threshold_param) if sampling_cpu_threshold_param else 50.0 # ms
+    except (UnknownKeyName, ValueError):
+        self.performance_sampling_cpu_threshold = 50.0
+
+    self.performance_sampling_skip_counter = 0
+
+    # Forced disengagement parameters for persistent performance degradation
+    try:
+        disengage_time_param = self.params.get("PerformanceDegradationDisengageTime")
+        self.performance_degradation_disengage_time = float(disengage_time_param) if disengage_time_param else 5.0 # seconds
+    except (UnknownKeyName, ValueError):
+        self.performance_degradation_disengage_time = 5.0
+    
+    self.performance_degradation_start_time = 0.0 # Tracks when degradation started
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
@@ -173,6 +197,7 @@ class Controls(ControlsExt, ModelStateBase):
     # Initialize safety report to default values
     safety_report = {}
     requires_intervention = False
+    self.performance_degraded_mode = False # Reset degraded mode at the start of each cycle
 
     # Update VehicleModel
     lp = self.sm['liveParameters']
@@ -245,7 +270,23 @@ class Controls(ControlsExt, ModelStateBase):
         safety_report['error_details'] = str(e)
 
     # Performance monitoring - evaluate real-time driving performance
-    if self.sm.all_checks(['modelV2', 'carState', 'controlsState']):
+    # Dynamic sampling rate control based on controlsd_state_control execution time
+    current_state_control_time = perf_monitor.get_average_time("controlsd_state_control") # Assuming this is available
+
+    if current_state_control_time is not None and current_state_control_time > self.performance_sampling_cpu_threshold:
+        self.performance_sampling_skip_counter += 1
+    else:
+        self.performance_sampling_skip_counter = 0 # Reset counter if CPU usage is normal
+
+    skip_performance_evaluation = False
+    if self.performance_sampling_skip_factor > 1 and \
+       self.performance_sampling_skip_counter > 0 and \
+       self.performance_sampling_skip_counter % self.performance_sampling_skip_factor != 0:
+        skip_performance_evaluation = True
+        cloudlog.debug(f"Skipping performance evaluation due to high CPU ({current_state_control_time:.2f}ms) "
+                      f"and skip factor {self.performance_sampling_skip_factor}. Counter: {self.performance_sampling_skip_counter}")
+
+    if not skip_performance_evaluation and self.sm.all_checks(['modelV2', 'carState', 'controlsState']):
       try:
         # Prepare data for performance evaluation
         desired_state = {
@@ -275,23 +316,42 @@ class Controls(ControlsExt, ModelStateBase):
         # Check if parameters need adaptation based on performance
         adapt_needed, adaptation_params = self.performance_monitor.should_adapt_parameters()
 
+        # Check performance health
+        if self.performance_monitor.performance_unhealthy:
+            cloudlog.warning("Performance unhealthy, forcing degraded mode.")
+            self.performance_degraded_mode = True
+            # Optional: revert to baseline tuning parameters if unhealthy
+            # For now, we'll let the adaptation logic handle this more gracefully
+            # adaptation_params = self.performance_monitor.performance_baseline_tuning_params() # if such a method existed
+
+        # Implement safety lockout for parameter adaptation
+        # Get overall safety score for critical check
+        overall_safety_score_val = safety_report.get('overall_safety_score', 1.0) # From safety_monitor update
+
         if adapt_needed and adaptation_params:
-          cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
-          # Update tuning parameters for adaptive control
-          for param, value in adaptation_params.items():
-            if param in self.performance_monitor.tuning_params:
-              self.performance_monitor.tuning_params[param] = value
+          # Check for safety lockout conditions
+          if self.safety_monitor.requires_intervention or overall_safety_score_val < self.safety_critical_threshold:
+            cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f}).")
+            # Do not apply adaptation_params
+          else:
+            cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
+            # Update tuning parameters for adaptive control
+            for param, value in adaptation_params.items():
+              if param in self.performance_monitor.tuning_params:
+                self.performance_monitor.tuning_params[param] = value
 
-          # Update the lateral controller with new parameters if needed
-          if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
-            # In a real implementation, we would pass these to the lateral controller
-            # For now, we'll just store them for reference
-            self.adaptation_params = adaptation_params
+            # Update the lateral controller with new parameters if needed
+            if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
+              # In a real implementation, we would pass these to the lateral controller
+              # For now, we'll just store them for reference
+              self.adaptation_params = adaptation_params
 
-          # Update performance degraded mode if needed
-          self.performance_degraded_mode = True
+                                # performance monitor indicates adaptation needed
 
-      except Exception as e:
+                                pass # performance_degraded_mode is now set by overall performance health
+
+                      
+                  except Exception as e:
         cloudlog.error(f"Performance monitor update failed: {e}")
         import traceback
         cloudlog.error(f"Performance monitor error traceback: {traceback.format_exc()}")
@@ -331,8 +391,32 @@ class Controls(ControlsExt, ModelStateBase):
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
 
+    # Determine combined degraded mode status with dual-channel monitoring
+    # Both safety and performance monitors must indicate degradation for a full degraded mode
+    # A moderate risk from safety monitor or an unhealthy flag from performance monitor can trigger it.
+    combined_degraded_mode = False
+    if self.performance_monitor.performance_unhealthy and \
+       (self.safety_degraded_mode or overall_safety_score < self.safety_moderate_risk_threshold):
+      combined_degraded_mode = True
+      cloudlog.warning("Dual-channel degraded mode: Both performance (unhealthy) and safety (degraded/moderate risk) indicate degradation.")
+    elif self.performance_monitor.performance_unhealthy:
+        cloudlog.info("Performance unhealthy, but safety is acceptable.")
+    elif self.safety_degraded_mode:
+        cloudlog.info("Safety degraded, but performance is acceptable.")
+
+    # Check for persistent performance degradation requiring disengagement
+    if combined_degraded_mode:
+        if self.performance_degradation_start_time == 0:
+            self.performance_degradation_start_time = time.monotonic()
+        elif (time.monotonic() - self.performance_degradation_start_time) > self.performance_degradation_disengage_time:
+            cloudlog.error(f"Persistent performance degradation for more than {self.performance_degradation_disengage_time}s. Requesting disengagement.")
+            requires_intervention = True # Force disengagement
+            self.performance_degradation_start_time = 0 # Reset timer
+    else:
+        self.performance_degradation_start_time = 0 # Reset timer if not in degraded mode
+
     # Apply safety-based acceleration limits if in degraded mode
-    if self.safety_degraded_mode or self.performance_degraded_mode:
+    if self.safety_degraded_mode or combined_degraded_mode: # Use combined_degraded_mode for stricter conditions
       # Get overall safety score
       overall_safety_score = safety_report.get('overall_safety_score', 1.0)
 

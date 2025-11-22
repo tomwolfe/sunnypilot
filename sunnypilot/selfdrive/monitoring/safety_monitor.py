@@ -104,99 +104,160 @@ class EnvironmentalConditionDetector:
 
     def detect_conditions(self, model_v2, live_pose, car_state):
         conditions = {}
+        confidences = {}
 
         # Advanced lighting detection using modelV2 scene analysis
         # Analyze brightness/contrast features from model if available
-        conditions['lighting'] = self.assess_lighting_conditions(model_v2)
+        lighting_condition, lighting_confidence = self.assess_lighting_conditions(model_v2, car_state)
+        conditions['lighting'] = lighting_condition
+        confidences['lighting'] = lighting_confidence
 
         # Road condition assessment using IMU data
         if live_pose is not None:
-            conditions['road_condition'] = self.assess_road_condition(
+            road_condition, road_confidence = self.assess_road_condition(
                 live_pose.angular_velocity, live_pose.acceleration, car_state
             )
+            conditions['road_condition'] = road_condition
+            confidences['road_condition'] = road_confidence
+        else:
+            conditions['road_condition'] = "unknown"
+            confidences['road_condition'] = 0.0 # No IMU data means no confidence
 
         # Weather assessment using multiple indicators
-        conditions['weather'] = self.assess_weather_condition(model_v2, car_state)
+        weather_condition, weather_confidence = self.assess_weather_condition(model_v2, car_state)
+        conditions['weather'] = weather_condition
+        confidences['weather'] = weather_confidence
 
-        return conditions
+        return conditions, confidences
 
-    def assess_lighting_conditions(self, model_v2):
+    def assess_lighting_conditions(self, model_v2, car_state_msg):
         # Analyze modelV2 outputs to estimate lighting conditions
         # In a real implementation, we would use camera brightness analysis,
         # scene classification outputs, or other vision-based indicators
         # For now, we'll use a placeholder method that could be enhanced with
         # actual image processing or scene understanding from the neural network
 
-        # Check if model has lighting indicators (this would depend on specific model outputs)
-        # If the model has specific scene understanding outputs, we could use those
         lighting_condition = "normal"  # Default assumption
+        lighting_confidence = 0.5  # Base confidence
 
         # Enhanced lighting detection using available model data
-        # For example, checking for night driving indicators if available in model outputs
-        if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'cameraState'):
-            # In a real implementation, this would access specific lighting information
-            # from the camera state or processed image data
-            pass
-
         # Check for indicators of poor visibility like road markings visibility
         if hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0:
             # If lane markings are very faint, it might indicate poor lighting
-            avg_lane_line_sturdiness = np.mean([line.strength for line in model_v2.laneLines if line.strength is not None])
-            if avg_lane_line_sturdiness < 0.3:  # Very weak lane line detection
-                lighting_condition = "dark"
+            # A higher strength indicates better visibility, thus better lighting
+            lane_line_strengths = [line.strength for line in model_v2.laneLines if line.strength is not None]
+            if len(lane_line_strengths) > 0:
+                avg_lane_line_sturdiness = np.mean(lane_line_strengths)
+                
+                # If average lane line sturdiness is low, suggest dark conditions
+                if avg_lane_line_sturdiness < 0.3:
+                    lighting_condition = "dark"
+                    lighting_confidence = max(0.1, 1.0 - (0.3 - avg_lane_line_sturdiness) / 0.3) # Confidence decreases as sturdiness drops
+                elif avg_lane_line_sturdiness < 0.6:
+                    lighting_condition = "dawn_dusk"
+                    lighting_confidence = 0.6 # Moderate confidence
+                else:
+                    lighting_condition = "normal"
+                    lighting_confidence = min(1.0, 0.5 + avg_lane_line_sturdiness / 2.0) # Higher sturdiness, higher confidence
+            else:
+                # No lane lines detected, assume normal but lower confidence
+                lighting_confidence = 0.4
+        else:
+            # No lane lines in model output, default to normal with lower confidence
+            lighting_confidence = 0.4
 
         # Future enhancement: Use actual brightness/contrast from camera feed if available
         # This would require access to raw image metrics or brightness indicators
+        # For now, this is a simplified approach.
 
-        return lighting_condition
+        return lighting_condition, lighting_confidence
 
     def assess_road_condition(self, angular_velocity, acceleration, car_state):
         # Analyze IMU data for road conditions
+        road_condition = "normal"
+        road_confidence = 0.5  # Base confidence
+
         if angular_velocity is not None and acceleration is not None:
             # Calculate metrics that indicate road condition
-            # High angular velocity variance might indicate bumpy road
-            # High acceleration variance might indicate rough road
             angular_magnitude = np.sqrt(angular_velocity[0]**2 + angular_velocity[1]**2 + angular_velocity[2]**2)
             accel_magnitude = np.sqrt(acceleration[0]**2 + acceleration[1]**2 + acceleration[2]**2)
 
+            # Check for rough road based on angular magnitude
             if angular_magnitude > self.road_condition_thresholds['roughness']:
-                return "rough"
-            elif car_state.vEgo > 0 and accel_magnitude > self.road_condition_thresholds['slippery']:
-                return "slippery"
-        return "normal"
+                road_condition = "rough"
+                road_confidence = min(0.9, 0.5 + (angular_magnitude / (2 * self.road_condition_thresholds['roughness'])))
+            
+            # Check for slippery road based on acceleration magnitude at speed
+            # Also integrate wheel slip if available
+            slippage_detected = False
+            if hasattr(car_state, 'wheelSpeeds') and car_state.wheelSpeeds is not None:
+                # Assuming wheelSpeeds has front and rear wheel speeds
+                # Simple check: large difference between front/rear or left/right wheels might indicate slip
+                if len(car_state.wheelSpeeds.fl) > 0 and len(car_state.wheelSpeeds.fr) > 0 and \
+                   len(car_state.wheelSpeeds.rl) > 0 and len(car_state.wheelSpeeds.rr) > 0:
+                    
+                    avg_front_speed = (car_state.wheelSpeeds.fl + car_state.wheelSpeeds.fr) / 2
+                    avg_rear_speed = (car_state.wheelSpeeds.rl + car_state.wheelSpeeds.rr) / 2
+                    
+                    # If there's a significant difference between average front and rear speeds, or individual wheel slips
+                    if car_state.vEgo > 5.0 and (abs(avg_front_speed - avg_rear_speed) > 1.0 or \
+                                                 abs(car_state.wheelSpeeds.fl - car_state.vEgo) > 1.0 or \
+                                                 abs(car_state.wheelSpeeds.fr - car_state.vEgo) > 1.0):
+                        slippage_detected = True
+                        
+            if car_state.vEgo > 0 and (accel_magnitude > self.road_condition_thresholds['slippery'] or slippage_detected):
+                road_condition = "slippery"
+                # Confidence in slippery increases with accel_magnitude and if slippage is detected
+                slippery_confidence_imu = min(0.9, 0.5 + (accel_magnitude / (2 * self.road_condition_thresholds['slippery'])))
+                slippery_confidence_wheel = 0.9 if slippage_detected else 0.0
+                road_confidence = max(slippery_confidence_imu, slippery_confidence_wheel)
+
+        return road_condition, road_confidence
 
     def assess_weather_condition(self, model_v2, car_state):
         # Analyze multiple indicators to estimate weather
         # Use available model outputs and car state to infer weather conditions
 
         weather_condition = "clear"  # Default assumption
+        weather_confidence = 0.5  # Base confidence
+
+        # Prioritize wiper status for rain/snow detection
+        if hasattr(car_state, 'rightWiper') and car_state.rightWiper:
+            weather_condition = "rain"  # Or "snow" if temperature data is available
+            weather_confidence = 0.9  # High confidence from direct sensor
+            return weather_condition, weather_confidence
+        if hasattr(car_state, 'leftWiper') and car_state.leftWiper: # Some cars have left/right independent wiper status
+            weather_condition = "rain"
+            weather_confidence = 0.9
+            return weather_condition, weather_confidence
 
         # Analyze object detection confidence for weather indicators
         # Rain, snow, fog often reduce object detection reliability
         if hasattr(model_v2, 'leadsV3') and len(model_v2.leadsV3) > 0:
-            # Analyze lead detection reliability as weather indicator
             valid_leads = [lead for lead in model_v2.leadsV3 if lead.prob > 0.5]
             detection_reliability = len(valid_leads) / len(model_v2.leadsV3) if len(model_v2.leadsV3) > 0 else 1.0
 
-            if detection_reliability < 0.3:  # Very low detection reliability
-                weather_condition = "fog"  # Could indicate fog, heavy rain, or snow
-            elif detection_reliability < 0.6:  # Moderately low detection reliability
-                weather_condition = "rain"  # Could indicate light rain/snow conditions
+            if detection_reliability < 0.3:
+                weather_condition = "fog"
+                weather_confidence = 0.8
+            elif detection_reliability < 0.6:
+                weather_condition = "rain"
+                weather_confidence = 0.7
+            else:
+                # If leads are reliable, increase confidence in clear weather
+                weather_confidence = max(weather_confidence, 0.5 + detection_reliability / 2.0)
 
         # Check if road edge detection is reduced (common in poor weather)
         if hasattr(model_v2, 'roadEdges') and len(model_v2.roadEdges) > 0:
             avg_edge_confidence = np.mean([edge.strength for edge in model_v2.roadEdges if edge.strength is not None])
-            if avg_edge_confidence < 0.4:  # Low road edge confidence
+            if avg_edge_confidence < 0.4:
+                # If existing weather_condition is clear, change to poor_visibility
                 if weather_condition == "clear":
-                    weather_condition = "poor_visibility"  # Generic poor visibility
+                    weather_condition = "poor_visibility"
+                # Reduce confidence if road edges are poor
+                weather_confidence = min(weather_confidence, 0.4 + avg_edge_confidence / 2.0)
 
-        # Vehicle behavior indicators (e.g., unexpected speed changes might indicate slippery conditions)
-        # This would require more complex analysis of longitudinal and lateral behavior
-        if car_state.vEgo > 5.0 and car_state.aEgo < -3.0:  # Hard braking without obvious reason
-            # Could indicate slippery conditions, but needs more context
-            pass  # Would need more sophisticated analysis
-
-        return weather_condition
+        return weather_condition, weather_confidence
 
 
 class SafetyMonitor:
@@ -280,6 +341,31 @@ class SafetyMonitor:
     except (TypeError, ValueError):
         self.model_confidence_threshold_multiplier = 0.8  # Default value if parameter is invalid type
     
+    # Environmental confidence thresholds - with configurable defaults
+    try:
+        lighting_confidence_param = self.params.get("LightingConfidenceThreshold")
+        self.lighting_confidence_threshold = float(lighting_confidence_param) if lighting_confidence_param else 0.7
+    except UnknownKeyName:
+        self.lighting_confidence_threshold = 0.7
+    except (TypeError, ValueError):
+        self.lighting_confidence_threshold = 0.7
+
+    try:
+        weather_confidence_param = self.params.get("WeatherConfidenceThreshold")
+        self.weather_confidence_threshold = float(weather_confidence_param) if weather_confidence_param else 0.7
+    except UnknownKeyName:
+        self.weather_confidence_threshold = 0.7
+    except (TypeError, ValueError):
+        self.weather_confidence_threshold = 0.7
+
+    try:
+        road_confidence_param = self.params.get("RoadConfidenceThreshold")
+        self.road_confidence_threshold = float(road_confidence_param) if road_confidence_param else 0.7
+    except UnknownKeyName:
+        self.road_confidence_threshold = 0.7
+    except (TypeError, ValueError):
+        self.road_confidence_threshold = 0.7
+    
     # Curve anticipation parameters
     # Justification: This value (2.0 m/s^2) represents a conservative maximum lateral acceleration the vehicle is allowed to experience.
     # It's a key parameter for calculating safe speeds around curves. This value should be tuned based on vehicle dynamics and comfort.
@@ -359,6 +445,9 @@ class SafetyMonitor:
     self.camera_confidence = 1.0
     self.radar_confidence = 1.0
     self.imu_confidence = 1.0
+    self.lighting_confidence = 0.0
+    self.weather_confidence = 0.0
+    self.road_confidence = 0.0
 
     # Raw confidence scores for immediate safety assessments (unfiltered)
     self.raw_model_confidence = 1.0
@@ -396,11 +485,37 @@ class SafetyMonitor:
     except (UnknownKeyName, ValueError):
         self.STALENESS_THRESHOLD_SECONDS = 0.5 # Default to 0.5 seconds
     
+    # Environmental weight adjustment factor for dynamic sensor weighting
+    try:
+        environmental_adj_factor_param = self.params.get("EnvironmentalWeightAdjustmentFactor")
+        self.environmental_weight_adjustment_factor = float(environmental_adj_factor_param) if environmental_adj_factor_param else 1.0
+    except UnknownKeyName:
+        self.environmental_weight_adjustment_factor = 1.0
+    except (TypeError, ValueError):
+        self.environmental_weight_adjustment_factor = 1.0
+
+    # Sensor confidence decay rate (per second of staleness)
+    try:
+        sensor_decay_rate_param = self.params.get("SensorConfidenceDecayRate")
+        self.sensor_confidence_decay_rate = float(sensor_decay_rate_param) if sensor_decay_rate_param else 0.1 # 10% decay per second
+    except UnknownKeyName:
+        self.sensor_confidence_decay_rate = 0.1
+    except (TypeError, ValueError):
+        self.sensor_confidence_decay_rate = 0.1
+    
     # Store last update times for staleness checks
     self.last_model_time = 0
     self.last_radar_time = 0
     self.last_camera_time = 0
     self.last_imu_time = 0
+    self.last_driver_monitoring_time = 0 # New: for driver monitoring staleness
+
+    # Store last valid confidence for decay
+    self.last_valid_model_confidence = 1.0
+    self.last_valid_radar_confidence = 1.0
+    self.last_valid_camera_confidence = 1.0
+    self.last_valid_imu_confidence = 1.0
+    self.last_valid_driver_monitoring_awareness = 1.0
 
   def update_model_confidence(self, model_v2_msg) -> None:
     """Update model confidence based on neural network outputs"""
@@ -471,23 +586,40 @@ class SafetyMonitor:
     else:
       self.camera_confidence = 0.6
 
-  def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> None:
-    """Detect environmental conditions and adjust safety accordingly"""
-    # Use the new EnvironmentalConditionDetector for better environmental assessment
-    environmental_conditions = self.environmental_detector.detect_conditions(model_v2_msg, live_pose_msg, car_state_msg)
-
-    # Update internal state with detected conditions
-    self.lighting_condition = environmental_conditions.get('lighting', 'unknown')
-    self.road_condition = environmental_conditions.get('road_condition', 'unknown')
-    self.weather_condition = environmental_conditions.get('weather', 'unknown')
-
-    # Tunnel detection logic
-    # Based on lighting, road conditions, and other factors, determine if in a tunnel
-    # For now, a simple placeholder - in future could use GPS location, camera analysis, etc.
-    self.in_tunnel = (self.lighting_condition == 'dark' and
-                     self.road_condition != 'normal')  # Simplified tunnel detection
-
-  def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
+      def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> None:
+          """Detect environmental conditions and adjust safety accordingly"""
+          # Use the new EnvironmentalConditionDetector for better environmental assessment
+          environmental_conditions, environmental_confidences = self.environmental_detector.detect_conditions(model_v2_msg, live_pose_msg, car_state_msg)
+  
+          # Update internal state with detected conditions, but only if confidence is high enough
+          # Otherwise, default to "unknown" or previous state for safety
+          
+          # Lighting
+          if environmental_confidences.get('lighting', 0.0) >= self.lighting_confidence_threshold:
+              self.lighting_condition = environmental_conditions.get('lighting', 'unknown')
+          else:
+              # If confidence is low, keep previous state or default to 'unknown' for safety
+              self.lighting_condition = 'unknown' # Default to unknown if not confident
+          self.lighting_confidence = environmental_confidences.get('lighting', 0.0) # Store actual confidence
+  
+          # Road
+          if environmental_confidences.get('road_condition', 0.0) >= self.road_confidence_threshold:
+              self.road_condition = environmental_conditions.get('road_condition', 'unknown')
+          else:
+              self.road_condition = 'unknown' # Default to unknown if not confident
+          self.road_confidence = environmental_confidences.get('road_condition', 0.0) # Store actual confidence
+  
+          # Weather
+          if environmental_confidences.get('weather', 0.0) >= self.weather_confidence_threshold:
+              self.weather_condition = environmental_conditions.get('weather', 'unknown')
+          else:
+              self.weather_condition = 'unknown' # Default to unknown if not confident
+          self.weather_confidence = environmental_confidences.get('weather', 0.0) # Store actual confidence
+  
+          # Tunnel detection logic
+          self.in_tunnel = (self.lighting_condition == 'dark' and self.lighting_confidence > self.lighting_confidence_threshold and
+                            self.road_condition != 'normal' and self.road_confidence > self.road_confidence_threshold) # More robust tunnel detection
+    def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
     if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
       # Properly calculate path curvature using first and second derivatives
@@ -595,18 +727,9 @@ class SafetyMonitor:
     """Calculate overall safety score based on all inputs"""
     # Weighted combination of all confidence measures
     # Adjust weights based on environmental conditions
-    # These weights are chosen based on the assumed reliability and criticality of each sensor
-    # in an autonomous driving context. While initial values are set, these require
-    # extensive empirical testing and real-world validation to ensure optimal balance
-    # and performance across diverse driving scenarios.
-    # - Model (0.4): High weight due to its comprehensive understanding of the driving scene.
-    #   Assumes the model's outputs are generally robust and accurate.
-    # - Camera (0.3): Significant weight for lane detection, object classification, and visual cues.
-    #   Reliability can be affected by lighting and weather conditions.
-    # - Radar (0.2): Moderate weight for precise distance and velocity measurements, especially for lead vehicles.
-    #   More robust in adverse weather than camera, but has a narrower field of view.
-    # - IMU (0.1): Lower weight for general vehicle dynamics and environmental condition estimation.
-    #   Provides foundational vehicle state but is a proxy for complex environmental factors.
+    # Define initial base weights for each sensor. These weights are conceptual and
+    # are dynamically adjusted based on environmental conditions and their detection confidence.
+    # These initial values serve as a starting point before environmental adjustments are applied.
     base_weights = {
       'model': 0.4,
       'camera': 0.3,
@@ -614,45 +737,69 @@ class SafetyMonitor:
       'imu': 0.1
     }
 
-    # Apply sensor health status to confidence values
-    model_conf = self.model_confidence if self.model_healthy else 0.1
-    radar_conf = self.radar_confidence if self.radar_healthy else 0.1
-    camera_conf = self.camera_confidence if self.camera_healthy else 0.1
-    imu_conf = self.imu_confidence if self.imu_healthy else 0.1 # Currently IMU confidence is always 1.0 but this prepares for future degradation
+    # Load environmental weight adjustment factor from Params
+    try:
+        environmental_adj_factor_param = self.params.get("EnvironmentalWeightAdjustmentFactor")
+        self.environmental_weight_adjustment_factor = float(environmental_adj_factor_param) if environmental_adj_factor_param else 1.0
+    except UnknownKeyName:
+        self.environmental_weight_adjustment_factor = 1.0
+    except (TypeError, ValueError):
+        self.environmental_weight_adjustment_factor = 1.0
 
-    # Adjust weights based on environmental conditions (enhanced detection)
+    # Apply sensor health status to raw confidence values
+    model_conf_val = self.model_confidence if self.model_healthy else 0.1
+    radar_conf_val = self.radar_confidence if self.radar_healthy else 0.1
+    camera_conf_val = self.camera_confidence if self.camera_healthy else 0.1
+    imu_conf_val = self.imu_confidence if self.imu_healthy else 0.1
+
+    # Initialize adjusted weights with base weights
+    adjusted_weights = base_weights.copy()
+
+    # Adjust weights based on environmental conditions and their confidence
+    # The influence of environmental conditions is scaled by their detection confidence
+    # and a configurable adjustment factor.
+
+    # Lighting adjustments
+    lighting_influence = self.environmental_weight_adjustment_factor * self.lighting_confidence
     if self.lighting_condition in ["night", "dawn_dusk", "dark", "tunnel"]:
-      base_weights['model'] *= 0.7  # Reduce camera-based confidence in poor lighting
-      base_weights['radar'] *= 1.1  # Increase radar confidence
+        adjusted_weights['model'] *= (1.0 - 0.3 * lighting_influence)  # Reduce model weight
+        adjusted_weights['camera'] *= (1.0 - 0.4 * lighting_influence) # More reduction for camera
+        adjusted_weights['radar'] *= (1.0 + 0.2 * lighting_influence)  # Increase radar weight
     elif self.lighting_condition == "bright":
-      # In bright lighting conditions, camera may perform better
-      base_weights['model'] *= 1.05
+        adjusted_weights['camera'] *= (1.0 + 0.1 * lighting_influence) # Slightly increase camera weight
 
-    # Apply road condition adjustments
+    # Road condition adjustments
+    road_influence = self.environmental_weight_adjustment_factor * self.road_confidence
     if self.road_condition == "rough":
-      # Bumpy roads may affect sensor accuracy
-      model_conf *= 0.9
-      camera_conf *= 0.85
+        adjusted_weights['model'] *= (1.0 - 0.1 * road_influence)
+        adjusted_weights['camera'] *= (1.0 - 0.15 * road_influence)
     elif self.road_condition == "slippery":
-      # Icy/wet roads require more conservative driving
-      base_weights['model'] *= 0.85
-      base_weights['camera'] *= 0.8
-      # Increase radar weight as it may be more reliable for distance in slippery conditions
-      base_weights['radar'] *= 1.05
+        adjusted_weights['model'] *= (1.0 - 0.15 * road_influence)
+        adjusted_weights['camera'] *= (1.0 - 0.2 * road_influence)
+        adjusted_weights['radar'] *= (1.0 + 0.1 * road_influence)
 
-    if self.weather_condition in ["rain", "snow", "fog", "unknown"]:
-      base_weights['model'] *= 0.6  # More conservative in poor weather
-      base_weights['camera'] *= 0.5
-      base_weights['radar'] *= 1.2  # Radar more reliable in poor weather
+    # Weather adjustments
+    weather_influence = self.environmental_weight_adjustment_factor * self.weather_confidence
+    if self.weather_condition in ["rain", "snow", "fog", "unknown", "poor_visibility"]:
+        adjusted_weights['model'] *= (1.0 - 0.4 * weather_influence)
+        adjusted_weights['camera'] *= (1.0 - 0.5 * weather_influence)
+        adjusted_weights['radar'] *= (1.0 + 0.3 * weather_influence)
     elif self.weather_condition == "clear":
-      base_weights['model'] *= 1.05  # Slightly more confident in clear conditions
+        adjusted_weights['model'] *= (1.0 + 0.05 * weather_influence)
+        adjusted_weights['camera'] *= (1.0 + 0.05 * weather_influence)
 
-    # Calculate base safety score
+    # Ensure weights sum to 1 after adjustments
+    total_weight = sum(adjusted_weights.values())
+    if total_weight > 0:
+        for key in adjusted_weights:
+            adjusted_weights[key] /= total_weight
+    
+    # Calculate safety score using adjusted weights and confidence values
     safety_score = (
-      model_conf * base_weights['model'] +
-      camera_conf * base_weights['camera'] +
-      radar_conf * base_weights['radar'] +
-      imu_conf * base_weights['imu']
+      model_conf_val * adjusted_weights['model'] +
+      camera_conf_val * adjusted_weights['camera'] +
+      radar_conf_val * adjusted_weights['radar'] +
+      imu_conf_val * adjusted_weights['imu']
     )
 
     # Apply critical safety penalties for values significantly below thresholds
@@ -663,6 +810,8 @@ class SafetyMonitor:
       confidence_deficit = (model_confidence_threshold_adjusted - self.raw_model_confidence) / model_confidence_threshold_adjusted
       safety_penalty = min(0.3, confidence_deficit)  # Max 30% reduction for very low confidence
       safety_score *= (1.0 - safety_penalty)
+    # Note: This penalty is applied per frame. If raw_model_confidence improves above the threshold,
+    # the penalty is automatically removed in the subsequent frame, ensuring dynamic recovery.
 
     # Apply curve anticipation safety factor
     if self.curve_anticipation_active and car_state_msg.vEgo > 10.0:
@@ -783,24 +932,41 @@ class SafetyMonitor:
     # --- Staleness Checks ---
     # Convert mono_time to seconds for comparison
     # Model Staleness
-    if (current_time * 1e-9 - model_v2_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+    time_since_model_update = (current_time - model_v2_mono_time) * 1e-9
+    if time_since_model_update > self.STALENESS_THRESHOLD_SECONDS:
         self.model_healthy = False
-        logging.warning(f"Model data is stale. Last update: {(current_time - model_v2_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+        logging.warning(f"Model data is stale. Last update: {time_since_model_update:.2f}s ago.")
+    else:
+        self.model_healthy = True
+        self.last_model_time = model_v2_mono_time
 
     # Radar Staleness
-    if (current_time * 1e-9 - radar_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+    time_since_radar_update = (current_time - radar_state_mono_time) * 1e-9
+    if time_since_radar_update > self.STALENESS_THRESHOLD_SECONDS:
         self.radar_healthy = False
-        logging.warning(f"Radar data is stale. Last update: {(current_time - radar_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+        logging.warning(f"Radar data is stale. Last update: {time_since_radar_update:.2f}s ago.")
+    else:
+        self.radar_healthy = True
+        self.last_radar_time = radar_state_mono_time
 
     # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
-    if (current_time * 1e-9 - car_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
+    time_since_car_state_update = (current_time - car_state_mono_time) * 1e-9
+    if time_since_car_state_update > self.STALENESS_THRESHOLD_SECONDS:
         self.camera_healthy = False
-        logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {(current_time - car_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+        logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {time_since_car_state_update:.2f}s ago.")
+    else:
+        self.camera_healthy = True
+        self.last_camera_time = car_state_mono_time # Update last_camera_time based on carState
 
     # IMU Staleness (livePose)
-    if live_pose_mono_time is not None and (current_time * 1e-9 - live_pose_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
-        self.imu_healthy = False
-        logging.warning(f"IMU data (livePose) is stale. Last update: {(current_time - live_pose_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+    if live_pose_mono_time is not None:
+        time_since_imu_update = (current_time - live_pose_mono_time) * 1e-9
+        if time_since_imu_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.imu_healthy = False
+            logging.warning(f"IMU data (livePose) is stale. Last update: {time_since_imu_update:.2f}s ago.")
+        else:
+            self.imu_healthy = True
+            self.last_imu_time = live_pose_mono_time
     elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
         self.imu_healthy = False
         logging.warning("LivePose message is not available. IMU data confidence reduced.")
@@ -808,9 +974,15 @@ class SafetyMonitor:
 
 
     # Driver Monitoring Staleness
-    if driver_monitoring_state_mono_time is not None and (current_time * 1e-9 - driver_monitoring_state_mono_time * 1e-9) > self.STALENESS_THRESHOLD_SECONDS:
-        self.driver_monitoring_healthy = False
-        logging.warning(f"Driver Monitoring data is stale. Last update: {(current_time - driver_monitoring_state_mono_time) * 1e-9:.2f}s ago. Confidence reduced.")
+    if driver_monitoring_state_mono_time is not None:
+        time_since_dm_update = (current_time - driver_monitoring_state_mono_time) * 1e-9
+        if time_since_dm_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.driver_monitoring_healthy = False
+            logging.warning(f"Driver Monitoring data is stale. Last update: {time_since_dm_update:.2f}s ago.")
+        else:
+            self.driver_monitoring_healthy = True
+            self.last_driver_monitoring_time = driver_monitoring_state_mono_time
+
     elif driver_monitoring_state_mono_time is None:
         self.driver_monitoring_healthy = False
         logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
@@ -822,56 +994,85 @@ class SafetyMonitor:
         logging.error(f"Error in anomaly detection: {e}")
         self.anomalies = {}
   
-      # --- Update Confidence Measures with Error Handling ---
-      try:
-        # If already marked unhealthy due to staleness, no need to update confidence values explicitly,
-        # as `calculate_overall_safety_score` will handle it.
-        # Only update if the sensor is still considered healthy at this point (not stale).
-        if self.model_healthy:
+      # --- Update Confidence Measures with Error Handling and Decay ---
+      # Model confidence
+      if self.model_healthy:
+        try:
           self.update_model_confidence(model_v2_msg)
-        else:
-          self.model_confidence = 0.1 # Set low confidence if stale
-      except Exception as e:
-        logging.error(f"Error in update_model_confidence: {e}")
-        self.model_confidence = 0.5  # Default to moderate confidence on error
-        self.model_healthy = False
+          self.last_valid_model_confidence = self.model_confidence # Store for decay
+        except Exception as e:
+          logging.error(f"Error in update_model_confidence: {e}")
+          self.model_confidence = 0.5  # Default to moderate confidence on error
+          self.model_healthy = False
+          self.last_valid_model_confidence = self.model_confidence # Also update last valid on error
+      else:
+        # Apply decay to last valid confidence if stale
+        time_since_update = (current_time - self.last_model_time) * 1e-9
+        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+        self.model_confidence = self.last_valid_model_confidence * decay_factor
+        logging.warning(f"Model confidence decayed to {self.model_confidence:.2f} due to staleness.")
   
-      try:
-        if self.radar_healthy:
+      # Radar confidence
+      if self.radar_healthy:
+        try:
           self.update_radar_confidence(radar_state_msg, car_state_msg)
-        else:
-          self.radar_confidence = 0.1 # Set low confidence if stale
-      except Exception as e:
-        logging.error(f"Error in update_radar_confidence: {e}")
-        self.radar_confidence = 0.5
-        self.radar_healthy = False
+          self.last_valid_radar_confidence = self.radar_confidence
+        except Exception as e:
+          logging.error(f"Error in update_radar_confidence: {e}")
+          self.radar_confidence = 0.5
+          self.radar_healthy = False
+          self.last_valid_radar_confidence = self.radar_confidence
+      else:
+        time_since_update = (current_time - self.last_radar_time) * 1e-9
+        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+        self.radar_confidence = self.last_valid_radar_confidence * decay_factor
+        logging.warning(f"Radar confidence decayed to {self.radar_confidence:.2f} due to staleness.")
   
-      try:
-        if self.camera_healthy:
+      # Camera confidence (using carState for freshness)
+      if self.camera_healthy:
+        try:
           self.update_camera_confidence(model_v2_msg, car_state_msg)
-        else:
-          self.camera_confidence = 0.1 # Set low confidence if stale
-      except Exception as e:
-        logging.error(f"Error in update_camera_confidence: {e}")
-        self.camera_confidence = 0.5
-        self.camera_healthy = False
+          self.last_valid_camera_confidence = self.camera_confidence
+        except Exception as e:
+          logging.error(f"Error in update_camera_confidence: {e}")
+          self.camera_confidence = 0.5
+          self.camera_healthy = False
+          self.last_valid_camera_confidence = self.camera_confidence
+      else:
+        time_since_update = (current_time - self.last_camera_time) * 1e-9 # Using last_camera_time for carState
+        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+        self.camera_confidence = self.last_valid_camera_confidence * decay_factor
+        logging.warning(f"Camera confidence decayed to {self.camera_confidence:.2f} due to staleness.")
   
-      try:
-        if self.imu_healthy: # Only update environmental conditions if IMU is healthy
+      # IMU and Environmental conditions
+      if self.imu_healthy:
+        try:
           self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg)
-        else: # If IMU is unhealthy, set environmental conditions to unknown and confidence low
+          self.last_valid_imu_confidence = self.imu_confidence # Assuming imu_confidence is updated by detect_environmental_conditions
+        except Exception as e:
+          logging.error(f"Error in detect_environmental_conditions: {e}")
+          self.imu_healthy = False
+          self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
+          self.last_valid_imu_confidence = self.imu_confidence
+          # Also set environmental conditions to unknown on error
           self.lighting_condition = "unknown"
           self.weather_condition = "unknown"
           self.road_condition = "unknown"
-          self.imu_confidence = 0.1 # Already set if stale, but ensure if an error occurs here
-      except Exception as e:
-        logging.error(f"Error in detect_environmental_conditions: {e}")
-        self.imu_healthy = False
-        self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
-        # Also set environmental conditions to unknown on error
+          self.lighting_confidence = 0.0
+          self.weather_confidence = 0.0
+          self.road_confidence = 0.0
+      else:
+        time_since_update = (current_time - self.last_imu_time) * 1e-9
+        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+        self.imu_confidence = self.last_valid_imu_confidence * decay_factor
+        logging.warning(f"IMU confidence decayed to {self.imu_confidence:.2f} due to staleness.")
+        # If IMU is unhealthy, set environmental conditions to unknown and confidence low
         self.lighting_condition = "unknown"
         self.weather_condition = "unknown"
         self.road_condition = "unknown"
+        self.lighting_confidence = 0.0
+        self.weather_confidence = 0.0
+        self.road_confidence = 0.0
   
       # Calculate overall safety with error handling
       try:

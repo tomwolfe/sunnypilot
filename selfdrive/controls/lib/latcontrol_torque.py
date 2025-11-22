@@ -1,6 +1,7 @@
 import math
 import numpy as np
 from collections import deque
+import time # Import time for stability monitoring
 
 from cereal import log
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
@@ -8,6 +9,7 @@ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
+from openpilot.common.params import Params, UnknownKeyName # Import Params and UnknownKeyName
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
 
@@ -49,6 +51,7 @@ VERSION = 0
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
     super().__init__(CP, CP_SP, CI, dt)
+    self.params = Params() # Initialize Params
     self.torque_params = CP.lateralTuning.torque.as_builder()
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
     self.lateral_accel_from_torque = CI.lateral_accel_from_torque()
@@ -71,6 +74,21 @@ class LatControlTorque(LatControl):
     self.steering_effort_history = deque(maxlen=20)  # Store recent steering efforts
     self.lateral_accel_history = deque(maxlen=20)    # Store recent lateral accelerations
 
+    # Previous gains for rate limiting
+    self.previous_kp = KP
+    self.previous_ki = KI
+    self.previous_kd = KD
+    
+    # Initialize Params for dynamic loading
+    self.params = Params() # Initialize Params here
+
+    # Configurable max gain change rate
+    try:
+        max_gain_change_param = self.params.get("LatAccelMaxGainChangeRate")
+        self.max_gain_change_rate = float(max_gain_change_param) if max_gain_change_param else 0.1 # 10% change per second
+    except (UnknownKeyName, ValueError):
+        self.max_gain_change_rate = 0.1
+
     # Road condition estimation
     self.road_condition = 'normal'  # 'normal', 'icy', 'wet', 'rough'
 
@@ -78,6 +96,23 @@ class LatControlTorque(LatControl):
     self.environmental_condition = 'normal'  # To track environmental conditions from external sources
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
+
+    # Stability monitoring
+    self.lateral_error_history = deque(maxlen=30) # Store 30 samples (0.3 seconds at 100Hz)
+    self.last_gain_adjustment_time = 0.0
+    self.stability_monitoring_active = False
+
+    try:
+        err_thresh_param = self.params.get("LateralErrorIncreaseThreshold")
+        self.lateral_error_increase_threshold = float(err_thresh_param) if err_thresh_param else 0.1 # meters
+    except (UnknownKeyName, ValueError):
+        self.lateral_error_increase_threshold = 0.1
+
+    try:
+        revert_duration_param = self.params.get("GainRevertDuration")
+        self.gain_revert_duration = float(revert_duration_param) if revert_duration_param else 2.0 # seconds
+    except (UnknownKeyName, ValueError):
+        self.gain_revert_duration = 2.0
 
   def estimate_environmental_conditions(self, CS, params, sm):
     """Estimate environmental conditions based on car state and sensor data"""
@@ -124,10 +159,23 @@ class LatControlTorque(LatControl):
     return kp, ki, kd
 
   def update_pid_gains(self, new_kp, new_ki, new_kd):
-    """Update PID controller gains"""
-    self.pid.k_p = new_kp
-    self.pid.k_i = new_ki
-    self.pid.k_d = new_kd
+    """Update PID controller gains with rate limiting"""
+    # Apply rate limiting to gain changes
+    kp_limited = np.clip(new_kp, self.previous_kp - self.max_gain_change_rate * self.dt,
+                                 self.previous_kp + self.max_gain_change_rate * self.dt)
+    ki_limited = np.clip(new_ki, self.previous_ki - self.max_gain_change_rate * self.dt,
+                                 self.previous_ki + self.max_gain_change_rate * self.dt)
+    kd_limited = np.clip(new_kd, self.previous_kd - self.max_gain_change_rate * self.dt,
+                                 self.previous_kd + self.max_gain_change_rate * self.dt)
+
+    self.pid.k_p = kp_limited
+    self.pid.k_i = ki_limited
+    self.pid.k_d = kd_limited
+
+    # Store current (limited) gains as previous for the next iteration
+    self.previous_kp = kp_limited
+    self.previous_ki = ki_limited
+    self.previous_kd = kd_limited
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -152,9 +200,16 @@ class LatControlTorque(LatControl):
     else:
       env_conditions = {'road_condition': 'normal', 'weather_condition': 'normal'}
 
-    # Calculate adaptive gains based on current conditions and update PID
+    # Calculate adaptive gains based on current conditions
     adaptive_kp, adaptive_ki, adaptive_kd = self.calculate_adaptive_gains(CS.vEgo, desired_curvature, env_conditions)
+
+    # Store current gains before potential adjustment for stability monitoring
+    current_kp, current_ki, current_kd = self.pid.k_p, self.pid.k_i, self.pid.k_d
+
     self.update_pid_gains(adaptive_kp, adaptive_ki, adaptive_kd)
+    
+    # Update last gain adjustment time for stability monitoring
+    self.last_gain_adjustment_time = time.time()
 
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
@@ -169,6 +224,31 @@ class LatControlTorque(LatControl):
       roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
       curvature_deadzone = abs(VM.calc_curvature(math.radians(self.steering_angle_deadzone_deg), CS.vEgo, 0.0))
       lateral_accel_deadzone = curvature_deadzone * CS.vEgo ** 2
+
+      # Calculate lateral error for stability monitoring
+      lateral_error = (desired_curvature - measured_curvature) * CS.vEgo # Approximation of lateral error
+      self.lateral_error_history.append(abs(lateral_error))
+      
+      # Check for instability after gain adjustment
+      if self.stability_monitoring_active and (time.time() - self.last_gain_adjustment_time) < self.gain_revert_duration:
+          # Compare current lateral error to an average before the adjustment
+          if len(self.lateral_error_history) > 10: # Ensure enough history
+              # Using the standard deviation of recent errors as a proxy for stability
+              recent_errors_std = np.std(list(self.lateral_error_history)[-10:])
+              # If current error is significantly higher than recent average or std, it might indicate instability
+              if abs(lateral_error) > (np.mean(list(self.lateral_error_history)[:-10]) + self.lateral_error_increase_threshold) and \
+                 abs(lateral_error) > (recent_errors_std * 3): # 3 standard deviations as a threshold
+                  
+                  # Revert to previous gains and disable stability monitoring for a period
+                  self.update_pid_gains(current_kp, current_ki, current_kd)
+                  self.stability_monitoring_active = False # Disable for a cooldown
+                  self.last_gain_adjustment_time = time.time() # Reset timer to prevent re-triggering immediately
+                  print("LATERAL CONTROL INSTABILITY DETECTED! Reverting gains.") # For debugging
+      else:
+          # Re-activate stability monitoring after cooldown period
+          if not self.stability_monitoring_active and (time.time() - self.last_gain_adjustment_time) > self.gain_revert_duration:
+              self.stability_monitoring_active = True
+
 
       delay_frames = int(np.clip(lat_delay / self.dt, 1, self.lat_accel_request_buffer_len))
       expected_lateral_accel = self.lat_accel_request_buffer[-delay_frames]

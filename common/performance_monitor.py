@@ -4,9 +4,11 @@ Provides runtime performance tracking for critical systems
 """
 import time
 import threading
+import json # Import json for loading performance baselines
 from collections import deque
 from typing import Dict, Optional
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.params import Params, UnknownKeyName # Import Params and UnknownKeyName
 
 
 class PerformanceTimer:
@@ -36,7 +38,40 @@ class PerformanceMonitor:
   def __init__(self):
     self.timers: Dict[str, deque] = {}
     self.timer_lock = threading.Lock()
-    self.max_samples = 100  # Keep last 100 samples for averaging
+    
+    self.params = Params() # Initialize Params
+
+    try:
+        max_samples_param = self.params.get("PerformanceMonitorMaxSamples")
+        self.max_samples = int(float(max_samples_param)) if max_samples_param else 50 # Default to 50 samples
+    except (UnknownKeyName, ValueError):
+        self.max_samples = 50 # Default value if parameter not found or invalid
+
+    # Performance baselines (configurable via Params)
+    try:
+        baselines_str = self.params.get("PerformanceBaselines")
+        # Example: '{"lateral_accuracy": 0.1, "longitudinal_accuracy": 0.2, "ride_comfort": 0.9}'
+        self.performance_baselines = json.loads(baselines_str) if baselines_str else {
+            'lateral_accuracy': 0.1,
+            'longitudinal_accuracy': 0.2,
+            'ride_comfort': 0.9
+        }
+    except (UnknownKeyName, ValueError, json.JSONDecodeError):
+        self.performance_baselines = {
+            'lateral_accuracy': 0.1,
+            'longitudinal_accuracy': 0.2,
+            'ride_comfort': 0.9
+        }
+    
+    # Window size for performance health check
+    try:
+        health_window_param = self.params.get("PerformanceHealthWindow")
+        self.performance_health_window = int(float(health_window_param)) if health_window_param else 10 # Default to 10 samples
+    except (UnknownKeyName, ValueError):
+        self.performance_health_window = 10
+
+    self.performance_unhealthy_counter = 0
+    self.performance_unhealthy = False
 
   def add_timing(self, name: str, elapsed_ms: float):
     """Add a timing sample for a named operation"""
