@@ -292,7 +292,14 @@ class EnvironmentalConditionDetector:
 class SafetyMonitor:
   """
   Enhanced Safety Monitoring System for Autonomous Driving
-  Implements multi-sensor fusion validation, confidence thresholds, and environmental adaptation
+  Implements multi-sensor fusion validation, confidence thresholds, and environmental adaptation.
+
+  NOTE: The effectiveness of this entire adaptive system heavily relies on the
+  accuracy and reliability of the environmental condition estimates (weather,
+  road, and lighting conditions). If these conditions are poorly estimated,
+  noisy, or based on unreliable sensor data, the system's adaptive behavior
+  will be erratic, potentially compromising safety or user comfort.
+  Continuous validation and improvement of environmental sensing are crucial.
   """
 
   def __init__(self):
@@ -961,7 +968,14 @@ class SafetyMonitor:
       for anomaly_type, anomaly_data in self.anomalies.items():
         if anomaly_type in ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']:
           # Apply severity-based penalty based on the anomaly data
-          # Adjust penalties based on environmental conditions - be more forgiving in poor conditions
+          # Adjust penalties based on environmental conditions - be more forgiving in poor conditions.
+          # The rationale is that in adverse environments (e.g., poor weather, low light, rough roads),
+          # certain anomalies (like higher jerk or steering rates) might be more attributable to
+          # environmental factors or the natural response of a human driver to these conditions,
+          # rather than a critical system or driver failure. This makes the system more tolerant
+          # of human behavior in challenging scenarios, reducing unnecessary interventions and
+          # improving user trust. In contrast, in ideal conditions, anomalies are penalized more
+          # severely as they are less justifiable.
           environmental_severity_factor = 1.0
 
           # In poor environmental conditions, be more forgiving (reduce penalties)
@@ -1016,7 +1030,16 @@ class SafetyMonitor:
     return max(0.0, min(1.0, safety_score))
 
   def get_adaptive_thresholds(self) -> Dict[str, float]:
-    """Calculate adaptive safety thresholds based on environmental conditions"""
+    """
+    Calculate adaptive safety thresholds based on environmental conditions.
+
+    This function dynamically adjusts various safety thresholds (e.g., model confidence,
+    lane deviation, safety score) to account for changing environmental factors.
+    The interactions between environmental multipliers, model confidence, and
+    vehicle speed are complex and can lead to non-linear behavior.
+    Therefore, rigorous simulation, scenario testing, and real-world validation
+    are paramount to ensure the system's safety and robustness across all conditions.
+    """
     # Base thresholds - these will be adjusted based on environmental conditions
     adaptive_thresholds = {
       'model_confidence': self.model_confidence_threshold * self.model_confidence_threshold_multiplier,
@@ -1050,7 +1073,13 @@ class SafetyMonitor:
     elif self.road_condition == "dry":
         road_multiplier = 1.05  # Slightly more aggressive on dry roads
 
-    # Combine multipliers with environmental confidence for weighted adjustment
+    # Combine multipliers with environmental confidence for weighted adjustment.
+    # The exponent (e.g., 0.4, 0.2) is a critical tuning constant that determines
+    # how strongly the environmental confidence influences the overall multiplier.
+    # Its specific value is empirically derived to balance aggressiveness and conservatism
+    # across various conditions. The mathematical justification for this exact exponent
+    # (e.g., why 0.4 and not a linear relationship) is a black-box component that
+    # requires further theoretical backing or extensive empirical validation.
     combined_multiplier = 1.0
     if self.lighting_confidence > 0.5:
         combined_multiplier *= lighting_multiplier ** (0.4 * self.lighting_confidence)
@@ -1069,13 +1098,18 @@ class SafetyMonitor:
 
     # Additional adjustment based on vehicle speed
     # At higher speeds, be more conservative even in good conditions
-    # At very low speeds, be more aggressive if conditions are good
     if hasattr(self, 'current_vEgo') and self.current_vEgo is not None:
         if self.current_vEgo > 25.0:  # Above ~90 km/h, be more conservative
             adaptive_thresholds['model_confidence'] *= 0.9
             adaptive_thresholds['lane_deviation'] *= 0.85
         elif self.current_vEgo < 5.0:  # At very low speed, can be more aggressive if conditions are good
             if combined_multiplier > 1.0:
+                # Increasing the safety score threshold (e.g., by 1.2) at very low speeds
+                # assumes the driver has more control and allows for more aggressive behavior
+                # from the system. While generally true, this could lead to the system being
+                # too lenient in dangerous low-speed scenarios (e.g., pedestrian crossings,
+                # complex maneuvers). This adjustment needs careful validation to ensure it
+                # doesn't compromise safety for perceived aggressiveness/smoothness.
                 adaptive_thresholds['safety_score'] *= 1.2  # Allow lower safety score when safe to do so
 
     return adaptive_thresholds

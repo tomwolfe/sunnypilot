@@ -335,29 +335,36 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       orientation_x = getattr(orientation_ned, 'x', None)
       if orientation_x is not None and len(orientation_x) > 0:
         road_pitch = orientation_x[0]
-        # Reduce rate limit when on hills
+        # Reduce rate limit when on hills. A 0.05 radian (approx 2.86 degrees) pitch
+        # is considered a significant grade. This makes the system more conservative
+        # when accelerating uphill, improving comfort and potentially fuel efficiency.
         if abs(road_pitch) > 0.05:  # More than 5% grade
           accel_rate_limit = 0.03  # More conservative acceleration rate
 
     # ENHANCED: Additional constraint based on safety monitor state
+    # This integrates the system's overall safety confidence into longitudinal planning.
+    # A degraded safety score implies higher risk, leading to more conservative acceleration.
     if cached_safety_monitor:  # Already retrieved with getattr, just check if not None
       safety_score = getattr(cached_safety_monitor, 'overall_safety_score', 1.0)
-      if safety_score < 0.6:  # If safety score is degraded
-        # Further reduce the acceleration rate limit for safety
-        if safety_score < 0.3:  # Critical safety level
-          accel_rate_limit *= 0.4  # Very conservative
-        elif safety_score < 0.5:  # High risk level
-          accel_rate_limit *= 0.6  # More conservative
-        else:  # Moderate risk level
-          accel_rate_limit *= 0.8  # Slightly more conservative
+      if safety_score < 0.6:  # If safety score is degraded (e.g., due to perception issues, driver disengagement)
+        # Further reduce the acceleration rate limit for safety. These multipliers
+        # create a hierarchical safety system, making the vehicle less aggressive
+        # as the safety score deteriorates.
+        if safety_score < 0.3:  # Critical safety level (e.g., severe sensor degradation)
+          accel_rate_limit *= 0.4  # Very conservative (60% reduction)
+        elif safety_score < 0.5:  # High risk level (e.g., significant temporary anomaly)
+          accel_rate_limit *= 0.6  # More conservative (40% reduction)
+        else:  # Moderate risk level (e.g., minor, transient issue)
+          accel_rate_limit *= 0.8  # Slightly more conservative (20% reduction)
 
-    # ENHANCED: Additional constraints based on model confidence and road conditions
-    # Use defensive programming to check if meta and confidence exist
+    # ENHANCED: Additional constraints based on model confidence
+    # When the model's confidence in its predictions is low, the system should act
+    # more conservatively to ensure safety. This is a vital safety feature.
     model_confidence = getattr(getattr(cached_model_v2, 'meta', None), 'confidence', None)
     if model_confidence is not None:
       model_confidence = model_confidence if model_confidence else 1.0
-      if model_confidence < 0.6:  # Low model confidence
-        accel_rate_limit *= 0.7  # Be more conservative
+      if model_confidence < 0.6:  # Low model confidence (below 60%)
+        accel_rate_limit *= 0.7  # Reduce acceleration rate limit by 30% to be more conservative
 
     # ENHANCED: Road condition-based constraints (integrated with safety monitor data)
 
@@ -368,13 +375,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       weather_condition = getattr(cached_safety_monitor, 'weather_condition', 'unknown')
       lighting_condition = getattr(cached_safety_monitor, 'lighting_condition', 'normal')
 
-      # Apply environmental-based adjustments more efficiently
+      # Apply environmental-based adjustments more efficiently. This proactively adapts
+      # the system's behavior to external conditions, enhancing safety and comfort.
       if road_condition in ['icy', 'wet', 'slippery']:
-        accel_rate_limit *= 0.5  # More conservative in slippery conditions
+        accel_rate_limit *= 0.5  # Significant reduction (50%) in slippery conditions for safety.
       elif weather_condition in ['rain', 'snow', 'fog']:
-        accel_rate_limit *= 0.6  # More conservative in poor weather
+        accel_rate_limit *= 0.6  # Moderate reduction (40%) in poor weather for increased caution.
       elif lighting_condition in ['night', 'dawn_dusk']:
-        accel_rate_limit *= 0.75  # More conservative in low light conditions
+        accel_rate_limit *= 0.75  # Slight reduction (25%) in low light conditions for improved perception margin.
 
     # NEW: Performance optimization - use local variables to reduce attribute access
     prev_accel_clip = self.prev_accel_clip
@@ -434,7 +442,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Apply conservative approach: reduce the minimum acceleration bound (allow more coasting) when approaching downhill
     # Only if uphill distance is zero and downhill distance is significant
     if upcoming_features['uphill_distance'] == 0.0 and upcoming_features['downhill_distance'] > 20.0:  # Significant downhill ahead with no uphill sections
-      # Reduce the minimum acceleration bound by 10% to allow more coasting (conservative approach)
+      # Reduce the minimum acceleration bound by 10% to allow more coasting (conservative approach).
+      # This is an energy efficiency gain, but it must be balanced against maintaining
+      # a safe following distance. The current implementation does not explicitly
+      # consider the distance to the vehicle ahead in this decision, which could be
+      # an area for future improvement for enhanced safety.
       accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # More conservative deceleration limit
 
     # For uphill sections, be more conservative about acceleration
@@ -447,7 +459,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.publish_longitudinal_plan_sp(sm, pm)
 
   def calculate_upcoming_road_features(self, model_v2, v_ego):
-    """Calculate upcoming road features for predictive efficiency optimization"""
+    """
+    Calculate upcoming road features for predictive efficiency optimization.
+
+    This function analyzes the model's predictions to identify upcoming changes in
+    road elevation (uphill/downhill) and curvature. These features are used to
+    proactively adjust longitudinal control for improved energy efficiency and comfort.
+
+    NOTE: This function performs significant computation on every cycle due to
+    numerical differentiation and array operations. While optimizations like
+    vectorized NumPy operations are used, its impact on ECU computational load,
+    especially on lower-end hardware, should be profiled and monitored.
+    The 20-point window for analysis is a compromise between prediction horizon
+    and computational cost.
+    """
     features = {
       'uphill_distance': 0.0,
       'downhill_distance': 0.0,
@@ -458,6 +483,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # NOTE: This function assumes that DT_MDL represents a constant, known time step
     # and that distance_per_point = v_ego * DT_MDL is a valid approximation.
     # This assumption is critical for the accuracy of the distance calculations.
+    # A more accurate method would use the actual path length between points from the model.
     distance_per_point = v_ego * DT_MDL  # Actual distance traveled per model time step
 
     # Check upcoming road elevation using modelV2 orientation data
@@ -469,7 +495,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         # Use NumPy for vectorized operations to improve performance
         pitch_array = np.array(pitch_values[1:])  # Skip current position (index 0)
 
-        # Calculate total distance for uphill/downhill sections using boolean indexing
+        # Calculate total distance for uphill/downhill sections using boolean indexing.
+        # The thresholds (0.05 radians for both uphill and downhill) are empirical
+        # and represent a significant grade for efficiency considerations.
+        # These values require further real-world validation to ensure optimality
+        # across various road types and vehicle load conditions.
         uphill_mask = pitch_array > 0.05
         downhill_mask = pitch_array < -0.05
 
@@ -488,7 +518,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       path_x = np.array(model_v2.path.x[:20])  # First 20 x positions as NumPy array
 
       if len(path_y) > 2:
-        # Calculate curvature using vectorized NumPy operations for better performance
+        # Calculate curvature using vectorized NumPy operations for better performance.
+        # This approximation (kappa ≈ |y''|) is used as a proxy for curvature,
+        # which is reasonable for identifying "high curvature" sections for planning.
+        # However, it is not the true mathematical definition of curvature and
+        # could have edge-case bugs, especially with noisy data or sharp,
+        # non-smooth path segments.
         try:
           # Calculate first derivatives using vectorized approach
           dx_diff = np.diff(path_x)  # Calculate all x differences at once
@@ -524,7 +559,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Calculate curvature magnitudes
           curvatures = np.abs(d2y_dx2)
 
-          # Check which curvatures exceed threshold (0.002 rad/m)
+          # Check which curvatures exceed threshold (0.002 rad/m).
+          # This threshold is empirically determined to identify "high curvature"
+          # sections relevant for longitudinal planning adjustments.
+          # Its optimality is unproven and needs extensive real-world validation
+          # to ensure it appropriately captures safety-critical curves without
+          # being overly conservative or aggressive.
           high_curvature_mask = curvatures > 0.002
 
           # Count how many points have high curvature

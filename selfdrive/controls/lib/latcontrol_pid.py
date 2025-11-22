@@ -205,7 +205,27 @@ class LatControlPID(LatControl):
     return output_torque, angle_steers_des, pid_log
 
   def _apply_smooth_transitions(self, output_torque, v_ego, active):
-    """Apply smooth transitions to reduce jerk and improve user experience"""
+    """
+    Applies smooth transitions to the output torque to reduce jerk and improve user experience.
+
+    This method implements speed-adaptive rate limiting and gentle activation strategies:
+    - **Speed-Adaptive Rate Limiting:** Dynamically adjusts the `max_torque_rate` based on
+      vehicle speed (`v_ego`) to provide conservative smoothing at high speeds and more
+      responsiveness at low speeds.
+    - **Gentle Activation:** Prevents jarring initial torque spikes when the system
+      engages by limiting the initial output torque, contributing to a smoother
+      user experience.
+    - **Smooth Deactivation:** Uses a faster rate when deactivating to smoothly
+      return control to the driver.
+
+    The overall goal is to provide human-like lateral control by ensuring smooth
+    transitions without introducing unacceptable latency in lane-keeping.
+
+    :param output_torque: The raw output torque from the PID controller.
+    :param v_ego: The ego vehicle's speed in m/s.
+    :param active: Boolean indicating if the lateral control is active.
+    :return: The smoothed output torque.
+    """
     # NOTE: v_ego is assumed to be in m/s (meters per second) throughout this function
     # The tuning values for max_torque_rate (0.1, 0.2, 0.3, 0.4, 0.5) have been carefully
     # selected based on vehicle dynamics and testing to ensure acceptable latency in
@@ -220,7 +240,9 @@ class LatControlPID(LatControl):
       # When deactivating, use faster smoothing to return to center
       max_torque_rate = 0.5  # Higher rate when returning to neutral
     else:
-      # When active, use more conservative smoothing
+      # When active, use more conservative smoothing. These values are critical for
+      # user experience and safety, controlling the responsiveness and smoothness of
+      # lateral control.
       if v_ego < 5.0:  # Very low speed
         max_torque_rate = 0.1
       elif v_ego < 15.0:  # Low to medium speed
@@ -229,14 +251,22 @@ class LatControlPID(LatControl):
         max_torque_rate = 0.3
       else:  # High speed
         max_torque_rate = 0.4  # More conservative at high speeds
+        # At high speeds, especially on high-curvature bends, this rate might
+        # introduce a slight delay before full correction. Future improvements
+        # could involve feeding predictive curve data (e.g., from longitudinal_planner)
+        # to pre-emptively adjust or increase the rate limit for upcoming curves.
 
-    # Validate max_torque_rate values to ensure acceptable latency in high-curvature roads
-    # The values 0.1, 0.2, 0.3, 0.4, 0.5 should be appropriate for smooth transitions
-    # without introducing unacceptable latency on high-curvature roads
-    # These values have been tuned to provide smooth transitions while maintaining
-    # responsiveness on curves at different speeds
+    # The `max_torque_rate` values (0.1, 0.2, 0.3, 0.4, 0.5) are empirically tuned.
+    # Their optimality is highly vehicle-specific and requires extensive, real-world
+    # validation across different models and loads. They are chosen to balance
+    # smooth transitions with acceptable latency in lane-keeping on high-curvature roads.
+    # Further tuning may be required to optimize for specific vehicle dynamics or user preferences.
 
     # Apply rate limiting for smoother transitions
+    # This smoothing is currently a rate limit on the PID output.
+    # Future improvements could explore incorporating feedback from the
+    # actual steering angle or steering rate to potentially achieve an
+    # even more responsive and natural feel.
     torque_diff = output_torque - self.prev_output_torque
     limited_diff = max(min(torque_diff, max_torque_rate), -max_torque_rate)
 
