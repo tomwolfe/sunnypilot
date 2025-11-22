@@ -555,11 +555,10 @@ class Controls(ControlsExt, ModelStateBase):
 
         # Now use the actual controller error as the true lateral deviation
         # lac_log.error represents the difference between desired and actual lateral position
-        corrected_actual_lateral_deviation = abs(lac_log.error)
+        corrected_actual_lateral_deviation = abs(lac_log.error) if lac_log.error is not None else 0.0
 
         actual_state_corrected = {
           'lateral_deviation': corrected_actual_lateral_deviation,  # True lateral deviation from desired path in meters
-          'lateral': abs(desired_lateral_pos),  # For backward compatibility
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
