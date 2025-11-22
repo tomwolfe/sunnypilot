@@ -143,6 +143,15 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
           num_valid_lanes += 1
 
     # Calculate path reliability based on both confidence and lane availability
+    # The scaling factors (1.5, 1.2, 0.8, 0.5) are heuristic values determined through
+    # empirical testing to balance responsiveness and safety. They are designed to:
+    # - Boost reliability when high confidence and multiple lanes are detected,
+    #   reflecting a strong perception of the environment.
+    # - Moderately reduce reliability when only one lane is detected, indicating
+    #   some uncertainty but not a complete loss of environmental understanding.
+    # - Significantly reduce reliability when no valid lanes are detected, prompting
+    #   a cautious system response due to high uncertainty.
+    # These values are subject to ongoing tuning and validation with real-world data.
     lane_reliability = min(1.0, avg_lane_confidence * 1.5)  # Scale up to account for conservative baseline values
 
     # Enhance path reliability based on number of valid lanes detected

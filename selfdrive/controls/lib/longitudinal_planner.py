@@ -85,6 +85,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   ACCEL_REDUCTION_LOW = 0.7
   BRAKE_AGGRESSION_LOW = 0.8
   ACCEL_RATE_LIMIT_LOW_RELIABILITY = 0.03
+  # These thresholds and multipliers are critical for safety and system behavior.
+  # Their current values are based on initial tuning and require extensive real-world
+  # validation to ensure optimal performance across various driving conditions and
+  # edge cases. Ongoing monitoring and fine-tuning are essential.
 
   # Constants for safety factor calculations
   SAFETY_SCORE_DEGRADED = 0.6
