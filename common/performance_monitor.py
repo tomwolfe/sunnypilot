@@ -121,9 +121,9 @@ class PerformanceMonitor:
     # The model output contains path information that can also be used.
     if 'lateral_deviation' in actual_state:
         performance_metrics['lateral_accuracy'] = abs(actual_state['lateral_deviation'])
-    elif 'lateral' in actual_state: # Fallback for backward compatibility, though not preferred
-        performance_metrics['lateral_accuracy'] = actual_state['lateral']
     else:
+        # If lateral_deviation is not available, we cannot accurately assess lateral accuracy
+        # using 'lateral' (steering angle) would be incorrect, as per critical review.
         performance_metrics['lateral_accuracy'] = float('inf') # Indicate no valid data
 
     # Longitudinal accuracy: Difference between desired speed and actual speed
@@ -168,16 +168,16 @@ class PerformanceMonitor:
                 is_degraded = True
                 degradation_details[metric] = f"Current {value:.2f} > Baseline {baseline:.2f}"
     
-    # Update performance unhealthy status and counter for hysteresis
+    # Update performance unhealthy status and counter for consecutive degraded frames
     if is_degraded:
         self.performance_unhealthy_counter = min(self.performance_unhealthy_counter + 1, self.performance_health_window + 1)
         if self.performance_unhealthy_counter >= self.performance_health_window:
             self.performance_unhealthy = True
             cloudlog.warning(f"Performance degraded: {degradation_details}")
     else:
-        self.performance_unhealthy_counter = max(self.performance_unhealthy_counter - 1, 0)
-        if self.performance_unhealthy_counter == 0:
-            self.performance_unhealthy = False
+        # Reset counter if not degraded, to only count CONSECUTIVE degraded frames
+        self.performance_unhealthy_counter = 0
+        self.performance_unhealthy = False # Ensure it's false if counter is reset
 
   def should_adapt_parameters(self) -> Tuple[bool, Optional[Dict]]:
     """

@@ -583,35 +583,11 @@ class Controls(ControlsExt, ModelStateBase):
 
         if adapt_needed and adaptation_params:
             # Re-apply safety lockout with corrected performance data
-            # Only lockout adaptation if safety score is critically low (below critical threshold)
+            # The lockout should be based *primarily* on the overall_safety_score being below a critical threshold.
             if overall_safety_score_val < self.safety_critical_threshold:
                 cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f} < {self.safety_critical_threshold}) with corrected lateral error.")
-            # Check for critical anomalies that should prevent adaptation
-            elif safety_report.get('anomalies_detected', {}):
-                # Only prevent adaptation for the most critical anomalies that indicate immediate danger
-                critical_anomalies = ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']
-                has_critical_anomaly = any(anomaly_type in critical_anomalies and
-                                          safety_report['anomalies_detected'][anomaly_type]
-                                          for anomaly_type in safety_report['anomalies_detected'])
-
-                # Only lockout if we have critical anomalies AND the safety score is below high risk threshold
-                if has_critical_anomaly and overall_safety_score_val < self.safety_high_risk_threshold:
-                    cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical anomalies with safety concerns (score: {overall_safety_score_val:.2f}, anomalies: {list(safety_report['anomalies_detected'].keys())}).")
-                else:
-                    # Apply adaptation as it could help resolve the anomalies
-                    cloudlog.info(f"Performance adaptation triggered with corrected lateral error (score: {overall_safety_score_val:.2f}): {adaptation_params}")
-                    # Update tuning parameters for adaptive control
-                    for param, value in adaptation_params.items():
-                        if param in self.performance_monitor.tuning_params:
-                            self.performance_monitor.tuning_params[param] = value
-
-                    # Update the lateral controller with new parameters if needed
-                    if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
-                        # In a real implementation, we would pass these to the lateral controller
-                        # For now, we'll just store them for reference
-                        self.adaptation_params = adaptation_params
             else:
-                cloudlog.info(f"Performance adaptation triggered with corrected lateral error: {adaptation_params}")
+                cloudlog.info(f"Performance adaptation triggered with corrected lateral error (score: {overall_safety_score_val:.2f}): {adaptation_params}")
                 # Update tuning parameters for adaptive control
                 for param, value in adaptation_params.items():
                     if param in self.performance_monitor.tuning_params:
