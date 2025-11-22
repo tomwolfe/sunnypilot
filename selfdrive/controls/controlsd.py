@@ -530,7 +530,7 @@ class Controls(ControlsExt, ModelStateBase):
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited, self.lat_delay,
-                                                       sm={'safety_monitor_state': safety_monitor_state})  # TODO what if not available
+                                                       sm=self.sm)  # Pass the submaster to access modelV2.meta.pathReliability
     actuators.torque = steer  # removed float() wrapper for performance
     actuators.steeringAngleDeg = steeringAngleDeg  # removed float() wrapper for performance
 

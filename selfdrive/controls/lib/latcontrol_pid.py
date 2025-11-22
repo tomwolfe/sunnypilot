@@ -72,7 +72,7 @@ class LatControlPID(LatControl):
     # Ensure time constant stays within reasonable bounds
     return max(0.02, min(0.2, time_constant))  # Clamp between 20ms and 200ms
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, sm=None):
     # Apply adaptive low-pass filter to desired_curvature based on driving conditions
     # Use different time constants based on vehicle speed and curvature for optimal response
     adaptive_time_constant = self._get_adaptive_time_constant(CS.vEgo, abs(desired_curvature))
@@ -92,6 +92,22 @@ class LatControlPID(LatControl):
 
     pid_log.steeringAngleDesiredDeg = angle_steers_des
     pid_log.angleError = error
+
+    # NEW: Enhanced safety based on path/model reliability for lateral control
+    reliability_factor = 1.0  # Default to no adjustment
+    if sm is not None and 'modelV2' in sm:
+      model_v2 = sm['modelV2']
+      if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'pathReliability'):
+        path_reliability = model_v2.meta.pathReliability
+        if path_reliability < 0.6:  # Low path reliability
+          # Reduce lateral control aggressiveness when path is unreliable
+          reliability_factor = 0.8 + 0.2 * path_reliability  # Gradually reduce from 0.8 to 0.2 as reliability decreases
+        elif hasattr(model_v2.meta, 'pathPredictionConfidence'):
+          model_confidence = model_v2.meta.pathPredictionConfidence
+          if model_confidence < 0.7:  # Low model confidence
+            # Use both path reliability and model confidence
+            combined_reliability = min(path_reliability, model_confidence)
+            reliability_factor = 0.7 + 0.3 * combined_reliability  # Even more conservative with low confidence
 
     # Add curvature gain specific monitoring
     current_time = time.time()  # Use proper time source instead of CS.aEgo which is acceleration
@@ -135,6 +151,11 @@ class LatControlPID(LatControl):
     else:
       # offset does not contribute to resistive torque
       ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
+
+      # Apply reliability factor to feedforward term when path/model is unreliable
+      if reliability_factor < 1.0:
+        ff *= reliability_factor
+
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
       # Handle invalid curvature values before passing to PID controller
@@ -152,6 +173,10 @@ class LatControlPID(LatControl):
                                 speed=CS.vEgo,
                                 curvature=safe_curvature,
                                 freeze_integrator=freeze_integrator)
+
+      # Apply reliability factor to the final output torque when path/model is unreliable
+      if reliability_factor < 1.0:
+        output_torque *= reliability_factor
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

@@ -1143,6 +1143,7 @@ struct ModelDataV2 {
     hardBrakePredicted @7 :Bool;
     laneChangeState @8 :LaneChangeState;
     laneChangeDirection @9 :LaneChangeDirection;
+    pathPredictionConfidence @10 :Float32;
 
 
     # deprecated

@@ -152,6 +152,8 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   meta.desireState = net_output_data['desire_state'][0].reshape(-1).tolist()
   meta.desirePrediction = net_output_data['desire_pred'][0].reshape(-1).tolist()
   meta.engagedProb = net_output_data['meta'][0,model_meta.ENGAGED].item()
+  if 'path_reliability' in net_output_data:
+    meta.pathPredictionConfidence = float(net_output_data['path_reliability'][0])
   meta.init('disengagePredictions')
   disengage_predictions = meta.disengagePredictions
   disengage_predictions.t = ModelConstants.META_T_IDXS

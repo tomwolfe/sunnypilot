@@ -120,6 +120,20 @@ class Parser:
     self.parse_mdn('lane_lines', outs, in_N=0, out_N=0, out_shape=(ModelConstants.NUM_LANE_LINES,ModelConstants.IDX_N,ModelConstants.LANE_LINES_WIDTH))
     self.parse_mdn('road_edges', outs, in_N=0, out_N=0, out_shape=(ModelConstants.NUM_ROAD_EDGES,ModelConstants.IDX_N,ModelConstants.LANE_LINES_WIDTH))
     self.parse_binary_crossentropy('lane_lines_prob', outs)
+
+    # Enhanced lane line confidence and reliability tracking
+    if 'lane_lines_prob' in outs and outs['lane_lines_prob'].size > 0:
+      # Calculate average confidence for each lane line and overall lane line reliability
+      lane_line_probs = outs['lane_lines_prob'][0, :, 0]  # Shape is (batch, num_lanes, 1)
+      avg_lane_confidence = np.mean(lane_line_probs)
+
+      # Calculate lane line consistency - how stable the lane detections are
+      # Higher confidence values indicate more reliable lane detection
+      lane_reliability = min(1.0, avg_lane_confidence * 1.5)  # Scale up to account for conservative baseline values
+
+      # Store in outs for downstream use
+      outs['lane_line_reliability'] = np.array([lane_reliability])
+
     self.parse_categorical_crossentropy('desire_pred', outs, out_shape=(ModelConstants.DESIRE_PRED_LEN,ModelConstants.DESIRE_PRED_WIDTH))
     self.parse_binary_crossentropy('meta', outs)
     self.parse_binary_crossentropy('lead_prob', outs)
@@ -128,6 +142,34 @@ class Parser:
     lead_out_shape = (ModelConstants.LEAD_TRAJ_LEN, ModelConstants.LEAD_WIDTH) if lead_mhp else \
         (ModelConstants.LEAD_MHP_SELECTION, ModelConstants.LEAD_TRAJ_LEN, ModelConstants.LEAD_WIDTH)
     self.parse_mdn('lead', outs, in_N=lead_in_N, out_N=lead_out_N, out_shape=lead_out_shape)
+
+    # Enhanced path reliability calculation based on lane detection quality
+    if 'lane_lines' in outs and outs['lane_lines'].size > 0 and 'lane_line_reliability' in outs:
+      lane_lines = outs['lane_lines'][0]  # Shape is (num_lanes, idx_n, lane_lines_width)
+
+      # Calculate path reliability based on lane line availability and confidence
+      # Consider both the confidence of lane detection and the geometric consistency of the path
+      path_reliability = outs['lane_line_reliability'][0]
+
+      # Additional check: if we have good lane line coverage for the path prediction horizon
+      num_valid_lanes = 0
+      if lane_lines.ndim >= 3:
+        for lane_idx in range(lane_lines.shape[0]):
+          # Check if lane line has sufficient valid points (not too much missing data)
+          valid_points = np.sum(np.abs(lane_lines[lane_idx, :ModelConstants.IDX_N//2, :]) > 0.001)  # First half of path
+          if valid_points > ModelConstants.IDX_N//4:  # At least 25% of points are valid
+            num_valid_lanes += 1
+
+      # Enhance path reliability based on number of valid lanes detected
+      if num_valid_lanes >= 2:  # We have at least 2 good lane lines
+        path_reliability = min(1.0, path_reliability * 1.2)  # Boost reliability
+      elif num_valid_lanes == 1:  # Only one lane line
+        path_reliability = max(0.3, path_reliability * 0.8)  # Reduce reliability moderately
+      else:  # No good lane lines
+        path_reliability = max(0.1, path_reliability * 0.5)  # Significantly reduce reliability
+
+      outs['path_reliability'] = np.array([path_reliability])
+
     return outs
 
   def parse_policy_outputs(self, outs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

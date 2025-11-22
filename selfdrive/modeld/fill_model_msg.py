@@ -124,11 +124,41 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
     lead.prob = net_output_data['lead_prob'][0,i].tolist()
     lead.probTime = ModelConstants.LEAD_T_OFFSETS[i]
 
+  # Enhanced path reliability calculation based on lane detection quality
+  path_reliability = 1.0
+  if 'lane_lines' in net_output_data and net_output_data['lane_lines'].size > 0 and 'lane_lines_prob' in net_output_data:
+    lane_lines = net_output_data['lane_lines'][0]  # Shape is (num_lanes, idx_n, lane_lines_width)
+    lane_line_probs = net_output_data['lane_lines_prob'][0, 1::2]  # Take every other prob starting from index 1
+
+    # Calculate average lane line confidence
+    avg_lane_confidence = np.mean(lane_line_probs)
+
+    # Calculate lane line availability across the prediction horizon
+    num_valid_lanes = 0
+    if lane_lines.ndim >= 3:
+      for lane_idx in range(lane_lines.shape[0]):
+        # Check if lane line has sufficient valid points (not too much missing data)
+        valid_points = np.sum(np.abs(lane_lines[lane_idx, :ModelConstants.IDX_N//2, :]) > 0.001)  # First half of path
+        if valid_points > ModelConstants.IDX_N//4:  # At least 25% of points are valid
+          num_valid_lanes += 1
+
+    # Calculate path reliability based on both confidence and lane availability
+    lane_reliability = min(1.0, avg_lane_confidence * 1.5)  # Scale up to account for conservative baseline values
+
+    # Enhance path reliability based on number of valid lanes detected
+    if num_valid_lanes >= 2:  # We have at least 2 good lane lines
+      path_reliability = min(1.0, lane_reliability * 1.2)  # Boost reliability
+    elif num_valid_lanes == 1:  # Only one lane line
+      path_reliability = max(0.3, lane_reliability * 0.8)  # Reduce reliability moderately
+    else:  # No good lane lines
+      path_reliability = max(0.1, lane_reliability * 0.5)  # Significantly reduce reliability
+
   # meta
   meta = modelV2.meta
   meta.desireState = net_output_data['desire_state'][0].reshape(-1).tolist()
   meta.desirePrediction = net_output_data['desire_pred'][0].reshape(-1).tolist()
   meta.engagedProb = net_output_data['meta'][0,Meta.ENGAGED].item()
+  meta.pathReliability = float(path_reliability)  # Add path reliability to meta
   meta.init('disengagePredictions')
   disengage_predictions = meta.disengagePredictions
   disengage_predictions.t = ModelConstants.META_T_IDXS
