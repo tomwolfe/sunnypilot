@@ -94,7 +94,14 @@ class Controls(ControlsExt, ModelStateBase):
     except (UnknownKeyName, ValueError):
         self.performance_degradation_disengage_time = 5.0
     
+    try:
+        consecutive_frames_param = self.params.get("PerformanceDegradationConsecutiveFrames")
+        self.performance_degradation_consecutive_frames = int(float(consecutive_frames_param)) if consecutive_frames_param else 50 # frames
+    except (UnknownKeyName, ValueError):
+        self.performance_degradation_consecutive_frames = 50 # Default to 50 frames (~0.5s at 100Hz)
+
     self.performance_degradation_start_time = 0.0 # Tracks when degradation started
+    self.degradation_consecutive_count = 0 # Tracks consecutive frames of degradation
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
@@ -150,7 +157,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.sm = messaging.SubMaster(['liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
-                                   'radarState'] + self.sm_services_ext,
+                                   'radarState', 'gpsLocationExternal'] + self.sm_services_ext,
                                   poll=['selfdriveState', 'radarState', 'livePose', 'modelV2', 'carState', 'carControl'])
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -223,7 +230,7 @@ class Controls(ControlsExt, ModelStateBase):
       self.LaC.extension.update_lateral_lag(self.lat_delay)
 
     # Enhanced safety monitoring - perform safety checks using multi-sensor fusion
-    if self.sm.all_checks(['modelV2', 'radarState', 'carState', 'carControl', 'livePose']):
+    if self.sm.all_checks(['modelV2', 'radarState', 'carState', 'carControl', 'livePose', 'gpsLocationExternal']):
       try:
         safety_score, requires_intervention, safety_report = self.safety_monitor.update(
           self.sm['modelV2'],
@@ -236,7 +243,9 @@ class Controls(ControlsExt, ModelStateBase):
           self.sm['livePose'],
           self.sm.logMonoTime['livePose'] if 'livePose' in self.sm.logMonoTime else None,
           self.sm['driverMonitoringState'],
-          self.sm.logMonoTime['driverMonitoringState'] if 'driverMonitoringState' in self.sm.logMonoTime else None
+          self.sm.logMonoTime['driverMonitoringState'] if 'driverMonitoringState' in self.sm.logMonoTime else None,
+          self.sm['gpsLocationExternal'],
+          self.sm.logMonoTime['gpsLocationExternal'] if 'gpsLocationExternal' in self.sm.logMonoTime else None
         )
 
         # Update safety degraded mode based on safety monitor
@@ -296,7 +305,7 @@ class Controls(ControlsExt, ModelStateBase):
         }
 
         actual_state = {
-          'lateral': CS.steeringAngleDeg,  # Using steering as proxy for lateral state
+          'lateral': 0.0,  # Car is at y=0 in model frame
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
@@ -330,8 +339,8 @@ class Controls(ControlsExt, ModelStateBase):
 
         if adapt_needed and adaptation_params:
           # Check for safety lockout conditions
-          if self.safety_monitor.requires_intervention or overall_safety_score_val < self.safety_critical_threshold:
-            cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f}).")
+          if overall_safety_score_val < self.safety_high_risk_threshold: # Use high risk threshold as lockout
+            cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to high risk safety state (score: {overall_safety_score_val:.2f}).")
             # Do not apply adaptation_params
           else:
             cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
@@ -406,14 +415,19 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Check for persistent performance degradation requiring disengagement
     if combined_degraded_mode:
+        self.degradation_consecutive_count += 1
         if self.performance_degradation_start_time == 0:
             self.performance_degradation_start_time = time.monotonic()
-        elif (time.monotonic() - self.performance_degradation_start_time) > self.performance_degradation_disengage_time:
-            cloudlog.error(f"Persistent performance degradation for more than {self.performance_degradation_disengage_time}s. Requesting disengagement.")
+        
+        if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames and \
+           (time.monotonic() - self.performance_degradation_start_time) > self.performance_degradation_disengage_time:
+            cloudlog.error(f"Persistent performance degradation for more than {self.performance_degradation_disengage_time}s and {self.degradation_consecutive_count} consecutive frames. Requesting disengagement.")
             requires_intervention = True # Force disengagement
             self.performance_degradation_start_time = 0 # Reset timer
+            self.degradation_consecutive_count = 0 # Reset counter
     else:
         self.performance_degradation_start_time = 0 # Reset timer if not in degraded mode
+        self.degradation_consecutive_count = 0 # Reset counter if not in degraded mode
 
     # Apply safety-based acceleration limits if in degraded mode
     if self.safety_degraded_mode or combined_degraded_mode: # Use combined_degraded_mode for stricter conditions

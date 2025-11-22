@@ -101,14 +101,16 @@ class EnvironmentalConditionDetector:
             'roughness': 0.5,  # Threshold for bumpy roads based on IMU data
             'slippery': 0.3   # Threshold for potentially slippery conditions
         }
+        self.gps_confidence = 0.0
+        self.gps_signal_lost = True # Assume lost until proven otherwise
 
-    def detect_conditions(self, model_v2, live_pose, car_state):
+    def detect_conditions(self, model_v2, live_pose, car_state, gps_location_msg):
         conditions = {}
         confidences = {}
 
         # Advanced lighting detection using modelV2 scene analysis
         # Analyze brightness/contrast features from model if available
-        lighting_condition, lighting_confidence = self.assess_lighting_conditions(model_v2, car_state)
+        lighting_condition, lighting_confidence = self.assess_lighting_conditions(model_v2, car_state, gps_location_msg)
         conditions['lighting'] = lighting_condition
         confidences['lighting'] = lighting_confidence
 
@@ -130,7 +132,7 @@ class EnvironmentalConditionDetector:
 
         return conditions, confidences
 
-    def assess_lighting_conditions(self, model_v2, car_state_msg):
+    def assess_lighting_conditions(self, model_v2, car_state_msg, gps_location_msg):
         # Analyze lighting conditions using multi-sensor fusion approach
         # Combining lane line strength, camera brightness metrics, and time-based estimates
 
@@ -141,52 +143,74 @@ class EnvironmentalConditionDetector:
         valid_indicators = 0
         total_confidence = 0.0
 
-        # Indicator 1: Lane line strength (original approach, weighted less)
+        # Indicator 1: Lane line strength (original approach, weighted less in tunnels)
         lane_line_confidence = 0.0
         if hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0:
             lane_line_strengths = [line.strength for line in model_v2.laneLines if line.strength is not None]
             if len(lane_line_strengths) > 0:
                 avg_lane_line_strength = np.mean(lane_line_strengths)
 
-                # If average lane line strength is low, suggest poor lighting
                 if avg_lane_line_strength < 0.25:
                     lighting_condition = "dark"
                     lane_line_confidence = max(0.1, 1.0 - (0.25 - avg_lane_line_strength) / 0.25)
                 elif avg_lane_line_strength < 0.5:
-                    if lighting_condition == "normal":  # Don't overwrite if already set to dark
+                    if lighting_condition == "normal":
                         lighting_condition = "dawn_dusk"
                     lane_line_confidence = 0.5
                 else:
                     lane_line_confidence = min(0.7, 0.4 + avg_lane_line_strength / 2.0)
+                
+                # De-emphasize lane line strength if GPS suggests it's night
+                # or if model confidence is low, indicating potential dark environment
+                if gps_location_msg is not None and gps_location_msg.unixTimestampMillis > 0:
+                    # Use GPS time for accurate day/night calculation
+                    gps_time = datetime.datetime.fromtimestamp(gps_location_msg.unixTimestampMillis / 1000)
+                    hour = gps_time.hour
+                    is_night_time = hour >= 19 or hour <= 6
+                else:
+                    # Fallback to system time if GPS time is not available
+                    current_time_dt = datetime.datetime.now()
+                    hour = current_time_dt.hour
+                    is_night_time = hour >= 19 or hour <= 6
 
-                total_confidence += lane_line_confidence * 0.4  # Weight lane line indicator at 40%
+                if is_night_time:
+                    # Reduce weight of lane line strength significantly at night
+                    total_confidence += lane_line_confidence * 0.1  # Reduced weight (was 0.4)
+                else:
+                    total_confidence += lane_line_confidence * 0.4  # Original weight
                 valid_indicators += 1
 
-        # Indicator 2: Time of day based on system time (for nighttime detection)
+        # Indicator 2: Time of day based on system time / GPS time (for nighttime detection)
+        # Prioritize GPS time for accuracy
         import datetime
-        current_time = datetime.datetime.now()
-        hour = current_time.hour
-        is_night_time = hour >= 19 or hour <= 6  # Night time is roughly 7 PM to 6 AM
+        is_night_time = False
+        if gps_location_msg is not None and gps_location_msg.unixTimestampMillis > 0:
+            gps_time = datetime.datetime.fromtimestamp(gps_location_msg.unixTimestampMillis / 1000)
+            hour = gps_time.hour
+            is_night_time = hour >= 19 or hour <= 6 # Night time is roughly 7 PM to 6 AM
+        else:
+            # Fallback to system time if GPS time is not available
+            current_time_dt = datetime.datetime.now()
+            hour = current_time_dt.hour
+            is_night_time = hour >= 19 or hour <= 6
+
         time_based_confidence = 0.0
 
         if is_night_time:
-            time_based_confidence = 0.8  # High confidence for night classification
-            if lighting_condition != "dark":  # If not already classified as dark
+            time_based_confidence = 0.9  # High confidence for night classification, increased from 0.8
+            if lighting_condition != "dark":
                 lighting_condition = "dark"
         else:
-            time_based_confidence = 0.5  # Moderate confidence for not night
+            time_based_confidence = 0.6  # Moderate confidence for not night, increased from 0.5
 
-        total_confidence += time_based_confidence * 0.3  # Weight time indicator at 30%
+        total_confidence += time_based_confidence * 0.5  # Increased weight to 50%
         valid_indicators += 1
 
-        # Indicator 3: GPS-based sunrise/sunset calculation (simplified)
-        # This would require GPS coordinates in a real implementation
-        # For now we'll use a placeholder that adds to our confidence
-        gps_based_confidence = 0.3  # Base assumption from GPS
-
-        # In a real implementation, we'd calculate sunrise/sunset based on GPS coordinates and date
-        # For now, we'll add this as a simple indicator
-        total_confidence += gps_based_confidence * 0.3  # Weight GPS indicator at 30%
+        # Indicator 3: GPS-based sunrise/sunset calculation (placeholder, now potentially more accurate time)
+        # This would require GPS coordinates and date for accurate calculation
+        # For now, we'll continue using this as a confidence booster, relying on the time-of-day for primary
+        gps_based_confidence = 0.4 # Increased from 0.3 for consistency
+        total_confidence += gps_based_confidence * 0.1  # Reduced weight, as time-based is now more robust
         valid_indicators += 1
 
         # Calculate final confidence with multi-indicator fusion
@@ -196,8 +220,8 @@ class EnvironmentalConditionDetector:
             lighting_confidence = 0.4  # Default if no indicators are valid
 
         # Apply minimum confidence threshold check
-        if lighting_confidence < 0.7:  # Require 70% confidence for classification
-            # If confidence is low, default to "normal" for safety
+        if lighting_confidence < 0.6:  # Slightly reduced threshold for flexibility
+            # If confidence is low, default to "unknown" for safety
             lighting_condition = "unknown"
             lighting_confidence = 0.3  # Reduced confidence for unknown state
 
@@ -289,6 +313,17 @@ class EnvironmentalConditionDetector:
                 weather_confidence = min(weather_confidence, 0.4 + avg_edge_confidence / 2.0)
 
         return weather_condition, weather_confidence
+
+    def assess_gps_signal_quality(self, gps_location_msg) -> None:
+        """Assess GPS signal quality and update gps_confidence and gps_signal_lost"""
+        if gps_location_msg is not None and gps_location_msg.hasFix:
+            # GPS has a fix, confidence is high, signal is not lost
+            self.gps_confidence = min(1.0, max(0.5, 1.0 - (gps_location_msg.horizontalAccuracy / 20.0))) # Higher accuracy (lower value) means higher confidence
+            self.gps_signal_lost = False
+        else:
+            # No GPS fix or message is None, confidence is low, signal is lost
+            self.gps_confidence = 0.0
+            self.gps_signal_lost = True
 
 
 class SafetyMonitor:
@@ -489,6 +524,7 @@ class SafetyMonitor:
     self.camera_healthy = True
     self.imu_healthy = True # For livePose data used in environmental detection
     self.driver_monitoring_healthy = True # New: for driver monitoring health
+    self.gps_healthy = True # New: for GPS health
 
     # Environmental condition filters
     self.lighting_change_filter = FirstOrderFilter(0.0, 1.0, DT_MDL)
@@ -540,6 +576,7 @@ class SafetyMonitor:
     self.last_camera_time = 0
     self.last_imu_time = 0
     self.last_driver_monitoring_time = 0 # New: for driver monitoring staleness
+    self.last_gps_time = 0 # New: for GPS staleness
 
     # Store last valid confidence for decay
     self.last_valid_model_confidence = 1.0
@@ -547,6 +584,7 @@ class SafetyMonitor:
     self.last_valid_camera_confidence = 1.0
     self.last_valid_imu_confidence = 1.0
     self.last_valid_driver_monitoring_awareness = 1.0
+    self.last_valid_gps_confidence = 1.0 # New: for GPS confidence decay
 
     # Initialize safety score hysteresis
     self.previous_safety_score = 1.0  # Start with high safety score
@@ -620,10 +658,10 @@ class SafetyMonitor:
     else:
       self.camera_confidence = 0.6
 
-      def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg, live_pose_msg=None) -> None:
+      def detect_environmental_conditions(self, model_v2_msg, car_state_msg, car_control_msg, live_pose_msg=None, gps_location_msg=None) -> None:
           """Detect environmental conditions and adjust safety accordingly"""
           # Use the new EnvironmentalConditionDetector for better environmental assessment
-          environmental_conditions, environmental_confidences = self.environmental_detector.detect_conditions(model_v2_msg, live_pose_msg, car_state_msg)
+          environmental_conditions, environmental_confidences = self.environmental_detector.detect_conditions(model_v2_msg, live_pose_msg, car_state_msg, gps_location_msg)
   
           # Update internal state with detected conditions, but only if confidence is high enough
           # Include hysteresis to prevent rapid state changes
@@ -688,16 +726,20 @@ class SafetyMonitor:
           road_is_not_normal = (self.road_condition != 'normal' or
                                self.road_condition == 'unknown')
           road_confidence_high = self.road_confidence > self.road_confidence_threshold
+          
+          # New: Incorporate GPS signal lost information from EnvironmentalConditionDetector
+          gps_signal_lost = self.environmental_detector.gps_signal_lost
+          gps_confidence_low = self.environmental_detector.gps_confidence < 0.5 # If GPS confidence is low
 
-          # For tunnel detection, we combine lighting and road conditions with road constraints
+          # For tunnel detection, we combine lighting and road conditions with GPS status
           # Also consider if we were previously in a tunnel to maintain consistency
-          if lighting_is_dark and road_confidence_high and road_is_not_normal:
+          if (lighting_is_dark and road_confidence_high and road_is_not_normal) or \
+             (lighting_is_dark and gps_signal_lost) or \
+             (lighting_is_dark and gps_confidence_low and not road_confidence_high):
+              # Conditions suggesting tunnel: dark lighting + (bad road or lost GPS or low GPS confidence)
               self.in_tunnel = True
-          elif lighting_is_dark and not road_confidence_high:
-              # If lighting suggests tunnel but road info is unreliable, be more conservative
-              self.in_tunnel = True  # Still assume tunnel due to dark lighting
           elif lighting_is_dark and road_confidence_high and self.road_condition == 'normal':
-              # If lighting is dark but road is normal, we might not be in tunnel
+              # If lighting is dark but road is normal, and GPS is fine, we might not be in tunnel
               self.in_tunnel = False
           else:
               self.in_tunnel = False
@@ -1020,7 +1062,45 @@ class SafetyMonitor:
 
     return intervention_needed
 
-  def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None) -> Tuple[float, bool, Dict]:
+  def _update_sensor_confidence_with_staleness(self, sensor_type: str, healthy_flag: bool, current_time: float,
+                                                sensor_mono_time: Optional[int], last_sensor_time: float,
+                                                last_valid_confidence_attr: str, update_func, *args) -> None:
+    """
+    Helper method to update sensor confidence, handle staleness, and apply decay.
+    Args:
+        sensor_type: String identifier for the sensor (e.g., "model", "radar").
+        healthy_flag: Current healthy status of the sensor (e.g., self.model_healthy).
+        current_time: Current monotonic time in nanoseconds.
+        sensor_mono_time: Monotonic time of the last sensor message (can be None for optional messages).
+        last_sensor_time: Last recorded monotonic time for this sensor.
+        last_valid_confidence_attr: Name of the attribute storing the last valid confidence (e.g., "last_valid_model_confidence").
+        update_func: The sensor-specific function to call for updating confidence (e.g., self.update_model_confidence).
+        *args: Arguments to pass to the update_func.
+    """
+    # Get current confidence value (e.g., self.model_confidence)
+    current_confidence_attr = f'{sensor_type}_confidence'
+    
+    if healthy_flag:
+      try:
+        update_func(*args)
+        # Update current confidence attribute from the result of update_func
+        # If update_func modifies self.sensor_confidence directly, no need to re-fetch
+        current_confidence = getattr(self, current_confidence_attr)
+        setattr(self, last_valid_confidence_attr, current_confidence)
+      except Exception as e:
+        logging.error(f"Error in {update_func.__name__} for {sensor_type}: {e}")
+        setattr(self, current_confidence_attr, 0.5)  # Default to moderate confidence on error
+        setattr(self, f'{sensor_type}_healthy', False)
+        setattr(self, last_valid_confidence_attr, getattr(self, current_confidence_attr)) # Also update last valid on error
+    else:
+      # Apply decay to last valid confidence if stale
+      time_since_update = (current_time - last_sensor_time) * 1e-9
+      decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+      decayed_confidence = getattr(self, last_valid_confidence_attr) * decay_factor
+      setattr(self, current_confidence_attr, decayed_confidence)
+      logging.warning(f"{sensor_type.capitalize()} confidence decayed to {getattr(self, current_confidence_attr):.2f} due to staleness.")
+
+  def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None, gps_location_msg=None, gps_location_mono_time=None) -> Tuple[float, bool, Dict]:
     """Main update function - processes all inputs and returns safety assessment"""
     current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
     start_time_update = time.monotonic() # Start timing for the entire update method
@@ -1031,6 +1111,8 @@ class SafetyMonitor:
     self.radar_healthy = True
     self.camera_healthy = True
     self.imu_healthy = True
+    self.driver_monitoring_healthy = True
+    self.gps_healthy = True
 
     # --- Staleness Checks ---
     # Convert mono_time to seconds for comparison
@@ -1090,6 +1172,19 @@ class SafetyMonitor:
         self.driver_monitoring_healthy = False
         logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
 
+    # GPS Staleness
+    if gps_location_mono_time is not None:
+        time_since_gps_update = (current_time - gps_location_mono_time) * 1e-9
+        if time_since_gps_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.gps_healthy = False
+            logging.warning(f"GPS data is stale. Last update: {time_since_gps_update:.2f}s ago.")
+        else:
+            self.gps_healthy = True
+            self.last_gps_time = gps_location_mono_time
+    elif gps_location_mono_time is None: # If gps_location_msg is None, then GPS data is not available
+        self.gps_healthy = False
+        logging.warning("GPS location message is not available. GPS data confidence reduced.")
+
 
       try:
         self.anomalies = self.anomaly_detector.detect_anomalies(car_state_msg, model_v2_msg, radar_state_msg)
@@ -1097,86 +1192,62 @@ class SafetyMonitor:
         logging.error(f"Error in anomaly detection: {e}")
         self.anomalies = {}
   
-      # --- Update Confidence Measures with Error Handling and Decay ---
-      # Model confidence
-      if self.model_healthy:
-        try:
-          self.update_model_confidence(model_v2_msg)
-          self.last_valid_model_confidence = self.model_confidence # Store for decay
-        except Exception as e:
-          logging.error(f"Error in update_model_confidence: {e}")
-          self.model_confidence = 0.5  # Default to moderate confidence on error
-          self.model_healthy = False
-          self.last_valid_model_confidence = self.model_confidence # Also update last valid on error
-      else:
-        # Apply decay to last valid confidence if stale
-        time_since_update = (current_time - self.last_model_time) * 1e-9
-        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
-        self.model_confidence = self.last_valid_model_confidence * decay_factor
-        logging.warning(f"Model confidence decayed to {self.model_confidence:.2f} due to staleness.")
-  
-      # Radar confidence
-      if self.radar_healthy:
-        try:
-          self.update_radar_confidence(radar_state_msg, car_state_msg)
-          self.last_valid_radar_confidence = self.radar_confidence
-        except Exception as e:
-          logging.error(f"Error in update_radar_confidence: {e}")
-          self.radar_confidence = 0.5
-          self.radar_healthy = False
-          self.last_valid_radar_confidence = self.radar_confidence
-      else:
-        time_since_update = (current_time - self.last_radar_time) * 1e-9
-        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
-        self.radar_confidence = self.last_valid_radar_confidence * decay_factor
-        logging.warning(f"Radar confidence decayed to {self.radar_confidence:.2f} due to staleness.")
-  
-      # Camera confidence (using carState for freshness)
-      if self.camera_healthy:
-        try:
-          self.update_camera_confidence(model_v2_msg, car_state_msg)
-          self.last_valid_camera_confidence = self.camera_confidence
-        except Exception as e:
-          logging.error(f"Error in update_camera_confidence: {e}")
-          self.camera_confidence = 0.5
-          self.camera_healthy = False
-          self.last_valid_camera_confidence = self.camera_confidence
-      else:
-        time_since_update = (current_time - self.last_camera_time) * 1e-9 # Using last_camera_time for carState
-        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
-        self.camera_confidence = self.last_valid_camera_confidence * decay_factor
-        logging.warning(f"Camera confidence decayed to {self.camera_confidence:.2f} due to staleness.")
-  
-      # IMU and Environmental conditions
-      if self.imu_healthy:
-        try:
-          self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg)
-          self.last_valid_imu_confidence = self.imu_confidence # Assuming imu_confidence is updated by detect_environmental_conditions
-        except Exception as e:
-          logging.error(f"Error in detect_environmental_conditions: {e}")
-          self.imu_healthy = False
-          self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
-          self.last_valid_imu_confidence = self.imu_confidence
-          # Also set environmental conditions to unknown on error
-          self.lighting_condition = "unknown"
-          self.weather_condition = "unknown"
-          self.road_condition = "unknown"
-          self.lighting_confidence = 0.0
-          self.weather_confidence = 0.0
-          self.road_confidence = 0.0
-      else:
-        time_since_update = (current_time - self.last_imu_time) * 1e-9
-        decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
-        self.imu_confidence = self.last_valid_imu_confidence * decay_factor
-        logging.warning(f"IMU confidence decayed to {self.imu_confidence:.2f} due to staleness.")
-        # If IMU is unhealthy, set environmental conditions to unknown and confidence low
-        self.lighting_condition = "unknown"
-        self.weather_condition = "unknown"
-        self.road_condition = "unknown"
-        self.lighting_confidence = 0.0
-        self.weather_confidence = 0.0
-        self.road_confidence = 0.0
-  
+              # --- Update Confidence Measures with Error Handling and Decay ---
+              # Model confidence
+              self._update_sensor_confidence_with_staleness(
+                  "model", self.model_healthy, current_time, model_v2_mono_time, self.last_model_time,
+                  "last_valid_model_confidence", self.update_model_confidence, model_v2_msg
+              )
+        
+              # Radar confidence
+              self._update_sensor_confidence_with_staleness(
+                  "radar", self.radar_healthy, current_time, radar_state_mono_time, self.last_radar_time,
+                  "last_valid_radar_confidence", self.update_radar_confidence, radar_state_msg, car_state_msg
+              )
+        
+              # Camera confidence (using carState for freshness)
+              self._update_sensor_confidence_with_staleness(
+                  "camera", self.camera_healthy, current_time, car_state_mono_time, self.last_camera_time, # Using carState mono time here
+                  "last_valid_camera_confidence", self.update_camera_confidence, model_v2_msg, car_state_msg
+              )
+        
+              # IMU and Environmental conditions
+              # Note: detect_environmental_conditions updates IMU confidence indirectly via its sub-components
+              # and also sets lighting, weather, road conditions. We track imu_healthy here.
+              if self.imu_healthy:
+                  try:
+                      self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg)
+                      self.last_valid_imu_confidence = self.imu_confidence
+                  except Exception as e:
+                      logging.error(f"Error in detect_environmental_conditions: {e}")
+                      self.imu_healthy = False
+                      self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
+                      self.last_valid_imu_confidence = self.imu_confidence
+                      # Also set environmental conditions to unknown on error
+                      self.lighting_condition = "unknown"
+                      self.weather_condition = "unknown"
+                      self.road_condition = "unknown"
+                      self.lighting_confidence = 0.0
+                      self.weather_confidence = 0.0
+                      self.road_confidence = 0.0
+              else:
+                  time_since_update = (current_time - self.last_imu_time) * 1e-9
+                  decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+                  self.imu_confidence = self.last_valid_imu_confidence * decay_factor
+                  logging.warning(f"IMU confidence decayed to {self.imu_confidence:.2f} due to staleness.")
+                  # If IMU is unhealthy, set environmental conditions to unknown and confidence low
+                  self.lighting_condition = "unknown"
+                  self.weather_condition = "unknown"
+                  self.road_condition = "unknown"
+                  self.lighting_confidence = 0.0
+                  self.weather_confidence = 0.0
+                  self.road_confidence = 0.0
+        
+              # GPS Confidence
+              self._update_sensor_confidence_with_staleness(
+                  "gps", self.gps_healthy, current_time, gps_location_mono_time if gps_location_mono_time is not None else 0,
+                  self.last_gps_time, "last_valid_gps_confidence", self.environmental_detector.assess_gps_signal_quality, gps_location_msg
+              )  
       # Calculate overall safety with error handling
       try:
         self.overall_safety_score = self.calculate_overall_safety_score(car_state_msg, driver_monitoring_state_msg)
@@ -1203,11 +1274,13 @@ class SafetyMonitor:
         'radar_confidence': getattr(self, 'radar_confidence', 0.5),
         'camera_confidence': getattr(self, 'camera_confidence', 0.5),
         'imu_confidence': getattr(self, 'imu_confidence', 0.5),
+        'gps_confidence': getattr(self, 'gps_confidence', 0.5), # New: GPS confidence
         'model_healthy': self.model_healthy,
         'radar_healthy': self.radar_healthy,
         'camera_healthy': self.camera_healthy,
         'imu_healthy': self.imu_healthy,
         'driver_monitoring_healthy': self.driver_monitoring_healthy,
+        'gps_healthy': self.gps_healthy, # New: GPS health
         'lighting_condition': self.lighting_condition,
         'weather_condition': self.weather_condition,
         'road_condition': self.road_condition,
