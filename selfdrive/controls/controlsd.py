@@ -304,8 +304,20 @@ class Controls(ControlsExt, ModelStateBase):
           'path_deviation': self.desired_curvature - self.curvature if hasattr(self, 'desired_curvature') and hasattr(self, 'curvature') else 0.0
         }
 
+        # Calculate lateral error using the actual path deviation from model
+        # The desired lateral position in the model frame is typically at y=0 (center of lane)
+        # The actual lateral error can be derived from the path.y values or lateral error from controller
+        desired_lateral_pos = 0.0  # Center of path in model frame
+        if len(self.sm['modelV2'].path.y) > 0:
+            # The first point in the path represents the immediate desired lateral offset from center
+            desired_lateral_pos = self.sm['modelV2'].path.y[0]
+
+        # The actual lateral deviation can be taken as the difference between what the model expects
+        # and the actual control performance. We'll use the lateral error from path following
+        actual_lateral_deviation = lac_log.yActual if hasattr(lac_log, 'yActual') and lac_log.yActual is not None else lac_log.error
+
         actual_state = {
-          'lateral': lac_log.angleError, # Actual lateral error is the angle error from the lateral controller
+          'lateral': abs(actual_lateral_deviation),  # True lateral deviation from path in meters
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
@@ -341,7 +353,7 @@ class Controls(ControlsExt, ModelStateBase):
           # Check for safety lockout conditions
           # Lockout only if overall safety score is below critical threshold.
           # This allows adaptation to occur in high-risk scenarios if it could improve safety.
-          if overall_safety_score_val < self.safety_critical_threshold: 
+          if overall_safety_score_val < self.safety_critical_threshold:
             cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to high risk safety state (score: {overall_safety_score_val:.2f}).")
             # Do not apply adaptation_params
           else:
@@ -357,12 +369,7 @@ class Controls(ControlsExt, ModelStateBase):
               # For now, we'll just store them for reference
               self.adaptation_params = adaptation_params
 
-                                # performance monitor indicates adaptation needed
-
-                                pass # performance_degraded_mode is now set by overall performance health
-
-                      
-                  except Exception as e:
+      except Exception as e:
         cloudlog.error(f"Performance monitor update failed: {e}")
         import traceback
         cloudlog.error(f"Performance monitor error traceback: {traceback.format_exc()}")

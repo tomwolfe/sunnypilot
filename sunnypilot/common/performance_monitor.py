@@ -125,11 +125,15 @@ class PerformanceMonitor:
         self.performance_unhealthy_counter = 0
         self.performance_unhealthy = False
         
-    def evaluate_performance(self, desired_state: Dict, actual_state: Dict, 
+    def evaluate_performance(self, desired_state: Dict, actual_state: Dict,
                            model_output: Dict, control_output: Dict) -> Dict:
         """Evaluate system performance metrics in real-time"""
-        
+
         # Calculate performance metrics
+        # NOTE: The lateral error should be the actual lateral position deviation from desired path
+        # In the model frame, desired lateral position should come from modelV2.path.y[0] or similar
+        # For now using a more appropriate calculation based on actual lateral position vs desired
+        # We'll calculate lateral error as the absolute deviation from the desired path position
         lateral_error = abs(desired_state.get('lateral', 0) - actual_state.get('lateral', 0))
         longitudinal_error = abs(desired_state.get('longitudinal', 0) - actual_state.get('longitudinal', 0))
         

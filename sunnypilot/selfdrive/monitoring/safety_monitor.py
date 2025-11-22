@@ -721,131 +721,143 @@ class SafetyMonitor:
           self.weather_confidence = new_weather_confidence
 
           # Tunnel detection logic - more robust with multiple condition checks
-          # A tunnel is characterized by sustained darkness and often GPS signal loss, with potentially clear road surface.
-          lighting_is_dark = (self.lighting_condition == 'dark' and
-                             self.lighting_confidence > self.lighting_confidence_threshold)
-          road_confidence_high = self.road_confidence > self.road_confidence_threshold # Keep this, it means we have good road data, which is useful context.
-          
+          # A tunnel is characterized by sustained darkness and GPS signal loss, with potentially clear road surface.
+          # However, we need a more reliable approach because lane markings can be strong in tunnels
+          # The original approach was flawed because strong lane lines are often present in tunnels.
+
+          # Improved tunnel detection: GPS signal loss is a much more reliable indicator
           gps_signal_lost = self.environmental_detector.gps_signal_lost
           gps_confidence_low = self.environmental_detector.gps_confidence < 0.5
+
+          # Check if lighting is dark, but we need to be more careful not to rely solely on lane line strength
+          lighting_is_dark = (self.lighting_condition in ['dark', 'unknown'] and
+                             self.lighting_confidence > self.lighting_confidence_threshold)
+
+          # Road confidence being high is normal in tunnels (surface is often smooth and clear)
+          road_confidence_high = self.road_confidence > self.road_confidence_threshold
 
           # Add a proxy for "lack of outdoor visual cues" - for example, if model confidence is low.
           # Using raw_model_confidence for immediate detection.
           model_confidence_low = self.raw_model_confidence < self.model_confidence_threshold
 
-          # Tunneled if it's dark AND (GPS signal is lost or (model confidence is low and road confidence is not high))
-          if lighting_is_dark and (gps_signal_lost or (model_confidence_low and not road_confidence_high)):
+          # Improved tunnel detection logic:
+          # A tunnel is primarily identified by GPS signal loss (which happens in tunnels) combined with other indicators
+          # GPS loss + dark conditions (not just lane line strength) indicates a tunnel
+          if gps_signal_lost and lighting_is_dark:
               self.in_tunnel = True
-          # If it's not dark, we are definitely not in a tunnel.
-          elif not lighting_is_dark:
+          # Additionally, if we have GPS signal loss and road conditions appear good (indicating we're moving on a clear road)
+          # but lighting is unknown and model confidence is low, it might be a tunnel
+          elif gps_signal_lost and road_confidence_high and (self.lighting_condition == 'unknown' or model_confidence_low):
+              self.in_tunnel = True
+          # If GPS signal is good, we are definitely not in a tunnel
+          elif not gps_signal_lost and self.environmental_detector.gps_confidence > 0.7:
               self.in_tunnel = False
-          # If we reach here, lighting_is_dark is True, but the other conditions for a tunnel are not met.
-          # In this case, we maintain the previous state of self.in_tunnel to avoid flickering.
+          # If we reach here, we maintain the previous state to avoid flickering.
           # This provides hysteresis for ambiguous situations.
 
     def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
-    """Enhanced curve anticipation with improved safety margins"""
-    if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
-      # Properly calculate path curvature using first and second derivatives
-      max_curvature_ahead = 0.0
-      x_coords = model_v2_msg.path.x
-      y_coords = model_v2_msg.path.y
-      z_coords = model_v2_msg.path.z # Assuming z-coordinates are available similarly
-
-      if len(x_coords) > 2 and len(y_coords) > 2 and len(z_coords) > 2:
-        # Convert lists to numpy arrays for efficient computation
-        x_coords_np = np.array(x_coords)
-        y_coords_np = np.array(y_coords)
-        z_coords_np = np.array(z_coords)
-
-        # Assuming path points are equally spaced (0.5m)
-        path_interval = 0.5 # Typically 0.5 meters between path points
-
-        # Add proper path length validation
-        min_points_needed = int(self.max_anticipation_distance / path_interval)
-        current_max_anticipation_distance = self.max_anticipation_distance
-        if len(x_coords_np) < min_points_needed:
-            logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {min_points_needed} points. Using available path length.")
-            # Fall back to shorter distance for calculation
-            current_max_anticipation_distance = len(x_coords_np) * path_interval
-
-        # Calculate first derivatives (dx/ds, dy/ds) and second derivatives
-        dx_ds = np.gradient(x_coords_np, path_interval)
-        dy_ds = np.gradient(y_coords_np, path_interval)
-        d2x_ds2 = np.gradient(dx_ds, path_interval)
-        d2y_ds2 = np.gradient(dy_ds, path_interval)
-
-        # Calculate dz/ds (slope along the path)
-        dz_ds = np.gradient(z_coords_np, path_interval)
-        # Approximate road grade (angle in radians)
-        # Assuming ds is roughly constant and small enough for tan(angle) approx angle
-        # grade_angle = np.arctan(dz_ds)
-        # For a simplified approach, use a smoothed version of dz_ds or an average over a segment
-        # Here, we will just use the dz_ds directly as a proxy for grade.
-
-        # Calculate curvature using the vectorized formula: curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
-        numerator = np.abs(dx_ds * d2y_ds2 - dy_ds * d2x_ds2)
-        denominator_squared = dx_ds**2 + dy_ds**2
-        
-        # Avoid division by zero: set curvature to 0 where denominator is too small
-        valid_indices = denominator_squared > 1e-6
-        
-        local_curvatures = np.zeros_like(numerator)
-        local_curvatures[valid_indices] = numerator[valid_indices] / (denominator_squared[valid_indices]**1.5)
-        
-        effective_path_length = min(len(x_coords_np), int(current_max_anticipation_distance / path_interval))
-        
-        if effective_path_length > 0:
-            max_curvature_ahead = np.max(np.abs(local_curvatures[:effective_path_length]))
-            # Get the grade at the point of max curvature for simplicity
-            # This is a simplification; a more robust solution would consider grade over the entire curve
-            max_curve_idx = np.argmax(np.abs(local_curvatures[:effective_path_length]))
-            
-            # Simple approximation of grade at max curvature point
-            # Avoid division by zero for small dx_ds and dy_ds (flat path)
-            if np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]]) > 1e-6:
-                grade_at_max_curvature = dz_ds[max_curve_idx] / np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]])
-            else:
-                grade_at_max_curvature = 0.0
-        else:
+        """Enhanced curve anticipation with improved safety margins"""
+        if hasattr(model_v2_msg, 'path') and len(model_v2_msg.path.x) > 10:
+            # Properly calculate path curvature using first and second derivatives
             max_curvature_ahead = 0.0
-            grade_at_max_curvature = 0.0
+            x_coords = model_v2_msg.path.x
+            y_coords = model_v2_msg.path.y
+            z_coords = model_v2_msg.path.z # Assuming z-coordinates are available similarly
+
+            if len(x_coords) > 2 and len(y_coords) > 2 and len(z_coords) > 2:
+                # Convert lists to numpy arrays for efficient computation
+                x_coords_np = np.array(x_coords)
+                y_coords_np = np.array(y_coords)
+                z_coords_np = np.array(z_coords)
+
+                # Assuming path points are equally spaced (0.5m)
+                path_interval = 0.5 # Typically 0.5 meters between path points
+
+                # Add proper path length validation
+                min_points_needed = int(self.max_anticipation_distance / path_interval)
+                current_max_anticipation_distance = self.max_anticipation_distance
+                if len(x_coords_np) < min_points_needed:
+                    logging.warning(f"Path is shorter than expected for {self.max_anticipation_distance}m anticipation. Actual: {len(x_coords_np)} points, Expected: {min_points_needed} points. Using available path length.")
+                    # Fall back to shorter distance for calculation
+                    current_max_anticipation_distance = len(x_coords_np) * path_interval
+
+                # Calculate first derivatives (dx/ds, dy/ds) and second derivatives
+                dx_ds = np.gradient(x_coords_np, path_interval)
+                dy_ds = np.gradient(y_coords_np, path_interval)
+                d2x_ds2 = np.gradient(dx_ds, path_interval)
+                d2y_ds2 = np.gradient(dy_ds, path_interval)
+
+                # Calculate dz/ds (slope along the path)
+                dz_ds = np.gradient(z_coords_np, path_interval)
+                # Approximate road grade (angle in radians)
+                # Assuming ds is roughly constant and small enough for tan(angle) approx angle
+                # grade_angle = np.arctan(dz_ds)
+                # For a simplified approach, use a smoothed version of dz_ds or an average over a segment
+                # Here, we will just use the dz_ds directly as a proxy for grade.
+
+                # Calculate curvature using the vectorized formula: curvature = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+                numerator = np.abs(dx_ds * d2y_ds2 - dy_ds * d2x_ds2)
+                denominator_squared = dx_ds**2 + dy_ds**2
+
+                # Avoid division by zero: set curvature to 0 where denominator is too small
+                valid_indices = denominator_squared > 1e-6
+
+                local_curvatures = np.zeros_like(numerator)
+                local_curvatures[valid_indices] = numerator[valid_indices] / (denominator_squared[valid_indices]**1.5)
+
+                effective_path_length = min(len(x_coords_np), int(current_max_anticipation_distance / path_interval))
+
+                if effective_path_length > 0:
+                    max_curvature_ahead = np.max(np.abs(local_curvatures[:effective_path_length]))
+                    # Get the grade at the point of max curvature for simplicity
+                    # This is a simplification; a more robust solution would consider grade over the entire curve
+                    max_curve_idx = np.argmax(np.abs(local_curvatures[:effective_path_length]))
+
+                    # Simple approximation of grade at max curvature point
+                    # Avoid division by zero for small dx_ds and dy_ds (flat path)
+                    if np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]]) > 1e-6:
+                        grade_at_max_curvature = dz_ds[max_curve_idx] / np.linalg.norm([dx_ds[max_curve_idx], dy_ds[max_curve_idx]])
+                    else:
+                        grade_at_max_curvature = 0.0
+                else:
+                    max_curvature_ahead = 0.0
+                    grade_at_max_curvature = 0.0
 
 
-      # Calculate safe speed based on curvature and now, road grade
-      if max_curvature_ahead > 0.001:  # Significant curve
-        # Adjust max_lat_accel based on road grade for safety
-        # On a downhill grade, the effective lateral friction available might be reduced.
-        # On an uphill grade, it might be increased.
-        # A conservative approach for now: reduce safe speed on downhill grades.
-        grade_factor = 1.0
-        if grade_at_max_curvature < 0: # Downhill
-            # Reduce safe speed for downhill curves. For example, a 5% grade (approx 0.05 rad)
-            # might reduce the effective lateral acceleration by a small percentage.
-            # This is a placeholder and needs empirical tuning.
-            grade_factor = max(0.8, 1.0 + grade_at_max_curvature * 5.0) # Reduce by up to 20% for steep downhill
-        elif grade_at_max_curvature > 0: # Uphill
-            # For uphill, we might slightly increase the safe speed, or keep it neutral for conservatism.
-            # For now, let's keep it neutral to prioritize safety.
-            grade_factor = 1.0
+            # Calculate safe speed based on curvature and now, road grade
+            if max_curvature_ahead > 0.001:  # Significant curve
+                # Adjust max_lat_accel based on road grade for safety
+                # On a downhill grade, the effective lateral friction available might be reduced.
+                # On an uphill grade, it might be increased.
+                # A conservative approach for now: reduce safe speed on downhill grades.
+                grade_factor = 1.0
+                if grade_at_max_curvature < 0: # Downhill
+                    # Reduce safe speed for downhill curves. For example, a 5% grade (approx 0.05 rad)
+                    # might reduce the effective lateral acceleration by a small percentage.
+                    # This is a placeholder and needs empirical tuning.
+                    grade_factor = max(0.8, 1.0 + grade_at_max_curvature * 5.0) # Reduce by up to 20% for steep downhill
+                elif grade_at_max_curvature > 0: # Uphill
+                    # For uphill, we might slightly increase the safe speed, or keep it neutral for conservatism.
+                    # For now, let's keep it neutral to prioritize safety.
+                    grade_factor = 1.0
 
-        effective_max_lat_accel = self.max_lat_accel * grade_factor
-        safe_speed = (effective_max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
+                effective_max_lat_accel = self.max_lat_accel * grade_factor
+                safe_speed = (effective_max_lat_accel / max_curvature_ahead) ** 0.5 if max_curvature_ahead > 0.0001 else car_state_msg.vEgo
 
-        # Calculate anticipation score based on speed vs safe speed
-        if car_state_msg.vEgo > 5.0:  # Only for meaningful speeds
-          speed_ratio = min(1.0, max(0.0, safe_speed / car_state_msg.vEgo))
-          self.curve_anticipation_score = max_curvature_ahead * (1.0 - speed_ratio)
-          self.curve_anticipation_active = speed_ratio < 0.9  # 10% margin
+                # Calculate anticipation score based on speed vs safe speed
+                if car_state_msg.vEgo > 5.0:  # Only for meaningful speeds
+                    speed_ratio = min(1.0, max(0.0, safe_speed / car_state_msg.vEgo))
+                    self.curve_anticipation_score = max_curvature_ahead * (1.0 - speed_ratio)
+                    self.curve_anticipation_active = speed_ratio < 0.9  # 10% margin
+                else:
+                    self.curve_anticipation_score = 0.0
+                    self.curve_anticipation_active = False
+            else:
+                self.curve_anticipation_score = 0.0
+                self.curve_anticipation_active = False
         else:
-          self.curve_anticipation_score = 0.0
-          self.curve_anticipation_active = False
-      else:
-        self.curve_anticipation_score = 0.0
-        self.curve_anticipation_active = False
-    else:
-      self.curve_anticipation_score = 0.0
-      self.curve_anticipation_active = False
+            self.curve_anticipation_score = 0.0
+            self.curve_anticipation_active = False
 
   def calculate_overall_safety_score(self, car_state_msg, driver_monitoring_state_msg) -> float:
     """Calculate overall safety score based on all inputs"""
@@ -1728,31 +1740,10 @@ class SafetyMonitor:
     
         
     
-                    def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None, gps_location_msg=None, gps_location_mono_time=None) -> Tuple[float, bool, Dict]:
-    
-        
-    
-            
-    
-        
-    
-                    """Main update function - processes all inputs and returns safety assessment"""
-    
-        
-    
-            
-    
-        
-    
-                    current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
-    
-        
-    
-            
-    
-        
-    
-                    start_time_update = time.monotonic() # Start timing for the entire update method
+    def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None, gps_location_msg=None, gps_location_mono_time=None) -> Tuple[float, bool, Dict]:
+        """Main update function - processes all inputs and returns safety assessment"""
+        current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
+        start_time_update = time.monotonic() # Start timing for the entire update method
     
         
     
