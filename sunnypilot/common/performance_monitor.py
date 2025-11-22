@@ -11,6 +11,7 @@ import numpy as np
 from collections import deque
 import time
 from typing import Dict, Tuple, Optional
+from openpilot.selfdrive.locationd.helpers import Pose # Import Pose for type hinting
 import logging
 
 

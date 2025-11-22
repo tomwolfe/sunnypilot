@@ -175,9 +175,9 @@ class EnvironmentalConditionDetector:
 
                 if is_night_time:
                     # Reduce weight of lane line strength significantly at night
-                    total_confidence += lane_line_confidence * 0.1  # Reduced weight (was 0.4)
+                    total_confidence += lane_line_confidence * 0.05  # Reduced weight from 0.1
                 else:
-                    total_confidence += lane_line_confidence * 0.4  # Original weight
+                    total_confidence += lane_line_confidence * 0.2  # Reduced weight from 0.4
                 valid_indicators += 1
 
         # Indicator 2: Time of day based on system time / GPS time (for nighttime detection)
@@ -720,29 +720,27 @@ class SafetyMonitor:
           self.weather_confidence = new_weather_confidence
 
           # Tunnel detection logic - more robust with multiple condition checks
-          # Only consider in tunnel if we have high confidence in both lighting and road conditions
+          # A tunnel is characterized by sustained darkness and often GPS signal loss, with potentially clear road surface.
           lighting_is_dark = (self.lighting_condition == 'dark' and
                              self.lighting_confidence > self.lighting_confidence_threshold)
-          road_is_not_normal = (self.road_condition != 'normal' or
-                               self.road_condition == 'unknown')
-          road_confidence_high = self.road_confidence > self.road_confidence_threshold
+          road_confidence_high = self.road_confidence > self.road_confidence_threshold # Keep this, it means we have good road data, which is useful context.
           
-          # New: Incorporate GPS signal lost information from EnvironmentalConditionDetector
           gps_signal_lost = self.environmental_detector.gps_signal_lost
-          gps_confidence_low = self.environmental_detector.gps_confidence < 0.5 # If GPS confidence is low
+          gps_confidence_low = self.environmental_detector.gps_confidence < 0.5
 
-          # For tunnel detection, we combine lighting and road conditions with GPS status
-          # Also consider if we were previously in a tunnel to maintain consistency
-          if (lighting_is_dark and road_confidence_high and road_is_not_normal) or \
-             (lighting_is_dark and gps_signal_lost) or \
-             (lighting_is_dark and gps_confidence_low and not road_confidence_high):
-              # Conditions suggesting tunnel: dark lighting + (bad road or lost GPS or low GPS confidence)
+          # Add a proxy for "lack of outdoor visual cues" - for example, if model confidence is low.
+          # Using raw_model_confidence for immediate detection.
+          model_confidence_low = self.raw_model_confidence < self.model_confidence_threshold
+
+          # Tunneled if it's dark AND (GPS signal is lost or (model confidence is low and road confidence is not high))
+          if lighting_is_dark and (gps_signal_lost or (model_confidence_low and not road_confidence_high)):
               self.in_tunnel = True
-          elif lighting_is_dark and road_confidence_high and self.road_condition == 'normal':
-              # If lighting is dark but road is normal, and GPS is fine, we might not be in tunnel
+          # If it's not dark, we are definitely not in a tunnel.
+          elif not lighting_is_dark:
               self.in_tunnel = False
-          else:
-              self.in_tunnel = False
+          # If we reach here, lighting_is_dark is True, but the other conditions for a tunnel are not met.
+          # In this case, we maintain the previous state of self.in_tunnel to avoid flickering.
+          # This provides hysteresis for ambiguous situations.
 
     def detect_curve_anticipation(self, model_v2_msg, car_state_msg) -> None:
     """Enhanced curve anticipation with improved safety margins"""
@@ -1100,214 +1098,764 @@ class SafetyMonitor:
       setattr(self, current_confidence_attr, decayed_confidence)
       logging.warning(f"{sensor_type.capitalize()} confidence decayed to {getattr(self, current_confidence_attr):.2f} due to staleness.")
 
-  def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None, gps_location_msg=None, gps_location_mono_time=None) -> Tuple[float, bool, Dict]:
-    """Main update function - processes all inputs and returns safety assessment"""
-    current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
-    start_time_update = time.monotonic() # Start timing for the entire update method
-
-    # --- Initialize healthy flags to True at the start of each update cycle ---
-    # They will be set to False if data is stale or an exception occurs during processing
-    self.model_healthy = True
-    self.radar_healthy = True
-    self.camera_healthy = True
-    self.imu_healthy = True
-    self.driver_monitoring_healthy = True
-    self.gps_healthy = True
-
-    # --- Staleness Checks ---
-    # Convert mono_time to seconds for comparison
-    # Model Staleness
-    time_since_model_update = (current_time - model_v2_mono_time) * 1e-9
-    if time_since_model_update > self.STALENESS_THRESHOLD_SECONDS:
-        self.model_healthy = False
-        logging.warning(f"Model data is stale. Last update: {time_since_model_update:.2f}s ago.")
-    else:
+    def _initialize_health_flags(self) -> None:
+        """Initializes all sensor health flags to True at the start of each update cycle."""
         self.model_healthy = True
-        self.last_model_time = model_v2_mono_time
-
-    # Radar Staleness
-    time_since_radar_update = (current_time - radar_state_mono_time) * 1e-9
-    if time_since_radar_update > self.STALENESS_THRESHOLD_SECONDS:
-        self.radar_healthy = False
-        logging.warning(f"Radar data is stale. Last update: {time_since_radar_update:.2f}s ago.")
-    else:
         self.radar_healthy = True
-        self.last_radar_time = radar_state_mono_time
-
-    # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
-    time_since_car_state_update = (current_time - car_state_mono_time) * 1e-9
-    if time_since_car_state_update > self.STALENESS_THRESHOLD_SECONDS:
-        self.camera_healthy = False
-        logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {time_since_car_state_update:.2f}s ago.")
-    else:
         self.camera_healthy = True
-        self.last_camera_time = car_state_mono_time # Update last_camera_time based on carState
+        self.imu_healthy = True
+        self.driver_monitoring_healthy = True
+        self.gps_healthy = True
 
-    # IMU Staleness (livePose)
-    if live_pose_mono_time is not None:
-        time_since_imu_update = (current_time - live_pose_mono_time) * 1e-9
-        if time_since_imu_update > self.STALENESS_THRESHOLD_SECONDS:
+    def _perform_staleness_checks(self, current_time: float, model_v2_mono_time: int, radar_state_mono_time: int, car_state_mono_time: int, live_pose_mono_time: Optional[int], driver_monitoring_state_mono_time: Optional[int], gps_location_mono_time: Optional[int]) -> None:
+        """Performs staleness checks for all sensors and updates their healthy flags."""
+        # Model Staleness
+        time_since_model_update = (current_time - model_v2_mono_time) * 1e-9
+        if time_since_model_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.model_healthy = False
+            logging.warning(f"Model data is stale. Last update: {time_since_model_update:.2f}s ago.")
+        else:
+            self.model_healthy = True
+            self.last_model_time = model_v2_mono_time
+
+        # Radar Staleness
+        time_since_radar_update = (current_time - radar_state_mono_time) * 1e-9
+        if time_since_radar_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.radar_healthy = False
+            logging.warning(f"Radar data is stale. Last update: {time_since_radar_update:.2f}s ago.")
+        else:
+            self.radar_healthy = True
+            self.last_radar_time = radar_state_mono_time
+
+        # Camera (carState is used as a proxy for freshness of car data influencing camera confidence)
+        time_since_car_state_update = (current_time - car_state_mono_time) * 1e-9
+        if time_since_car_state_update > self.STALENESS_THRESHOLD_SECONDS:
+            self.camera_healthy = False
+            logging.warning(f"CarState data (influencing camera confidence) is stale. Last update: {time_since_car_state_update:.2f}s ago.")
+        else:
+            self.camera_healthy = True
+            self.last_camera_time = car_state_mono_time # Update last_camera_time based on carState
+
+        # IMU Staleness (livePose)
+        if live_pose_mono_time is not None:
+            time_since_imu_update = (current_time - live_pose_mono_time) * 1e-9
+            if time_since_imu_update > self.STALENESS_THRESHOLD_SECONDS:
+                self.imu_healthy = False
+                logging.warning(f"IMU data (livePose) is stale. Last update: {time_since_imu_update:.2f}s ago.")
+            else:
+                self.imu_healthy = True
+                self.last_imu_time = live_pose_mono_time
+        else: # If live_pose_msg is None, then IMU data is not available
             self.imu_healthy = False
-            logging.warning(f"IMU data (livePose) is stale. Last update: {time_since_imu_update:.2f}s ago.")
+            logging.warning("LivePose message is not available. IMU data confidence reduced.")
+
+        # Driver Monitoring Staleness
+        if driver_monitoring_state_mono_time is not None:
+            time_since_dm_update = (current_time - driver_monitoring_state_mono_time) * 1e-9
+            if time_since_dm_update > self.STALENESS_THRESHOLD_SECONDS:
+                self.driver_monitoring_healthy = False
+                logging.warning(f"Driver Monitoring data is stale. Last update: {time_since_dm_update:.2f}s ago.")
+            else:
+                self.driver_monitoring_healthy = True
+                self.last_driver_monitoring_time = driver_monitoring_state_mono_time
         else:
-            self.imu_healthy = True
-            self.last_imu_time = live_pose_mono_time
-    elif live_pose_mono_time is None: # If live_pose_msg is None, then IMU data is not available
-        self.imu_healthy = False
-        logging.warning("LivePose message is not available. IMU data confidence reduced.")
-
-
-
-    # Driver Monitoring Staleness
-    if driver_monitoring_state_mono_time is not None:
-        time_since_dm_update = (current_time - driver_monitoring_state_mono_time) * 1e-9
-        if time_since_dm_update > self.STALENESS_THRESHOLD_SECONDS:
             self.driver_monitoring_healthy = False
-            logging.warning(f"Driver Monitoring data is stale. Last update: {time_since_dm_update:.2f}s ago.")
-        else:
-            self.driver_monitoring_healthy = True
-            self.last_driver_monitoring_time = driver_monitoring_state_mono_time
+            logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
 
-    elif driver_monitoring_state_mono_time is None:
-        self.driver_monitoring_healthy = False
-        logging.warning("Driver Monitoring message is not available. Driver monitoring confidence reduced.")
-
-    # GPS Staleness
-    if gps_location_mono_time is not None:
-        time_since_gps_update = (current_time - gps_location_mono_time) * 1e-9
-        if time_since_gps_update > self.STALENESS_THRESHOLD_SECONDS:
+        # GPS Staleness
+        if gps_location_mono_time is not None:
+            time_since_gps_update = (current_time - gps_location_mono_time) * 1e-9
+            if time_since_gps_update > self.STALENESS_THRESHOLD_SECONDS:
+                self.gps_healthy = False
+                logging.warning(f"GPS data is stale. Last update: {time_since_gps_update:.2f}s ago.")
+            else:
+                self.gps_healthy = True
+                self.last_gps_time = gps_location_mono_time
+        else: # If gps_location_msg is None, then GPS data is not available
             self.gps_healthy = False
-            logging.warning(f"GPS data is stale. Last update: {time_since_gps_update:.2f}s ago.")
-        else:
-            self.gps_healthy = True
-            self.last_gps_time = gps_location_mono_time
-    elif gps_location_mono_time is None: # If gps_location_msg is None, then GPS data is not available
-        self.gps_healthy = False
-        logging.warning("GPS location message is not available. GPS data confidence reduced.")
+            logging.warning("GPS location message is not available. GPS data confidence reduced.")
 
-
-      try:
-        self.anomalies = self.anomaly_detector.detect_anomalies(car_state_msg, model_v2_msg, radar_state_msg)
-      except Exception as e:
-        logging.error(f"Error in anomaly detection: {e}")
-        self.anomalies = {}
-  
-              # --- Update Confidence Measures with Error Handling and Decay ---
-              # Model confidence
-              self._update_sensor_confidence_with_staleness(
-                  "model", self.model_healthy, current_time, model_v2_mono_time, self.last_model_time,
-                  "last_valid_model_confidence", self.update_model_confidence, model_v2_msg
-              )
+        def _run_anomaly_detection(self, car_state_msg, model_v2_msg, radar_state_msg) -> None:
+            """Runs anomaly detection and stores the results."""
+            try:
+                self.anomalies = self.anomaly_detector.detect_anomalies(car_state_msg, model_v2_msg, radar_state_msg)
+            except Exception as e:
+                logging.error(f"Error in anomaly detection: {e}")
+                self.anomalies = {}
+    
+            def _update_all_confidences(self, current_time: float, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg, gps_location_mono_time: Optional[int]) -> None:
+    
+                """Updates confidence measures for all sensors and environmental conditions."""
+    
+                # Model confidence
+    
+                self._update_sensor_confidence_with_staleness(
+    
+                    "model", self.model_healthy, current_time, model_v2_msg.logMonoTime if model_v2_msg else 0, self.last_model_time,
+    
+                    "last_valid_model_confidence", self.update_model_confidence, model_v2_msg
+    
+                )
+    
+          
+    
+                # Radar confidence
+    
+                self._update_sensor_confidence_with_staleness(
+    
+                    "radar", self.radar_healthy, current_time, radar_state_msg.logMonoTime if radar_state_msg else 0, self.last_radar_time,
+    
+                    "last_valid_radar_confidence", self.update_radar_confidence, radar_state_msg, car_state_msg
+    
+                )
+    
+          
+    
+                # Camera confidence (using carState for freshness)
+    
+                self._update_sensor_confidence_with_staleness(
+    
+                    "camera", self.camera_healthy, current_time, car_state_msg.logMonoTime if car_state_msg else 0, self.last_camera_time, # Using carState mono time here
+    
+                    "last_valid_camera_confidence", self.update_camera_confidence, model_v2_msg, car_state_msg
+    
+                )
+    
+          
+    
+                # IMU and Environmental conditions
+    
+                # Note: detect_environmental_conditions updates IMU confidence indirectly via its sub-components
+    
+                # and also sets lighting, weather, road conditions. We track imu_healthy here.
+    
+                if self.imu_healthy:
+    
+                    try:
+    
+                        self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg)
+    
+                        self.last_valid_imu_confidence = self.imu_confidence
+    
+                    except Exception as e:
+    
+                        logging.error(f"Error in detect_environmental_conditions: {e}")
+    
+                        self.imu_healthy = False
+    
+                        self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
+    
+                        self.last_valid_imu_confidence = self.imu_confidence
+    
+                        # Also set environmental conditions to unknown on error
+    
+                        self.lighting_condition = "unknown"
+    
+                        self.weather_condition = "unknown"
+    
+                        self.road_condition = "unknown"
+    
+                        self.lighting_confidence = 0.0
+    
+                        self.weather_confidence = 0.0
+    
+                        self.road_confidence = 0.0
+    
+                else:
+    
+                    time_since_update = (current_time - self.last_imu_time) * 1e-9
+    
+                    decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
+    
+                    self.imu_confidence = self.last_valid_imu_confidence * decay_factor
+    
+                    logging.warning(f"IMU confidence decayed to {self.imu_confidence:.2f} due to staleness.")
+    
+                    # If IMU is unhealthy, set environmental conditions to unknown and confidence low
+    
+                    self.lighting_condition = "unknown"
+    
+                    self.weather_condition = "unknown"
+    
+                    self.road_condition = "unknown"
+    
+                    self.lighting_confidence = 0.0
+    
+                    self.weather_confidence = 0.0
+    
+                    self.road_confidence = 0.0
+    
+          
+    
+                # GPS Confidence
+    
+                self._update_sensor_confidence_with_staleness(
+    
+                    "gps", self.gps_healthy, current_time, gps_location_mono_time if gps_location_mono_time is not None else 0,
+    
+                    self.last_gps_time, "last_valid_gps_confidence", self.environmental_detector.assess_gps_signal_quality, gps_location_msg
+    
+                )
+    
         
-              # Radar confidence
-              self._update_sensor_confidence_with_staleness(
-                  "radar", self.radar_healthy, current_time, radar_state_mono_time, self.last_radar_time,
-                  "last_valid_radar_confidence", self.update_radar_confidence, radar_state_msg, car_state_msg
-              )
+    
+                def _calculate_safety_outputs(self, model_v2_msg, car_state_msg, driver_monitoring_state_msg) -> None:
+    
         
-              # Camera confidence (using carState for freshness)
-              self._update_sensor_confidence_with_staleness(
-                  "camera", self.camera_healthy, current_time, car_state_mono_time, self.last_camera_time, # Using carState mono time here
-                  "last_valid_camera_confidence", self.update_camera_confidence, model_v2_msg, car_state_msg
-              )
+    
+                    """Calculates overall safety score, intervention needs, and confidence degradation."""
+    
         
-              # IMU and Environmental conditions
-              # Note: detect_environmental_conditions updates IMU confidence indirectly via its sub-components
-              # and also sets lighting, weather, road conditions. We track imu_healthy here.
-              if self.imu_healthy:
-                  try:
-                      self.detect_environmental_conditions(model_v2_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg)
-                      self.last_valid_imu_confidence = self.imu_confidence
-                  except Exception as e:
-                      logging.error(f"Error in detect_environmental_conditions: {e}")
-                      self.imu_healthy = False
-                      self.imu_confidence = 0.1 # Set IMU confidence to low on processing error
-                      self.last_valid_imu_confidence = self.imu_confidence
-                      # Also set environmental conditions to unknown on error
-                      self.lighting_condition = "unknown"
-                      self.weather_condition = "unknown"
-                      self.road_condition = "unknown"
-                      self.lighting_confidence = 0.0
-                      self.weather_confidence = 0.0
-                      self.road_confidence = 0.0
-              else:
-                  time_since_update = (current_time - self.last_imu_time) * 1e-9
-                  decay_factor = max(0.0, 1.0 - self.sensor_confidence_decay_rate * time_since_update)
-                  self.imu_confidence = self.last_valid_imu_confidence * decay_factor
-                  logging.warning(f"IMU confidence decayed to {self.imu_confidence:.2f} due to staleness.")
-                  # If IMU is unhealthy, set environmental conditions to unknown and confidence low
-                  self.lighting_condition = "unknown"
-                  self.weather_condition = "unknown"
-                  self.road_condition = "unknown"
-                  self.lighting_confidence = 0.0
-                  self.weather_confidence = 0.0
-                  self.road_confidence = 0.0
+    
+                    # Detect curve anticipation
+    
         
-              # GPS Confidence
-              self._update_sensor_confidence_with_staleness(
-                  "gps", self.gps_healthy, current_time, gps_location_mono_time if gps_location_mono_time is not None else 0,
-                  self.last_gps_time, "last_valid_gps_confidence", self.environmental_detector.assess_gps_signal_quality, gps_location_msg
-              )  
-      # Calculate overall safety with error handling
-      try:
-        self.overall_safety_score = self.calculate_overall_safety_score(car_state_msg, driver_monitoring_state_msg)
-      except Exception as e:
-        import logging
-        logging.error(f"Error in calculate_overall_safety_score: {e}")
-        self.overall_safety_score = 0.5
-  
-      try:
-        self.requires_intervention = self.evaluate_safety_intervention_needed(
-          self.overall_safety_score, car_state_msg, driver_monitoring_state_msg
-        )
-      except Exception as e:
-        import logging
-        logging.error(f"Error in evaluate_safety_intervention_needed: {e}")
-        self.requires_intervention = True  # Default to intervention on error
-  
-      # Determine if confidence is degraded (requires more conservative driving)
-      self.confidence_degraded = self.overall_safety_score < 0.6
-  
-      # Prepare safety report with error information
-      safety_report = {
-        'model_confidence': getattr(self, 'model_confidence', 0.5),
-        'radar_confidence': getattr(self, 'radar_confidence', 0.5),
-        'camera_confidence': getattr(self, 'camera_confidence', 0.5),
-        'imu_confidence': getattr(self, 'imu_confidence', 0.5),
-        'gps_confidence': getattr(self, 'gps_confidence', 0.5), # New: GPS confidence
-        'model_healthy': self.model_healthy,
-        'radar_healthy': self.radar_healthy,
-        'camera_healthy': self.camera_healthy,
-        'imu_healthy': self.imu_healthy,
-        'driver_monitoring_healthy': self.driver_monitoring_healthy,
-        'gps_healthy': self.gps_healthy, # New: GPS health
-        'lighting_condition': self.lighting_condition,
-        'weather_condition': self.weather_condition,
-        'road_condition': self.road_condition,
-        'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
-        'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
-        'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
-        'overall_safety_score': self.overall_safety_score,
-        'confidence_degraded': self.confidence_degraded,
-        'monitoring_cycles': self.monitoring_cycles,
-        'anomalies_detected': self.anomalies
-      }
-      self.monitoring_cycles += 1
-  
-      # Add error flag if any sub-component failed
-      safety_report['error_occurred'] = False
-  
-      # Check if any anomalies detected that require immediate safety response
-      if self.anomalies:
-        # If significant anomalies are detected, reduce safety score
-        if any(key in ['high_jerk', 'velocity_inconsistency', 'high_steering_rate'] for key in self.anomalies.keys()):
-          # Add penalty based on anomalies
-          self.overall_safety_score *= 0.8  # Reduce score by 20% if anomalies detected
-          self.confidence_degraded = True
-          if self.overall_safety_score < 0.3:  # If safety score becomes critical
-            self.requires_intervention = True
-  
-        return self.overall_safety_score, self.requires_intervention, safety_report
+    
+                    self.detect_curve_anticipation(model_v2_msg, car_state_msg)
+    
+        
+    
+            
+    
+        
+    
+                    # Calculate overall safety with error handling
+    
+        
+    
+                    try:
+    
+        
+    
+                        self.overall_safety_score = self.calculate_overall_safety_score(car_state_msg, driver_monitoring_state_msg)
+    
+        
+    
+                    except Exception as e:
+    
+        
+    
+                        logging.error(f"Error in calculate_overall_safety_score: {e}")
+    
+        
+    
+                        self.overall_safety_score = 0.5
+    
+        
+    
+                
+    
+        
+    
+                    try:
+    
+        
+    
+                        self.requires_intervention = self.evaluate_safety_intervention_needed(
+    
+        
+    
+                        self.overall_safety_score, car_state_msg, driver_monitoring_state_msg
+    
+        
+    
+                        )
+    
+        
+    
+                    except Exception as e:
+    
+        
+    
+                        logging.error(f"Error in evaluate_safety_intervention_needed: {e}")
+    
+        
+    
+                        self.requires_intervention = True  # Default to intervention on error
+    
+        
+    
+                
+    
+        
+    
+                    # Determine if confidence is degraded (requires more conservative driving)
+    
+        
+    
+                    self.confidence_degraded = self.overall_safety_score < 0.6
+    
+        
+    
+            
+    
+        
+    
+                    def _prepare_safety_report(self) -> Tuple[float, bool, Dict]:
+    
+        
+    
+            
+    
+        
+    
+                        """Prepares the final safety report and adjusts scores based on anomalies."""
+    
+        
+    
+            
+    
+        
+    
+                        safety_report = {
+    
+        
+    
+            
+    
+        
+    
+                            'model_confidence': getattr(self, 'model_confidence', 0.5),
+    
+        
+    
+            
+    
+        
+    
+                            'radar_confidence': getattr(self, 'radar_confidence', 0.5),
+    
+        
+    
+            
+    
+        
+    
+                            'camera_confidence': getattr(self, 'camera_confidence', 0.5),
+    
+        
+    
+            
+    
+        
+    
+                            'imu_confidence': getattr(self, 'imu_confidence', 0.5),
+    
+        
+    
+            
+    
+        
+    
+                            'gps_confidence': getattr(self, 'gps_confidence', 0.5),
+    
+        
+    
+            
+    
+        
+    
+                            'model_healthy': self.model_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'radar_healthy': self.radar_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'camera_healthy': self.camera_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'imu_healthy': self.imu_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'driver_monitoring_healthy': self.driver_monitoring_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'gps_healthy': self.gps_healthy,
+    
+        
+    
+            
+    
+        
+    
+                            'lighting_condition': self.lighting_condition,
+    
+        
+    
+            
+    
+        
+    
+                            'weather_condition': self.weather_condition,
+    
+        
+    
+            
+    
+        
+    
+                            'road_condition': self.road_condition,
+    
+        
+    
+            
+    
+        
+    
+                            'curve_anticipation_active': getattr(self, 'curve_anticipation_active', False),
+    
+        
+    
+            
+    
+        
+    
+                            'curve_anticipation_score': getattr(self, 'curve_anticipation_score', 0.0),
+    
+        
+    
+            
+    
+        
+    
+                            'lane_deviation': getattr(self.lane_deviation_filter, 'x', 0.0),
+    
+        
+    
+            
+    
+        
+    
+                            'overall_safety_score': self.overall_safety_score,
+    
+        
+    
+            
+    
+        
+    
+                            'confidence_degraded': self.confidence_degraded,
+    
+        
+    
+            
+    
+        
+    
+                            'monitoring_cycles': self.monitoring_cycles,
+    
+        
+    
+            
+    
+        
+    
+                            'anomalies_detected': self.anomalies
+    
+        
+    
+            
+    
+        
+    
+                        }
+    
+        
+    
+            
+    
+        
+    
+                        self.monitoring_cycles += 1
+    
+        
+    
+            
+    
+        
+    
+                  
+    
+        
+    
+            
+    
+        
+    
+                        # Add error flag if any sub-component failed
+    
+        
+    
+            
+    
+        
+    
+                        safety_report['error_occurred'] = False
+    
+        
+    
+            
+    
+        
+    
+                  
+    
+        
+    
+            
+    
+        
+    
+                        # Check if any anomalies detected that require immediate safety response
+    
+        
+    
+            
+    
+        
+    
+                        if self.anomalies:
+    
+        
+    
+            
+    
+        
+    
+                            # If significant anomalies are detected, reduce safety score
+    
+        
+    
+            
+    
+        
+    
+                            if any(key in ['high_jerk', 'velocity_inconsistency', 'high_steering_rate'] for key in self.anomalies.keys()):
+    
+        
+    
+            
+    
+        
+    
+                                # Add penalty based on anomalies
+    
+        
+    
+            
+    
+        
+    
+                                self.overall_safety_score *= 0.8  # Reduce score by 20% if anomalies detected
+    
+        
+    
+            
+    
+        
+    
+                                self.confidence_degraded = True
+    
+        
+    
+            
+    
+        
+    
+                                if self.overall_safety_score < 0.3:  # If safety score becomes critical
+    
+        
+    
+            
+    
+        
+    
+                                    self.requires_intervention = True
+    
+        
+    
+            
+    
+        
+    
+                        
+    
+        
+    
+            
+    
+        
+    
+                        return self.overall_safety_score, self.requires_intervention, safety_report
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    def update(self, model_v2_msg, model_v2_mono_time, radar_state_msg, radar_state_mono_time, car_state_msg, car_state_mono_time, car_control_msg, live_pose_msg=None, live_pose_mono_time=None, driver_monitoring_state_msg=None, driver_monitoring_state_mono_time=None, gps_location_msg=None, gps_location_mono_time=None) -> Tuple[float, bool, Dict]:
+    
+        
+    
+            
+    
+        
+    
+                    """Main update function - processes all inputs and returns safety assessment"""
+    
+        
+    
+            
+    
+        
+    
+                    current_time = time.monotonic() * 1e9 # Get current time once in nanoseconds. time.monotonic returns seconds.
+    
+        
+    
+            
+    
+        
+    
+                    start_time_update = time.monotonic() # Start timing for the entire update method
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    self._initialize_health_flags() # Initialize health flags
+    
+        
+    
+            
+    
+        
+    
+                    self._perform_staleness_checks(current_time, model_v2_mono_time, radar_state_mono_time, car_state_mono_time, live_pose_mono_time, driver_monitoring_state_mono_time, gps_location_mono_time)
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    self._run_anomaly_detection(car_state_msg, model_v2_msg, radar_state_msg)
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    # --- Update Confidence Measures with Error Handling and Decay ---
+    
+        
+    
+            
+    
+        
+    
+                    self._update_all_confidences(current_time, model_v2_msg, radar_state_msg, car_state_msg, car_control_msg, live_pose_msg, gps_location_msg, gps_location_mono_time)
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    self._calculate_safety_outputs(model_v2_msg, car_state_msg, driver_monitoring_state_msg)
+    
+        
+    
+            
+    
+        
+    
+                
+    
+        
+    
+            
+    
+        
+    
+                    # Return the safety assessment and report
+    
+        
+    
+            
+    
+        
+    
+                    return self._prepare_safety_report()
 
   except Exception as e:
     import logging

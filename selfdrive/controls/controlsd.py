@@ -305,7 +305,7 @@ class Controls(ControlsExt, ModelStateBase):
         }
 
         actual_state = {
-          'lateral': 0.0,  # Car is at y=0 in model frame
+          'lateral': self.calibrated_pose.position.y if self.calibrated_pose else 0.0, # Use calibrated pose for actual lateral position
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
@@ -339,7 +339,9 @@ class Controls(ControlsExt, ModelStateBase):
 
         if adapt_needed and adaptation_params:
           # Check for safety lockout conditions
-          if overall_safety_score_val < self.safety_high_risk_threshold: # Use high risk threshold as lockout
+          # Lockout only if overall safety score is below critical threshold.
+          # This allows adaptation to occur in high-risk scenarios if it could improve safety.
+          if overall_safety_score_val < self.safety_critical_threshold: 
             cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to high risk safety state (score: {overall_safety_score_val:.2f}).")
             # Do not apply adaptation_params
           else:
@@ -416,18 +418,14 @@ class Controls(ControlsExt, ModelStateBase):
     # Check for persistent performance degradation requiring disengagement
     if combined_degraded_mode:
         self.degradation_consecutive_count += 1
-        if self.performance_degradation_start_time == 0:
-            self.performance_degradation_start_time = time.monotonic()
-        
-        if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames and \
-           (time.monotonic() - self.performance_degradation_start_time) > self.performance_degradation_disengage_time:
-            cloudlog.error(f"Persistent performance degradation for more than {self.performance_degradation_disengage_time}s and {self.degradation_consecutive_count} consecutive frames. Requesting disengagement.")
+        # Disengage if consecutive degraded frames exceed threshold
+        if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:
+            cloudlog.error(f"Persistent performance degradation for {self.degradation_consecutive_count} consecutive frames. Requesting disengagement.")
             requires_intervention = True # Force disengagement
-            self.performance_degradation_start_time = 0 # Reset timer
-            self.degradation_consecutive_count = 0 # Reset counter
+            self.degradation_consecutive_count = 0 # Reset counter after disengagement
     else:
-        self.performance_degradation_start_time = 0 # Reset timer if not in degraded mode
-        self.degradation_consecutive_count = 0 # Reset counter if not in degraded mode
+        # Reset consecutive counter if not in degraded mode
+        self.degradation_consecutive_count = 0
 
     # Apply safety-based acceleration limits if in degraded mode
     if self.safety_degraded_mode or combined_degraded_mode: # Use combined_degraded_mode for stricter conditions
