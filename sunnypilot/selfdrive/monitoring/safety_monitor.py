@@ -151,7 +151,8 @@ class EnvironmentalConditionDetector:
                 avg_lane_line_strength = np.mean(lane_line_strengths)
 
                 if avg_lane_line_strength < 0.25:
-                    lighting_condition = "dark"
+                    # Do not set lighting_condition to "dark" based solely on lane line strength
+                    # lighting_condition = "dark" # Removed this line
                     lane_line_confidence = max(0.1, 1.0 - (0.25 - avg_lane_line_strength) / 0.25)
                 elif avg_lane_line_strength < 0.5:
                     if lighting_condition == "normal":

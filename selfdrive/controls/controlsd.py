@@ -299,13 +299,13 @@ class Controls(ControlsExt, ModelStateBase):
       try:
         # Prepare data for performance evaluation
         desired_state = {
-          'lateral': self.sm['modelV2'].position.y[0] if len(self.sm['modelV2'].position.y) > 0 else 0.0,
+          'lateral': 0.0, # Desired angle error is 0
           'longitudinal': self.sm['modelV2'].velocity.x[0] if len(self.sm['modelV2'].velocity.x) > 0 else CS.vEgo,
           'path_deviation': self.desired_curvature - self.curvature if hasattr(self, 'desired_curvature') and hasattr(self, 'curvature') else 0.0
         }
 
         actual_state = {
-          'lateral': self.calibrated_pose.position.y if self.calibrated_pose else 0.0, # Use calibrated pose for actual lateral position
+          'lateral': lac_log.angleError, # Actual lateral error is the angle error from the lateral controller
           'longitudinal': CS.vEgo,
           'lateral_accel': CS.aEgo,  # Using longitudinal acceleration as it's available
         }
@@ -417,15 +417,16 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Check for persistent performance degradation requiring disengagement
     if combined_degraded_mode:
-        self.degradation_consecutive_count += 1
-        # Disengage if consecutive degraded frames exceed threshold
-        if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:
-            cloudlog.error(f"Persistent performance degradation for {self.degradation_consecutive_count} consecutive frames. Requesting disengagement.")
-            requires_intervention = True # Force disengagement
-            self.degradation_consecutive_count = 0 # Reset counter after disengagement
+        self.degradation_consecutive_count = min(self.degradation_consecutive_count + 1, self.performance_degradation_consecutive_frames + 10) # Cap the counter to prevent indefinite growth
     else:
-        # Reset consecutive counter if not in degraded mode
-        self.degradation_consecutive_count = 0
+        # Decrement counter, but not below zero, to handle momentary glitches
+        self.degradation_consecutive_count = max(0, self.degradation_consecutive_count - 2) # Decrement by 2 to allow faster recovery from brief non-degraded periods
+
+    # Disengage if consecutive degraded frames exceed threshold
+    if self.degradation_consecutive_count >= self.performance_degradation_consecutive_frames:
+        cloudlog.error(f"Persistent performance degradation for {self.degradation_consecutive_count} frames. Requesting disengagement.")
+        requires_intervention = True # Force disengagement
+        self.degradation_consecutive_count = 0 # Reset counter after disengagement
 
     # Apply safety-based acceleration limits if in degraded mode
     if self.safety_degraded_mode or combined_degraded_mode: # Use combined_degraded_mode for stricter conditions
