@@ -956,26 +956,43 @@ class SafetyMonitor:
         logging.warning(f"Low driver awareness ({driver_monitoring_state_msg.awarenessStatus:.2f}). Applying moderate safety score penalty.")
         safety_score *= 0.8
 
-    # NEW: Apply anomaly-based penalties with temporal consistency
+    # NEW: Apply anomaly-based penalties with temporal consistency and environmental adaptation
     if hasattr(self, 'anomalies') and self.anomalies:
       for anomaly_type, anomaly_data in self.anomalies.items():
         if anomaly_type in ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']:
           # Apply severity-based penalty based on the anomaly data
+          # Adjust penalties based on environmental conditions - be more forgiving in poor conditions
+          environmental_severity_factor = 1.0
+
+          # In poor environmental conditions, be more forgiving (reduce penalties)
+          # In good environmental conditions, be less forgiving (increase penalties)
+          if self.weather_condition in ["rain", "snow", "fog", "poor_visibility"]:
+              environmental_severity_factor = 0.7  # Reduce penalties by 30% in bad weather
+          elif self.lighting_condition in ["night", "dark", "tunnel"]:
+              environmental_severity_factor = 0.8  # Reduce penalties by 20% in low light
+          elif self.road_condition in ["rough", "slippery"]:
+              environmental_severity_factor = 0.75  # Reduce penalties by 25% on poor road surface
+          elif self.weather_condition == "clear" and self.lighting_condition == "normal":
+              environmental_severity_factor = 1.2  # Increase penalties by 20% in good conditions
+
           if anomaly_type == 'high_jerk':
             # More severe penalty for higher jerk values
             current_jerk = anomaly_data.get('current_jerk', 0)
-            severity = min(0.3, current_jerk / 15.0)  # Cap penalty at 30%
-            safety_score *= (1.0 - severity)
+            base_severity = min(0.3, current_jerk / 15.0)  # Cap penalty at 30%
+            severity = base_severity * environmental_severity_factor
+            safety_score *= (1.0 - min(0.4, severity))  # Cap total penalty at 40%
           elif anomaly_type == 'velocity_inconsistency':
             # Penalty based on velocity difference
             difference = anomaly_data.get('difference', 0)
-            severity = min(0.25, difference / 2.0)  # Cap penalty at 25%
-            safety_score *= (1.0 - severity)
+            base_severity = min(0.25, difference / 2.0)  # Cap penalty at 25%
+            severity = base_severity * environmental_severity_factor
+            safety_score *= (1.0 - min(0.35, severity))  # Cap total penalty at 35%
           elif anomaly_type == 'high_steering_rate':
             # Penalty based on steering rate
             steering_rate = abs(anomaly_data.get('steering_rate', 0))
-            severity = min(0.2, steering_rate / 150.0)  # Cap penalty at 20%
-            safety_score *= (1.0 - severity)
+            base_severity = min(0.2, steering_rate / 150.0)  # Cap penalty at 20%
+            severity = base_severity * environmental_severity_factor
+            safety_score *= (1.0 - min(0.3, severity))  # Cap total penalty at 30%
 
     # Apply safety score hysteresis to prevent oscillation
     # Only allow rapid changes in safety score when there are critical anomalies
@@ -998,13 +1015,84 @@ class SafetyMonitor:
 
     return max(0.0, min(1.0, safety_score))
 
+  def get_adaptive_thresholds(self) -> Dict[str, float]:
+    """Calculate adaptive safety thresholds based on environmental conditions"""
+    # Base thresholds - these will be adjusted based on environmental conditions
+    adaptive_thresholds = {
+      'model_confidence': self.model_confidence_threshold * self.model_confidence_threshold_multiplier,
+      'lane_deviation': self.lane_deviation_threshold,
+      'safety_score': 0.3,  # Overall safety score threshold
+      'low_speed_safety': self.low_speed_safety_threshold,
+      'curve_anticipation_score': 0.05  # Approaching curve threshold
+    }
+
+    # Environmental condition multipliers for adjusting thresholds
+    # Lower multipliers mean more conservative (safer) thresholds in adverse conditions
+
+    # Lighting-based adjustments
+    lighting_multiplier = 1.0
+    if self.lighting_condition in ["night", "dawn_dusk", "dark", "tunnel"]:
+        lighting_multiplier = 0.8  # More conservative in low light
+    elif self.lighting_condition in ["bright"]:
+        lighting_multiplier = 1.1  # More aggressive in bright conditions
+
+    # Weather-based adjustments
+    weather_multiplier = 1.0
+    if self.weather_condition in ["rain", "snow", "fog", "poor_visibility"]:
+        weather_multiplier = 0.7  # More conservative in poor weather
+    elif self.weather_condition == "clear":
+        weather_multiplier = 1.05  # Slightly more aggressive in clear conditions
+
+    # Road condition adjustments
+    road_multiplier = 1.0
+    if self.road_condition in ["rough", "slippery"]:
+        road_multiplier = 0.75  # More conservative on poor road surfaces
+    elif self.road_condition == "dry":
+        road_multiplier = 1.05  # Slightly more aggressive on dry roads
+
+    # Combine multipliers with environmental confidence for weighted adjustment
+    combined_multiplier = 1.0
+    if self.lighting_confidence > 0.5:
+        combined_multiplier *= lighting_multiplier ** (0.4 * self.lighting_confidence)
+    if self.weather_confidence > 0.5:
+        combined_multiplier *= weather_multiplier ** (0.4 * self.weather_confidence)
+    if self.road_confidence > 0.5:
+        combined_multiplier *= road_multiplier ** (0.2 * self.road_confidence)
+
+    # Apply combined multiplier to thresholds
+    # For confidence thresholds: lower multiplier = more stringent (lower) threshold
+    # For distance/angle thresholds: lower multiplier = more conservative (smaller) threshold
+    adaptive_thresholds['model_confidence'] *= combined_multiplier
+    adaptive_thresholds['lane_deviation'] *= combined_multiplier
+    adaptive_thresholds['safety_score'] *= max(0.5, combined_multiplier)  # Don't make safety score threshold too low
+    adaptive_thresholds['curve_anticipation_score'] *= max(0.3, combined_multiplier)  # More conservative for curves
+
+    # Additional adjustment based on vehicle speed
+    # At higher speeds, be more conservative even in good conditions
+    # At very low speeds, be more aggressive if conditions are good
+    if hasattr(self, 'current_vEgo') and self.current_vEgo is not None:
+        if self.current_vEgo > 25.0:  # Above ~90 km/h, be more conservative
+            adaptive_thresholds['model_confidence'] *= 0.9
+            adaptive_thresholds['lane_deviation'] *= 0.85
+        elif self.current_vEgo < 5.0:  # At very low speed, can be more aggressive if conditions are good
+            if combined_multiplier > 1.0:
+                adaptive_thresholds['safety_score'] *= 1.2  # Allow lower safety score when safe to do so
+
+    return adaptive_thresholds
+
   def evaluate_safety_intervention_needed(self, safety_score: float, car_state_msg, driver_monitoring_state_msg) -> bool:
     """Determine if safety intervention is required"""
+    # Store current vehicle speed for adaptive threshold calculation
+    self.current_vEgo = car_state_msg.vEgo
+
+    # Get adaptive thresholds based on environmental conditions
+    adaptive_thresholds = self.get_adaptive_thresholds()
+
     # Check multiple conditions for intervention
     intervention_needed = False
 
-    # Model confidence too low
-    if self.model_confidence < self.model_confidence_threshold * self.model_confidence_threshold_multiplier:
+    # Model confidence too low (adaptive threshold)
+    if self.model_confidence < adaptive_thresholds['model_confidence']:
       intervention_needed = True
 
     # If any critical sensor is unhealthy, intervention is more likely
@@ -1021,20 +1109,20 @@ class SafetyMonitor:
         logging.warning(f"Very low driver awareness ({driver_monitoring_state_msg.awarenessStatus:.2f}). Intervention needed.")
         intervention_needed = True
 
-    # Lane deviation too high
-    if self.lane_deviation_filter.x > self.lane_deviation_threshold * 1.2:
+    # Lane deviation too high (adaptive threshold)
+    if self.lane_deviation_filter.x > adaptive_thresholds['lane_deviation'] * 1.2:
       intervention_needed = True
 
-    # Approaching curve too fast
-    if self.curve_anticipation_active and self.curve_anticipation_score > 0.05:
+    # Approaching curve too fast (adaptive threshold)
+    if self.curve_anticipation_active and self.curve_anticipation_score > adaptive_thresholds['curve_anticipation_score']:
       intervention_needed = True
 
-    # Overall safety score too low
-    if safety_score < 0.3:
+    # Overall safety score too low (adaptive threshold)
+    if safety_score < adaptive_thresholds['safety_score']:
       intervention_needed = True
 
-    # At very low speeds, be more conservative with intervention
-    if car_state_msg.vEgo < 5.0 and safety_score < self.low_speed_safety_threshold:
+    # At very low speeds, be more conservative with intervention (adaptive threshold)
+    if car_state_msg.vEgo < 5.0 and safety_score < adaptive_thresholds['low_speed_safety']:
       intervention_needed = True
 
     # NEW: Check for critical anomalies that require intervention
@@ -1043,15 +1131,32 @@ class SafetyMonitor:
       critical_anomalies = ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']
       for anomaly_type, anomaly_data in self.anomalies.items():
         if anomaly_type in critical_anomalies:
-          if anomaly_type == 'high_jerk' and anomaly_data.get('current_jerk', 0) > 8.0:  # Very high jerk (8 m/s³)
+          # Get adaptive thresholds for anomalies based on environmental conditions
+          # In poor conditions, be more tolerant of anomalies (higher thresholds)
+          # In good conditions, be less tolerant (lower thresholds)
+
+          base_jerk_threshold = 8.0
+          base_velocity_threshold = 2.5
+          base_steering_rate_threshold = 150.0
+
+          # Adjust thresholds based on environmental conditions
+          environment_factor = 1.0 / max(0.5, adaptive_thresholds.get('model_confidence', 0.5) / (self.model_confidence_threshold * self.model_confidence_threshold_multiplier))
+          # In poor conditions (low confidence), be more tolerant (higher thresholds)
+          # In good conditions (high confidence), be less tolerant (lower thresholds)
+
+          adjusted_jerk_threshold = base_jerk_threshold * environment_factor
+          adjusted_velocity_threshold = base_velocity_threshold * environment_factor
+          adjusted_steering_rate_threshold = base_steering_rate_threshold * environment_factor
+
+          if anomaly_type == 'high_jerk' and anomaly_data.get('current_jerk', 0) > adjusted_jerk_threshold:  # Adaptive high jerk threshold
             intervention_needed = True
-            logging.warning(f"Critical anomaly detected: Excessive jerk of {anomaly_data.get('current_jerk', 0)} m/s³")
-          elif anomaly_type == 'velocity_inconsistency' and anomaly_data.get('difference', 0) > 2.5:  # Very large velocity difference
+            logging.warning(f"Critical anomaly detected: Excessive jerk of {anomaly_data.get('current_jerk', 0)} m/s³ (threshold: {adjusted_jerk_threshold:.1f} m/s³)")
+          elif anomaly_type == 'velocity_inconsistency' and anomaly_data.get('difference', 0) > adjusted_velocity_threshold:  # Adaptive velocity threshold
             intervention_needed = True
-            logging.warning(f"Critical anomaly detected: Velocity inconsistency of {anomaly_data.get('difference', 0)} m/s")
-          elif anomaly_type == 'high_steering_rate' and abs(anomaly_data.get('steering_rate', 0)) > 150.0:  # Very high steering rate
+            logging.warning(f"Critical anomaly detected: Velocity inconsistency of {anomaly_data.get('difference', 0)} m/s (threshold: {adjusted_velocity_threshold:.1f} m/s)")
+          elif anomaly_type == 'high_steering_rate' and abs(anomaly_data.get('steering_rate', 0)) > adjusted_steering_rate_threshold:  # Adaptive steering rate threshold
             intervention_needed = True
-            logging.warning(f"Critical anomaly detected: High steering rate of {anomaly_data.get('steering_rate', 0)} deg/s")
+            logging.warning(f"Critical anomaly detected: High steering rate of {anomaly_data.get('steering_rate', 0)} deg/s (threshold: {adjusted_steering_rate_threshold:.1f} deg/s)")
 
     return intervention_needed
 

@@ -318,20 +318,26 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
+    # NEW: PERFORMANCE OPTIMIZATION - Cache frequently accessed values to reduce computation
+    # and create a more efficient method for calculating acceleration rate limits
+    cached_model_v2 = sm['modelV2']
+    cached_car_state = sm['carState']
+    cached_safety_monitor = getattr(self, 'safety_monitor', None)
+
     # NEW: Adaptive acceleration rate limiting based on driving conditions
     # Base acceleration rate limit (0.05 m/s^2 per DT_MDL) - original value was too aggressive
     accel_rate_limit = 0.05
 
     # Adjust rate limit based on environmental conditions
-    if hasattr(sm['modelV2'], 'orientationNED') and len(sm['modelV2'].orientationNED.x) > 0:
-      road_pitch = sm['modelV2'].orientationNED.x[0]
+    if hasattr(cached_model_v2, 'orientationNED') and len(cached_model_v2.orientationNED.x) > 0:
+      road_pitch = cached_model_v2.orientationNED.x[0]
       # Reduce rate limit when on hills
       if abs(road_pitch) > 0.05:  # More than 5% grade
         accel_rate_limit = 0.03  # More conservative acceleration rate
 
     # ENHANCED: Additional constraint based on safety monitor state
-    if hasattr(self, 'safety_monitor') and hasattr(self.safety_monitor, 'overall_safety_score'):
-      safety_score = getattr(self.safety_monitor, 'overall_safety_score', 1.0)
+    if cached_safety_monitor and hasattr(cached_safety_monitor, 'overall_safety_score'):
+      safety_score = getattr(cached_safety_monitor, 'overall_safety_score', 1.0)
       if safety_score < 0.6:  # If safety score is degraded
         # Further reduce the acceleration rate limit for safety
         if safety_score < 0.3:  # Critical safety level
@@ -342,15 +348,27 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           accel_rate_limit *= 0.8  # Slightly more conservative
 
     # ENHANCED: Additional constraints based on model confidence and road conditions
-    if hasattr(sm['modelV2'], 'meta') and hasattr(sm['modelV2'].meta, 'confidence'):
-      model_confidence = sm['modelV2'].meta.confidence if sm['modelV2'].meta.confidence else 1.0
+    if hasattr(cached_model_v2, 'meta') and hasattr(cached_model_v2.meta, 'confidence'):
+      model_confidence = cached_model_v2.meta.confidence if cached_model_v2.meta.confidence else 1.0
       if model_confidence < 0.6:  # Low model confidence
         accel_rate_limit *= 0.7  # Be more conservative
 
     # ENHANCED: Road condition-based constraints (integrated with safety monitor data)
-    # In a real system, this would come from the safety monitor's environmental assessment
-    if hasattr(self, 'road_conditions') and self.road_conditions in ['icy', 'wet']:
-      accel_rate_limit *= 0.5  # Very conservative in slippery conditions
+
+    # PERFORMANCE OPTIMIZATION: Reduced computation for environmental condition checks
+    # Cache environmental conditions to reduce repeated attribute access
+    if cached_safety_monitor:
+      road_condition = getattr(cached_safety_monitor, 'road_condition', 'unknown')
+      weather_condition = getattr(cached_safety_monitor, 'weather_condition', 'unknown')
+      lighting_condition = getattr(cached_safety_monitor, 'lighting_condition', 'normal')
+
+      # Apply environmental-based adjustments more efficiently
+      if road_condition in ['icy', 'wet', 'slippery']:
+        accel_rate_limit *= 0.5  # More conservative in slippery conditions
+      elif weather_condition in ['rain', 'snow', 'fog']:
+        accel_rate_limit *= 0.6  # More conservative in poor weather
+      elif lighting_condition in ['night', 'dawn_dusk']:
+        accel_rate_limit *= 0.75  # More conservative in low light conditions
 
     # NEW: Performance optimization - use local variables to reduce attribute access
     prev_accel_clip = self.prev_accel_clip
@@ -402,6 +420,64 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
 
+    # NEW: Predictive efficiency optimization based on upcoming road features
+    # Calculate upcoming road features for energy efficiency
+    upcoming_features = self.calculate_upcoming_road_features(sm['modelV2'], v_ego)
+
+    # Adjust acceleration profile for energy efficiency if upcoming features allow
+    if upcoming_features['downhill_distance'] > 20.0:  # More than 20m of downhill ahead
+      # Allow slightly higher acceleration before downhill to take advantage of potential energy
+      if self.output_a_target > 0:  # Only if accelerating
+        self.output_a_target = min(self.output_a_target * 1.1, accel_clip[1])  # Increase by 10% for efficiency
+
+    # For uphill sections, be more conservative about acceleration
+    if upcoming_features['uphill_distance'] > 20.0:  # More than 20m of uphill ahead
+      if self.output_a_target > 0:  # Only if accelerating
+        self.output_a_target = max(self.output_a_target * 0.9, 0)  # Reduce by 10% to save energy
+
     pm.send('longitudinalPlan', plan_send)
 
     self.publish_longitudinal_plan_sp(sm, pm)
+
+  def calculate_upcoming_road_features(self, model_v2, v_ego):
+    """Calculate upcoming road features for predictive efficiency optimization"""
+    features = {
+      'uphill_distance': 0.0,
+      'downhill_distance': 0.0,
+      'curve_distance': 0.0,
+      'elevation_change': 0.0
+    }
+
+    # Check upcoming road elevation using modelV2 orientation data
+    if hasattr(model_v2, 'orientationNED') and len(model_v2.orientationNED.x) > 1:
+      # Look at the upcoming pitch angles to identify hills
+      pitch_values = model_v2.orientationNED.x[:20]  # Look at first 20 points (roughly 100m at highway speeds)
+
+      if len(pitch_values) > 0:
+        # Calculate total distance for uphill/downhill sections
+        distance_per_point = 1.0  # Approximate distance per model point in meters
+        uphill_distance = 0
+        downhill_distance = 0
+
+        for i, pitch in enumerate(pitch_values):
+          if i == 0:
+            continue  # Skip current position
+          if pitch > 0.05:  # Uphill (more than 5% grade)
+            uphill_distance += distance_per_point
+          elif pitch < -0.05:  # Downhill (more than 5% grade)
+            downhill_distance += distance_per_point
+
+        features['uphill_distance'] = uphill_distance
+        features['downhill_distance'] = downhill_distance
+        features['elevation_change'] = sum(pitch_values[:10])  # Sum of first 10 pitch values as indicator
+
+    # Check for upcoming curves using path curvature
+    if hasattr(model_v2, 'path') and hasattr(model_v2.path, 'y') and len(model_v2.path.y) > 10:
+      # Look for significant curvature that indicates curves
+      path_curvatures = model_v2.path.y[:20]  # First 20 path points
+      significant_curves = [curv for curv in path_curvatures if abs(curv) > 0.002]  # Curvature above threshold
+
+      if len(significant_curves) > 0:
+        features['curve_distance'] = len(significant_curves) * 1.0  # Estimate based on number of points
+
+    return features

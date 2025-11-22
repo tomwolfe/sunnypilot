@@ -199,4 +199,47 @@ class LatControlPID(LatControl):
       except Exception as e:
         cloudlog.error(f"Error in curvature gain monitoring log: {e}")
 
+    # NEW: Smooth transition enhancement for better user experience
+    output_torque = self._apply_smooth_transitions(output_torque, CS.vEgo, active)
+
     return output_torque, angle_steers_des, pid_log
+
+  def _apply_smooth_transitions(self, output_torque, v_ego, active):
+    """Apply smooth transitions to reduce jerk and improve user experience"""
+    # Initialize previous values if not already set
+    if not hasattr(self, 'prev_output_torque'):
+      self.prev_output_torque = output_torque
+      self.active_prev = active
+
+    # Calculate desired change rate based on speed and activity state
+    if not active:
+      # When deactivating, use faster smoothing to return to center
+      max_torque_rate = 0.5  # Higher rate when returning to neutral
+    else:
+      # When active, use more conservative smoothing
+      if v_ego < 5.0:  # Very low speed
+        max_torque_rate = 0.1
+      elif v_ego < 15.0:  # Low to medium speed
+        max_torque_rate = 0.2
+      elif v_ego < 30.0:  # Medium to high speed
+        max_torque_rate = 0.3
+      else:  # High speed
+        max_torque_rate = 0.4  # More conservative at high speeds
+
+    # Apply rate limiting for smoother transitions
+    torque_diff = output_torque - self.prev_output_torque
+    limited_diff = max(min(torque_diff, max_torque_rate), -max_torque_rate)
+
+    # Apply the limited change to previous output
+    output_torque = self.prev_output_torque + limited_diff
+
+    # When transitioning from inactive to active, start more gently
+    if active and not self.active_prev:
+      # Apply a gentle start by limiting the initial torque
+      output_torque = min(max(output_torque, -0.2), 0.2)
+
+    # Store values for next iteration
+    self.prev_output_torque = output_torque
+    self.active_prev = active
+
+    return output_torque
