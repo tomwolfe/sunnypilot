@@ -261,6 +261,10 @@ class LatControlPID(LatControl):
     # validation across different models and loads. They are chosen to balance
     # smooth transitions with acceptable latency in lane-keeping on high-curvature roads.
     # Further tuning may be required to optimize for specific vehicle dynamics or user preferences.
+    # CRITICAL REVIEW NOTE: Quantitative validation data is severely lacking for these
+    # tuning values. Their optimality is unproven and requires mandatory, rigorous
+    # empirical validation across a wide range of scenarios and vehicle types to ensure
+    # safety and performance.
 
     # Apply rate limiting for smoother transitions
     # This smoothing is currently a rate limit on the PID output.

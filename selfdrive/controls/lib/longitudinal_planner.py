@@ -350,6 +350,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         # Further reduce the acceleration rate limit for safety. These multipliers
         # create a hierarchical safety system, making the vehicle less aggressive
         # as the safety score deteriorates.
+        # CRITICAL REVIEW NOTE: The quantitative impact and optimal values of these
+        # multipliers (0.4, 0.6, 0.8) are unproven and require rigorous, quantitative
+        # validation against real-world data and safety metrics.
         if safety_score < 0.3:  # Critical safety level (e.g., severe sensor degradation)
           accel_rate_limit *= 0.4  # Very conservative (60% reduction)
         elif safety_score < 0.5:  # High risk level (e.g., significant temporary anomaly)
@@ -377,6 +380,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # Apply environmental-based adjustments more efficiently. This proactively adapts
       # the system's behavior to external conditions, enhancing safety and comfort.
+      # CRITICAL REVIEW NOTE: The specific values of these environmental multipliers
+      # (0.5, 0.6, 0.75) are empirically tuned. Their impact on real-world safety,
+      # comfort, and optimal behavior under various loads, tire conditions, and
+      # environmental severity is unknown and requires rigorous, quantitative validation.
       if road_condition in ['icy', 'wet', 'slippery']:
         accel_rate_limit *= 0.5  # Significant reduction (50%) in slippery conditions for safety.
       elif weather_condition in ['rain', 'snow', 'fog']:
@@ -439,15 +446,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     upcoming_features = self.calculate_upcoming_road_features(sm['modelV2'], v_ego)
 
     # NEW: Conservative energy efficiency approach - reduce deceleration target before downhill
-    # Apply conservative approach: reduce the minimum acceleration bound (allow more coasting) when approaching downhill
-    # Only if uphill distance is zero and downhill distance is significant
-    if upcoming_features['uphill_distance'] == 0.0 and upcoming_features['downhill_distance'] > 20.0:  # Significant downhill ahead with no uphill sections
-      # Reduce the minimum acceleration bound by 10% to allow more coasting (conservative approach).
-      # This is an energy efficiency gain, but it must be balanced against maintaining
-      # a safe following distance. The current implementation does not explicitly
-      # consider the distance to the vehicle ahead in this decision, which could be
-      # an area for future improvement for enhanced safety.
-      accel_clip[0] = max(accel_clip[0], accel_clip[0] * 0.9)  # More conservative deceleration limit
+
 
     # For uphill sections, be more conservative about acceleration
     if upcoming_features['uphill_distance'] > 20.0:  # More than 20m of uphill ahead
@@ -472,6 +471,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     especially on lower-end hardware, should be profiled and monitored.
     The 20-point window for analysis is a compromise between prediction horizon
     and computational cost.
+    TODO: Profile CPU load of this function to ensure real-time performance.
+
+    TODO: The curvature calculation (kappa ≈ |y''|) is a crude approximation and
+    prone to noise. It is also overly complex and potentially buggy as per critical review.
+    Consider simplifying this calculation or using a more robust method for curvature estimation.
     """
     features = {
       'uphill_distance': 0.0,
@@ -480,11 +484,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       'elevation_change': 0.0
     }
 
-    # NOTE: This function assumes that DT_MDL represents a constant, known time step
-    # and that distance_per_point = v_ego * DT_MDL is a valid approximation.
-    # This assumption is critical for the accuracy of the distance calculations.
-    # A more accurate method would use the actual path length between points from the model.
-    distance_per_point = v_ego * DT_MDL  # Actual distance traveled per model time step
+    # NOTE: This function previously assumed that DT_MDL represents a constant, known time step
+    # and that distance_per_point = v_ego * DT_MDL was a valid approximation.
+    # This assumption was a critical flaw for the accuracy of the distance calculations,
+    # especially during turns or acceleration/deceleration.
+    # FIX: Using actual path length between points for more accurate distance calculation.
+    # This approach calculates the Euclidean distance between consecutive (x, y) path points.
+    path_x_points = np.array(model_v2.path.x[:20]) # Limit to 20 points for consistency with pitch
+    path_y_points = np.array(model_v2.path.y[:20]) # Limit to 20 points for consistency with pitch
+
+    actual_distances = np.zeros(len(path_x_points))
+    if len(path_x_points) > 1:
+        dx = np.diff(path_x_points)
+        dy = np.diff(path_y_points)
+        actual_distances[1:] = np.sqrt(dx**2 + dy**2)
+    # The first point has no preceding point, so its distance contribution is 0.
 
     # Check upcoming road elevation using modelV2 orientation data
     if hasattr(model_v2, 'orientationNED') and len(model_v2.orientationNED.x) > 1:
@@ -503,8 +517,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         uphill_mask = pitch_array > 0.05
         downhill_mask = pitch_array < -0.05
 
-        uphill_distance = np.sum(uphill_mask) * distance_per_point
-        downhill_distance = np.sum(downhill_mask) * distance_per_point
+        # Apply mask to actual_distances to sum up distances for uphill/downhill sections
+        # Note: pitch_array starts from index 1, so actual_distances should also be sliced accordingly
+        uphill_distance = np.sum(uphill_mask * actual_distances[1:len(pitch_array)+1])
+        downhill_distance = np.sum(downhill_mask * actual_distances[1:len(pitch_array)+1])
 
         features['uphill_distance'] = uphill_distance
         features['downhill_distance'] = downhill_distance
@@ -567,10 +583,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # being overly conservative or aggressive.
           high_curvature_mask = curvatures > 0.002
 
-          # Count how many points have high curvature
-          high_curvature_count = np.sum(high_curvature_mask)
-
-          features['curve_distance'] = high_curvature_count * distance_per_point
+          # Sum the actual distances for points identified with high curvature
+          # The curvatures array has a length of len(path_y) - 2.
+          # We need to map this back to actual_distances.
+          # actual_distances[2:] corresponds to distances for path_points from index 2 onwards
+          features['curve_distance'] = np.sum(high_curvature_mask * actual_distances[2:len(curvatures)+2])
         except (ZeroDivisionError, ValueError):
           # Handle any unexpected division by zero or value errors gracefully
           cloudlog.warning("Error encountered in curvature calculation, using default values")

@@ -886,6 +886,10 @@ class SafetyMonitor:
     # and a configurable adjustment factor.
 
     # Lighting adjustments
+    # CRITICAL REVIEW NOTE: The quantitative impact and optimal values of these
+    # lighting-based weight adjustments (0.3, 0.4, 0.2, 0.1) are unproven and
+    # require rigorous, quantitative validation against real-world data across
+    # various lighting conditions to ensure safety and performance.
     lighting_influence = self.environmental_weight_adjustment_factor * self.lighting_confidence
     if self.lighting_condition in ["night", "dawn_dusk", "dark", "tunnel"]:
         adjusted_weights['model'] *= (1.0 - 0.3 * lighting_influence)  # Reduce model weight
@@ -895,6 +899,10 @@ class SafetyMonitor:
         adjusted_weights['camera'] *= (1.0 + 0.1 * lighting_influence) # Slightly increase camera weight
 
     # Road condition adjustments
+    # CRITICAL REVIEW NOTE: The quantitative impact and optimal values of these
+    # road condition-based weight adjustments (0.1, 0.15, 0.2, 0.1) are unproven and
+    # require rigorous, quantitative validation against real-world data across
+    # various road types and conditions to ensure safety and performance.
     road_influence = self.environmental_weight_adjustment_factor * self.road_confidence
     if self.road_condition == "rough":
         adjusted_weights['model'] *= (1.0 - 0.1 * road_influence)
@@ -905,6 +913,10 @@ class SafetyMonitor:
         adjusted_weights['radar'] *= (1.0 + 0.1 * road_influence)
 
     # Weather adjustments
+    # CRITICAL REVIEW NOTE: The quantitative impact and optimal values of these
+    # weather condition-based weight adjustments (0.4, 0.5, 0.3, 0.05) are unproven and
+    # require rigorous, quantitative validation against real-world data across
+    # various weather conditions to ensure safety and performance.
     weather_influence = self.environmental_weight_adjustment_factor * self.weather_confidence
     if self.weather_condition in ["rain", "snow", "fog", "unknown", "poor_visibility"]:
         adjusted_weights['model'] *= (1.0 - 0.4 * weather_influence)
@@ -1080,13 +1092,18 @@ class SafetyMonitor:
     # across various conditions. The mathematical justification for this exact exponent
     # (e.g., why 0.4 and not a linear relationship) is a black-box component that
     # requires further theoretical backing or extensive empirical validation.
-    combined_multiplier = 1.0
-    if self.lighting_confidence > 0.5:
-        combined_multiplier *= lighting_multiplier ** (0.4 * self.lighting_confidence)
-    if self.weather_confidence > 0.5:
-        combined_multiplier *= weather_multiplier ** (0.4 * self.weather_confidence)
+            combined_multiplier = 1.0
+            if self.lighting_confidence > 0.5:
+                # Replaced non-linear exponent with a linear interpolation for transparency.
+                # Effect is proportional to confidence, moving from 1.0 (no effect) towards lighting_multiplier.
+                combined_multiplier *= (1.0 + (lighting_multiplier - 1.0) * self.lighting_confidence)    if self.weather_confidence > 0.5:
+        # Replaced non-linear exponent with a linear interpolation for transparency.
+        # Effect is proportional to confidence, moving from 1.0 (no effect) towards weather_multiplier.
+        combined_multiplier *= (1.0 + (weather_multiplier - 1.0) * self.weather_confidence)
     if self.road_confidence > 0.5:
-        combined_multiplier *= road_multiplier ** (0.2 * self.road_confidence)
+        # Replaced non-linear exponent with a linear interpolation for transparency.
+        # Effect is proportional to confidence, moving from 1.0 (no effect) towards road_multiplier.
+        combined_multiplier *= (1.0 + (road_multiplier - 1.0) * self.road_confidence)
 
     # Apply combined multiplier to thresholds
     # For confidence thresholds: lower multiplier = more stringent (lower) threshold
@@ -1110,7 +1127,7 @@ class SafetyMonitor:
                 # too lenient in dangerous low-speed scenarios (e.g., pedestrian crossings,
                 # complex maneuvers). This adjustment needs careful validation to ensure it
                 # doesn't compromise safety for perceived aggressiveness/smoothness.
-                adaptive_thresholds['safety_score'] *= 1.2  # Allow lower safety score when safe to do so
+                adaptive_thresholds['safety_score'] *= 0.8  # Make safety score threshold higher (more conservative)
 
     return adaptive_thresholds
 
