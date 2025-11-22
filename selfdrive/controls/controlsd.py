@@ -355,43 +355,10 @@ class Controls(ControlsExt, ModelStateBase):
 
         if adapt_needed and adaptation_params:
           # Check for safety lockout conditions
-          # Previously, the logic was too restrictive: checking either requires_intervention or safety score
-          # The issue was that any anomaly would trigger requires_intervention=True, blocking adaptation
-          # This is too strict because adaptation might be exactly what's needed to improve performance
-
-          # NEW: More nuanced safety lockout logic
-          # Only lockout adaptation if safety score is critically low (below critical threshold)
-          # This allows adaptation in moderate risk situations where it could help improve performance
-          # while still preventing adaptation in truly dangerous situations
+          # The lockout should be based primarily on the overall_safety_score being below a critical threshold.
           if overall_safety_score_val < self.safety_critical_threshold:
             cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical safety state (score: {overall_safety_score_val:.2f} < {self.safety_critical_threshold}).")
-            # Do not apply adaptation_params in critical safety state
-          # NEW: Also check for critical anomalies that should prevent adaptation
-          elif safety_report.get('anomalies_detected', {}):
-            # Only prevent adaptation for the most critical anomalies that indicate immediate danger
-            critical_anomalies = ['high_jerk', 'velocity_inconsistency', 'high_steering_rate']
-            has_critical_anomaly = any(anomaly_type in critical_anomalies and
-                                      safety_report['anomalies_detected'][anomaly_type]
-                                      for anomaly_type in safety_report['anomalies_detected'])
-
-            # Only lockout if we have critical anomalies AND the safety score is below high risk threshold
-            # This allows adaptation for minor anomalies as long as overall safety is not severely compromised
-            if has_critical_anomaly and overall_safety_score_val < self.safety_high_risk_threshold:
-              cloudlog.warning(f"Safety lockout active: Preventing performance adaptation due to critical anomalies with safety concerns (score: {overall_safety_score_val:.2f}, anomalies: {list(safety_report['anomalies_detected'].keys())}).")
-              # Do not apply adaptation_params
-            else:
-              # Apply adaptation as it could help resolve the anomalies
-              cloudlog.info(f"Performance adaptation triggered despite anomalies (score: {overall_safety_score_val:.2f}): {adaptation_params}")
-              # Update tuning parameters for adaptive control
-              for param, value in adaptation_params.items():
-                if param in self.performance_monitor.tuning_params:
-                  self.performance_monitor.tuning_params[param] = value
-
-              # Update the lateral controller with new parameters if needed
-              if 'lateral_kp_factor' in adaptation_params or 'lateral_ki_factor' in adaptation_params:
-                # In a real implementation, we would pass these to the lateral controller
-                # For now, we'll just store them for reference
-                self.adaptation_params = adaptation_params
+            # Do not apply adaptation_params
           else:
             cloudlog.info(f"Performance adaptation triggered: {adaptation_params}")
             # Update tuning parameters for adaptive control
@@ -459,29 +426,15 @@ class Controls(ControlsExt, ModelStateBase):
         cloudlog.info("Safety degraded, but performance is acceptable.")
 
     # Check for persistent performance degradation requiring disengagement
-    # Using a hysteresis approach to prevent rapid resets due to brief non-degraded periods
     if combined_degraded_mode:
         self.degradation_consecutive_count += 1
         # Cap the counter to prevent indefinite growth
         self.degradation_consecutive_count = min(self.degradation_consecutive_count,
                                                self.performance_degradation_consecutive_frames + 50)  # Cap at threshold + buffer
     else:
-        # Only reset counter if degradation has been cleared for a sustained period
-        # This addresses the critical bug where temporary improvements would reset the timer
-        # Instead of decrementing by 1, we now use a reset threshold to prevent spurious resets
-        # The counter only resets after being in non-degraded mode for a significant period
-        if self.degradation_consecutive_count > 0:
-            # Increment a separate counter for consecutive non-degraded frames
-            if not hasattr(self, 'non_degraded_consecutive_count'):
-                self.non_degraded_consecutive_count = 0
-            self.non_degraded_consecutive_count += 1
-
-            # Only reset the degradation counter after a significant period of non-degraded operation
-            if self.non_degraded_consecutive_count >= self.performance_degradation_consecutive_frames // 2:
-                self.degradation_consecutive_count = 0
-                self.non_degraded_consecutive_count = 0
-        else:
-            # Reset the non-degraded counter when already at 0 degradation count
+        # Reset counter immediately if not in degraded mode
+        self.degradation_consecutive_count = 0
+        if hasattr(self, 'non_degraded_consecutive_count'): # Ensure this is reset if it was previously used
             self.non_degraded_consecutive_count = 0
 
     # Disengage if consecutive degraded frames exceed threshold

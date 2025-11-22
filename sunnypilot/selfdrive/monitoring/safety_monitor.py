@@ -134,7 +134,7 @@ class EnvironmentalConditionDetector:
 
     def assess_lighting_conditions(self, model_v2, car_state_msg, gps_location_msg):
         # Analyze lighting conditions using multi-sensor fusion approach
-        # Combining lane line strength, camera brightness metrics, and time-based estimates
+        # Relying on camera brightness metrics, and time-based estimates (GPS prioritized)
 
         lighting_condition = "normal"  # Default assumption
         lighting_confidence = 0.5  # Base confidence
@@ -143,45 +143,7 @@ class EnvironmentalConditionDetector:
         valid_indicators = 0
         total_confidence = 0.0
 
-        # Indicator 1: Lane line strength (original approach, weighted less in tunnels)
-        lane_line_confidence = 0.0
-        if hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0:
-            lane_line_strengths = [line.strength for line in model_v2.laneLines if line.strength is not None]
-            if len(lane_line_strengths) > 0:
-                avg_lane_line_strength = np.mean(lane_line_strengths)
-
-                if avg_lane_line_strength < 0.25:
-                    # Do not set lighting_condition to "dark" based solely on lane line strength
-                    # lighting_condition = "dark" # Removed this line
-                    lane_line_confidence = max(0.1, 1.0 - (0.25 - avg_lane_line_strength) / 0.25)
-                elif avg_lane_line_strength < 0.5:
-                    if lighting_condition == "normal":
-                        lighting_condition = "dawn_dusk"
-                    lane_line_confidence = 0.5
-                else:
-                    lane_line_confidence = min(0.7, 0.4 + avg_lane_line_strength / 2.0)
-                
-                # De-emphasize lane line strength if GPS suggests it's night
-                # or if model confidence is low, indicating potential dark environment
-                if gps_location_msg is not None and gps_location_msg.unixTimestampMillis > 0:
-                    # Use GPS time for accurate day/night calculation
-                    gps_time = datetime.datetime.fromtimestamp(gps_location_msg.unixTimestampMillis / 1000)
-                    hour = gps_time.hour
-                    is_night_time = hour >= 19 or hour <= 6
-                else:
-                    # Fallback to system time if GPS time is not available
-                    current_time_dt = datetime.datetime.now()
-                    hour = current_time_dt.hour
-                    is_night_time = hour >= 19 or hour <= 6
-
-                if is_night_time:
-                    # Reduce weight of lane line strength significantly at night
-                    total_confidence += lane_line_confidence * 0.05  # Reduced weight from 0.1
-                else:
-                    total_confidence += lane_line_confidence * 0.2  # Reduced weight from 0.4
-                valid_indicators += 1
-
-        # Indicator 2: Time of day based on system time / GPS time (for nighttime detection)
+        # Indicator 1: Time of day based on system time / GPS time (for nighttime detection)
         # Prioritize GPS time for accuracy
         import datetime
         is_night_time = False
@@ -207,7 +169,7 @@ class EnvironmentalConditionDetector:
         total_confidence += time_based_confidence * 0.5  # Increased weight to 50%
         valid_indicators += 1
 
-        # Indicator 3: GPS-based sunrise/sunset calculation (placeholder, now potentially more accurate time)
+        # Indicator 2: GPS-based sunrise/sunset calculation (placeholder, now potentially more accurate time)
         # This would require GPS coordinates and date for accurate calculation
         # For now, we'll continue using this as a confidence booster, relying on the time-of-day for primary
         gps_based_confidence = 0.4 # Increased from 0.3 for consistency
