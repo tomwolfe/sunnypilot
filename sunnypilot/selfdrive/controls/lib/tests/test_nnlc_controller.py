@@ -43,8 +43,8 @@ class TestNeuralNetworkLateralControl:
         # Mock the params and model - patches need to be in place during instantiation
         mock_params = Mock()
         mock_params.get_bool.return_value = True
-        with patch('openpilot.common.params.Params') as MockParams, \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad') as MockModel, \
+             patch('openpilot.common.params.Params') as MockParams:
             MockParams.return_value = mock_params
             mock_model_instance = Mock()
             mock_model_instance.friction_override = False
@@ -89,8 +89,8 @@ class TestNeuralNetworkLateralControl:
         # Mock the params and model
         mock_params = Mock()
         mock_params.get_bool.return_value = True
-        with patch('openpilot.common.params.Params') as MockParams, \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad') as MockModel, \
+             patch('openpilot.common.params.Params') as MockParams:
             MockParams.return_value = mock_params
             mock_model_instance = Mock()
             mock_model_instance.friction_override = False
@@ -123,7 +123,7 @@ class TestNeuralNetworkLateralControl:
             
             # Test normal input clipping
             normal_input = [15.0, 0.1, 0.05] + [0.0] * 10  # [vEgo, setpoint, jerk] + others
-            clipped = nnlc._NeuralNetworkLateralControl__safe_clip_input(normal_input, 15.0, False)
+            clipped = nnlc.safe_clip_input(normal_input, 15.0, False)
             
             # Verify vEgo is kept within bounds (0.0 to 40.0)
             assert 0.0 <= clipped[0] <= 40.0
@@ -134,7 +134,7 @@ class TestNeuralNetworkLateralControl:
             
             # Test with extreme values
             extreme_input = [50.0, 10.0, -15.0] + [20.0] * 10  # Extreme values
-            clipped_extreme = nnlc._NeuralNetworkLateralControl__safe_clip_input(extreme_input, 50.0, False)
+            clipped_extreme = nnlc.safe_clip_input(extreme_input, 50.0, False)
             
             # Verify extreme values are clipped
             assert clipped_extreme[0] == 40.0  # vEgo should be clipped to 40
@@ -148,8 +148,8 @@ class TestNeuralNetworkLateralControl:
         # Mock the params and model
         mock_params = Mock()
         mock_params.get_bool.return_value = True
-        with patch('openpilot.common.params.Params') as MockParams, \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad') as MockModel, \
+             patch('openpilot.common.params.Params') as MockParams:
             MockParams.return_value = mock_params
             mock_model_instance = Mock()
             mock_model_instance.friction_override = False
@@ -182,22 +182,22 @@ class TestNeuralNetworkLateralControl:
             
             # Test with testing mode enabled (should allow higher values for setpoint/measurement)
             test_input = [15.0, 8.0, 6.0, 4.0, 2.0, 1.0]  # High values for first few params
-            clipped = nnlc._NeuralNetworkLateralControl__safe_clip_input(test_input, 15.0, True)
+            clipped = nnlc.safe_clip_input(test_input, 15.0, True)
             
             # With allow_high_values_for_testing=True, the first few values should be preserved
-            # But other values should still be clipped
+            # But other values should still be clipped to [-5.0, 5.0] range
             assert clipped[0] == 15.0  # vEgo preserved
             assert clipped[1] == 8.0   # setpoint allowed in testing mode
             assert clipped[2] == 6.0   # jerk allowed in testing mode
             assert clipped[3] == 4.0   # roll allowed in testing mode
-            assert clipped[4] == 1.0   # but this should be clipped if it's not in the first 3 setpoint/measurement params
-            assert -5.0 <= clipped[5] <= 5.0  # Further values should be clipped
+            assert clipped[4] == 2.0   # value within [-5.0, 5.0] range preserved
+            assert clipped[5] == 1.0   # value within [-5.0, 5.0] range preserved
 
     def test_update_with_safe_inputs(self):
         """Test update method with safe input handling"""
         # Mock the model evaluation to return a predictable value
         with patch('openpilot.common.params.Params'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad'):
+             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad'):
             
             # Create a mock model
             mock_model = Mock()
@@ -224,8 +224,8 @@ class TestNeuralNetworkLateralControl:
         # Mock the params and model
         mock_params = Mock()
         mock_params.get_bool.return_value = True
-        with patch('openpilot.common.params.Params') as MockParams, \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad.NNTorqueModelTinygrad') as MockModel:
+        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad') as MockModel, \
+             patch('openpilot.common.params.Params') as MockParams:
             MockParams.return_value = mock_params
             mock_model_instance = Mock()
             mock_model_instance.friction_override = False
@@ -259,7 +259,7 @@ class TestNeuralNetworkLateralControl:
             # The enhanced code should preserve high values during saturation testing
             # when allow_high_values_for_testing is True for setpoint and measurement inputs
             test_setpoint_input = [15.0, 10.0, 8.0] + [1.0] * 10  # High setpoint/measurement values
-            clipped_setpoint = nnlc._NeuralNetworkLateralControl__safe_clip_input(
+            clipped_setpoint = nnlc.safe_clip_input(
                 test_setpoint_input, 15.0, allow_high_values_for_testing=True)
             
             # The first few values (vEgo, setpoint, jerk, roll) should maintain their relative relationships

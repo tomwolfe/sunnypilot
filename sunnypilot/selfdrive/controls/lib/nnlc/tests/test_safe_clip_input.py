@@ -32,12 +32,44 @@ class TestSafeClipInput:
         # Create mock VehicleModel
         self.mock_vm = Mock()
 
-        # Initialize the controller with minimal mocks
-        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_ff_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.create_lat_accel_model'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModel'), \
-             patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.Params'):
-            self.nnlc = NeuralNetworkLateralControl(self.mock_cp, self.mock_vm)
+        # We need lac_torque, CP, CP_SP, CI for the actual constructor
+        self.mock_lac_torque = Mock()
+        self.mock_lac_torque.steer_max = 1.0
+        self.mock_lac_torque.torque_params = Mock()
+        self.mock_lac_torque.torque_params.STEER_MAX = 2.0
+        self.mock_lac_torque.torque_params.STEER_DELTA_UP = 0.5
+        self.mock_lac_torque.torque_params.STEER_DELTA_DOWN = 0.5
+        self.mock_lac_torque.torque_params.STEER_ERROR_MAX = 0.5
+        self.mock_lac_torque.torque_params.TORQUE_MEASURED_SCALAR = 1000.0
+        self.mock_lac_torque.torque_params.TORQUE_OFFSET = 0.0
+        self.mock_lac_torque.torque_params.TORQUE_POSITION_SCALAR = 1000.0
+
+        # Create mock CP_SP (SunPyPilot CarParams)
+        self.mock_cp_sp = Mock()
+        self.mock_nnlc_sp = Mock()
+        self.mock_model_path = Mock()
+        self.mock_model_path.path = "test_path"  # This will be ignored due to mocking
+        self.mock_nnlc_sp.model = self.mock_model_path
+        self.mock_cp_sp.neuralNetworkLateralControl = self.mock_nnlc_sp
+
+        # Create mock CI (Car Interface)
+        self.mock_ci = Mock()
+
+        # Mock the model and params at the right place
+        with patch('sunnypilot.selfdrive.controls.lib.nnlc.nnlc.NNTorqueModelTinygrad') as MockModelClass, \
+             patch('openpilot.common.params.Params') as MockParamsClass:
+
+            # Mock the model instance that will be created
+            mock_model_instance = Mock()
+            mock_model_instance.friction_override = False
+            MockModelClass.return_value = mock_model_instance
+
+            # Mock the params instance that will be created
+            mock_params_instance = Mock()
+            mock_params_instance.get_bool.return_value = True
+            MockParamsClass.return_value = mock_params_instance
+
+            self.nnlc = NeuralNetworkLateralControl(self.mock_lac_torque, self.mock_cp, self.mock_cp_sp, self.mock_ci)
 
     def test_v_ego_boundary_clipping(self):
         """Test that vEgo is always clipped to [0.0, 40.0] range"""

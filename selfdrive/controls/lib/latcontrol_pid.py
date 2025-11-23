@@ -105,7 +105,7 @@ class LatControlPID(LatControl):
     # Define a maximum allowed age for the modelV2 message (e.g., 200ms)
     MAX_MODEL_V2_AGE = 0.2  # seconds
 
-    if 'modelV2' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
+    if sm is not None and 'modelV2' in sm and 'logMonoTime' in sm and hasattr(sm['modelV2'], 'logMonoTime'):
       model_v2_age = (sm['logMonoTime']['carState'] - sm['modelV2'].logMonoTime) / 1e9  # Convert to seconds
       if model_v2_age > MAX_MODEL_V2_AGE:
         # If modelV2 message is stale, set reliability_factor to 0.0 to essentially disable lateral control
@@ -233,7 +233,7 @@ class LatControlPID(LatControl):
             vEgo=CS.vEgo,
             curvature_gain_interp=getattr(CP_SP, 'curvatureGainInterp', None),
           )
-        self.last_monitoring_log_time = current_time
+        self.last_monitoring_log_time = current_time_monitoring
       except Exception as e:
         cloudlog.error(f"Error in curvature gain monitoring log: {e}")
 
