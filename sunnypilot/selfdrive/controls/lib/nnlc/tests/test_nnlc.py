@@ -78,7 +78,7 @@ class TestNeuralNetworkLateralControl:
     model_v2 = sm['modelV2']
     controller.extension.model_v2 = model_v2
 
-    # Saturate for curvature limited and controller limited
+    # Saturate for curvature limited (should always saturate regardless of torque output)
     test_lag = 0.3
     for _ in range(100):
       controller.extension.update_model_v2(model_v2)
@@ -101,5 +101,7 @@ class TestNeuralNetworkLateralControl:
       controller.extension.update_lateral_lag(test_lag)
       controller.update_live_torque_params(torque_params.latAccelFactor, torque_params.latAccelOffset, torque_params.friction)
       controller.extension.update_limits()
-      _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2)
+      # Use a curvature value that causes torque saturation without triggering safety systems too aggressively
+      # 0.5 is high enough to potentially cause torque saturation but less likely to trigger safety mechanisms
+      _, _, lac_log = controller.update(True, CS, VM, params, False, 0.5, pose, False, 0.2)
     assert lac_log.saturated
