@@ -41,8 +41,9 @@ class NNTorqueModelTinygrad:
 
   # Begin activation functions.
   # These are called by name using the keys in the model json file
-  @staticmethod
-  def sigmoid(x: Tensor) -> Tensor:
+  def sigmoid(self, x: Tensor) -> Tensor:
+    # Apply input clipping to prevent extremely large values that cause safe_exp clipping
+    x = x.clip(-20.0, 20.0)  # Limit input to prevent extreme values
     return 1 / (1 + safe_exp(-x))
 
   @staticmethod

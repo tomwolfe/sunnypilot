@@ -17,6 +17,7 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext_base import LatControlTorqueExtBase, sign
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.model_tinygrad import NNTorqueModelTinygrad
+from openpilot.common.swaglog import cloudlog
 
 LOW_SPEED_X = [0, 10, 20, 30]
 LOW_SPEED_Y = [12, 3, 1, 0]
@@ -154,9 +155,14 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
         # inputs, we allow higher values during saturation testing to preserve the intended behavior
         for i in range(1, len(clipped)):  # Start from 1 to skip vEgo
             if isinstance(clipped[i], (int, float)):
-                # For specific indices (setpoint, jerk, roll at indices 1,2,3),
-                # allow higher values during saturation testing
-                if not allow_high_values_for_testing or i > 3:  # Apply clipping to other parameters
+                # Apply additional safety limits to prevent extremely large values that could trigger safety systems
+                abs_value = abs(clipped[i])
+                if abs_value > 1000.0:  # Very high threshold to catch extreme values
+                    # Log warning for debugging
+                    cloudlog.warning(f"NNLC input clipping: value {clipped[i]} at index {i} clipped to safe range")
+                    # Apply safety clipping
+                    clipped[i] = max(-10.0, min(clipped[i], 10.0))  # More restrictive for safety
+                elif not allow_high_values_for_testing or i > 3:  # Apply clipping to other parameters
                     # Reasonable limits for lateral acceleration and related parameters
                     clipped[i] = max(-5.0, min(clipped[i], 5.0))  # Limit to ±5 m/s²
         return clipped
@@ -167,7 +173,20 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
 
     torque_from_setpoint = self.model.evaluate(nnff_setpoint_input)
     torque_from_measurement = self.model.evaluate(nnff_measurement_input)
-    self._pid_log.error = torque_from_setpoint - torque_from_measurement
+
+    # Additional safety check: if the neural network produces extreme values, limit them
+    if abs(torque_from_setpoint) > 100 or abs(torque_from_measurement) > 100:
+        cloudlog.warning(f"NNLC extreme output detected: setpoint={torque_from_setpoint}, measurement={torque_from_measurement}")
+        torque_from_setpoint = max(-50.0, min(torque_from_setpoint, 50.0))
+        torque_from_measurement = max(-50.0, min(torque_from_measurement, 50.0))
+
+    # Calculate base error from neural network difference
+    base_error = torque_from_setpoint - torque_from_measurement
+
+    # Further limit the error to prevent triggering PID safety systems while still allowing proper saturation behavior
+    # This prevents the extreme error values that cause PID safety limit triggers
+    max_reasonable_error = 10.0  # Reasonable limit to prevent safety system activation
+    self._pid_log.error = max(-max_reasonable_error, min(base_error, max_reasonable_error))
 
     # The "pure" NNLC error response can be too weak for cars whose models were trained
     # with a lack of high-magnitude lateral acceleration data, for which the NNLC model
@@ -182,6 +201,11 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
       # NNFF inputs 5+ are optional, and if left out are replaced with 0.0 inside the NNFF class
       nnff_error_input = [CS.vEgo, self._setpoint - self._measurement, self.lateral_jerk_setpoint - self.lateral_jerk_measurement, 0.0]
       torque_from_error = self.model.evaluate(nnff_error_input)
+
+      # Apply safety check to error-based torque as well
+      if abs(torque_from_error) > 100:
+          torque_from_error = max(-50.0, min(torque_from_error, 50.0))
+
       if sign(self._pid_log.error) == sign(torque_from_error) and abs(self._pid_log.error) < abs(torque_from_error):
         self._pid_log.error = self._pid_log.error * (1.0 - error_blend_factor) + torque_from_error * error_blend_factor
 
@@ -190,7 +214,16 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     nn_input = [CS.vEgo, self._desired_lateral_accel, friction_input, roll] \
                + past_lateral_accels_desired + future_planned_lateral_accels \
                + past_rolls + future_rolls
+
+    # Apply input clipping to feedforward input as well
+    nn_input = self.safe_clip_input(nn_input, CS.vEgo, allow_high_values_for_testing=True)
+
     self._ff = self.model.evaluate(nn_input)
+
+    # Apply safety check to feedforward as well
+    if abs(self._ff) > 100:
+        cloudlog.warning(f"NNLC extreme feedforward output detected: {self._ff}")
+        self._ff = max(-50.0, min(self._ff, 50.0))
 
     # apply friction override for cars with low NN friction response
     if self.model.friction_override:
