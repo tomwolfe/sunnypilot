@@ -90,6 +90,7 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     self._output_torque = self._pid.update(self._pid_log.error,
                                            feedforward=self._ff,
                                            speed=CS.vEgo,
+                                           curvature=self._desired_curvature,  # Pass curvature for safety systems
                                            freeze_integrator=freeze_integrator)
 
   def update_neural_network_feedforward(self, CS, params, calibrated_pose) -> None:
