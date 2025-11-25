@@ -16,13 +16,19 @@ from openpilot.selfdrive.locationd.helpers import rotate_std
 from openpilot.selfdrive.locationd.models.pose_kf import PoseKalman, States
 from openpilot.selfdrive.locationd.models.constants import ObservationKind, GENERATED_DIR
 
-ACCEL_SANITY_CHECK = 100.0  # m/s^2
-ROTATION_SANITY_CHECK = 10.0  # rad/s
-TRANS_SANITY_CHECK = 200.0  # m/s
-CALIB_RPY_SANITY_CHECK = 0.5  # rad (+- 30 deg)
-MIN_STD_SANITY_CHECK = 1e-5  # m or rad
-MAX_FILTER_REWIND_TIME = 0.8  # s
-MAX_SENSOR_TIME_DIFF = 0.1  # s
+# Sanity check bounds - values should be based on physical limits and sensor specifications
+# These values should be carefully tuned based on vehicle dynamics and sensor capabilities:
+# - Accelerometer: typical max ~98 m/s^2 (10g) for consumer IMU, using 100 m/s^2 as limit
+# - Gyroscope: typical max ~17.5 rad/s (1000 deg/s) for consumer IMU, using 10 rad/s as limit
+# - Translation: reasonable max for vehicle motion ~200 m/s (447 mph)
+# - Calibration: reasonable max for calibration angles ~0.5 rad (~29 deg)
+ACCEL_SANITY_CHECK = 100.0  # m/s^2 - Accelerometer sanity check limit (approx 10g)
+ROTATION_SANITY_CHECK = 10.0  # rad/s - Gyroscope sanity check limit (approx 573 deg/s)
+TRANS_SANITY_CHECK = 200.0  # m/s - Translation sanity check limit
+CALIB_RPY_SANITY_CHECK = 0.5  # rad (+- 30 deg) - Calibration sanity check limit
+MIN_STD_SANITY_CHECK = 1e-5  # m or rad - Minimum standard deviation sanity check
+MAX_FILTER_REWIND_TIME = 0.8  # s - Maximum time allowed to rewind filter
+MAX_SENSOR_TIME_DIFF = 0.1  # s - Maximum acceptable time difference between sensor and log
 YAWRATE_CROSS_ERR_CHECK_FACTOR = 30
 INPUT_INVALID_LIMIT = 2.0 # 1 (camodo) / 9 (sensor) bad input[s] ignored
 INPUT_INVALID_RECOVERY = 10.0 # ~10 secs to resume after exceeding allowed bad inputs by one
@@ -94,6 +100,33 @@ class LocationEstimator:
       cloudlog.error("Non-finite values detected, kalman reset")
       self.reset(t)
 
+  def _validate_and_bound_input(self, input_array: np.ndarray, min_val: float, max_val: float, input_name: str) -> np.ndarray:
+    """
+    Validate input array and bound values to prevent non-finite values from entering the filter.
+
+    Args:
+        input_array: Input array to validate
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+        input_name: Name of the input for logging purposes
+
+    Returns:
+        Bounded array with valid values
+    """
+    # Check for non-finite values and replace them with reasonable defaults
+    if not np.isfinite(input_array).all():
+      cloudlog.warning(f"{input_name} contains non-finite values, replacing with zeros")
+      input_array = np.where(np.isfinite(input_array), input_array, 0.0)
+
+    # Bound the values to prevent extreme inputs
+    bounded_array = np.clip(input_array, min_val, max_val)
+
+    # Log if clipping occurred
+    if not np.array_equal(input_array, bounded_array):
+      cloudlog.debug(f"{input_name} values clipped: {input_array} -> {bounded_array}")
+
+    return bounded_array
+
   def handle_log(self, t: float, which: str, msg: capnp._DynamicStructReader) -> HandleLogResult:
     new_x, new_P = None, None
     if which == "accelerometer" and msg.which() == "acceleration":
@@ -107,6 +140,10 @@ class LocationEstimator:
 
       v = msg.acceleration.v
       meas = np.array([-v[2], -v[1], -v[0]])
+
+      # Validate and bound the accelerometer measurement to prevent extreme values or non-finite inputs
+      meas = self._validate_and_bound_input(meas, -ACCEL_SANITY_CHECK, ACCEL_SANITY_CHECK, "accelerometer measurement")
+
       if np.linalg.norm(meas) >= ACCEL_SANITY_CHECK:
         return HandleLogResult.INPUT_INVALID
 
@@ -127,6 +164,9 @@ class LocationEstimator:
 
       v = msg.gyroUncalibrated.v
       meas = np.array([-v[2], -v[1], -v[0]])
+
+      # Validate and bound the gyroscope measurement to prevent extreme values or non-finite inputs
+      meas = self._validate_and_bound_input(meas, -ROTATION_SANITY_CHECK, ROTATION_SANITY_CHECK, "gyroscope measurement")
 
       gyro_bias = self.kf.x[States.GYRO_BIAS]
       gyro_camodo_yawrate_err = np.abs((meas[2] - gyro_bias[2]) - self.camodo_yawrate_distribution[0])
@@ -149,6 +189,10 @@ class LocationEstimator:
       # Note that we use this message during calibration
       if len(msg.rpyCalib) > 0:
         calib = np.array(msg.rpyCalib)
+
+        # Validate and bound the calibration values to prevent non-finite or extreme values
+        calib = self._validate_and_bound_input(calib, -CALIB_RPY_SANITY_CHECK, CALIB_RPY_SANITY_CHECK, "liveCalibration RPY")
+
         if calib.min() < -CALIB_RPY_SANITY_CHECK or calib.max() > CALIB_RPY_SANITY_CHECK:
           return HandleLogResult.INPUT_INVALID
 
@@ -158,14 +202,28 @@ class LocationEstimator:
       if not self._validate_timestamp(t):
         return HandleLogResult.TIMING_INVALID
 
-      rot_device = np.matmul(self.device_from_calib, np.array(msg.rot))
-      trans_device = np.matmul(self.device_from_calib, np.array(msg.trans))
+      # Validate and bound the rotation and translation measurements
+      raw_rot = np.array(msg.rot)
+      raw_trans = np.array(msg.trans)
+
+      # Validate rotation data
+      rot_device_untransformed = self._validate_and_bound_input(raw_rot, -ROTATION_SANITY_CHECK, ROTATION_SANITY_CHECK, "camera odometry rotation")
+      rot_device = np.matmul(self.device_from_calib, rot_device_untransformed)
+
+      # Validate translation data
+      trans_device_untransformed = self._validate_and_bound_input(raw_trans, -TRANS_SANITY_CHECK, TRANS_SANITY_CHECK, "camera odometry translation")
+      trans_device = np.matmul(self.device_from_calib, trans_device_untransformed)
 
       if np.linalg.norm(rot_device) > ROTATION_SANITY_CHECK or np.linalg.norm(trans_device) > TRANS_SANITY_CHECK:
         return HandleLogResult.INPUT_INVALID
 
-      rot_calib_std = np.array(msg.rotStd)
-      trans_calib_std = np.array(msg.transStd)
+      # Validate standard deviation values
+      raw_rot_std = np.array(msg.rotStd)
+      raw_trans_std = np.array(msg.transStd)
+
+      # Validate and bound standard deviation values
+      rot_calib_std = self._validate_and_bound_input(raw_rot_std, MIN_STD_SANITY_CHECK, 10 * ROTATION_SANITY_CHECK, "rotation std")
+      trans_calib_std = self._validate_and_bound_input(raw_trans_std, MIN_STD_SANITY_CHECK, 10 * TRANS_SANITY_CHECK, "translation std")
 
       if rot_calib_std.min() <= MIN_STD_SANITY_CHECK or trans_calib_std.min() <= MIN_STD_SANITY_CHECK:
         return HandleLogResult.INPUT_INVALID

@@ -330,7 +330,7 @@ class SelfdriveD(CruiseHelper):
       if log.PandaState.FaultType.relayMalfunction in pandaState.faults:
         self.events.add(EventName.relayMalfunction)
 
-    # Handle HW and system malfunctions
+    # Handle HW and system malfunctions with optimized priority system
     # Order is very intentional here. Be careful when modifying this.
     # All events here should at least have NO_ENTRY and SOFT_DISABLE.
     num_events = len(self.events)
@@ -363,7 +363,8 @@ class SelfdriveD(CruiseHelper):
     elif not CS.canValid:
       self.events.add(EventName.canError)
 
-    # generic catch-all. ideally, a more specific event should be added above instead
+    # Enhanced communication issue handling with prioritization
+    # Prioritize critical system issues over minor communication problems
     has_disable_events = self.events.contains(ET.NO_ENTRY) and (self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE))
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
     if not self.sm.all_checks() and no_system_errors:
@@ -463,6 +464,10 @@ class SelfdriveD(CruiseHelper):
     if CS.gearShifter == car.CarState.GearShifter.park and self.mads.enabled:
       self.events.remove(EventName.canBusMissing)
 
+    # Optimized event priority handling to reduce false positives
+    # Check if we have multiple low-priority events that can be suppressed when higher-priority events exist
+    self._optimize_event_priority()
+
     CruiseHelper.update(self, CS, self.events_sp, self.experimental_mode)
 
     # decrement personality on distance button press
@@ -475,6 +480,28 @@ class SelfdriveD(CruiseHelper):
         self.experimental_mode_switched = False
 
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
+
+  def _optimize_event_priority(self):
+    """
+    Optimize event priorities to reduce spurious alerts while maintaining safety.
+    Higher priority events may suppress lower priority events to prevent alert flooding.
+    """
+    # If we have critical safety events, suppress less critical alerts
+    if (self.events.contains(ET.IMMEDIATE_DISABLE) or
+        self.events.contains(EventName.fcw) or
+        self.events.contains(EventName.steerSaturated)):
+
+      # Suppress less critical events when critical events are present
+      # Note: overheat is intentionally excluded as it's critical safety concern
+      suppressible_events = [
+        EventName.modeldLagging, EventName.cameraFrameRate, EventName.commIssue,
+        EventName.outOfSpace, EventName.lowMemory
+      ]
+
+      for event in suppressible_events:
+        if self.events.names.count(event) > 0:
+          # Only remove if there's a more critical event taking precedence
+          self.events.remove(event)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)

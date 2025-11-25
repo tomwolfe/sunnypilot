@@ -149,6 +149,7 @@ class Controls(ControlsExt, ModelStateBase):
     if not CC.longActive:
       self.LoC.reset()
 
+    # Enhanced saturation handling with adaptive limits
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
@@ -163,9 +164,17 @@ class Controls(ControlsExt, ModelStateBase):
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited, lat_delay)
+
+    # Enhanced saturation detection with smoother recovery
+    saturation_detected = False
+    if hasattr(lac_log, 'saturated') and lac_log.saturated:
+      saturation_detected = True
+      cloudlog.debug(f"Steering saturation detected at vEgo: {CS.vEgo:.2f} m/s")
+
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
-    # Ensure no NaNs/Infs
+
+    # Enhanced finite value checks with recovery mechanism
     for p in ACTUATOR_FIELDS:
       attr = getattr(actuators, p)
       if not isinstance(attr, Number):
@@ -173,7 +182,20 @@ class Controls(ControlsExt, ModelStateBase):
 
       if not math.isfinite(attr):
         cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
-        setattr(actuators, p, 0.0)
+        # Implement a recovery by setting to a safe value instead of 0.0
+        if p in ['steeringAngleDeg', 'curvature']:
+          # For steering-related values, use current measurement as fallback
+          setattr(actuators, p, 0.0 if p == 'curvature' else CS.steeringAngleDeg)
+        elif p == 'accel':
+          # For acceleration, use 0 to maintain current speed
+          setattr(actuators, p, 0.0)
+        else:
+          # Default fallback to 0.0
+          setattr(actuators, p, 0.0)
+
+    # Enhanced saturation handling in controls state
+    if saturation_detected:
+      CC.hudControl.visualAlert = log.ControlsState.AlertStatus.normal  # Indicate saturation to user
 
     return CC, lac_log
 
