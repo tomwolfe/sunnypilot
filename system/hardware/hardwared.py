@@ -293,13 +293,37 @@ def hardware_thread(end_event, hw_queue) -> None:
       msg.deviceState.fanSpeedPercentDesired = fan_controller.update(all_comp_temp, onroad_conditions["ignition"])
 
     # Add adaptive performance scaling based on thermal conditions
+    # Use a more granular approach instead of discrete steps
+    # Calculate performance factor based on temperature within thermal bands
     thermal_performance_factor = 1.0  # Default full performance
-    if thermal_status == ThermalStatus.yellow:
-      thermal_performance_factor = 0.8  # Reduce performance by 20% in yellow zone
+
+    # Map thermal status to performance factor with continuous scaling
+    if thermal_status == ThermalStatus.green:
+      thermal_performance_factor = 1.0
+    elif thermal_status == ThermalStatus.yellow:
+      # Scale from 1.0 (at lower bound) to 0.8 (at upper bound)
+      temp_range = THERMAL_BANDS[ThermalStatus.yellow]
+      if temp_range.min_temp is not None and temp_range.max_temp is not None:
+        temp_progress = max(0.0, min(1.0, (all_comp_temp - temp_range.min_temp) / (temp_range.max_temp - temp_range.min_temp)))
+        thermal_performance_factor = 1.0 - (0.2 * temp_progress)  # From 1.0 to 0.8
+      else:
+        thermal_performance_factor = 0.9  # Mid-point for yellow if bounds are undefined
     elif thermal_status == ThermalStatus.red:
-      thermal_performance_factor = 0.6  # Reduce performance by 40% in red zone
+      # Scale from 0.8 (at lower bound) to 0.6 (at upper bound)
+      temp_range = THERMAL_BANDS[ThermalStatus.red]
+      if temp_range.min_temp is not None and temp_range.max_temp is not None:
+        temp_progress = max(0.0, min(1.0, (all_comp_temp - temp_range.min_temp) / (temp_range.max_temp - temp_range.min_temp)))
+        thermal_performance_factor = 0.8 - (0.2 * temp_progress)  # From 0.8 to 0.6
+      else:
+        thermal_performance_factor = 0.7  # Mid-point for red if bounds are undefined
     elif thermal_status == ThermalStatus.danger:
-      thermal_performance_factor = 0.4  # Reduce performance by 60% in danger zone
+      # Scale from 0.6 (at lower bound) to 0.4 (at upper bound)
+      temp_range = THERMAL_BANDS[ThermalStatus.danger]
+      if temp_range.min_temp is not None and temp_range.max_temp is not None:
+        temp_progress = max(0.0, min(1.0, (all_comp_temp - temp_range.min_temp) / (temp_range.max_temp - temp_range.min_temp)))
+        thermal_performance_factor = 0.6 - (0.2 * temp_progress)  # From 0.6 to 0.4
+      else:
+        thermal_performance_factor = 0.5  # Mid-point for danger if bounds are undefined
 
     # Add to message for other processes to use
     msg.deviceState.thermalPerc = int(thermal_performance_factor * 100.0)

@@ -380,17 +380,20 @@ def main(demo=False):
     memory_usage = sm['deviceState'].memoryUsagePercent if sm.updated['deviceState'] else 0
     cpu_usage = max(sm['deviceState'].cpuUsagePercent) if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0
 
-    # Adjust processing based on system load
+    # Adjust processing based on system load with more sophisticated approach
     system_load = max(thermal_status, memory_usage / 100.0, cpu_usage / 100.0)
 
-    if system_load > 0.8:  # High system load
-        # Reduce processing intensity
+    if system_load > 0.9:  # Very high system load
+        # Reduce processing intensity significantly using prepare_only
         model_execution_time = 0.0
-        model_output = model.run(bufs, transforms, inputs, prepare_only)
-    elif thermal_status >= 3 or memory_usage > 85:  # Thermal or memory issues
-        # Use simpler processing pipeline
-        model_execution_time = 0.0
-        model_output = model.run(bufs, transforms, inputs, prepare_only)
+        model_output = model.run(bufs, transforms, inputs, prepare_only=True)
+    elif system_load > 0.8 or thermal_status >= 3 or memory_usage > 85:  # High system load or thermal/memory issues
+        # For high load, consider using smaller input resolution or lighter model variant if available
+        # For now, use prepare_only to reduce immediate computational load while preparing for next frame
+        mt1 = time.perf_counter()
+        model_output = model.run(bufs, transforms, inputs, prepare_only=True)  # Prepare for next frame but don't compute full output
+        mt2 = time.perf_counter()
+        model_execution_time = mt2 - mt1
     else:
         # Normal processing
         mt1 = time.perf_counter()
