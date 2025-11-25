@@ -317,12 +317,14 @@ def main(demo=False):
         log.DeviceState.ThermalStatus.green: 1.0,
         log.DeviceState.ThermalStatus.yellow: 0.8,
         log.DeviceState.ThermalStatus.red: 0.6,
-        log.DeviceState.ThermalStatus.danger: 0.4, # Corresponds to critical/shutdown in some contexts
+        log.DeviceState.ThermalStatus.danger: 0.1, # Corresponds to critical/shutdown in some contexts
     }
     thermal_throttle_factor = thermal_status_map.get(thermal_status, 1.0)
     # Read ModelExecutionThrottleFactor parameter from Params
     model_param_throttle_factor = params.get_float("ModelExecutionThrottleFactor", default=1.0)
     throttle_factor = min(thermal_throttle_factor, model_param_throttle_factor)
+    # Ensure throttle_factor is within a valid range [0.0, 1.0]
+    throttle_factor = max(0.0, min(1.0, throttle_factor))
 
     cloudlog.debug(f"Thermal status: {thermal_status}, Throttle factor: {throttle_factor:.2f}")
 
