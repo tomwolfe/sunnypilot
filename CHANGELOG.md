@@ -1,5 +1,6 @@
-sunnypilot Version 2025.003.000 (20xx-xx-xx)
+sunnypilot Version 2025.003.000 (2025-11-24)
 ========================
+* UPDATED: tinygrad submodule from 7296c74c to 64648c9b for bug fixes and performance improvements.
 
 sunnypilot Version 2025.002.000 (2025-11-06)
 ========================
