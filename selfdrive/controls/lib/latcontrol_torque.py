@@ -162,33 +162,59 @@ class LatControlTorque(LatControl):
 
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
-      # Adaptive PID parameters for smoother response
-      # Increase damping at higher speeds to reduce oscillations
+      # Enhanced adaptive PID parameters for smoother response
+      # Increase damping based on multiple factors: speed, curvature, and system load
+      original_kp_values = list(self.pid._k_p[1])  # Store original kp values
       original_ki_values = list(self.pid._k_i[1])  # Store original ki values
+      original_kd_values = list(self.pid._k_d[1])  # Store original kd values
 
-      # Adjust KI based on curvature: reduce KI for higher curvatures
-      curvature_factor = 1.0 - np.clip(abs(desired_curvature) * self.curvature_ki_scaler, 0.0, 1.0)
-      current_ki = self.pid.k_i * curvature_factor
-      adjusted_ki = current_ki
+      # Calculate adaptive gains based on multiple factors
+      # 1. Curvature-based scaling: reduce gains in high-curvature situations to prevent oscillations
+      curvature_factor = 1.0 - np.clip(abs(desired_curvature) * self.curvature_ki_scaler, 0.0, 0.8)  # Limit reduction to 80%
 
+      # 2. Speed-based scaling: adjust for different driving conditions
+      speed_factor = np.interp(CS.vEgo, [0, 10, 30, 50], [1.0, 1.0, 0.8, 0.7])  # Higher speeds use lower gains
+
+      # 3. Error-based scaling: increase gains when error is high to respond more aggressively
+      error_magnitude_factor = np.clip(abs(error) * 0.5, 0.8, 1.5)  # Boost gains for large errors
+
+      # Calculate adjusted gains using all factors
+      adjusted_kp = self.pid.k_p * curvature_factor * speed_factor * error_magnitude_factor
+      adjusted_ki = self.pid.k_i * curvature_factor * speed_factor
+      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * error_magnitude_factor
+
+      # Apply high-speed specific constraints
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Further reduce integral gain to prevent oscillations at high speeds
         adjusted_ki = min(adjusted_ki, self.high_speed_ki_limit)
+        # Also slightly reduce proportional gain at high speeds for stability
+        adjusted_kp = min(adjusted_kp, self.pid.k_p * 0.9)
 
-      # Temporarily modify the ki values for this update with the adjusted value
-      # This needs to be done at the data structure level since k_i is a property
+      # Temporarily modify the gain values for this update
+      # This needs to be done at the data structure level since gains are properties
+      temp_kp_array = [adjusted_kp] * len(original_kp_values)
       temp_ki_array = [adjusted_ki] * len(original_ki_values)
-      # Create new tuple to replace the original
+      temp_kd_array = [adjusted_kd] * len(original_kd_values)
+
+      # Create new tuples to replace the original gain structures
+      new_kp_structure = (self.pid._k_p[0], tuple(temp_kp_array))  # Keep speed points, update kp values
       new_ki_structure = (self.pid._k_i[0], tuple(temp_ki_array))  # Keep speed points, update ki values
+      new_kd_structure = (self.pid._k_d[0], tuple(temp_kd_array))  # Keep speed points, update kd values
+
+      # Apply the adjusted gains
+      self.pid._k_p = new_kp_structure
       self.pid._k_i = new_ki_structure
+      self.pid._k_d = new_kd_structure
 
       output_lataccel = self.pid.update(pid_log.error,
                                           -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
                                           freeze_integrator=freeze_integrator)
-      # Restore original ki values after the update
+      # Restore original gain values after the update to maintain baseline tuning
+      self.pid._k_p = (self.pid._k_p[0], original_kp_values)
       self.pid._k_i = (self.pid._k_i[0], original_ki_values)
+      self.pid._k_d = (self.pid._k_d[0], original_kd_values)
 
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 

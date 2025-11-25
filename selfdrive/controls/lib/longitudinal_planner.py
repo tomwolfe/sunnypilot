@@ -168,38 +168,74 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # Calculate time to collision based on current trajectories
     time_to_collision = float('inf')
+    distance_to_collision = float('inf')
     if lead_one.status and lead_one.dRel > 0:
       relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
       if relative_speed > 0:  # Approaching lead vehicle
         time_to_collision = lead_one.dRel / relative_speed
+        distance_to_collision = lead_one.dRel
+      elif lead_one.vRel > 0:  # Lead vehicle accelerating away
+        # Calculate when we'd catch up if they maintain speed
+        relative_accel = (a_ego - lead_one.aLeadK)
+        if relative_accel > 0:  # If we're accelerating faster than lead
+          # Approximate time to catch up
+          time_to_collision = relative_speed / relative_accel if relative_accel > 0.1 else float('inf')
 
     # Enhanced FCW logic with speed-adaptive thresholds
     mpc_crash_warning = self.mpc.crash_cnt > 2
-    emergency_brake_threshold = 2.5  # seconds to collision
-    warning_threshold = 3.5  # seconds to collision
 
-    # Adaptive thresholds based on speed
-    if v_ego > 25:  # Above ~90 km/h
-      emergency_brake_threshold = 2.2
-      warning_threshold = 3.2
-    elif v_ego < 10:  # Below ~36 km/h
+    # Dynamic thresholds based on speed and driving context
+    if v_ego < 5:  # Very low speeds (stationary or slow moving)
+      emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
+      warning_threshold = 2.5
+      distance_threshold = 8  # meters
+    elif v_ego < 15:  # City speeds (~54 km/h)
+      emergency_brake_threshold = 2.0
+      warning_threshold = 3.0
+      distance_threshold = 15  # meters
+    elif v_ego < 25:  # Highway speeds (~54-90 km/h)
+      emergency_brake_threshold = 2.5
+      warning_threshold = 3.5
+      distance_threshold = 30  # meters
+    else:  # High speeds (>90 km/h)
       emergency_brake_threshold = 2.8
       warning_threshold = 4.0
+      distance_threshold = 45  # meters
 
     # Enhanced FCW logic - trigger based on multiple criteria
-    self.fcw = (mpc_crash_warning and not sm['carState'].standstill) or \
-               (time_to_collision < emergency_brake_threshold and relative_speed > 1.0) or \
-               (lead_one.aLeadK - a_ego > 2.0 and lead_one.dRel < 50 and v_ego > 10)  # Lead vehicle braking hard
+    # 1. Time to collision with immediate braking requirement
+    imminent_collision = (time_to_collision < emergency_brake_threshold and relative_speed > 0.5)
 
-    # Also consider model predictions for FCW
-    model_fcw = sm['modelV2'].meta.hardBrakePredicted and not sm['carState'].brakePressed \
-                and sm['carState'].aEgo < -1.25
+    # 2. Distance-based warning for low-speed situations where time-based may not work well
+    distance_collision = (distance_to_collision < distance_threshold and relative_speed > 0.5 and v_ego < 10)
 
-    # Combine MPC-based and model-based FCW
-    self.fcw = self.fcw or (model_fcw and v_ego > 5)
+    # 3. Lead vehicle emergency braking detection
+    lead_braking_emergency = (lead_one.aLeadK - a_ego > 2.5 and lead_one.dRel < 40 and v_ego > 5)
+
+    # 4. Combined MPC and sensor-based warnings
+    mpc_and_sensors_warning = mpc_crash_warning and not sm['carState'].standstill and relative_speed > 1.0
+
+    # 5. Enhanced model-based prediction with additional safety checks
+    model_fcw = (sm['modelV2'].meta.hardBrakePredicted and
+                 not sm['carState'].brakePressed and
+                 v_ego > 3 and
+                 distance_to_collision < 50)  # Only if close enough to be relevant
+
+    # Combine all FCW triggers
+    self.fcw = (imminent_collision or
+                distance_collision or
+                lead_braking_emergency or
+                mpc_and_sensors_warning or
+                (model_fcw and v_ego > 5))
+
+    # Additional safety logic: consider relative acceleration
+    if lead_one.status and lead_one.dRel < 50:  # Only consider when close to lead vehicle
+      relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
+      if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
+        self.fcw = True
 
     if self.fcw:
-      cloudlog.info("FCW triggered")
+      cloudlog.warning(f"FCW triggered: TTC={time_to_collision:.2f}s, distance={distance_to_collision:.1f}m, rel_speed={relative_speed:.2f}m/s")
 
     # Interpolate 0.05 seconds and save as starting point for next iteration
     a_prev = self.a_desired
