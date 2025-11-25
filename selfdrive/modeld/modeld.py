@@ -310,7 +310,11 @@ def main(demo=False):
     # Check system status for adaptive frame sync thresholds
     thermal_factor = sm['deviceState'].thermalPerc / 100.0 if sm.updated['deviceState'] else 1.0
     cpu_usage = max(sm['deviceState'].cpuUsagePercent) / 100.0 if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0.0
-    system_load_factor = min(1.0, (thermal_factor + cpu_usage) / 2.0)
+
+    # Calculate system load more conservatively using maximum of all system resources instead of average
+    # This ensures the system throttles appropriately when any single resource is under stress
+    memory_usage = sm['deviceState'].memoryUsagePercent / 100.0 if sm.updated['deviceState'] else 0.0
+    system_load_factor = min(1.0, max(thermal_factor, cpu_usage, memory_usage))
 
     # Adjust tolerance based on system load: use more aggressive sync when system is under less stress
     base_tolerance_ns = 25000000  # 25ms base tolerance
@@ -418,12 +422,12 @@ def main(demo=False):
     # Advanced resource management with thermal and performance optimization
     # Check system thermal status and resource usage to prevent overheating and maintain responsiveness
     thermal_status = sm['deviceState'].thermalStatus if sm.updated['deviceState'] else 0
-    memory_usage = sm['deviceState'].memoryUsagePercent if sm.updated['deviceState'] else 0
-    cpu_usage = max(sm['deviceState'].cpuUsagePercent) if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0
+    memory_usage_raw = sm['deviceState'].memoryUsagePercent if sm.updated['deviceState'] else 0
+    cpu_usage_raw = max(sm['deviceState'].cpuUsagePercent) if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0
 
     # Calculate system load as the maximum of thermal status (categorical), memory usage, and CPU usage
-    # This provides an overall measure of system stress
-    system_load = max(thermal_status, memory_usage / 100.0, cpu_usage / 100.0)
+    # This provides an overall measure of system stress - conservative approach
+    system_load = max(thermal_status, memory_usage_raw / 100.0, cpu_usage_raw / 100.0)
 
     # Enhanced performance monitoring with adaptive model execution
     mt1 = time.perf_counter()
@@ -435,8 +439,8 @@ def main(demo=False):
     if system_load > 0.8 or model_execution_time > 0.05:  # High system load or slow execution (>50ms)
       cloudlog.debug(f"Performance metrics - System load: {system_load:.2f}, "
                      f"Model execution time: {model_execution_time*1000:.1f}ms, "
-                     f"Thermal: {thermal_status}, Memory: {memory_usage:.1f}%, "
-                     f"CPU: {cpu_usage:.1f}%")
+                     f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, "
+                     f"CPU: {cpu_usage_raw:.1f}%")
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')
