@@ -118,27 +118,37 @@ class TestConfigurableParameters(unittest.TestCase):
             'LongitudinalAdaptiveErrorThreshold': '0.3',
             'LongitudinalAdaptiveSpeedThreshold': '10.0'
         }
-        
+
         def side_effect(key, encoding=None):
             if key in custom_params:
                 return custom_params[key].encode(encoding) if encoding else custom_params[key]
             return None
-        
+
         mock_get.side_effect = side_effect
-        
+
         # Create controllers with mocked parameters
         pid_controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
         torque_controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
         long_controller = LongControl(self.CP, self.CP_SP)
-        
+
         # Verify custom values are used
         self.assertEqual(pid_controller.max_angle_rate, 3.0)
         self.assertEqual(pid_controller.high_speed_threshold, 20.0)
         self.assertEqual(pid_controller.high_speed_ki_limit, 0.10)
-        
-        self.assertEqual(torque_controller.max_lateral_jerk, 5.0)  # Default value for non-mocked param
+
+        self.assertEqual(torque_controller.max_lateral_jerk, float(custom_params['LateralMaxJerk']))  # Custom value should be loaded
         self.assertEqual(long_controller.max_jerk, 3.0)
         self.assertEqual(long_controller.max_stopping_jerk, 2.0)
+
+    def test_parameter_loading_edge_cases(self):
+        """Test edge cases in parameter loading."""
+        # Test when params.get returns None
+        with patch('openpilot.common.params.Params.get', return_value=None):
+            controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
+            # Should fall back to default values
+            self.assertEqual(controller.max_angle_rate, 2.0)
+            self.assertEqual(controller.high_speed_threshold, 15.0)
+            self.assertEqual(controller.high_speed_ki_limit, 0.15)
 
 
 if __name__ == "__main__":
