@@ -41,7 +41,7 @@ class ModelsLayout(Widget):
     return items
 
   def _get_current_throttle_factor_index(self) -> int:
-    current_value = self._params.get_float("ModelExecutionThrottleFactor", default=1.0)
+    current_value = float(self._params.get("ModelExecutionThrottleFactor", default=b"1.0"))
     # Find the index of the closest value. If not exact, default to 1.0 (100%)
     try:
       return THROTTLE_FACTORS.index(current_value)
@@ -50,7 +50,7 @@ class ModelsLayout(Widget):
 
   def _set_model_throttle_factor(self, index: int):
     value = THROTTLE_FACTORS[index]
-    self._params.put_float("ModelExecutionThrottleFactor", value)
+    self._params.put("ModelExecutionThrottleFactor", str(value))
 
   def _render(self, rect):
     self._scroller.render(rect)
