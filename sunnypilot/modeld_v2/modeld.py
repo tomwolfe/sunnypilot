@@ -134,14 +134,13 @@ class ModelState(ModelStateBase):
       return None
     
     # --- Start Deterministic Throttling Logic ---
-        # Calculate deterministic frame skip threshold based on throttle_factor                                                                                                      
-        execution_rate = throttle_factor
-        if execution_rate <= 0.0: # If user wants 0% execution, we should skip ALL frames.
-            # Set threshold to a very large number so we never run the model.
-            self.frame_skip_threshold = 999999
-        else:                                                                                                                                                                        
-            # We run the model every N frames, where N = 1 / execution_rate
-            self.frame_skip_threshold = max(1, round(1.0 / execution_rate))
+            # Calculate deterministic frame skip threshold based on throttle_factor
+            execution_rate = throttle_factor
+            if execution_rate <= 0.0: # If user wants 0% execution, we should skip ALL frames.
+                # Set threshold to a very large number so we never run the model.
+                self.frame_skip_threshold = 999999
+            else:
+                # We run the model every N frames, where N = 1 / execution_rate            self.frame_skip_threshold = max(1, round(1.0 / execution_rate))
                                                                                                                                                                                      
         self.frame_skip_counter += 1                                                                                                                                                 
                                                                                                                                                                                      
@@ -155,7 +154,7 @@ class ModelState(ModelStateBase):
                                                                                                                                                                                      
         # If we reach here, it means we are going to run the model.                                                                                                                  
         # Reset the counter for the next cycle.                                                                                                                                      
-        self.frame_skip_counter = 0    # Reset after successful model run to prepare for the next frame processing cycle.
+        self.frame_skip_counter = 0    # --- End Deterministic Throttling Logic ---
 
     # Run model inference
     outputs = self.model_runner.run_model()
