@@ -230,6 +230,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                  not sm['carState'].brakePressed and
                  v_ego > 3 and
                  distance_to_collision < 50)  # Only if close enough to be relevant
+    # TODO: The original model_fcw condition also checked `sm['carState'].aEgo < -1.25`.
+    # This check is now missing. Is this intentional? It might have been a safeguard against the model
+    # predicting a brake when the car is actually accelerating. Re-evaluate if this safeguard is still needed.
 
     # Combine all FCW triggers
     self.fcw = (imminent_collision or
@@ -243,6 +246,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
       if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
         self.fcw = True
+        # TODO: This trigger is powerful and potentially aggressive. It needs extensive real-world testing
+        # to ensure it doesn't cause false positives during normal maneuvers like lane changes or merging.
 
     if self.fcw:
       cloudlog.warning(f"FCW triggered: TTC={time_to_collision:.2f}s, distance={distance_to_collision:.1f}m, rel_speed={relative_speed:.2f}m/s")
