@@ -36,7 +36,7 @@ class LatControlPID(LatControl):
         5.0, 30.0, "LateralHighSpeedThreshold"
     )  # m/s
     self.high_speed_ki_limit = self._validate_parameter(
-        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15"),
+        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.12"),
         0.01, 0.5, "LateralHighSpeedKiLimit"
     )  # Integral gain limit at high speeds
 
