@@ -305,47 +305,68 @@ def main(demo=False):
   DH = DesireHelper()
 
   while True:
-    # Adaptive frame synchronization to reduce latency spikes
-    # Wait for main camera to catch up to the extra camera (within tolerance)
-    # Continue receiving main frames while main is behind extra by more than 25ms
-    max_wait_cycles = MAX_WAIT_CYCLES  # Limit the number of attempts to avoid excessive blocking
-    wait_cycles = 0
+    # Optimized frame synchronization to reduce latency while maintaining safety
+    # Use dynamic tolerance based on current system load and thermal conditions
+    # Check system status for adaptive frame sync thresholds
+    thermal_factor = sm['deviceState'].thermalPerc / 100.0 if sm.updated['deviceState'] else 1.0
+    cpu_usage = max(sm['deviceState'].cpuUsagePercent) / 100.0 if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0.0
+    system_load_factor = min(1.0, (thermal_factor + cpu_usage) / 2.0)
 
-    # The 25ms tolerance (25,000,000 nanoseconds) is likely based on the camera frame rate (~40ms for 25fps).
-    while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
+    # Adjust tolerance based on system load: use more aggressive sync when system is under less stress
+    base_tolerance_ns = 25000000  # 25ms base tolerance
+    dynamic_tolerance_ns = int(base_tolerance_ns * (0.8 if system_load_factor < 0.7 else 1.2))  # 20ms when system is cool, 30ms when stressed
+    max_wait_cycles = MAX_WAIT_CYCLES if system_load_factor < 0.8 else max(1, MAX_WAIT_CYCLES // 2)  # Reduce wait cycles when system is stressed
+
+    # Optimized frame synchronization - attempt to get both frames with minimal blocking
+    # First, get main camera frame (which we need regardless)
+    if buf_main is None:  # Only if we don't already have a valid buffer from previous loop
       buf_main = vipc_client_main.recv()
       meta_main = FrameMeta(vipc_client_main)
-      if buf_main is None:
-        break
-      wait_cycles += 1
-      if wait_cycles >= max_wait_cycles:
-        # If we've waited too long, use the latest available frame to avoid excessive latency
-        cloudlog.debug(f"Breaking wait after {max_wait_cycles} cycles to avoid excessive latency")
-        break
 
     if buf_main is None:
       cloudlog.debug("vipc_client_main no frame")
       continue
 
     if use_extra_client:
-      # Adaptive frame synchronization for extra camera too
-      # Wait for extra camera to catch up to the main camera (within tolerance)
-      # Continue receiving extra frames while extra is behind main by more than 25ms
+      # Optimized wait strategy that reduces blocking while maintaining sync
+      # Instead of waiting for perfect sync, try to get the closest possible frames
       wait_cycles = 0
-      while wait_cycles < max_wait_cycles:  # Limit the wait for extra camera too
+      buf_extra_timeout = None
+
+      # Try to get extra camera frame that is close in time to main frame
+      while wait_cycles < max_wait_cycles and buf_extra_timeout is None:
         buf_extra = vipc_client_extra.recv()
         meta_extra = FrameMeta(vipc_client_extra)
-        if buf_extra is None or meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
+        if buf_extra is None:
           break
+
+        # Check if the frames are reasonably synchronized
+        if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) <= dynamic_tolerance_ns:
+          buf_extra_timeout = buf_extra  # We found a reasonably synchronized frame
+          break
+        elif meta_main.timestamp_sof < meta_extra.timestamp_sof + dynamic_tolerance_ns:
+          # Extra is ahead of main, accept this frame as it's closest to main
+          buf_extra_timeout = buf_extra
+          break
+        # If extra is behind main, continue waiting for new extra frame
         wait_cycles += 1
 
+      # Use the best available extra frame even if it's not perfectly synchronized
+      buf_extra = buf_extra_timeout
       if buf_extra is None:
-        cloudlog.debug("vipc_client_extra no frame")
+        # If we couldn't get a reasonable extra frame, skip this cycle to maintain safety
+        cloudlog.debug("Could not get reasonably synchronized extra frame, skipping cycle")
         continue
 
-      if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:
-        cloudlog.error(f"frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}),\
-                         extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f})")
+      # Check sync quality and log if frames are significantly out of sync
+      if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
+        cloudlog.error(f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), "
+                        f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), "
+                        f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms")
+      elif abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 5000000:  # 5ms threshold
+        # Log when frames are moderately out of sync
+        cloudlog.debug(f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, "
+                        f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}")
 
     else:
       # Use single camera
@@ -404,12 +425,18 @@ def main(demo=False):
     # This provides an overall measure of system stress
     system_load = max(thermal_status, memory_usage / 100.0, cpu_usage / 100.0)
 
-    # Normal processing with full model computation
-    # (Simplifying to avoid potential hanging with prepare_only flag)
+    # Enhanced performance monitoring with adaptive model execution
     mt1 = time.perf_counter()
     model_output = model.run(bufs, transforms, inputs, prepare_only)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
+
+    # Log performance metrics when system load is high or execution time is excessive
+    if system_load > 0.8 or model_execution_time > 0.05:  # High system load or slow execution (>50ms)
+      cloudlog.debug(f"Performance metrics - System load: {system_load:.2f}, "
+                     f"Model execution time: {model_execution_time*1000:.1f}ms, "
+                     f"Thermal: {thermal_status}, Memory: {memory_usage:.1f}%, "
+                     f"CPU: {cpu_usage:.1f}%")
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')

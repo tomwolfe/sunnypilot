@@ -92,7 +92,20 @@ class Controls(ControlsExt, ModelStateBase):
     # Adaptive control based on thermal performance factor
     # This allows the system to automatically adjust its control rate based on hardware thermal conditions
     # to prevent overheating and maintain performance stability
-    self.thermal_performance_factor = self.sm['deviceState'].thermalPerc / 100.0 if self.sm.updated['deviceState'] else 1.0
+    if self.sm.updated['deviceState']:
+      thermal_status = self.sm['deviceState'].thermalStatus
+      thermal_prc = self.sm['deviceState'].thermalPerc
+      # Enhanced thermal management with more granular control
+      self.thermal_performance_factor = thermal_prc / 100.0
+
+      # Additional thermal considerations for safety-critical functions
+      # When thermal status is critical, reduce computational load to protect hardware
+      if thermal_status >= 5:  # Critical thermal status
+        cloudlog.warning(f"Critical thermal status: {thermal_status}, reducing performance to protect hardware")
+        # Reduce performance factor further when in critical thermal state
+        self.thermal_performance_factor = min(self.thermal_performance_factor, 0.7)
+    else:
+      self.thermal_performance_factor = 1.0
 
   def state_control(self):
     CS = self.sm['carState']
@@ -289,24 +302,48 @@ class Controls(ControlsExt, ModelStateBase):
     computational load when the device is overheating. The rate is reduced
     gradually to maintain system stability while protecting hardware.
     """
-    # Fixed rate at 100Hz to maintain compatibility with Ratekeeper
-    # Thermal management is achieved by skipping some processing cycles when necessary
     e = threading.Event()
     t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
-      rk = Ratekeeper(100, print_delay_threshold=None)  # Fixed at 100Hz
+      rk = Ratekeeper(100, print_delay_threshold=None)  # Base rate is 100Hz
+      thermal_adjusted_frame = 0
+      # Thermal scaling parameters
+      base_rate = 100  # Hz
+      min_rate = 50    # Hz - minimum rate when thermal stress is high
       while True:
-        self.update()
-        CC, lac_log = self.state_control()
-        self.publish(CC, lac_log)
-        self.run_ext(self.sm, self.pm)
+        # Use thermal performance factor to adjust processing frequency
+        # This allows the system to reduce computational load when thermally stressed
+        current_rate = max(min_rate, base_rate * self.thermal_performance_factor)
 
-        # Original monitoring approach
+        # Process every frame when at full rate, every other frame when at reduced rate
+        frame_skip_threshold = base_rate / current_rate
+        thermal_adjusted_frame += 1
+
+        # Only perform full control cycle if we're not skipping this frame due to thermal constraints
+        if thermal_adjusted_frame >= frame_skip_threshold:
+          thermal_adjusted_frame = 0  # Reset counter
+          self.update()
+          CC, lac_log = self.state_control()
+          self.publish(CC, lac_log)
+          self.run_ext(self.sm, self.pm)
+
+          # Enhanced thermal monitoring and logging
+          if self.thermal_performance_factor < 0.8:
+            cloudlog.debug(f"Thermal throttling active: factor={self.thermal_performance_factor:.2f}, rate={current_rate:.1f}Hz")
+        else:
+          # Still update the message subsystem regularly to maintain message flow
+          self.sm.update(15)
+
+        # Monitor timing with thermal awareness
+        timing_start = time.monotonic()
         rk.monitor_time()
+        timing_elapsed = time.monotonic() - timing_start
 
-        # Additional thermal management can be implemented in other parts of the system
-        # rather than changing the control loop rate
+        # Additional thermal monitoring for extreme cases
+        if timing_elapsed > 0.02:  # If we're taking too long, log it
+          cloudlog.debug(f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, thermal factor: {self.thermal_performance_factor:.2f}")
+
     finally:
       e.set()
       t.join()
