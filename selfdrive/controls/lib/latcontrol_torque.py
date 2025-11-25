@@ -164,24 +164,31 @@ class LatControlTorque(LatControl):
 
       # Adaptive PID parameters for smoother response
       # Increase damping at higher speeds to reduce oscillations
-      original_ki = self.pid.ki  # Store original ki value
+      original_ki_values = list(self.pid._k_i[1])  # Store original ki values
 
       # Adjust KI based on curvature: reduce KI for higher curvatures
       curvature_factor = 1.0 - np.clip(abs(desired_curvature) * self.curvature_ki_scaler, 0.0, 1.0)
-      temp_ki = self.pid.ki * curvature_factor
+      current_ki = self.pid.k_i * curvature_factor
+      adjusted_ki = current_ki
 
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Further reduce integral gain to prevent oscillations at high speeds
-        temp_ki = min(temp_ki, self.high_speed_ki_limit)
-      
-      self.pid.ki = temp_ki
+        adjusted_ki = min(adjusted_ki, self.high_speed_ki_limit)
+
+      # Temporarily modify the ki values for this update with the adjusted value
+      # This needs to be done at the data structure level since k_i is a property
+      temp_ki_array = [adjusted_ki] * len(original_ki_values)
+      # Create new tuple to replace the original
+      new_ki_structure = (self.pid._k_i[0], tuple(temp_ki_array))  # Keep speed points, update ki values
+      self.pid._k_i = new_ki_structure
+
       output_lataccel = self.pid.update(pid_log.error,
                                           -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
                                           freeze_integrator=freeze_integrator)
-      # Restore original ki value after update
-      self.pid.ki = original_ki
+      # Restore original ki values after the update
+      self.pid._k_i = (self.pid._k_i[0], original_ki_values)
 
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 

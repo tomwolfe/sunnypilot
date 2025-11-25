@@ -265,11 +265,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // New parameters for LatControlPID and LongControl
     {"LateralMaxAngleRate", {PERSISTENT | BACKUP, FLOAT, "2.0"}}, // From LatControlPID default
     {"LateralHighSpeedThreshold", {PERSISTENT | BACKUP, FLOAT, "15.0"}}, // From LatControlPID default
-    {"LateralHighSpeedKiLimit", {PERSISTENT | BACKUP, FLOAT, "0.12"}}, // From LatControlPID default
+    {"LateralHighSpeedKiLimit", {PERSISTENT | BACKUP, FLOAT, "0.15"}}, // From LatControlPID default
     {"LongitudinalMaxJerk", {PERSISTENT | BACKUP, FLOAT, "2.2"}}, // From LongControl default
     {"LongitudinalMaxStoppingJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
     {"LongitudinalMaxOutputJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
     {"LongitudinalStartingSpeedThreshold", {PERSISTENT | BACKUP, FLOAT, "3.0"}}, // From LongControl default
     {"LongitudinalStartingAccelMultiplier", {PERSISTENT | BACKUP, FLOAT, "0.8"}},
+    {"LongitudinalStartingAccelLimit", {PERSISTENT | BACKUP, FLOAT, "0.8"}},
     {"LateralMaxJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
+    {"LateralCurvatureKiScaler", {PERSISTENT | BACKUP, FLOAT, "0.2"}},
 };

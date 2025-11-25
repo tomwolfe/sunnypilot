@@ -96,18 +96,23 @@ class LatControlPID(LatControl):
 
       # Adaptive PID parameters for smoother response
       # Reduce integral gain at high speed to prevent oscillations
-      original_ki = self.pid.ki  # Store original ki value
+      original_ki_values = self.pid._k_i[1]  # Store original ki values (tuple)
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Temporarily reduce integral gain to prevent oscillations at high speeds
         # This is more robust than creating temporary PID controllers
-        temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-        self.pid.ki = temp_ki
+        temp_ki = min(self.pid.k_i, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
+        # We can't directly modify the property of PIDController, so we need to update the internal values temporarily
+        # Create new array that maintains the same length as original, with all values set to temp_ki
+        temp_ki_array = [temp_ki] * len(original_ki_values)
+        # Create new tuple to replace the original
+        new_ki_structure = (self.pid._k_i[0], tuple(temp_ki_array))  # Keep speed points, update ki values
+        self.pid._k_i = new_ki_structure
         output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
-        # Restore original ki value after update
-        self.pid.ki = original_ki
+        # Restore original ki values after update
+        self.pid._k_i = (self.pid._k_i[0], original_ki_values)
       else:
         output_torque = self.pid.update(error,
                                   feedforward=ff,
