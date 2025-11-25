@@ -207,10 +207,12 @@ class LocationEstimator:
       raw_trans = np.array(msg.trans)
 
       # Validate rotation data
+      # _validate_and_bound_input is called on raw values before transformation, as transformation doesn't change physical magnitude.
       rot_device_untransformed = self._validate_and_bound_input(raw_rot, -ROTATION_SANITY_CHECK, ROTATION_SANITY_CHECK, "camera odometry rotation")
       rot_device = np.matmul(self.device_from_calib, rot_device_untransformed)
 
       # Validate translation data
+      # _validate_and_bound_input is called on raw values before transformation, as transformation doesn't change physical magnitude.
       trans_device_untransformed = self._validate_and_bound_input(raw_trans, -TRANS_SANITY_CHECK, TRANS_SANITY_CHECK, "camera odometry translation")
       trans_device = np.matmul(self.device_from_calib, trans_device_untransformed)
 
