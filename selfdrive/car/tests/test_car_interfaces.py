@@ -3,6 +3,7 @@ import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
 from parameterized import parameterized
 import pytest
+from unittest.mock import Mock
 
 from cereal import car, custom
 from opendbc.car import DT_CTRL
@@ -62,6 +63,11 @@ class TestCarInterfaces:
     # Test controller initialization
     # TODO: wait until card refactor is merged to run controller a few times,
     #  hypothesis also slows down significantly with just one more message draw
+
+    # Create a mock params object to satisfy the interface expected by the controllers
+    mock_params = Mock()
+    mock_params.get = Mock(return_value=None)  # Default to return None for any parameter request
+
     LongControl(car_params, car_params_sp, mock_params)
     if car_params.steerControlType == CarParams.SteerControlType.angle:
       LatControlAngle(car_params, car_params_sp, car_interface, DT_CTRL)
