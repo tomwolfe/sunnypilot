@@ -49,6 +49,18 @@ TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 
+# Define configurable suppression groups for events. Each tuple contains:
+#   - A list of event names that, if active, will trigger suppression.
+#   - A list of event names that will be suppressed when triggered.
+# Note: overheat is intentionally excluded from suppressible events as it's a critical safety concern.
+SUPPRESSION_GROUPS = [
+  ([EventName.fcw, EventName.steerSaturated, ET.IMMEDIATE_DISABLE],
+   [EventName.modeldLagging, EventName.cameraFrameRate, EventName.commIssue,
+    EventName.outOfSpace, EventName.lowMemory]),
+  # Add other groups here as needed.
+  # Example: ([EventName.anotherCriticalEvent], [EventName.minorEventA, EventName.minorEventB]),
+]
+
 
 class SelfdriveD(CruiseHelper):
   def __init__(self, CP=None, CP_SP=None):
@@ -486,22 +498,13 @@ class SelfdriveD(CruiseHelper):
     Optimize event priorities to reduce spurious alerts while maintaining safety.
     Higher priority events may suppress lower priority events to prevent alert flooding.
     """
-    # If we have critical safety events, suppress less critical alerts
-    if (self.events.contains(ET.IMMEDIATE_DISABLE) or
-        self.events.contains(EventName.fcw) or
-        self.events.contains(EventName.steerSaturated)):
-
-      # Suppress less critical events when critical events are present
-      # Note: overheat is intentionally excluded as it's critical safety concern
-      suppressible_events = [
-        EventName.modeldLagging, EventName.cameraFrameRate, EventName.commIssue,
-        EventName.outOfSpace, EventName.lowMemory
-      ]
-
-      for event in suppressible_events:
-        if self.events.names.count(event) > 0:
-          # Only remove if there's a more critical event taking precedence
-          self.events.remove(event)
+    for trigger_events, suppressible_events in SUPPRESSION_GROUPS:
+      # Check if any of the trigger events are currently active
+      if any(self.events.contains(e) for e in trigger_events):
+        # If a trigger event is active, suppress the associated lower-priority events
+        for event_to_suppress in suppressible_events:
+          if self.events.names.count(event_to_suppress) > 0:
+            self.events.remove(event_to_suppress)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)

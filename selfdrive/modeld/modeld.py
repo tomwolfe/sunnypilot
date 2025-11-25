@@ -19,7 +19,10 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.swaglog import cloudlog
 
-MAX_WAIT_CYCLES = 5 # Default limit for adaptive frame synchronization
+# MAX_WAIT_CYCLES defines the maximum number of cycles to wait for frame synchronization.
+# This value is a trade-off between latency and perfect frame synchronization.
+# It should be tuned based on empirical data from real-world driving conditions and camera frame rates.
+MAX_WAIT_CYCLES = 5
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
