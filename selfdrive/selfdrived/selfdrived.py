@@ -426,19 +426,22 @@ class SelfdriveD(CruiseHelper):
     planner_fcw = self.sm['longitudinalPlan'].fcw and self.enabled
 
     # Enhanced FCW with additional safety checks using radar data
-    lead_one = self.sm['radarState'].leadOne
-    v_ego = CS.vEgo
     time_to_collision = float('inf')
-    if lead_one.status and lead_one.dRel > 0:
-        relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
-        if relative_speed > 0:  # Approaching lead vehicle
-            time_to_collision = lead_one.dRel / relative_speed
+    relative_speed = 0.0
+    radar_based_fcw = False
+    if self.sm.updated['radarState'] and self.sm['radarState'].leadOne.status:
+        lead_one = self.sm['radarState'].leadOne
+        v_ego = CS.vEgo
+        if lead_one.status and lead_one.dRel > 0:
+            relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
+            if relative_speed > 0:  # Approaching lead vehicle
+                time_to_collision = lead_one.dRel / relative_speed
 
-    # Enhanced radar-based FCW with speed-adaptive thresholds
-    # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
-    relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
-    radar_based_fcw = (time_to_collision < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
-                      and not CS.brakePressed and self.enabled)
+        # Enhanced radar-based FCW with speed-adaptive thresholds
+        # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
+        relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
+        radar_based_fcw = (time_to_collision < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
+                          and not CS.brakePressed and self.enabled)
 
     if ((planner_fcw or model_fcw or radar_based_fcw) and not self.CP.notCar):
       self.events.add(EventName.fcw)

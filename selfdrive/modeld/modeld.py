@@ -384,25 +384,12 @@ def main(demo=False):
     # This provides an overall measure of system stress
     system_load = max(thermal_status, memory_usage / 100.0, cpu_usage / 100.0)
 
-    if system_load > 0.9:  # Very high system load (>90% of any resource)
-        # When system is extremely stressed, skip model computation entirely to preserve resources
-        # This maintains system stability at the cost of temporarily reduced functionality
-        model_execution_time = 0.0
-        model_output = model.run(bufs, transforms, inputs, prepare_only=True)
-    elif system_load > 0.8 or thermal_status >= 3 or memory_usage > 85:  # High system load
-        # When system is highly loaded, reduce computational intensity while preparing for next frame
-        # The prepare_only=True flag indicates to the model that we should prepare for the next frame
-        # without performing full computation, which reduces immediate load while maintaining readiness
-        mt1 = time.perf_counter()
-        model_output = model.run(bufs, transforms, inputs, prepare_only=True)
-        mt2 = time.perf_counter()
-        model_execution_time = mt2 - mt1
-    else:
-        # Normal processing with full model computation
-        mt1 = time.perf_counter()
-        model_output = model.run(bufs, transforms, inputs, prepare_only)
-        mt2 = time.perf_counter()
-        model_execution_time = mt2 - mt1
+    # Normal processing with full model computation
+    # (Simplifying to avoid potential hanging with prepare_only flag)
+    mt1 = time.perf_counter()
+    model_output = model.run(bufs, transforms, inputs, prepare_only)
+    mt2 = time.perf_counter()
+    model_execution_time = mt2 - mt1
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')

@@ -24,10 +24,17 @@ def smooth_trajectory(data: np.ndarray) -> np.ndarray:
   """
   window_length = ModelConstants.SMOOTH_WINDOW_LENGTH
   polyorder = ModelConstants.SMOOTH_POLYORDER
-  if len(data) < window_length:
+
+  # Check if data is valid and has sufficient length
+  if data is None or len(data) == 0 or len(data) < window_length:
       # Not enough data points to apply filter, return original
       return data
-  return savgol_filter(data, window_length, polyorder)
+
+  try:
+      return savgol_filter(data, window_length, polyorder)
+  except Exception:
+      # If smoothing fails, return original data to maintain functionality
+      return data
 
 
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
