@@ -2,6 +2,7 @@ import os
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
 from parameterized import parameterized
+from unittest.mock import patch
 
 from cereal import car, custom
 from opendbc.car import DT_CTRL
@@ -9,6 +10,7 @@ from opendbc.car.structs import CarParams
 from opendbc.car.tests.test_car_interfaces import get_fuzzy_car_interface
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.values import PLATFORMS
+from openpilot.common.params import Params
 from openpilot.selfdrive.car.helpers import convert_carControlSP
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
@@ -21,6 +23,35 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 MAX_EXAMPLES = int(os.environ.get('MAX_EXAMPLES', '60'))
 
 
+def mock_params_get(key, block=False):
+  """
+  Mock function for Params.get that returns default values for specific parameters
+  needed by LongControl and LatControlTorque, and handles missing keys properly.
+  """
+  # Define default values for the parameters that cause test failures
+  param_defaults = {
+    "LongitudinalMaxJerk": "2.2",
+    "LongitudinalMaxStoppingJerk": "1.5",
+    "LongitudinalMaxOutputJerk": "2.0",
+    "LongitudinalStartingSpeedThreshold": "3.0",
+    "LongitudinalStartingAccelMultiplier": "0.8",
+    "LongitudinalStartingAccelLimit": "0.8",
+    "LongitudinalAdaptiveErrorThreshold": "0.6",
+    "LongitudinalAdaptiveSpeedThreshold": "5.0",
+    "LateralMaxJerk": "5.0",  # Default value as defined in latcontrol_torque.py
+    "LateralHighSpeedThreshold": "15.0",
+    "LateralHighSpeedKiLimit": "0.15",
+    "LateralCurvatureKiScaler": "0.2"
+  }
+
+  if key in param_defaults:
+    return param_defaults[key].encode()  # Params.get returns bytes
+  else:
+    # For other keys, return empty bytes b"" which is falsy and will trigger the 'or' default
+    return b""
+
+
+@patch.object(Params, 'get', side_effect=mock_params_get)
 class TestCarInterfaces:
   # FIXME: Due to the lists used in carParams, Phase.target is very slow and will cause
   #  many generated examples to overrun when max_examples > ~20, don't use it
