@@ -27,6 +27,7 @@ nav:
   - Concepts:
     - Logs: concepts/logs.md
     - Safety: concepts/safety.md
+    - Model Throttling: concepts/model_throttling.md
     - Glossary: concepts/glossary.md
   - Car Porting:
     - What is a car port?: car-porting/what-is-a-car-port.md
