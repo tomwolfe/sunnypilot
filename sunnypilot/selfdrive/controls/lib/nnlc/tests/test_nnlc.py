@@ -1,6 +1,6 @@
 import numpy as np
 from parameterized import parameterized
-from unittest.mock import patch
+import pytest
 
 from cereal import car, log, messaging
 from opendbc.car.car_helpers import interfaces
@@ -17,34 +17,6 @@ from openpilot.selfdrive.locationd.helpers import Pose
 from openpilot.common.mock.generators import generate_livePose
 from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfaces
 from openpilot.selfdrive.modeld.constants import ModelConstants
-
-
-def mock_params_get(key, block=False):
-  """
-  Mock function for Params.get that returns default values for specific parameters
-  needed by LongControl and LatControlTorque, and handles missing keys properly.
-  """
-  # Define default values for the parameters that cause test failures
-  param_defaults = {
-    "LongitudinalMaxJerk": "2.2",
-    "LongitudinalMaxStoppingJerk": "1.5",
-    "LongitudinalMaxOutputJerk": "2.0",
-    "LongitudinalStartingSpeedThreshold": "3.0",
-    "LongitudinalStartingAccelMultiplier": "0.8",
-    "LongitudinalStartingAccelLimit": "0.8",
-    "LongitudinalAdaptiveErrorThreshold": "0.6",
-    "LongitudinalAdaptiveSpeedThreshold": "5.0",
-    "LateralMaxJerk": "5.0",  # Default value as defined in latcontrol_torque.py
-    "LateralHighSpeedThreshold": "15.0",
-    "LateralHighSpeedKiLimit": "0.15",
-    "LateralCurvatureKiScaler": "0.2"
-  }
-
-  if key in param_defaults:
-    return param_defaults[key].encode()  # Params.get returns bytes
-  else:
-    # For other keys, return empty bytes b"" which is falsy and will trigger the 'or' default
-    return b""
 
 
 def generate_modelV2():
@@ -70,11 +42,10 @@ def generate_modelV2():
   return model
 
 
-@patch.object(Params, 'get', side_effect=mock_params_get)
 class TestNeuralNetworkLateralControl:
 
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN, GM.CHEVROLET_BOLT_EUV])
-  def test_saturation(self, car_name):
+  def test_saturation(self, car_name, mock_params):
     params = Params()
     params.put_bool("NeuralNetworkLateralControl", True)
 
@@ -88,7 +59,7 @@ class TestNeuralNetworkLateralControl:
     CP_SP = convert_to_capnp(CP_SP)
     VM = VehicleModel(CP)
 
-    controller = LatControlTorque(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL)
+    controller = LatControlTorque(CP.as_reader(), CP_SP.as_reader(), CI, DT_CTRL, mock_params)
     torque_params = CP.lateralTuning.torque
 
     CS = car.CarState.new_message()

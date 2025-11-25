@@ -1,6 +1,7 @@
 import contextlib
 import gc
 import os
+from unittest.mock import MagicMock
 import pytest
 
 from openpilot.common.prefix import OpenpilotPrefix
@@ -98,6 +99,39 @@ def pytest_collection_modifyitems(config, items):
       class_property_name = item.get_closest_marker('xdist_group_class_property').args[0]
       class_property_value = getattr(item.cls, class_property_name)
       item.add_marker(pytest.mark.xdist_group(class_property_value))
+
+
+@pytest.fixture
+def mock_params():
+  """Pytest fixture to create a mock Params object with configurable parameter values."""
+  mock_params_obj = MagicMock()
+
+  # Define default parameter values as used in the actual controllers
+  param_defaults = {
+    "LongitudinalMaxJerk": "2.2",
+    "LongitudinalMaxStoppingJerk": "1.5",
+    "LongitudinalMaxOutputJerk": "2.0",
+    "LongitudinalStartingSpeedThreshold": "3.0",
+    "LongitudinalStartingAccelMultiplier": "0.8",
+    "LongitudinalStartingAccelLimit": "0.8",
+    "LongitudinalAdaptiveErrorThreshold": "0.6",
+    "LongitudinalAdaptiveSpeedThreshold": "5.0",
+    "LateralMaxJerk": "5.0",
+    "LateralHighSpeedThreshold": "15.0",
+    "LateralHighSpeedKiLimit": "0.15",
+    "LateralCurvatureKiScaler": "0.2"
+  }
+
+  def mock_get(key, block=False):
+    """Mock implementation of Params.get that returns bytes for known keys."""
+    if key in param_defaults:
+      return param_defaults[key].encode()  # Params.get returns bytes
+    else:
+      # For unknown keys, return empty bytes which will trigger the 'or' default in controllers
+      return b""
+
+  mock_params_obj.get.side_effect = mock_get
+  return mock_params_obj
 
 
 @pytest.hookimpl(trylast=True)

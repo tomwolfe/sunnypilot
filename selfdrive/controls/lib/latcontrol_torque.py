@@ -34,7 +34,7 @@ LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
 VERSION = 0
 
 class LatControlTorque(LatControl):
-  def __init__(self, CP, CP_SP, CI, dt):
+  def __init__(self, CP, CP_SP, CI, dt, params=None):
     """
     Initialize the Torque lateral controller with adaptive parameters.
 
@@ -43,6 +43,7 @@ class LatControlTorque(LatControl):
         CP_SP: Sunnypilot car parameters
         CI: Car interface
         dt: Time step for the controller
+        params: Optional params object for testing
     """
     super().__init__(CP, CP_SP, CI, dt)
     self.torque_params = CP.lateralTuning.torque.as_builder()
@@ -59,7 +60,8 @@ class LatControlTorque(LatControl):
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
 
     # Load configurable parameters with validation to ensure safe operation
-    params = Params()
+    if params is None:
+      params = Params()
     self.max_lateral_jerk = self._validate_parameter(
         float(params.get("LateralMaxJerk") or "5.0"),
         0.5, 10.0, "LateralMaxJerk"

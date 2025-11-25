@@ -8,7 +8,7 @@ from openpilot.common.params import Params
 
 
 class LatControlPID(LatControl):
-  def __init__(self, CP, CP_SP, CI, dt):
+  def __init__(self, CP, CP_SP, CI, dt, params=None):
     """
     Initialize the PID lateral controller with adaptive parameters.
 
@@ -17,6 +17,7 @@ class LatControlPID(LatControl):
         CP_SP: Sunnypilot car parameters
         CI: Car interface
         dt: Time step for the controller
+        params: Optional params object for testing
     """
     super().__init__(CP, CP_SP, CI, dt)
     self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
@@ -26,7 +27,8 @@ class LatControlPID(LatControl):
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
 
     # Load configurable parameters to allow user customization of vehicle behavior
-    params = Params()
+    if params is None:
+      params = Params()
     self.max_angle_rate = self._validate_parameter(
         float(params.get("LateralMaxAngleRate") or "2.0"),
         0.1, 10.0, "LateralMaxAngleRate"
