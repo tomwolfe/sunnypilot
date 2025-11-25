@@ -313,6 +313,7 @@ def main(demo=False):
 
     # Calculate system load more conservatively using maximum of all system resources instead of average
     # This ensures the system throttles appropriately when any single resource is under stress
+    # Thermal status values: green=0, yellow=1, red=2, danger=3
     memory_usage = sm['deviceState'].memoryUsagePercent / 100.0 if sm.updated['deviceState'] else 0.0
     system_load_factor = min(1.0, max(thermal_factor, cpu_usage, memory_usage))
 
@@ -432,6 +433,7 @@ def main(demo=False):
 
     # Calculate system load as the maximum of thermal status (categorical), memory usage, and CPU usage
     # This provides an overall measure of system stress - conservative approach
+    # Thermal status values: green=0, yellow=1, red=2, danger=3
     system_load = max(thermal_status, memory_usage_raw / 100.0, cpu_usage_raw / 100.0)
 
     # Enhanced performance monitoring with adaptive model execution

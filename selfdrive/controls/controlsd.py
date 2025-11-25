@@ -83,7 +83,7 @@ class Controls(ControlsExt):
     # without adding significant load, especially during skipped control cycles.
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
-      self.pose_calibrator.feed_live_calib(self.sm['liveCalibration']):
+      self.pose_calibrator.feed_live_calib(self.sm['liveCalibration'])
     if self.sm.updated["livePose"]:
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
@@ -98,8 +98,10 @@ class Controls(ControlsExt):
       self.thermal_performance_factor = thermal_prc / 100.0
 
       # Additional thermal considerations for safety-critical functions
-      # When thermal status is critical, reduce computational load to protect hardware
-      if thermal_status >= 5:  # Critical thermal status
+      # Thermal status values: green=0, yellow=1, red=2, danger=3
+      # Values >= 5 indicate extreme thermal conditions requiring immediate action
+      # This provides an additional safety margin beyond standard thermal warnings
+      if thermal_status >= 5:  # Critical thermal status (beyond standard danger level)
         cloudlog.warning(f"Critical thermal status: {thermal_status}, reducing performance to protect hardware")
         # Reduce performance factor further when in critical thermal state
         self.thermal_performance_factor = min(self.thermal_performance_factor, 0.7)
