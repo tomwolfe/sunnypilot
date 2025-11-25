@@ -118,6 +118,7 @@ class LatControlTorque(LatControl):
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Reduce integral gain at high speed to prevent oscillations
         temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
+        # Create temporary PID with the same proportional parameters but reduced integral gain
         temp_pid = PIDController([INTERP_SPEEDS, KP_INTERP], temp_ki, KD, rate=1/self.dt)
         temp_pid.neg_limit = self.pid.neg_limit
         temp_pid.pos_limit = self.pid.pos_limit
