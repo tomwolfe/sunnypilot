@@ -134,27 +134,28 @@ class ModelState(ModelStateBase):
       return None
     
     # --- Start Deterministic Throttling Logic ---
-    # Calculate deterministic frame skip threshold based on throttle_factor
-    run_frequency = 1.0 - throttle_factor
-    if run_frequency <= 0.0: # Effectively full throttling
-        self.frame_skip_threshold = 1 # Run every frame
-    else:
-        self.frame_skip_threshold = max(1, round(1.0 / run_frequency))
-
-    self.frame_skip_counter += 1
-
-    # If this is a frame to skip AND we have previous outputs, return them
-    # Ensure last_vision_outputs_dict is not None to prevent crashes on initial frames
-    if self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None:
-        cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
-                        f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}")
-
-        return self.last_vision_outputs_dict
-    
-    # If we reach here, it means we are going to run the model.
-    # Reset the counter for the next cycle.
-    self.frame_skip_counter = 0
-    # --- End Deterministic Throttling Logic ---
+        # Calculate deterministic frame skip threshold based on throttle_factor                                                                                                      
+        execution_rate = throttle_factor
+        if execution_rate <= 0.0: # If user wants 0% execution, we should skip ALL frames.
+            # Set threshold to a very large number so we never run the model.
+            self.frame_skip_threshold = 999999
+        else:                                                                                                                                                                        
+            # We run the model every N frames, where N = 1 / execution_rate
+            self.frame_skip_threshold = max(1, round(1.0 / execution_rate))
+                                                                                                                                                                                     
+        self.frame_skip_counter += 1                                                                                                                                                 
+                                                                                                                                                                                     
+        # If this is a frame to skip AND we have previous outputs, return them                                                                                                       
+        # Ensure last_vision_outputs_dict is not None to prevent crashes on initial frames                                                                                           
+        if self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None:                                                                   
+            cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "                                                  
+                            f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}")                                                     
+                                                                                                                                                                                     
+            return self.last_vision_outputs_dict                                                                                                                                     
+                                                                                                                                                                                     
+        # If we reach here, it means we are going to run the model.                                                                                                                  
+        # Reset the counter for the next cycle.                                                                                                                                      
+        self.frame_skip_counter = 0    # --- End Deterministic Throttling Logic ---
 
     # Run model inference
     outputs = self.model_runner.run_model()
