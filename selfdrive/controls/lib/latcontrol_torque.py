@@ -35,6 +35,15 @@ VERSION = 0
 
 class LatControlTorque(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
+    """
+    Initialize the Torque lateral controller with adaptive parameters.
+
+    Args:
+        CP: Car parameters
+        CP_SP: Sunnypilot car parameters
+        CI: Car interface
+        dt: Time step for the controller
+    """
     super().__init__(CP, CP_SP, CI, dt)
     self.torque_params = CP.lateralTuning.torque.as_builder()
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
@@ -49,11 +58,41 @@ class LatControlTorque(LatControl):
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
 
-    # Load configurable parameters
+    # Load configurable parameters with validation to ensure safe operation
     params = Params()
-    self.max_lateral_jerk = float(params.get("LateralMaxJerk", encoding='utf8') or "5.0")  # m/s^3
-    self.high_speed_threshold = float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0")  # m/s
-    self.high_speed_ki_limit = float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15")
+    self.max_lateral_jerk = self._validate_parameter(
+        float(params.get("LateralMaxJerk", encoding='utf8') or "5.0"),
+        0.5, 10.0, "LateralMaxJerk"
+    )  # m/s^3
+    self.high_speed_threshold = self._validate_parameter(
+        float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0"),
+        5.0, 30.0, "LateralHighSpeedThreshold"
+    )  # m/s
+    self.high_speed_ki_limit = self._validate_parameter(
+        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15"),
+        0.01, 0.5, "LateralHighSpeedKiLimit"
+    )
+
+  def _validate_parameter(self, value, min_val, max_val, name):
+    """
+    Validate that a parameter is within safe bounds.
+
+    Args:
+        value: Parameter value to validate
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+        name: Name of the parameter for logging
+
+    Returns:
+        Validated parameter value within bounds
+    """
+    if value < min_val:
+      print(f"Warning: {name} value {value} below minimum {min_val}, clamping to minimum")
+      return min_val
+    elif value > max_val:
+      print(f"Warning: {name} value {value} above maximum {max_val}, clamping to maximum")
+      return max_val
+    return value
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -115,21 +154,19 @@ class LatControlTorque(LatControl):
 
       # Adaptive PID parameters for smoother response
       # Increase damping at higher speeds to reduce oscillations
+      original_ki = self.pid.ki  # Store original ki value
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Reduce integral gain at high speed to prevent oscillations
+        # Temporarily reduce integral gain to prevent oscillations at high speeds
+        # This is more robust than creating temporary PID controllers
         temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-        # Create temporary PID with the same proportional parameters but reduced integral gain
-        temp_pid = PIDController([INTERP_SPEEDS, KP_INTERP], temp_ki, KD, rate=1/self.dt)
-        temp_pid.neg_limit = self.pid.neg_limit
-        temp_pid.pos_limit = self.pid.pos_limit
-        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
-        output_lataccel = temp_pid.update(pid_log.error,
+        self.pid.ki = temp_ki
+        output_lataccel = self.pid.update(pid_log.error,
                                          -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
                                           freeze_integrator=freeze_integrator)
-        # Preserve the original PID's integral term for next iteration
-        self.pid.error_integral = temp_pid.error_integral
+        # Restore original ki value after update
+        self.pid.ki = original_ki
       else:
         output_lataccel = self.pid.update(pid_log.error,
                                          -measurement_rate,

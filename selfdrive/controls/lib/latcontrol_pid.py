@@ -9,6 +9,15 @@ from openpilot.common.params import Params
 
 class LatControlPID(LatControl):
   def __init__(self, CP, CP_SP, CI, dt):
+    """
+    Initialize the PID lateral controller with adaptive parameters.
+
+    Args:
+        CP: Car parameters
+        CP_SP: Sunnypilot car parameters
+        CI: Car interface
+        dt: Time step for the controller
+    """
     super().__init__(CP, CP_SP, CI, dt)
     self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
                              (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
@@ -16,11 +25,41 @@ class LatControlPID(LatControl):
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
 
-    # Load configurable parameters
+    # Load configurable parameters to allow user customization of vehicle behavior
     params = Params()
-    self.max_angle_rate = float(params.get("LateralMaxAngleRate", encoding='utf8') or "2.0")  # degrees per second
-    self.high_speed_threshold = float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0")  # m/s
-    self.high_speed_ki_limit = float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15")
+    self.max_angle_rate = self._validate_parameter(
+        float(params.get("LateralMaxAngleRate", encoding='utf8') or "2.0"),
+        0.1, 10.0, "LateralMaxAngleRate"
+    )  # degrees per second
+    self.high_speed_threshold = self._validate_parameter(
+        float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0"),
+        5.0, 30.0, "LateralHighSpeedThreshold"
+    )  # m/s
+    self.high_speed_ki_limit = self._validate_parameter(
+        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15"),
+        0.01, 0.5, "LateralHighSpeedKiLimit"
+    )  # Integral gain limit at high speeds
+
+  def _validate_parameter(self, value, min_val, max_val, name):
+    """
+    Validate that a parameter is within safe bounds.
+
+    Args:
+        value: Parameter value to validate
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+        name: Name of the parameter for logging
+
+    Returns:
+        Validated parameter value within bounds
+    """
+    if value < min_val:
+      print(f"Warning: {name} value {value} below minimum {min_val}, clamping to minimum")
+      return min_val
+    elif value > max_val:
+      print(f"Warning: {name} value {value} above maximum {max_val}, clamping to maximum")
+      return max_val
+    return value
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
     pid_log = log.ControlsState.LateralPIDState.new_message()
@@ -55,19 +94,18 @@ class LatControlPID(LatControl):
 
       # Adaptive PID parameters for smoother response
       # Reduce integral gain at high speed to prevent oscillations
+      original_ki = self.pid.ki  # Store original ki value
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Create temporary PID with reduced integral gain
+        # Temporarily reduce integral gain to prevent oscillations at high speeds
+        # This is more robust than creating temporary PID controllers
         temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-        temp_pid = PIDController((self.CP.lateralTuning.pid.kpBP, self.CP.lateralTuning.pid.kpV),
-                                 (self.CP.lateralTuning.pid.kiBP, [temp_ki] * len(self.CP.lateralTuning.pid.kiV)),
-                                 pos_limit=self.steer_max, neg_limit=-self.steer_max)
-        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
-        output_torque = temp_pid.update(error,
+        self.pid.ki = temp_ki
+        output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
-        # Preserve the original PID's integral term for next iteration
-        self.pid.error_integral = temp_pid.error_integral
+        # Restore original ki value after update
+        self.pid.ki = original_ki
       else:
         output_torque = self.pid.update(error,
                                   feedforward=ff,
