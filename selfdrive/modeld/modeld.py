@@ -300,11 +300,21 @@ def main(demo=False):
   DH = DesireHelper()
 
   while True:
-    # Keep receiving frames until we are at least 1 frame ahead of previous extra frame
+    # Adaptive frame synchronization to reduce latency spikes
+    # Wait for main camera to catch up to the extra camera (within tolerance)
+    # Continue receiving main frames while main is behind extra by more than 25ms
+    max_wait_cycles = 5  # Limit the number of attempts to avoid excessive blocking
+    wait_cycles = 0
+
     while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
       buf_main = vipc_client_main.recv()
       meta_main = FrameMeta(vipc_client_main)
       if buf_main is None:
+        break
+      wait_cycles += 1
+      if wait_cycles >= max_wait_cycles:
+        # If we've waited too long, use the latest available frame to avoid excessive latency
+        cloudlog.debug(f"Breaking wait after {max_wait_cycles} cycles to avoid excessive latency")
         break
 
     if buf_main is None:
@@ -312,12 +322,16 @@ def main(demo=False):
       continue
 
     if use_extra_client:
-      # Keep receiving extra frames until frame id matches main camera
-      while True:
+      # Adaptive frame synchronization for extra camera too
+      # Wait for extra camera to catch up to the main camera (within tolerance)
+      # Continue receiving extra frames while extra is behind main by more than 25ms
+      wait_cycles = 0
+      while wait_cycles < max_wait_cycles:  # Limit the wait for extra camera too
         buf_extra = vipc_client_extra.recv()
         meta_extra = FrameMeta(vipc_client_extra)
         if buf_extra is None or meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
           break
+        wait_cycles += 1
 
       if buf_extra is None:
         cloudlog.debug("vipc_client_extra no frame")
