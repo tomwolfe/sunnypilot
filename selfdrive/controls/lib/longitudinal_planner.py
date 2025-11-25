@@ -176,10 +176,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         distance_to_collision = lead_one.dRel
       elif lead_one.vRel > 0:  # Lead vehicle accelerating away
         # Calculate when we'd catch up if they maintain speed
+        # Use a more noise-resistant approach by applying filtering to acceleration values
         relative_accel = (a_ego - lead_one.aLeadK)
-        if relative_accel > 0:  # If we're accelerating faster than lead
-          # Approximate time to catch up
-          time_to_collision = relative_speed / relative_accel if relative_accel > 0.1 else float('inf')
+
+        # Apply noise filtering to relative acceleration to prevent false triggers
+        # Check if acceleration values are reliable before using them
+        acceleration_reliable = abs(relative_accel) > 0.5  # Only use if acceleration difference is significant
+        relative_accel_filtered = relative_accel if acceleration_reliable else 0.0
+
+        if relative_accel_filtered > 0.1 and relative_speed > 0.5:  # Only calculate if conditions are stable
+          # Apply a safety check to prevent unrealistic calculations from noisy data
+          # Limit time to collision to a reasonable range to prevent spikes
+          raw_time_to_collision = relative_speed / relative_accel_filtered
+          # Cap the calculated time to prevent extreme values from noise
+          time_to_collision = min(raw_time_to_collision, 5.0)  # Cap at 5 seconds to prevent noise-induced false positives
 
     # Enhanced FCW logic with speed-adaptive thresholds
     mpc_crash_warning = self.mpc.crash_cnt > 2

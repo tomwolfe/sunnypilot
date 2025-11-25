@@ -176,12 +176,25 @@ class LatControlTorque(LatControl):
       speed_factor = np.interp(CS.vEgo, [0, 10, 30, 50], [1.0, 1.0, 0.8, 0.7])  # Higher speeds use lower gains
 
       # 3. Error-based scaling: increase gains when error is high to respond more aggressively
-      error_magnitude_factor = np.clip(abs(error) * 0.5, 0.8, 1.5)  # Boost gains for large errors
+      # Apply smoothing to error magnitude to reduce noise sensitivity, especially for Kd scaling
+      raw_error_magnitude_factor = abs(error) * 0.5
+      # Apply a simple first-order filter to reduce high-frequency noise in error magnitude
+      if not hasattr(self, 'filtered_error_magnitude'):
+        self.filtered_error_magnitude = raw_error_magnitude_factor
+      # Use a simple exponential moving average for filtering
+      alpha = 0.3  # Filter coefficient (lower = more filtering)
+      self.filtered_error_magnitude = alpha * raw_error_magnitude_factor + (1 - alpha) * self.filtered_error_magnitude
+      # Apply the final clipping to the filtered value
+      error_magnitude_factor = np.clip(self.filtered_error_magnitude, 0.8, 1.5)  # Boost gains for large errors
 
       # Calculate adjusted gains using all factors
+      # For Kd, use a more conservative approach to reduce noise sensitivity
       adjusted_kp = self.pid.k_p * curvature_factor * speed_factor * error_magnitude_factor
       adjusted_ki = self.pid.k_i * curvature_factor * speed_factor
-      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * error_magnitude_factor
+      # Use a separate, more conservative factor for Kd to reduce noise sensitivity
+      # Kd controls derivative action which is most sensitive to noise
+      kd_error_magnitude_factor = np.clip(self.filtered_error_magnitude * 0.7, 0.8, 1.2)  # More conservative for Kd
+      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * kd_error_magnitude_factor
 
       # Apply high-speed specific constraints
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
