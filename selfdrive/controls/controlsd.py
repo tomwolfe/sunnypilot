@@ -67,6 +67,14 @@ class Controls(ControlsExt):
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
   def update(self):
+    """
+    Update the control system with new sensor and model data.
+
+    This method updates the internal state of the control system by processing
+    new messages from various sensors and the model. It also implements adaptive
+    control based on thermal performance to maintain system stability under
+    varying hardware conditions.
+    """
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
       self.pose_calibrator.feed_live_calib(self.sm['liveCalibration'])
@@ -75,6 +83,8 @@ class Controls(ControlsExt):
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
     # Adaptive control based on thermal performance factor
+    # This allows the system to automatically adjust its control rate based on hardware thermal conditions
+    # to prevent overheating and maintain performance stability
     self.thermal_performance_factor = self.sm['deviceState'].thermalPerc / 100.0 if self.sm.updated['deviceState'] else 1.0
 
   def state_control(self):
@@ -237,8 +247,16 @@ class Controls(ControlsExt):
       time.sleep(0.1)
 
   def run(self):
+    """
+    Main control loop that runs at an adaptive rate based on thermal conditions.
+
+    The control system normally runs at 100Hz (base_rate), but this rate is
+    dynamically adjusted based on the thermal performance factor to reduce
+    computational load when the device is overheating. The rate is reduced
+    gradually to maintain system stability while protecting hardware.
+    """
     # Use variable rate based on thermal conditions
-    base_rate = 100  # Default rate
+    base_rate = 100  # Default rate in Hz
     e = threading.Event()
     t = threading.Thread(target=self.params_thread, args=(e,))
     try:
@@ -250,8 +268,12 @@ class Controls(ControlsExt):
         current_thermal_factor = getattr(self, 'thermal_performance_factor', 1.0)
 
         # Update Ratekeeper interval if thermal factor has significantly changed
+        # Hysteresis of 5% prevents rapid switching between rates
         if abs(current_thermal_factor - last_thermal_factor) > 0.05:  # Changed by more than 5%
-          new_rate = max(50, int(base_rate * current_thermal_factor))
+          # Calculate new rate with minimum of 50Hz to ensure basic functionality
+          # Use continuous rate adjustment instead of stepped reduction for smoother operation
+          desired_rate = base_rate * current_thermal_factor
+          new_rate = max(50, desired_rate)  # Allow fractional rates for smoother transitions
           # Update Ratekeeper's internal interval to match new rate
           rk._interval = 1.0 / new_rate
           last_thermal_factor = current_thermal_factor
