@@ -75,7 +75,10 @@ class LatControlTorque(LatControl):
     self.curvature_ki_scaler = self._validate_parameter(
         float(params.get("LateralCurvatureKiScaler", encoding='utf8') or "0.2"),
         0.0, 1.0, "LateralCurvatureKiScaler"
-    ) # Scale KI down for high curvatures (0.0 means no KI at high curvature, 1.0 means no scaling)
+    ) # Scales down the integral gain (Ki) of the PID controller based on the absolute desired curvature.
+      # A value of 0.0 means Ki is fully turned off at high curvatures,
+      # while 1.0 means no scaling is applied based on curvature.
+      # This helps to prevent oscillations and aggressive steering in turns.
 
   def _validate_parameter(self, value, min_val, max_val, name):
     """
@@ -108,7 +111,8 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, # Desired path curvature in 1/meter
+             calibrated_pose, curvature_limited, lat_delay):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()

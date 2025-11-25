@@ -17,11 +17,13 @@ class PublishState:
     self.prev_brake_5ms2_probs = np.zeros(ModelConstants.FCW_5MS2_PROBS_WIDTH, dtype=np.float32)
     self.prev_brake_3ms2_probs = np.zeros(ModelConstants.FCW_3MS2_PROBS_WIDTH, dtype=np.float32)
 
-def smooth_trajectory(data: np.ndarray, window_length: int = 5, polyorder: int = 2) -> np.ndarray:
+def smooth_trajectory(data: np.ndarray) -> np.ndarray:
   """
-  Applies a Savitzky-Golay filter to smooth a 1D trajectory.
+  Applies a Savitzky-Golay filter to smooth a 1D trajectory using parameters from ModelConstants.
   The filter needs window_length to be odd and at least polyorder + 2.
   """
+  window_length = ModelConstants.SMOOTH_WINDOW_LENGTH
+  polyorder = ModelConstants.SMOOTH_POLYORDER
   if len(data) < window_length:
       # Not enough data points to apply filter, return original
       return data

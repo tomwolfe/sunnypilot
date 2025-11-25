@@ -42,6 +42,10 @@ class ModelConstants:
   LAT_PLANNER_SOLUTION_WIDTH = 4
   DESIRED_CURV_WIDTH = 1
 
+  # Savitzky-Golay filter parameters for trajectory smoothing
+  SMOOTH_WINDOW_LENGTH = 5  # Must be odd and at least SMOOTH_POLYORDER + 2
+  SMOOTH_POLYORDER = 2
+
   NUM_LANE_LINES = 4
   NUM_ROAD_EDGES = 2
 
