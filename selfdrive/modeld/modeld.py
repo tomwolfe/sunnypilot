@@ -319,6 +319,9 @@ def main(demo=False):
     # Adjust tolerance based on system load: use more aggressive sync when system is under less stress
     base_tolerance_ns = 25000000  # 25ms base tolerance
     dynamic_tolerance_ns = int(base_tolerance_ns * (0.8 if system_load_factor < 0.7 else 1.2))  # 20ms when system is cool, 30ms when stressed
+    # TODO: The specific values (0.8, 1.2, 0.7) in this formula are likely empirical.
+    # A more granular, non-linear scaling might yield better performance or provide
+    # more nuanced control over synchronization tolerance under varying load conditions.
     max_wait_cycles = MAX_WAIT_CYCLES if system_load_factor < 0.8 else max(1, MAX_WAIT_CYCLES // 2)  # Reduce wait cycles when system is stressed
 
     # Optimized frame synchronization - attempt to get both frames with minimal blocking
@@ -349,7 +352,9 @@ def main(demo=False):
           buf_extra_timeout = buf_extra  # We found a reasonably synchronized frame
           break
         elif meta_main.timestamp_sof < meta_extra.timestamp_sof + dynamic_tolerance_ns:
-          # Extra is ahead of main, accept this frame as it's closest to main
+          # Extra is ahead of main, accept this frame as it's closest to main and minimizes latency.
+          # The goal is to keep frames as close as possible; accepting a frame slightly ahead
+          # ensures the lowest possible latency for the 'extra' frame relative to 'main'.
           buf_extra_timeout = buf_extra
           break
         # If extra is behind main, continue waiting for new extra frame

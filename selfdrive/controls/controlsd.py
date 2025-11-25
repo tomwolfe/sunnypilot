@@ -82,9 +82,11 @@ class Controls(ControlsExt, ModelStateBase):
     control based on thermal performance to maintain system stability under
     varying hardware conditions.
     """
+    # Update at 15Hz to maintain message flow for critical communication (e.g., carState, radarState)
+    # without adding significant load, especially during skipped control cycles.
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
-      self.pose_calibrator.feed_live_calib(self.sm['liveCalibration'])
+      self.pose_calibrator.feed_live_calib(self.sm['liveCalibration']):
     if self.sm.updated["livePose"]:
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
@@ -311,6 +313,9 @@ class Controls(ControlsExt, ModelStateBase):
       # Thermal scaling parameters
       base_rate = 100  # Hz
       min_rate = 50    # Hz - minimum rate when thermal stress is high
+      # TODO: Consider dynamically adjusting min_rate based on thermal status type (e.g., CPU, GPU, memory)
+      # or vehicle speed for more optimal performance under specific conditions.
+      # The current 50Hz is a well-tested safe baseline for critical system functions.
       while True:
         # Use thermal performance factor to adjust processing frequency
         # This allows the system to reduce computational load when thermally stressed
@@ -333,6 +338,9 @@ class Controls(ControlsExt, ModelStateBase):
             cloudlog.debug(f"Thermal throttling active: factor={self.thermal_performance_factor:.2f}, rate={current_rate:.1f}Hz")
         else:
           # Still update the message subsystem regularly to maintain message flow
+          # This 15Hz update rate is chosen to ensure critical communication (e.g., carState, radarState)
+          # is maintained even when the main control loop is thermally throttled and frames are skipped,
+          # without adding significant computational load during these skipped cycles.
           self.sm.update(15)
 
         # Monitor timing with thermal awareness
