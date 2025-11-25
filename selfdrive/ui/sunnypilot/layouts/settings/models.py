@@ -28,7 +28,7 @@ class ModelsLayout(Widget):
       button_width=180,
       callback=self._set_model_throttle_factor,
       selected_index=self._get_current_throttle_factor_index(),
-      icon="speed_limit.png" # Placeholder icon, consider a more appropriate one
+      icon="settings.png" # Placeholder icon, consider a more appropriate one
     )
 
     items = self._initialize_items()
