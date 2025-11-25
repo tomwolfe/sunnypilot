@@ -262,4 +262,10 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
-};
+    // New parameters for LatControlPID and LongControl
+    {"LateralMaxAngleRate", {PERSISTENT | BACKUP, FLOAT, "2.0"}}, // From LatControlPID default
+    {"LateralHighSpeedThreshold", {PERSISTENT | BACKUP, FLOAT, "15.0"}}, // From LatControlPID default
+    {"LateralHighSpeedKiLimit", {PERSISTENT | BACKUP, FLOAT, "0.12"}}, // From LatControlPID default
+    {"LongitudinalMaxJerk", {PERSISTENT | BACKUP, FLOAT, "2.2"}}, // From LongControl default
+    {"LongitudinalMaxStoppingJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
+    {"LongitudinalMaxOutputJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
