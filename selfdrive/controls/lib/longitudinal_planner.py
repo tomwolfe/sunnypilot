@@ -229,7 +229,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     model_fcw = (sm['modelV2'].meta.hardBrakePredicted and
                  not sm['carState'].brakePressed and
                  v_ego > 3 and
-                 distance_to_collision < 50)  # Only if close enough to be relevant
+                 distance_to_collision < 50 and  # Only if close enough to be relevant
+                 sm['carState'].aEgo < -1.0) # Re-added safeguard: prevent FCW during strong acceleration
     # TODO: The original model_fcw condition also checked `sm['carState'].aEgo < -1.25`.
     # This check is now missing. Is this intentional? It might have been a safeguard against the model
     # predicting a brake when the car is actually accelerating. Re-evaluate if this safeguard is still needed.
