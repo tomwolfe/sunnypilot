@@ -103,6 +103,7 @@ class ModelState(ModelStateBase):
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool, throttle_factor: float) -> dict[str, np.ndarray] | None:
+    # throttle_factor is not applied when prepare_only is True, as the model inference is skipped entirely.
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs[self.desire_key][0] = 0
     new_desire = np.where(inputs[self.desire_key] - self.prev_desire > .99, inputs[self.desire_key], 0)
@@ -289,28 +290,18 @@ def main(demo=False):
     # Get thermal status and calculate throttle factor
     # This logic is based on the critical review's description of a new feature.
     # It assumes thermalStatus is an enum or integer value.
-    thermal_status = 1.0 # Default to normal operating conditions
-    if sm.updated["deviceState"] and sm.seen["deviceState"]:
+    thermal_status = log.DeviceState.ThermalStatus.green
+    thermal_status_val = thermal_status.value # Default to green
+    if sm.updated["deviceState"]:
       thermal_status = sm["deviceState"].thermalStatus
-    
-    # Map thermalStatus (enum) to a numeric value for calculation
-    # Using a simplified mapping for now, assuming thermalStatus is an enum where 1 is normal
-    # and higher values indicate hotter. This needs to be confirmed with cereal/log.capnp
-    # For now, let's assume ThermalStatus.green = 1, .yellow = 2, .red = 3, .danger = 4
-    if thermal_status == log.DeviceState.ThermalStatus.green:
-      thermal_status_val = 1
-    elif thermal_status == log.DeviceState.ThermalStatus.yellow:
-      thermal_status_val = 2
-    elif thermal_status == log.DeviceState.ThermalStatus.red:
-      thermal_status_val = 3
-    elif thermal_status == log.DeviceState.ThermalStatus.danger:
-      thermal_status_val = 4
-    else:
-      thermal_status_val = 1 # Default to green
+      thermal_status_val = thermal_status.value # Directly use the enum's integer value
 
-    throttle_factor = max(0.1, 1.0 - (thermal_status_val - 1) * 0.2)
+    thermal_throttle_factor = max(0.3, 1.0 - (thermal_status_val - 1) * 0.2)
+    # Read ModelExecutionThrottleFactor parameter from Params
+    model_param_throttle_factor = params.get_float("ModelExecutionThrottleFactor", default=1.0)
+    throttle_factor = min(thermal_throttle_factor, model_param_throttle_factor)
 
-    cloudlog.debug(f"Thermal status: {thermal_status} (val: {thermal_status_val}), Throttle factor: {throttle_factor:.2f}")
+    cloudlog.debug(f"Thermal status val: {thermal_status_val}, Throttle factor: {throttle_factor:.2f}")
 
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
