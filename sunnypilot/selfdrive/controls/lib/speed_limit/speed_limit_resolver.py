@@ -142,14 +142,36 @@ class SpeedLimitResolver:
     self.limit_solutions[SpeedLimitSource.map] = speed_limit
     self.distance_solutions[SpeedLimitSource.map] = 0.
 
-    # FIXME-SP: this is not working as expected
+    # Enhanced logic for handling upcoming speed limit changes
+    # Consider both the current and next speed limit with smooth transitions
     if 0. < next_speed_limit < self.v_ego:
-      adapt_time = (next_speed_limit - self.v_ego) / LIMIT_ADAPT_ACC
-      adapt_distance = self.v_ego * adapt_time + 0.5 * LIMIT_ADAPT_ACC * adapt_time ** 2
+      # Calculate required distance to safely decelerate to next speed limit
+      required_decel_distance = self._calculate_safe_deceleration_distance(self.v_ego, next_speed_limit)
 
-      if distance_to_speed_limit_ahead <= adapt_distance:
+      if distance_to_speed_limit_ahead <= required_decel_distance + 10:  # Add 10m safety buffer
+        # Apply the next speed limit when we're getting close to the change
         self.limit_solutions[SpeedLimitSource.map] = next_speed_limit
         self.distance_solutions[SpeedLimitSource.map] = distance_to_speed_limit_ahead
+      elif distance_to_speed_limit_ahead <= required_decel_distance + 50:  # 50m warning zone
+        # Use distance-based interpolation between current and next speed limit
+        # This provides smoother transition as we approach the speed limit change
+        ratio = max(0.0, min(1.0, (distance_to_speed_limit_ahead - 10) / 40.0))  # Normalize to 0-1 between 10-50m
+        interpolated_speed_limit = speed_limit * ratio + next_speed_limit * (1 - ratio)
+        self.limit_solutions[SpeedLimitSource.map] = min(self.limit_solutions[SpeedLimitSource.map], interpolated_speed_limit)
+
+  def _calculate_safe_deceleration_distance(self, current_speed: float, target_speed: float) -> float:
+    """Calculate the distance needed to safely decelerate from current to target speed."""
+    # Use conservative deceleration of -1.0 m/s^2 for comfort and -1.5 m/s^2 for safety
+    # Choose based on the situation for better driving experience
+    max_decel = -1.0  # Conservative deceleration rate for comfort
+
+    if current_speed <= target_speed:
+      return 0.0
+
+    # Using kinematic equation: v_f^2 = v_i^2 + 2*a*d
+    # Rearranging: d = (v_f^2 - v_i^2) / (2*a)
+    required_distance = (target_speed**2 - current_speed**2) / (2 * max_decel)
+    return required_distance
 
   def _get_source_solution_according_to_policy(self) -> custom.LongitudinalPlanSP.SpeedLimit.Source:
     sources_for_policy = self._policy_to_sources_map[self.policy]

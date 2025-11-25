@@ -73,20 +73,69 @@ class LongControl:
       output_accel = 0.
 
     elif self.long_control_state == LongCtrlState.stopping:
+      # Enhanced stopping with smoother deceleration profile
+      # Apply more gradual deceleration to avoid harsh braking
       output_accel = self.last_output_accel
       if output_accel > self.CP.stopAccel:
         output_accel = min(output_accel, 0.0)
-        output_accel -= self.CP.stoppingDecelRate * DT_CTRL
+        # Apply jerk-limited deceleration for smoother stop
+        max_jerk = 1.5  # m/s^3, limit deceleration change
+        desired_decel = max_jerk * DT_CTRL
+        output_accel = max(output_accel - desired_decel, self.CP.stopAccel)
       self.reset()
 
     elif self.long_control_state == LongCtrlState.starting:
-      output_accel = self.CP.startAccel
+      # Enhanced starting with smoother acceleration
+      # Apply gradual acceleration to avoid harsh takeoff
+      if CS.vEgo < 3.0:  # Below 10.8 km/h
+        output_accel = min(self.CP.startAccel * 0.7, 0.8)  # More gentle start at very low speeds
+      else:
+        output_accel = self.CP.startAccel
       self.reset()
 
     else:  # LongCtrlState.pid
-      error = a_target - CS.aEgo
-      output_accel = self.pid.update(error, speed=CS.vEgo,
-                                     feedforward=a_target)
+      # Apply jerk limitation to the target acceleration for smoother transitions
+      # Limit the rate of change of acceleration (jerk)
+      if hasattr(self, '_prev_a_target'):
+        max_jerk = 2.5  # m/s^3, limit how fast acceleration can change
+        jerk_limit = max_jerk * DT_CTRL
+        a_target_change = a_target - self._prev_a_target
+        a_target_limited = self._prev_a_target + np.clip(a_target_change, -jerk_limit, jerk_limit)
+      else:
+        a_target_limited = a_target
+      self._prev_a_target = a_target_limited
+
+      error = a_target_limited - CS.aEgo
+
+      # Adaptive PID based on driving conditions
+      # Reduce integral gain when close to target to avoid overshoot
+      if abs(error) < 0.5 and CS.vEgo > 5:  # Near target at moderate speeds
+        # Create temporary PID with reduced integral gain
+        temp_ki = min(self.pid.ki, self.CP.longitudinalTuning.kiV[0] * 0.5)  # Reduce integral action
+        temp_pid = PIDController((self.CP.longitudinalTuning.kpBP, self.CP.longitudinalTuning.kpV),
+                                 (self.CP.longitudinalTuning.kiBP, [temp_ki] * len(self.CP.longitudinalTuning.kiV)),
+                                 rate=1 / DT_CTRL)
+        temp_pid.neg_limit = self.pid.neg_limit
+        temp_pid.pos_limit = self.pid.pos_limit
+        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
+
+        output_accel = temp_pid.update(error, speed=CS.vEgo,
+                                       feedforward=a_target_limited)
+
+        # Preserve the original PID's integral term for next iteration
+        self.pid.error_integral = temp_pid.error_integral
+      else:
+        output_accel = self.pid.update(error, speed=CS.vEgo,
+                                       feedforward=a_target_limited)
+
+      # Apply additional smoothing to the output acceleration
+      # Limit the rate of change of acceleration for comfort
+      if hasattr(self, '_prev_output_accel'):
+        max_output_jerk = 2.5  # m/s^3, limit output jerk
+        output_jerk_limit = max_output_jerk * DT_CTRL
+        output_accel_change = output_accel - self._prev_output_accel
+        output_accel = self._prev_output_accel + np.clip(output_accel_change, -output_jerk_limit, output_jerk_limit)
+      self._prev_output_accel = output_accel
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel

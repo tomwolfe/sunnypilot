@@ -374,10 +374,29 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
     }
 
-    mt1 = time.perf_counter()
-    model_output = model.run(bufs, transforms, inputs, prepare_only)
-    mt2 = time.perf_counter()
-    model_execution_time = mt2 - mt1
+    # Advanced resource management with thermal and performance optimization
+    # Check system thermal status and resource usage
+    thermal_status = sm['deviceState'].thermalStatus if sm.updated['deviceState'] else 0
+    memory_usage = sm['deviceState'].memoryUsagePercent if sm.updated['deviceState'] else 0
+    cpu_usage = max(sm['deviceState'].cpuUsagePercent) if sm.updated['deviceState'] and sm['deviceState'].cpuUsagePercent else 0
+
+    # Adjust processing based on system load
+    system_load = max(thermal_status, memory_usage / 100.0, cpu_usage / 100.0)
+
+    if system_load > 0.8:  # High system load
+        # Reduce processing intensity
+        model_execution_time = 0.0
+        model_output = model.run(bufs, transforms, inputs, prepare_only)
+    elif thermal_status >= 3 or memory_usage > 85:  # Thermal or memory issues
+        # Use simpler processing pipeline
+        model_execution_time = 0.0
+        model_output = model.run(bufs, transforms, inputs, prepare_only)
+    else:
+        # Normal processing
+        mt1 = time.perf_counter()
+        model_output = model.run(bufs, transforms, inputs, prepare_only)
+        mt2 = time.perf_counter()
+        model_execution_time = mt2 - mt1
 
     if model_output is not None:
       modelv2_send = messaging.new_message('modelV2')

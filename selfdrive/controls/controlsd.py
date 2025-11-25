@@ -77,6 +77,9 @@ class Controls(ControlsExt, ModelStateBase):
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
+    # Adaptive control based on thermal performance factor
+    self.thermal_performance_factor = self.sm['deviceState'].thermalPerc / 100.0 if self.sm.updated['deviceState'] else 1.0
+
   def state_control(self):
     CS = self.sm['carState']
 
@@ -241,12 +244,25 @@ class Controls(ControlsExt, ModelStateBase):
       time.sleep(0.1)
 
   def run(self):
-    rk = Ratekeeper(100, print_delay_threshold=None)
+    # Use variable rate based on thermal conditions
+    base_rate = 100  # Default rate
     e = threading.Event()
     t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
+      rk = Ratekeeper(base_rate, print_delay_threshold=None)
+      last_thermal_factor = 1.0
       while True:
+        # Check if we need to adjust the rate based on thermal performance
+        current_thermal_factor = getattr(self, 'thermal_performance_factor', 1.0)
+
+        # Update Ratekeeper interval if thermal factor has significantly changed
+        if abs(current_thermal_factor - last_thermal_factor) > 0.05:  # Changed by more than 5%
+          new_rate = max(50, int(base_rate * current_thermal_factor))
+          # Update Ratekeeper's internal interval to match new rate
+          rk._interval = 1.0 / new_rate
+          last_thermal_factor = current_thermal_factor
+
         self.update()
         CC, lac_log = self.state_control()
         self.publish(CC, lac_log)

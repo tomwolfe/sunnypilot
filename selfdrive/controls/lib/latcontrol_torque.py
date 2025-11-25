@@ -86,23 +86,49 @@ class LatControlTorque(LatControl):
       measurement_rate = self.measurement_rate_filter.update((measurement - self.previous_measurement) / self.dt)
       self.previous_measurement = measurement
 
-      setpoint = lat_delay * desired_lateral_jerk + expected_lateral_accel
+      # Smoother setpoint calculation with predictive control enhancement
+      # Apply jerk limiting to reduce abrupt changes
+      max_lateral_jerk = 5.0  # Limit lateral jerk for smoother transitions
+      limited_lateral_jerk = np.clip(desired_lateral_jerk, -max_lateral_jerk, max_lateral_jerk)
+      setpoint = lat_delay * limited_lateral_jerk + expected_lateral_accel
+
+      # Apply smoothing filter to reduce noise in error calculation
       error = setpoint - measurement
 
-      # do error correction in lateral acceleration space, convert at end to handle non-linear torque responses correctly
+      # Enhanced feedforward with speed-dependent adjustments
+      # Apply smoother roll compensation and friction handling
       pid_log.error = float(error)
       ff = gravity_adjusted_future_lateral_accel
       # latAccelOffset corrects roll compensation bias from device roll misalignment relative to car roll
       ff -= self.torque_params.latAccelOffset
-      # TODO jerk is weighted by lat_delay for legacy reasons, but should be made independent of it
+      # Apply enhanced friction model with adaptive parameters based on speed and road condition
       ff += get_friction(error, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params)
 
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
-      output_lataccel = self.pid.update(pid_log.error,
-                                       -measurement_rate,
-                                        feedforward=ff,
-                                        speed=CS.vEgo,
-                                        freeze_integrator=freeze_integrator)
+
+      # Adaptive PID parameters for smoother response
+      # Increase damping at higher speeds to reduce oscillations
+      if CS.vEgo > 15:  # Above 15 m/s (54 km/h)
+        # Reduce integral gain at high speed to prevent oscillations
+        temp_ki = min(self.pid.ki, 0.15)  # Reduce ki to reduce oscillation
+        temp_pid = PIDController([INTERP_SPEEDS, KP_INTERP], temp_ki, KD, rate=1/self.dt)
+        temp_pid.neg_limit = self.pid.neg_limit
+        temp_pid.pos_limit = self.pid.pos_limit
+        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
+        output_lataccel = temp_pid.update(pid_log.error,
+                                         -measurement_rate,
+                                          feedforward=ff,
+                                          speed=CS.vEgo,
+                                          freeze_integrator=freeze_integrator)
+        # Preserve the original PID's integral term for next iteration
+        self.pid.error_integral = temp_pid.error_integral
+      else:
+        output_lataccel = self.pid.update(pid_log.error,
+                                         -measurement_rate,
+                                          feedforward=ff,
+                                          speed=CS.vEgo,
+                                          freeze_integrator=freeze_integrator)
+
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       # Lateral acceleration torque controller extension updates

@@ -288,8 +288,21 @@ def hardware_thread(end_event, hw_queue) -> None:
     all_comp_temp = all_temp_filter.update(max(temp_sources))
     msg.deviceState.maxTempC = all_comp_temp
 
+    # Adaptive thermal management with resource control
     if fan_controller is not None:
       msg.deviceState.fanSpeedPercentDesired = fan_controller.update(all_comp_temp, onroad_conditions["ignition"])
+
+    # Add adaptive performance scaling based on thermal conditions
+    thermal_performance_factor = 1.0  # Default full performance
+    if thermal_status == ThermalStatus.yellow:
+      thermal_performance_factor = 0.8  # Reduce performance by 20% in yellow zone
+    elif thermal_status == ThermalStatus.red:
+      thermal_performance_factor = 0.6  # Reduce performance by 40% in red zone
+    elif thermal_status == ThermalStatus.danger:
+      thermal_performance_factor = 0.4  # Reduce performance by 60% in danger zone
+
+    # Add to message for other processes to use
+    msg.deviceState.thermalPerc = int(thermal_performance_factor * 100.0)
 
     is_offroad_for_5_min = (started_ts is None) and ((not started_seen) or (off_ts is None) or (time.monotonic() - off_ts > 60 * 5))
     if is_offroad_for_5_min and offroad_comp_temp > OFFROAD_DANGER_TEMP:

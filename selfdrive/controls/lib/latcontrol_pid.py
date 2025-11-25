@@ -21,6 +21,17 @@ class LatControlPID(LatControl):
 
     angle_steers_des_no_offset = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
     angle_steers_des = angle_steers_des_no_offset + params.angleOffsetDeg
+
+    # Apply smoothing to reduce abrupt steering angle changes
+    # Limit the rate of change of desired steering angle
+    if hasattr(self, '_prev_angle_steers_des'):
+      max_angle_rate = 2.0  # degrees per second
+      rate_limit = max_angle_rate * self.dt
+      angle_diff = angle_steers_des - self._prev_angle_steers_des
+      angle_diff_limited = np.clip(angle_diff, -rate_limit, rate_limit)
+      angle_steers_des = self._prev_angle_steers_des + angle_diff_limited
+    self._prev_angle_steers_des = angle_steers_des
+
     error = angle_steers_des - CS.steeringAngleDeg
 
     pid_log.steeringAngleDesiredDeg = angle_steers_des
@@ -34,10 +45,26 @@ class LatControlPID(LatControl):
       ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
-      output_torque = self.pid.update(error,
-                                feedforward=ff,
-                                speed=CS.vEgo,
-                                freeze_integrator=freeze_integrator)
+      # Adaptive PID parameters for smoother response
+      # Reduce integral gain at high speed to prevent oscillations
+      if CS.vEgo > 15:  # Above 15 m/s (54 km/h)
+        # Create temporary PID with reduced integral gain
+        temp_ki = min(self.pid.ki, 0.15)  # Reduce ki to reduce oscillation
+        temp_pid = PIDController((self.CP.lateralTuning.pid.kpBP, self.CP.lateralTuning.pid.kpV),
+                                 (self.CP.lateralTuning.pid.kiBP, [temp_ki] * len(self.CP.lateralTuning.pid.kiV)),
+                                 pos_limit=self.steer_max, neg_limit=-self.steer_max)
+        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
+        output_torque = temp_pid.update(error,
+                                  feedforward=ff,
+                                  speed=CS.vEgo,
+                                  freeze_integrator=freeze_integrator)
+        # Preserve the original PID's integral term for next iteration
+        self.pid.error_integral = temp_pid.error_integral
+      else:
+        output_torque = self.pid.update(error,
+                                  feedforward=ff,
+                                  speed=CS.vEgo,
+                                  freeze_integrator=freeze_integrator)
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)
