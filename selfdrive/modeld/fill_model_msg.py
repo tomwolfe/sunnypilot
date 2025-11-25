@@ -1,6 +1,7 @@
 import os
 import capnp
 import numpy as np
+from scipy.signal import savgol_filter
 from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 from openpilot.sunnypilot.models.helpers import plan_x_idxs_helper
@@ -15,6 +16,16 @@ class PublishState:
     self.disengage_buffer = np.zeros(ModelConstants.CONFIDENCE_BUFFER_LEN*ModelConstants.DISENGAGE_WIDTH, dtype=np.float32)
     self.prev_brake_5ms2_probs = np.zeros(ModelConstants.FCW_5MS2_PROBS_WIDTH, dtype=np.float32)
     self.prev_brake_3ms2_probs = np.zeros(ModelConstants.FCW_3MS2_PROBS_WIDTH, dtype=np.float32)
+
+def smooth_trajectory(data: np.ndarray, window_length: int = 5, polyorder: int = 2) -> np.ndarray:
+  """
+  Applies a Savitzky-Golay filter to smooth a 1D trajectory.
+  The filter needs window_length to be odd and at least polyorder + 2.
+  """
+  if len(data) < window_length:
+      # Not enough data points to apply filter, return original
+      return data
+  return savgol_filter(data, window_length, polyorder)
 
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
   builder.t = t
@@ -83,12 +94,35 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   modelV2.timestampEof = timestamp_eof
   modelV2.modelExecutionTime = model_execution_time
 
+  # Apply smoothing to the plan data
+  plan_position_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,0])
+  plan_position_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,1])
+  plan_position_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,2])
+  
+  plan_velocity_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,0])
+  plan_velocity_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,1])
+  plan_velocity_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,2])
+
+  plan_acceleration_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,0])
+  plan_acceleration_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,1])
+  plan_acceleration_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,2])
+  
+  plan_orientation_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,0])
+  plan_orientation_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,1])
+  plan_orientation_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,2])
+
+  plan_orientation_rate_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,0])
+  plan_orientation_rate_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,1])
+  plan_orientation_rate_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,2])
+
+
   # plan
-  fill_xyzt(modelV2.position, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.POSITION].T, *net_output_data['plan_stds'][0,:,Plan.POSITION].T)
-  fill_xyzt(modelV2.velocity, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.VELOCITY].T)
-  fill_xyzt(modelV2.acceleration, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.ACCELERATION].T)
-  fill_xyzt(modelV2.orientation, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER].T)
-  fill_xyzt(modelV2.orientationRate, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.ORIENTATION_RATE].T)
+  fill_xyzt(modelV2.position, ModelConstants.T_IDXS, plan_position_x, plan_position_y, plan_position_z, *net_output_data['plan_stds'][0,:,Plan.POSITION].T)
+  fill_xyzt(modelV2.velocity, ModelConstants.T_IDXS, plan_velocity_x, plan_velocity_y, plan_velocity_z)
+  fill_xyzt(modelV2.acceleration, ModelConstants.T_IDXS, plan_acceleration_x, plan_acceleration_y, plan_acceleration_z)
+  fill_xyzt(modelV2.orientation, ModelConstants.T_IDXS, plan_orientation_x, plan_orientation_y, plan_orientation_z)
+  fill_xyzt(modelV2.orientationRate, ModelConstants.T_IDXS, plan_orientation_rate_x, plan_orientation_rate_y, plan_orientation_rate_z)
+
 
   # poly path
   fill_xyz_poly(driving_model_data.path, ModelConstants.POLY_PATH_DEGREE, *net_output_data['plan'][0,:,Plan.POSITION].T)

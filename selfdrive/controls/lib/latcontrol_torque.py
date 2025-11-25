@@ -72,6 +72,10 @@ class LatControlTorque(LatControl):
         float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15"),
         0.01, 0.5, "LateralHighSpeedKiLimit"
     )
+    self.curvature_ki_scaler = self._validate_parameter(
+        float(params.get("LateralCurvatureKiScaler", encoding='utf8') or "0.2"),
+        0.0, 1.0, "LateralCurvatureKiScaler"
+    ) # Scale KI down for high curvatures (0.0 means no KI at high curvature, 1.0 means no scaling)
 
   def _validate_parameter(self, value, min_val, max_val, name):
     """
@@ -155,24 +159,23 @@ class LatControlTorque(LatControl):
       # Adaptive PID parameters for smoother response
       # Increase damping at higher speeds to reduce oscillations
       original_ki = self.pid.ki  # Store original ki value
+
+      # Adjust KI based on curvature: reduce KI for higher curvatures
+      curvature_factor = 1.0 - np.clip(abs(desired_curvature) * self.curvature_ki_scaler, 0.0, 1.0)
+      temp_ki = self.pid.ki * curvature_factor
+
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Temporarily reduce integral gain to prevent oscillations at high speeds
-        # This is more robust than creating temporary PID controllers
-        temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-        self.pid.ki = temp_ki
-        output_lataccel = self.pid.update(pid_log.error,
-                                         -measurement_rate,
+        # Further reduce integral gain to prevent oscillations at high speeds
+        temp_ki = min(temp_ki, self.high_speed_ki_limit)
+      
+      self.pid.ki = temp_ki
+      output_lataccel = self.pid.update(pid_log.error,
+                                          -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
                                           freeze_integrator=freeze_integrator)
-        # Restore original ki value after update
-        self.pid.ki = original_ki
-      else:
-        output_lataccel = self.pid.update(pid_log.error,
-                                         -measurement_rate,
-                                          feedforward=ff,
-                                          speed=CS.vEgo,
-                                          freeze_integrator=freeze_integrator)
+      # Restore original ki value after update
+      self.pid.ki = original_ki
 
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
