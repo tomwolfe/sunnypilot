@@ -58,16 +58,61 @@ class LongControl:
                              rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
 
-    # Load configurable parameters
+    # Load configurable parameters with validation to ensure safe operation
     params = Params()
-    self.max_jerk = float(params.get("LongitudinalMaxJerk") or "2.2")  # m/s^3
-    self.max_stopping_jerk = float(params.get("LongitudinalMaxStoppingJerk") or "1.5")  # m/s^3
-    self.max_output_jerk = float(params.get("LongitudinalMaxOutputJerk") or "2.0")  # m/s^3
-    self.starting_speed_threshold = float(params.get("LongitudinalStartingSpeedThreshold") or "3.0")  # m/s
-    self.starting_accel_multiplier = float(params.get("LongitudinalStartingAccelMultiplier") or "0.8")
-    self.starting_accel_limit = float(params.get("LongitudinalStartingAccelLimit") or "0.8")
-    self.adaptive_error_threshold = float(params.get("LongitudinalAdaptiveErrorThreshold") or "0.6")
-    self.adaptive_speed_threshold = float(params.get("LongitudinalAdaptiveSpeedThreshold") or "5.0")  # m/s
+    self.max_jerk = self._validate_parameter(
+        float(params.get("LongitudinalMaxJerk") or "2.2"),
+        0.5, 10.0, "LongitudinalMaxJerk"
+    )  # m/s^3
+    self.max_stopping_jerk = self._validate_parameter(
+        float(params.get("LongitudinalMaxStoppingJerk") or "1.5"),
+        0.5, 5.0, "LongitudinalMaxStoppingJerk"
+    )  # m/s^3
+    self.max_output_jerk = self._validate_parameter(
+        float(params.get("LongitudinalMaxOutputJerk") or "2.0"),
+        0.5, 5.0, "LongitudinalMaxOutputJerk"
+    )  # m/s^3
+    self.starting_speed_threshold = self._validate_parameter(
+        float(params.get("LongitudinalStartingSpeedThreshold") or "3.0"),
+        0.5, 10.0, "LongitudinalStartingSpeedThreshold"
+    )  # m/s
+    self.starting_accel_multiplier = self._validate_parameter(
+        float(params.get("LongitudinalStartingAccelMultiplier") or "0.8"),
+        0.1, 2.0, "LongitudinalStartingAccelMultiplier"
+    )
+    self.starting_accel_limit = self._validate_parameter(
+        float(params.get("LongitudinalStartingAccelLimit") or "0.8"),
+        0.1, 2.0, "LongitudinalStartingAccelLimit"
+    )
+    self.adaptive_error_threshold = self._validate_parameter(
+        float(params.get("LongitudinalAdaptiveErrorThreshold") or "0.6"),
+        0.01, 2.0, "LongitudinalAdaptiveErrorThreshold"
+    )
+    self.adaptive_speed_threshold = self._validate_parameter(
+        float(params.get("LongitudinalAdaptiveSpeedThreshold") or "5.0"),
+        1.0, 20.0, "LongitudinalAdaptiveSpeedThreshold"
+    )  # m/s
+
+  def _validate_parameter(self, value, min_val, max_val, name):
+    """
+    Validate that a parameter is within safe bounds.
+
+    Args:
+        value: Parameter value to validate
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+        name: Name of the parameter for logging
+
+    Returns:
+        Validated parameter value within bounds
+    """
+    if value < min_val:
+      print(f"Warning: {name} value {value} below minimum {min_val}, clamping to minimum")
+      return min_val
+    elif value > max_val:
+      print(f"Warning: {name} value {value} above maximum {max_val}, clamping to maximum")
+      return max_val
+    return value
 
   def reset(self):
     self.pid.reset()

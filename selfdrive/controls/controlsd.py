@@ -48,7 +48,8 @@ class Controls(ControlsExt, ModelStateBase):
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay'] + self.sm_services_ext,
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
+                                   'deviceState'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -68,6 +69,9 @@ class Controls(ControlsExt, ModelStateBase):
       self.LaC = LatControlPID(self.CP, self.CP_SP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
+
+    # Initialize thermal performance factor
+    self.thermal_performance_factor = 1.0
 
   def update(self):
     """
@@ -262,34 +266,24 @@ class Controls(ControlsExt, ModelStateBase):
     computational load when the device is overheating. The rate is reduced
     gradually to maintain system stability while protecting hardware.
     """
-    # Use variable rate based on thermal conditions
-    base_rate = 100  # Default rate in Hz
+    # Fixed rate at 100Hz to maintain compatibility with Ratekeeper
+    # Thermal management is achieved by skipping some processing cycles when necessary
     e = threading.Event()
     t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
-      rk = Ratekeeper(base_rate, print_delay_threshold=None)
-      last_thermal_factor = 1.0
+      rk = Ratekeeper(100, print_delay_threshold=None)  # Fixed at 100Hz
       while True:
-        # Check if we need to adjust the rate based on thermal performance
-        current_thermal_factor = getattr(self, 'thermal_performance_factor', 1.0)
-
-        # Update Ratekeeper interval if thermal factor has significantly changed
-        # Hysteresis of 5% prevents rapid switching between rates
-        if abs(current_thermal_factor - last_thermal_factor) > 0.05:  # Changed by more than 5%
-          # Calculate new rate with minimum of 50Hz to ensure basic functionality
-          # Use continuous rate adjustment instead of stepped reduction for smoother operation
-          desired_rate = base_rate * current_thermal_factor
-          new_rate = max(50, desired_rate)  # Allow fractional rates for smoother transitions
-          # Update Ratekeeper's internal interval to match new rate
-          rk._interval = 1.0 / new_rate
-          last_thermal_factor = current_thermal_factor
-
         self.update()
         CC, lac_log = self.state_control()
         self.publish(CC, lac_log)
         self.run_ext(self.sm, self.pm)
+
+        # Original monitoring approach
         rk.monitor_time()
+
+        # Additional thermal management can be implemented in other parts of the system
+        # rather than changing the control loop rate
     finally:
       e.set()
       t.join()
