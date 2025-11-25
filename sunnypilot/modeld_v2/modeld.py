@@ -137,7 +137,7 @@ class ModelState(ModelStateBase):
     # Calculate deterministic frame skip threshold based on throttle_factor
     run_frequency = 1.0 - throttle_factor
     if run_frequency <= 0.0: # Effectively full throttling
-        self.frame_skip_threshold = float('inf')
+        self.frame_skip_threshold = 1 # Run every frame
     else:
         self.frame_skip_threshold = max(1, round(1.0 / run_frequency))
 
@@ -148,8 +148,7 @@ class ModelState(ModelStateBase):
     if self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None:
         cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
                         f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}")
-        # Reset counter if it gets too large to prevent overflow, but ensure it always aligns with threshold
-        self.frame_skip_counter = self.frame_skip_counter % self.frame_skip_threshold
+
         return self.last_vision_outputs_dict
     
     # If we reach here, it means we are going to run the model.
@@ -308,20 +307,24 @@ def main(demo=False):
     sm.update(0)
 
     # Get thermal status and calculate throttle factor
-    # This logic is based on the critical review's description of a new feature.
-    # It assumes thermalStatus is an enum or integer value.
+
     thermal_status = log.DeviceState.ThermalStatus.green
-    thermal_status_val = thermal_status.value # Default to green
     if sm.updated["deviceState"]:
       thermal_status = sm["deviceState"].thermalStatus
-      thermal_status_val = thermal_status.value # Directly use the enum's integer value
 
-    thermal_throttle_factor = max(0.2, 1.0 - (thermal_status_val - 1) * 0.2)
+    # Map thermal status to throttle factor directly
+    thermal_status_map = {
+        log.DeviceState.ThermalStatus.green: 1.0,
+        log.DeviceState.ThermalStatus.yellow: 0.8,
+        log.DeviceState.ThermalStatus.red: 0.6,
+        log.DeviceState.ThermalStatus.danger: 0.4, # Corresponds to critical/shutdown in some contexts
+    }
+    thermal_throttle_factor = thermal_status_map.get(thermal_status, 1.0)
     # Read ModelExecutionThrottleFactor parameter from Params
     model_param_throttle_factor = params.get_float("ModelExecutionThrottleFactor", default=1.0)
     throttle_factor = min(thermal_throttle_factor, model_param_throttle_factor)
 
-    cloudlog.debug(f"Thermal status val: {thermal_status_val}, Throttle factor: {throttle_factor:.2f}")
+    cloudlog.debug(f"Thermal status: {thermal_status}, Throttle factor: {throttle_factor:.2f}")
 
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
