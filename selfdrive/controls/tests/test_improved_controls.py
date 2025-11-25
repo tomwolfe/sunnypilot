@@ -38,10 +38,12 @@ class TestLateralControlImprovements(unittest.TestCase):
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
         self.CP.minSteerSpeed = 0.5
+        self.CP.steerActuatorDelay = 0.1
         
         self.CP_SP = Mock()
         self.CI = Mock()
-        
+        self.CI.get_steer_feedforward_function.return_value = lambda x, y: 0.0  # Return a function that returns float
+
         # Mock parameters
         self.params = Mock()
         
@@ -352,6 +354,7 @@ class TestConfigurableParameters(unittest.TestCase):
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
         self.CP.minSteerSpeed = 0.5
+        self.CP.steerActuatorDelay = 0.1
         self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
         self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
         self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
@@ -370,7 +373,7 @@ class TestConfigurableParameters(unittest.TestCase):
 
         self.CP_SP = Mock()
         self.CI = Mock()
-        self.CI.get_steer_feedforward_function.return_value = Mock()
+        self.CI.get_steer_feedforward_function.return_value = lambda x, y: 0.0  # Return a function that returns float
         self.CI.torque_from_lateral_accel.return_value = Mock()
         self.CI.lateral_accel_from_torque.return_value = Mock()
 
