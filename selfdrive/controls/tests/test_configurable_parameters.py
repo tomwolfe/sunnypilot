@@ -27,6 +27,7 @@ class TestConfigurableParameters:
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
         self.CP.minSteerSpeed = 0.5
+        self.CP.steerActuatorDelay = 0.1
         self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
         self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
         self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
