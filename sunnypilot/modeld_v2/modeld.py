@@ -45,6 +45,7 @@ class ModelState(ModelStateBase):
   inputs: dict[str, np.ndarray]
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
   temporal_idxs: slice | np.ndarray
+  last_vision_outputs_dict: dict[str, np.ndarray] | None 
 
   def __init__(self, context: CLContext):
     ModelStateBase.__init__(self)
@@ -66,6 +67,7 @@ class ModelState(ModelStateBase):
     buffer_length = 5 if self.model_runner.is_20hz else 2
     self.frames = {name: DrivingModelFrame(context, buffer_length) for name in self.model_runner.vision_input_names}
     self.prev_desire = np.zeros(self.constants.DESIRE_LEN, dtype=np.float32)
+    self.last_vision_outputs_dict = None 
 
     # img buffers are managed in openCL transform code
     self.numpy_inputs = {}
@@ -100,7 +102,7 @@ class ModelState(ModelStateBase):
     return next(key for key in self.numpy_inputs if key.startswith('desire'))
 
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
-                inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+                inputs: dict[str, np.ndarray], prepare_only: bool, throttle_factor: float) -> dict[str, np.ndarray] | None:
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs[self.desire_key][0] = 0
     new_desire = np.where(inputs[self.desire_key] - self.prev_desire > .99, inputs[self.desire_key], 0)
@@ -127,9 +129,18 @@ class ModelState(ModelStateBase):
 
     if prepare_only:
       return None
+    
+    # Throttling logic based on critical review.
+    # Policy model runs every cycle regardless of vision model throttling.
+    if np.random.random() >= throttle_factor and self.last_vision_outputs_dict is not None:
+      cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}")
+      return self.last_vision_outputs_dict
 
     # Run model inference
     outputs = self.model_runner.run_model()
+
+    # Store outputs for throttling
+    self.last_vision_outputs_dict = outputs
 
     # Update features_buffer
     self.temporal_buffers['features_buffer'][0, :-1] = self.temporal_buffers['features_buffer'][0, 1:]
@@ -274,6 +285,33 @@ def main(demo=False):
       meta_extra = meta_main
 
     sm.update(0)
+
+    # Get thermal status and calculate throttle factor
+    # This logic is based on the critical review's description of a new feature.
+    # It assumes thermalStatus is an enum or integer value.
+    thermal_status = 1.0 # Default to normal operating conditions
+    if sm.updated["deviceState"] and sm.seen["deviceState"]:
+      thermal_status = sm["deviceState"].thermalStatus
+    
+    # Map thermalStatus (enum) to a numeric value for calculation
+    # Using a simplified mapping for now, assuming thermalStatus is an enum where 1 is normal
+    # and higher values indicate hotter. This needs to be confirmed with cereal/log.capnp
+    # For now, let's assume ThermalStatus.green = 1, .yellow = 2, .red = 3, .danger = 4
+    if thermal_status == log.DeviceState.ThermalStatus.green:
+      thermal_status_val = 1
+    elif thermal_status == log.DeviceState.ThermalStatus.yellow:
+      thermal_status_val = 2
+    elif thermal_status == log.DeviceState.ThermalStatus.red:
+      thermal_status_val = 3
+    elif thermal_status == log.DeviceState.ThermalStatus.danger:
+      thermal_status_val = 4
+    else:
+      thermal_status_val = 1 # Default to green
+
+    throttle_factor = max(0.1, 1.0 - (thermal_status_val - 1) * 0.2)
+
+    cloudlog.debug(f"Thermal status: {thermal_status} (val: {thermal_status_val}), Throttle factor: {throttle_factor:.2f}")
+
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["roadCameraState"].frameId
@@ -320,7 +358,7 @@ def main(demo=False):
       inputs['lateral_control_params'] = np.array([v_ego, lat_delay], dtype=np.float32)
 
     mt1 = time.perf_counter()
-    model_output = model.run(bufs, transforms, inputs, prepare_only)
+    model_output = model.run(bufs, transforms, inputs, prepare_only, throttle_factor)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
 
