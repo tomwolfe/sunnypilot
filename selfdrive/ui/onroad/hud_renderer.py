@@ -116,6 +116,27 @@ class HudRenderer(Widget):
       self._draw_set_speed(rect)
 
     self._draw_current_speed(rect)
+    self._draw_throttle_indicator(rect)
+
+  def _draw_throttle_indicator(self, rect: rl.Rectangle) -> None:
+    # Position the indicator in the top right, below the exp button.
+    # Adjust position to avoid overlapping other elements
+    indicator_size = 30
+    padding = 15
+    x = rect.x + rect.width - UI_CONFIG.border_size - indicator_size - padding
+    y = rect.y + UI_CONFIG.border_size + UI_CONFIG.button_size + padding
+
+    throttle_factor = ui_state.throttle_factor
+    color = COLORS.white # Default to white
+
+    if throttle_factor >= 0.9:
+      color = COLORS.engaged # Greenish
+    elif throttle_factor >= 0.5:
+      color = COLORS.override # Yellowish
+    else:
+      color = COLORS.disengaged # Reddish
+
+    rl.draw_circle(x + indicator_size // 2, y + indicator_size // 2, indicator_size // 2, color)
 
     button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
     button_y = rect.y + UI_CONFIG.border_size

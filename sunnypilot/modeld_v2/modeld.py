@@ -318,7 +318,7 @@ def main(demo=False):
         log.DeviceState.ThermalStatus.green: 1.0,
         log.DeviceState.ThermalStatus.yellow: 0.8,
         log.DeviceState.ThermalStatus.red: 0.6,
-        log.DeviceState.ThermalStatus.danger: 0.1, # Corresponds to critical/shutdown in some contexts
+        log.DeviceState.ThermalStatus.danger: 0.0, # Corresponds to critical/shutdown in some contexts
     }
     thermal_throttle_factor = thermal_status_map.get(thermal_status, 1.0)
     # Read ModelExecutionThrottleFactor parameter from Params
@@ -401,6 +401,8 @@ def main(demo=False):
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction
       drivingdata_send.drivingModelData.meta.laneChangeState = DH.lane_change_state
       drivingdata_send.drivingModelData.meta.laneChangeDirection = DH.lane_change_direction
+
+      modelv2_send.modelV2.throttleFactor = throttle_factor
 
       fill_pose_msg(posenet_send, model_output, meta_main.frame_id, vipc_dropped_frames, meta_main.timestamp_eof, live_calib_seen)
       pm.send('modelV2', modelv2_send)

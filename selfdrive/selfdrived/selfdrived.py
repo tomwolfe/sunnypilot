@@ -251,7 +251,12 @@ class SelfdriveD(CruiseHelper):
 
     # Create events for temperature, disk space, and memory
     if self.sm['deviceState'].thermalStatus >= ThermalStatus.red:
-      self.events.add(EventName.overheat)
+      if self.sm['deviceState'].thermalStatus == ThermalStatus.danger:
+        # Explicitly add overheat with IMMEDIATE_DISABLE for danger status
+        self.events.add(EventName.overheat, [ET.IMMEDIATE_DISABLE])
+      else:
+        # For red but not danger, add default overheat event (SOFT_DISABLE, NO_ENTRY)
+        self.events.add(EventName.overheat)
     if self.sm['deviceState'].freeSpacePercent < 7 and not SIMULATION:
       self.events.add(EventName.outOfSpace)
     if self.sm['deviceState'].memoryUsagePercent > 90 and not SIMULATION:

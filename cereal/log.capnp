@@ -1091,6 +1091,7 @@ struct ModelDataV2 {
 
   # e2e lateral planner
   action @26: Action;
+  throttleFactor @27 :Float32;
 
   gpuExecutionTimeDEPRECATED @17 :Float32;
   navEnabledDEPRECATED @22 :Bool;
