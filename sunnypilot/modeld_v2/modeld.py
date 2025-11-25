@@ -47,8 +47,9 @@ class ModelState(ModelStateBase):
   temporal_idxs: slice | np.ndarray
   last_vision_outputs_dict: dict[str, np.ndarray] | None 
 
-  def __init__(self, context: CLContext):
+  def __init__(self, context: CLContext, params: Params):
     ModelStateBase.__init__(self)
+    self.params = params
     try:
       self.model_runner = get_model_runner()
       self.constants = self.model_runner.constants
@@ -69,7 +70,13 @@ class ModelState(ModelStateBase):
     self.prev_desire = np.zeros(self.constants.DESIRE_LEN, dtype=np.float32)
     self.last_vision_outputs_dict = None
     self.frame_skip_counter = 0
-    self.frame_skip_threshold = 1 # Will be updated dynamically 
+
+    # Initialize frame_skip_threshold based on ModelExecutionThrottleFactor
+    initial_model_param_throttle_factor = self.params.get_float("ModelExecutionThrottleFactor", default=1.0)
+    if initial_model_param_throttle_factor <= 0.0:
+      self.frame_skip_threshold = 999999  # Skip all frames if throttle factor is zero
+    else:
+      self.frame_skip_threshold = max(1, round(1.0 / initial_model_param_throttle_factor)) 
 
     # img buffers are managed in openCL transform code
     self.numpy_inputs = {}
@@ -212,7 +219,8 @@ def main(demo=False):
   cloudlog.warning("setting up CL context")
   cl_context = CLContext()
   cloudlog.warning("CL context ready; loading model")
-  model = ModelState(cl_context)
+  params = Params()
+  model = ModelState(cl_context, params)
   cloudlog.warning("models loaded, modeld starting")
 
   # visionipc clients
