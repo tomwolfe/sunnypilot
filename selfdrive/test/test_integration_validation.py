@@ -3,8 +3,8 @@
 Integration test to validate all sunnypilot improvements work together.
 """
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock
+import pytest
+from unittest.mock import Mock
 import numpy as np
 import os
 import tempfile
@@ -22,11 +22,11 @@ from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPl
 from openpilot.selfdrive.controls.controlsd import Controls
 
 
-class TestSunnypilotIntegrationImprovements(unittest.TestCase):
+class TestSunnypilotIntegrationImprovements:
     """Integration test for all sunnypilot improvements."""
 
-    @patch('openpilot.common.params.Params') # Patch the Params class
-    def setUp(self, MockParamsClass):
+    @pytest.fixture(autouse=True)
+    def setup_method(self, mock_params):
         """Set up test environment."""
         self.CP = Mock()
         self.CP.steerRatio = 15.0
@@ -54,88 +54,37 @@ class TestSunnypilotIntegrationImprovements(unittest.TestCase):
         self.CI.torque_from_lateral_accel.return_value = Mock()
         self.CI.lateral_accel_from_torque.return_value = Mock()
 
-        self.temp_params_dir = tempfile.mkdtemp()
-
-        # Write dummy parameter files to self.temp_params_dir
-        with open(os.path.join(self.temp_params_dir, "LateralMaxAngleRate"), "w") as f:
-            f.write("2.0")
-        with open(os.path.join(self.temp_params_dir, "LateralHighSpeedThreshold"), "w") as f:
-            f.write("15.0")
-        with open(os.path.join(self.temp_params_dir, "LateralHighSpeedKiLimit"), "w") as f:
-            f.write("0.12")
-        with open(os.path.join(self.temp_params_dir, "LongitudinalMaxJerk"), "w") as f:
-            f.write("2.2")
-        with open(os.path.join(self.temp_params_dir, "LongitudinalMaxStoppingJerk"), "w") as f:
-            f.write("5.0")
-        with open(os.path.join(self.temp_params_dir, "LongitudinalMaxOutputJerk"), "w") as f:
-            f.write("5.0")
-
-        # Configure the mock Params class
-        self.mock_params_instance = Mock() # Create a fresh mock for the instance
-
-        def mock_get(key, block=False):
-            param_file_path = os.path.join(self.temp_params_dir, key)
-            if os.path.exists(param_file_path):
-                with open(param_file_path, 'r') as f:
-                    return f.read()
-            return "" # Return empty string if parameter not found
-
-        self.mock_params_instance.get.side_effect = mock_get
-        self.mock_params_instance.check_key.return_value = True # Ensure check_key always passes
-
-        # Now, when `Params()` is called within the code, it should return our `self.mock_params_instance`
-        MockParamsClass.return_value = self.mock_params_instance
-
-    def tearDown(self):
-        """Clean up after test."""
-        shutil.rmtree(self.temp_params_dir)
-
-
-    def _mock_params_get(self, key, default=None):
-        """Helper to mock Params.get method."""
-        if key == "LateralMaxAngleRate":
-            return "2.0"
-        elif key == "LateralHighSpeedThreshold":
-            return "10.0"
-        elif key == "LateralHighSpeedKiLimit":
-            return "0.0"
-        elif key == "LongitudinalMaxJerk":
-            return "2.2"
-        elif key == "LongitudinalMaxStoppingJerk":
-            return "5.0"
-        elif key == "LongitudinalMaxOutputJerk":
-            return "5.0"
-        # Add other new parameters as they appear in errors
-        return default # Fallback for other parameters if not explicitly mocked
+        # Store mock_params for use in tests
+        self.mock_params = mock_params
 
     def test_lateral_control_smoothing_integration(self):
         """Test that lateral control improvements work together."""
         # Create controllers and check that configurable parameters exist
-        pid_controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
-        torque_controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
+        pid_controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
+        torque_controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
 
         # Check that the key improvements are implemented
-        self.assertTrue(hasattr(pid_controller, 'max_angle_rate'))
-        self.assertTrue(hasattr(pid_controller, 'high_speed_threshold'))
-        self.assertTrue(hasattr(pid_controller, 'high_speed_ki_limit'))
+        assert hasattr(pid_controller, 'max_angle_rate')
+        assert hasattr(pid_controller, 'high_speed_threshold')
+        assert hasattr(pid_controller, 'high_speed_ki_limit')
 
-        self.assertTrue(hasattr(torque_controller, 'max_lateral_jerk'))
-        self.assertTrue(hasattr(torque_controller, 'high_speed_threshold'))
-        self.assertTrue(hasattr(torque_controller, 'high_speed_ki_limit'))
+        assert hasattr(torque_controller, 'max_lateral_jerk')
+        assert hasattr(torque_controller, 'high_speed_threshold')
+        assert hasattr(torque_controller, 'high_speed_ki_limit')
 
     def test_longitudinal_control_smoothing_integration(self):
         """Test that longitudinal control improvements work together."""
-        controller = LongControl(self.CP, self.CP_SP)
+        controller = LongControl(self.CP, self.CP_SP, self.mock_params)
 
         # Check that all configurable parameters exist
-        self.assertTrue(hasattr(controller, 'max_jerk'))
-        self.assertTrue(hasattr(controller, 'max_stopping_jerk'))
-        self.assertTrue(hasattr(controller, 'max_output_jerk'))
-        self.assertTrue(hasattr(controller, 'starting_speed_threshold'))
-        self.assertTrue(hasattr(controller, 'starting_accel_multiplier'))
-        self.assertTrue(hasattr(controller, 'starting_accel_limit'))
-        self.assertTrue(hasattr(controller, 'adaptive_error_threshold'))
-        self.assertTrue(hasattr(controller, 'adaptive_speed_threshold'))
+        assert hasattr(controller, 'max_jerk')
+        assert hasattr(controller, 'max_stopping_jerk')
+        assert hasattr(controller, 'max_output_jerk')
+        assert hasattr(controller, 'starting_speed_threshold')
+        assert hasattr(controller, 'starting_accel_multiplier')
+        assert hasattr(controller, 'starting_accel_limit')
+        assert hasattr(controller, 'adaptive_error_threshold')
+        assert hasattr(controller, 'adaptive_speed_threshold')
 
     def test_enhanced_safety_features_integration(self):
         """Test that enhanced safety features work together."""
@@ -167,9 +116,9 @@ class TestSunnypilotIntegrationImprovements(unittest.TestCase):
     def test_parameter_interactions(self):
         """Test that configurable parameters work together correctly."""
         # Test that parameters can be loaded and used together
-        pid_controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
-        torque_controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
-        long_controller = LongControl(self.CP, self.CP_SP)
+        pid_controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
+        torque_controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
+        long_controller = LongControl(self.CP, self.CP_SP, self.mock_params)
 
         # Verify all controllers have their parameters
         all_params = [
@@ -194,7 +143,7 @@ class TestSunnypilotIntegrationImprovements(unittest.TestCase):
 
         # All parameters should be numeric values
         for param in all_params:
-            self.assertIsInstance(param, (int, float))
+            assert isinstance(param, (int, float))
 
 
 def test_overall_system_improvements():

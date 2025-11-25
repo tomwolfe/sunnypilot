@@ -49,7 +49,7 @@ def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
   return long_control_state
 
 class LongControl:
-  def __init__(self, CP, CP_SP):
+  def __init__(self, CP, CP_SP, params=None):
     self.CP = CP
     self.CP_SP = CP_SP
     self.long_control_state = LongCtrlState.off
@@ -59,7 +59,8 @@ class LongControl:
     self.last_output_accel = 0.0
 
     # Load configurable parameters with validation to ensure safe operation
-    params = Params()
+    if params is None:
+      params = Params()
     self.max_jerk = self._validate_parameter(
         float(params.get("LongitudinalMaxJerk") or "2.2"),
         0.5, 10.0, "LongitudinalMaxJerk"
