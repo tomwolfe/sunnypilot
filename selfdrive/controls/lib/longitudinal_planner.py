@@ -242,10 +242,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Additional safety logic: consider relative acceleration
     # NOTE: This trigger is potentially aggressive and may cause false positives during lane changes or merging.
     # Extensive real-world testing is required before deployment in production systems.
-    if lead_one.status and lead_one.dRel < 50:  # Only consider when close to lead vehicle
-      relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
-      if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
-        self.fcw = True
+    # Disabling this for now based on critical review.
+    # if lead_one.status and lead_one.dRel < 50:  # Only consider when close to lead vehicle
+    #   relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
+    #   if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
+    #     self.fcw = True
+
 
     if self.fcw:
       cloudlog.warning(f"FCW triggered: TTC={time_to_collision:.2f}s, distance={distance_to_collision:.1f}m, rel_speed={relative_speed:.2f}m/s")
