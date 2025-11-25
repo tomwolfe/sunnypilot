@@ -83,7 +83,7 @@ class LatControlPID(LatControl):
 
     error = angle_steers_des - CS.steeringAngleDeg
 
-    pid_log.steeringAngleDesiredDeg = angle_steers_des
+    pid_log.steeringAngleDesiredDeg = float(angle_steers_des)
     pid_log.angleError = error
     if not active:
       output_torque = 0.0
