@@ -424,7 +424,21 @@ class SelfdriveD(CruiseHelper):
     stock_long_is_braking = self.enabled and not self.CP.openpilotLongitudinalControl and CS.aEgo < -1.25
     model_fcw = self.sm['modelV2'].meta.hardBrakePredicted and not CS.brakePressed and not stock_long_is_braking
     planner_fcw = self.sm['longitudinalPlan'].fcw and self.enabled
-    if (planner_fcw or model_fcw) and not self.CP.notCar:
+
+    # Enhanced FCW with additional safety checks using radar data
+    lead_one = self.sm['radarState'].leadOne
+    v_ego = CS.vEgo
+    time_to_collision = float('inf')
+    if lead_one.status and lead_one.dRel > 0:
+        relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
+        if relative_speed > 0:  # Approaching lead vehicle
+            time_to_collision = lead_one.dRel / relative_speed
+
+    # Enhanced radar-based FCW
+    radar_based_fcw = (time_to_collision < 2.0 and relative_speed > 2.0 and lead_one.dRel < 50
+                      and not CS.brakePressed and self.enabled)
+
+    if ((planner_fcw or model_fcw or radar_based_fcw) and not self.CP.notCar):
       self.events.add(EventName.fcw)
 
     # GPS checks

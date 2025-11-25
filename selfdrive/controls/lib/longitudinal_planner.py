@@ -160,8 +160,44 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
     self.j_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC[:-1], self.mpc.j_solution)
 
-    # TODO counter is only needed because radar is glitchy, remove once radar is gone
-    self.fcw = self.mpc.crash_cnt > 2 and not sm['carState'].standstill
+    # Enhanced forward collision warning with multiple indicators
+    # Use multiple thresholds based on speed and distance
+    lead_one = sm['radarState'].leadOne
+    v_ego = sm['carState'].vEgo
+    a_ego = sm['carState'].aEgo
+
+    # Calculate time to collision based on current trajectories
+    time_to_collision = float('inf')
+    if lead_one.status and lead_one.dRel > 0:
+      relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
+      if relative_speed > 0:  # Approaching lead vehicle
+        time_to_collision = lead_one.dRel / relative_speed
+
+    # Enhanced FCW logic with speed-adaptive thresholds
+    mpc_crash_warning = self.mpc.crash_cnt > 2
+    emergency_brake_threshold = 2.5  # seconds to collision
+    warning_threshold = 3.5  # seconds to collision
+
+    # Adaptive thresholds based on speed
+    if v_ego > 25:  # Above ~90 km/h
+      emergency_brake_threshold = 2.2
+      warning_threshold = 3.2
+    elif v_ego < 10:  # Below ~36 km/h
+      emergency_brake_threshold = 2.8
+      warning_threshold = 4.0
+
+    # Enhanced FCW logic - trigger based on multiple criteria
+    self.fcw = (mpc_crash_warning and not sm['carState'].standstill) or \
+               (time_to_collision < emergency_brake_threshold and relative_speed > 1.0) or \
+               (lead_one.aLead - a_ego > 2.0 and lead_one.dRel < 50 and v_ego > 10)  # Lead vehicle braking hard
+
+    # Also consider model predictions for FCW
+    model_fcw = sm['modelV2'].meta.hardBrakePredicted and not sm['carState'].brakePressed \
+                and sm['carState'].aEgo < -1.25
+
+    # Combine MPC-based and model-based FCW
+    self.fcw = self.fcw or (model_fcw and v_ego > 5)
+
     if self.fcw:
       cloudlog.info("FCW triggered")
 

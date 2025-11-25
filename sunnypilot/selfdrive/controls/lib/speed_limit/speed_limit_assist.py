@@ -205,12 +205,32 @@ class SpeedLimitAssist:
 
   def get_adapting_state_target_acceleration(self) -> float:
     if self._distance > 0:
-      return (self._speed_limit_final_last ** 2 - self.v_ego ** 2) / (2. * self._distance)
+      # Calculate required acceleration to reach speed limit by the specified distance
+      # Use kinematic equation: v_f^2 = v_i^2 + 2*a*d, solving for a: a = (v_f^2 - v_i^2) / (2*d)
+      required_accel = (self._speed_limit_final_last ** 2 - self.v_ego ** 2) / (2. * self._distance)
+      # Limit acceleration to reasonable bounds for comfort and safety
+      return max(LIMIT_MIN_ACC, min(LIMIT_MAX_ACC, required_accel))
 
-    return self.v_offset / float(ModelConstants.T_IDXS[CONTROL_N])
+    # If no distance info, use time-based approach with smooth adjustment
+    time_to_target = abs(self.v_offset) / max(abs(self.a_ego), 0.5) if self.a_ego != 0 else 3.0  # Default to 3 seconds
+    return self.v_offset / max(time_to_target, float(ModelConstants.T_IDXS[CONTROL_N]))
 
   def get_active_state_target_acceleration(self) -> float:
-    return self.v_offset / float(ModelConstants.T_IDXS[CONTROL_N])
+    # Enhanced acceleration calculation with adaptive time horizon
+    # Use a shorter time horizon when close to speed limit for quick response
+    # Use a longer time horizon when far from speed limit for smoother adjustment
+    speed_diff_ratio = abs(self.v_offset) / max(self._speed_limit_final_last, 1.0)  # Normalize speed difference
+
+    if speed_diff_ratio > 0.2:  # Large difference - use longer horizon for smoothness
+      time_horizon = float(ModelConstants.T_IDXS[CONTROL_N]) * 2.0  # Double the standard time
+    elif speed_diff_ratio > 0.05:  # Medium difference - use standard horizon
+      time_horizon = float(ModelConstants.T_IDXS[CONTROL_N])
+    else:  # Small difference - use shorter horizon for precision
+      time_horizon = float(ModelConstants.T_IDXS[CONTROL_N]) * 0.5  # Half the standard time
+
+    acceleration = self.v_offset / time_horizon
+    # Apply acceleration limits
+    return max(LIMIT_MIN_ACC, min(LIMIT_MAX_ACC, acceleration))
 
   def _update_confirmed_state(self):
     if self._has_speed_limit:
