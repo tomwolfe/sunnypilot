@@ -61,19 +61,19 @@ class LatControlTorque(LatControl):
     # Load configurable parameters with validation to ensure safe operation
     params = Params()
     self.max_lateral_jerk = self._validate_parameter(
-        float(params.get("LateralMaxJerk", encoding='utf8') or "5.0"),
+        float(params.get("LateralMaxJerk") or "5.0"),
         0.5, 10.0, "LateralMaxJerk"
     )  # m/s^3
     self.high_speed_threshold = self._validate_parameter(
-        float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0"),
+        float(params.get("LateralHighSpeedThreshold") or "15.0"),
         5.0, 30.0, "LateralHighSpeedThreshold"
     )  # m/s
     self.high_speed_ki_limit = self._validate_parameter(
-        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15"),
+        float(params.get("LateralHighSpeedKiLimit") or "0.15"),
         0.01, 0.5, "LateralHighSpeedKiLimit"
     )
     self.curvature_ki_scaler = self._validate_parameter(
-        float(params.get("LateralCurvatureKiScaler", encoding='utf8') or "0.2"),
+        float(params.get("LateralCurvatureKiScaler") or "0.2"),
         0.0, 1.0, "LateralCurvatureKiScaler"
     ) # Scales down the integral gain (Ki) of the PID controller based on the absolute desired curvature.
       # A value of 0.0 means Ki is fully turned off at high curvatures,

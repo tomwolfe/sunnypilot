@@ -28,15 +28,15 @@ class LatControlPID(LatControl):
     # Load configurable parameters to allow user customization of vehicle behavior
     params = Params()
     self.max_angle_rate = self._validate_parameter(
-        float(params.get("LateralMaxAngleRate", encoding='utf8') or "2.0"),
+        float(params.get("LateralMaxAngleRate") or "2.0"),
         0.1, 10.0, "LateralMaxAngleRate"
     )  # degrees per second
     self.high_speed_threshold = self._validate_parameter(
-        float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0"),
+        float(params.get("LateralHighSpeedThreshold") or "15.0"),
         5.0, 30.0, "LateralHighSpeedThreshold"
     )  # m/s
     self.high_speed_ki_limit = self._validate_parameter(
-        float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.12"),
+        float(params.get("LateralHighSpeedKiLimit") or "0.12"),
         0.01, 0.5, "LateralHighSpeedKiLimit"
     )  # Integral gain limit at high speeds
 
