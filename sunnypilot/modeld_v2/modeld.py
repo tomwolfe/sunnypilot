@@ -155,7 +155,7 @@ class ModelState(ModelStateBase):
                                                                                                                                                                                      
         # If we reach here, it means we are going to run the model.                                                                                                                  
         # Reset the counter for the next cycle.                                                                                                                                      
-        self.frame_skip_counter = 0    # --- End Deterministic Throttling Logic ---
+        self.frame_skip_counter = 0    # Reset after successful model run to prepare for the next frame processing cycle.
 
     # Run model inference
     outputs = self.model_runner.run_model()
