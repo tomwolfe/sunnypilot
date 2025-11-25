@@ -274,4 +274,5 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LongitudinalStartingAccelLimit", {PERSISTENT | BACKUP, FLOAT, "0.8"}},
     {"LateralMaxJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
     {"LateralCurvatureKiScaler", {PERSISTENT | BACKUP, FLOAT, "0.2"}},
+    {"ModelExecutionThrottleFactor", {PERSISTENT | BACKUP, FLOAT, "1.0"}}, // Factor to throttle model execution based on thermal conditions
 };
