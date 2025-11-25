@@ -67,7 +67,9 @@ class ModelState(ModelStateBase):
     buffer_length = 5 if self.model_runner.is_20hz else 2
     self.frames = {name: DrivingModelFrame(context, buffer_length) for name in self.model_runner.vision_input_names}
     self.prev_desire = np.zeros(self.constants.DESIRE_LEN, dtype=np.float32)
-    self.last_vision_outputs_dict = None 
+    self.last_vision_outputs_dict = None
+    self.frame_skip_counter = 0
+    self.frame_skip_threshold = 1 # Will be updated dynamically 
 
     # img buffers are managed in openCL transform code
     self.numpy_inputs = {}
@@ -131,11 +133,29 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
     
-    # Throttling logic based on critical review.
-    # Policy model runs every cycle regardless of vision model throttling.
-    if np.random.random() >= throttle_factor and self.last_vision_outputs_dict is not None:
-      cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}")
-      return self.last_vision_outputs_dict
+    # --- Start Deterministic Throttling Logic ---
+    # Calculate deterministic frame skip threshold based on throttle_factor
+    run_frequency = 1.0 - throttle_factor
+    if run_frequency <= 0.0: # Effectively full throttling
+        self.frame_skip_threshold = float('inf')
+    else:
+        self.frame_skip_threshold = max(1, round(1.0 / run_frequency))
+
+    self.frame_skip_counter += 1
+
+    # If this is a frame to skip AND we have previous outputs, return them
+    # Ensure last_vision_outputs_dict is not None to prevent crashes on initial frames
+    if self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None:
+        cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
+                        f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}")
+        # Reset counter if it gets too large to prevent overflow, but ensure it always aligns with threshold
+        self.frame_skip_counter = self.frame_skip_counter % self.frame_skip_threshold
+        return self.last_vision_outputs_dict
+    
+    # If we reach here, it means we are going to run the model.
+    # Reset the counter for the next cycle.
+    self.frame_skip_counter = 0
+    # --- End Deterministic Throttling Logic ---
 
     # Run model inference
     outputs = self.model_runner.run_model()
@@ -296,7 +316,7 @@ def main(demo=False):
       thermal_status = sm["deviceState"].thermalStatus
       thermal_status_val = thermal_status.value # Directly use the enum's integer value
 
-    thermal_throttle_factor = max(0.3, 1.0 - (thermal_status_val - 1) * 0.2)
+    thermal_throttle_factor = max(0.2, 1.0 - (thermal_status_val - 1) * 0.2)
     # Read ModelExecutionThrottleFactor parameter from Params
     model_param_throttle_factor = params.get_float("ModelExecutionThrottleFactor", default=1.0)
     throttle_factor = min(thermal_throttle_factor, model_param_throttle_factor)
