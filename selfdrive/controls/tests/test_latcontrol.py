@@ -36,7 +36,10 @@ class TestLatControl:
     CS.vEgo = 30
     CS.steeringPressed = False
 
-    params = log.LiveParametersData.new_message()
+    from types import SimpleNamespace
+    params = SimpleNamespace()
+    params.roll = 0.0
+    params.angleOffsetDeg = 0.0
 
     lp = generate_livePose()
     pose = Pose.from_live_pose(lp.livePose)
