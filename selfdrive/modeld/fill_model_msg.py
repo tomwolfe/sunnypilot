@@ -29,6 +29,7 @@ def smooth_trajectory(data: np.ndarray) -> np.ndarray:
       return data
   return savgol_filter(data, window_length, polyorder)
 
+
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
   builder.t = t
   builder.x = x.tolist()
