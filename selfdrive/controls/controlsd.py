@@ -186,6 +186,7 @@ class Controls(ControlsExt, ModelStateBase):
         if p in ['steeringAngleDeg', 'curvature']:
           # For steering-related values, use current measurement as fallback
           setattr(actuators, p, 0.0 if p == 'curvature' else CS.steeringAngleDeg)
+          CC.hudControl.visualAlert = log.ControlsState.AlertStatus.critical # Indicate non-finite steering to user
         elif p == 'accel':
           # For acceleration, use 0 to maintain current speed
           setattr(actuators, p, 0.0)

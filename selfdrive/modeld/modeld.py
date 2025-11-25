@@ -18,6 +18,8 @@ from cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.swaglog import cloudlog
+
+MAX_WAIT_CYCLES = 5 # Default limit for adaptive frame synchronization
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
@@ -303,9 +305,10 @@ def main(demo=False):
     # Adaptive frame synchronization to reduce latency spikes
     # Wait for main camera to catch up to the extra camera (within tolerance)
     # Continue receiving main frames while main is behind extra by more than 25ms
-    max_wait_cycles = 5  # Limit the number of attempts to avoid excessive blocking
+    max_wait_cycles = MAX_WAIT_CYCLES  # Limit the number of attempts to avoid excessive blocking
     wait_cycles = 0
 
+    # The 25ms tolerance (25,000,000 nanoseconds) is likely based on the camera frame rate (~40ms for 25fps).
     while meta_main.timestamp_sof < meta_extra.timestamp_sof + 25000000:
       buf_main = vipc_client_main.recv()
       meta_main = FrameMeta(vipc_client_main)
