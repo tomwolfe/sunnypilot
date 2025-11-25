@@ -622,6 +622,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: overheat_alert,
     ET.SOFT_DISABLE: soft_disable_alert("System Overheated"),
     ET.NO_ENTRY: NoEntryAlert("System Overheated"),
+    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert("SYSTEM OVERHEATED: Disengage to Cool Down"),
   },
 
   EventName.wrongGear: {

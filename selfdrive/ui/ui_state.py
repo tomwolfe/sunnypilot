@@ -79,6 +79,7 @@ class UIState:
     self.has_longitudinal_control: bool = False
     self.CP: car.CarParams | None = None
     self.light_sensor: float = -1.0
+    self.throttle_factor: float = 1.0
     self._param_update_time: float = 0.0
 
     # Callbacks
@@ -132,6 +133,10 @@ class UIState:
       self.light_sensor = max(100.0 - cam_state.exposureValPercent, 0.0)
     elif not self.sm.alive["wideRoadCameraState"] or not self.sm.valid["wideRoadCameraState"]:
       self.light_sensor = -1
+
+    # Handle modelV2 updates
+    if self.sm.updated["modelV2"]:
+      self.throttle_factor = self.sm["modelV2"].throttleFactor
 
     # Update started state
     self.started = self.sm["deviceState"].started and self.ignition
