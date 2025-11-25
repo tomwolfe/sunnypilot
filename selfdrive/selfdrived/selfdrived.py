@@ -434,8 +434,10 @@ class SelfdriveD(CruiseHelper):
         if relative_speed > 0:  # Approaching lead vehicle
             time_to_collision = lead_one.dRel / relative_speed
 
-    # Enhanced radar-based FCW
-    radar_based_fcw = (time_to_collision < 2.0 and relative_speed > 2.0 and lead_one.dRel < 50
+    # Enhanced radar-based FCW with speed-adaptive thresholds
+    # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
+    relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
+    radar_based_fcw = (time_to_collision < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
                       and not CS.brakePressed and self.enabled)
 
     if ((planner_fcw or model_fcw or radar_based_fcw) and not self.CP.notCar):

@@ -9,6 +9,7 @@ This test suite validates all the improvements made to:
 4. Enhanced safety features
 5. Speed limit recognition and enforcement
 6. Hardware resource utilization
+7. Configurable parameters
 """
 
 import unittest
@@ -24,6 +25,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
+from openpilot.common.params import Params
 
 
 class TestLateralControlImprovements(unittest.TestCase):
@@ -314,12 +316,76 @@ class TestSpeedLimitImprovements(unittest.TestCase):
 
 class TestHardwareResourceImprovements(unittest.TestCase):
     """Test suite for hardware resource utilization improvements."""
-    
+
     def test_thermal_performance_factor_in_device_state(self):
         """Test that thermal performance factor is applied to device state."""
         # This tests the concept that thermal performance factor exists
         # The actual implementation is in hardwared.py and would be integration tested
         pass
+
+
+class TestConfigurableParameters(unittest.TestCase):
+    """Test suite for configurable parameters improvements."""
+
+    def setUp(self):
+        """Set up test environment."""
+        self.CP = Mock()
+        self.CP.steerRatio = 15.0
+        self.CP.wheelbase = 2.7
+        self.CP.minSteerSpeed = 0.5
+        self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
+        self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kiV = [0.0, 0.5, 0.2]
+        self.CP.lateralTuning.pid.kf = 0.00006
+        self.CP.vEgoStopping = 0.25
+        self.CP.vEgoStarting = 0.5
+        self.CP.stopAccel = -2.0
+        self.CP.stoppingDecelRate = 0.8
+        self.CP.startAccel = 1.0
+        self.CP.startingState = True
+        self.CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
+        self.CP.longitudinalTuning.kpV = [1.0, 0.8, 0.5]
+        self.CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
+        self.CP.longitudinalTuning.kiV = [0.0, 0.5, 0.2]
+
+        self.CP_SP = Mock()
+        self.CI = Mock()
+        self.CI.get_steer_feedforward_function.return_value = Mock()
+        self.CI.torque_from_lateral_accel.return_value = Mock()
+        self.CI.lateral_accel_from_torque.return_value = Mock()
+
+    def test_latcontrol_pid_configurable_parameters(self):
+        """Test that latcontrol_pid uses configurable parameters."""
+        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
+
+        # Check that configurable parameters exist as instance attributes
+        self.assertTrue(hasattr(controller, 'max_angle_rate'))
+        self.assertTrue(hasattr(controller, 'high_speed_threshold'))
+        self.assertTrue(hasattr(controller, 'high_speed_ki_limit'))
+
+    def test_latcontrol_torque_configurable_parameters(self):
+        """Test that latcontrol_torque uses configurable parameters."""
+        controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
+
+        # Check that configurable parameters exist as instance attributes
+        self.assertTrue(hasattr(controller, 'max_lateral_jerk'))
+        self.assertTrue(hasattr(controller, 'high_speed_threshold'))
+        self.assertTrue(hasattr(controller, 'high_speed_ki_limit'))
+
+    def test_longcontrol_configurable_parameters(self):
+        """Test that longcontrol uses configurable parameters."""
+        controller = LongControl(self.CP, self.CP_SP)
+
+        # Check that configurable parameters exist as instance attributes
+        self.assertTrue(hasattr(controller, 'max_jerk'))
+        self.assertTrue(hasattr(controller, 'max_stopping_jerk'))
+        self.assertTrue(hasattr(controller, 'max_output_jerk'))
+        self.assertTrue(hasattr(controller, 'starting_speed_threshold'))
+        self.assertTrue(hasattr(controller, 'starting_accel_multiplier'))
+        self.assertTrue(hasattr(controller, 'starting_accel_limit'))
+        self.assertTrue(hasattr(controller, 'adaptive_error_threshold'))
+        self.assertTrue(hasattr(controller, 'adaptive_speed_threshold'))
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
+from openpilot.common.params import Params
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
 
@@ -47,6 +48,12 @@ class LatControlTorque(LatControl):
     self.measurement_rate_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
+
+    # Load configurable parameters
+    params = Params()
+    self.max_lateral_jerk = float(params.get("LateralMaxJerk", encoding='utf8') or "5.0")  # m/s^3
+    self.high_speed_threshold = float(params.get("LateralHighSpeedThreshold", encoding='utf8') or "15.0")  # m/s
+    self.high_speed_ki_limit = float(params.get("LateralHighSpeedKiLimit", encoding='utf8') or "0.15")
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -88,7 +95,7 @@ class LatControlTorque(LatControl):
 
       # Smoother setpoint calculation with predictive control enhancement
       # Apply jerk limiting to reduce abrupt changes
-      max_lateral_jerk = 5.0  # Limit lateral jerk for smoother transitions
+      max_lateral_jerk = self.max_lateral_jerk  # Limit lateral jerk for smoother transitions - now configurable
       limited_lateral_jerk = np.clip(desired_lateral_jerk, -max_lateral_jerk, max_lateral_jerk)
       setpoint = lat_delay * limited_lateral_jerk + expected_lateral_accel
 
@@ -108,9 +115,9 @@ class LatControlTorque(LatControl):
 
       # Adaptive PID parameters for smoother response
       # Increase damping at higher speeds to reduce oscillations
-      if CS.vEgo > 15:  # Above 15 m/s (54 km/h)
+      if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Reduce integral gain at high speed to prevent oscillations
-        temp_ki = min(self.pid.ki, 0.15)  # Reduce ki to reduce oscillation
+        temp_ki = min(self.pid.ki, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
         temp_pid = PIDController([INTERP_SPEEDS, KP_INTERP], temp_ki, KD, rate=1/self.dt)
         temp_pid.neg_limit = self.pid.neg_limit
         temp_pid.pos_limit = self.pid.pos_limit
