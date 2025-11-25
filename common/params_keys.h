@@ -269,3 +269,4 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LongitudinalMaxJerk", {PERSISTENT | BACKUP, FLOAT, "2.2"}}, // From LongControl default
     {"LongitudinalMaxStoppingJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
     {"LongitudinalMaxOutputJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}}, // From LongControl default
+};
