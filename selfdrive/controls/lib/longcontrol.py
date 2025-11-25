@@ -60,13 +60,13 @@ class LongControl:
 
     # Load configurable parameters
     params = Params()
-    self.max_jerk = float(params.get("LongitudinalMaxJerk", encoding='utf8') or "2.5")  # m/s^3
+    self.max_jerk = float(params.get("LongitudinalMaxJerk", encoding='utf8') or "2.2")  # m/s^3
     self.max_stopping_jerk = float(params.get("LongitudinalMaxStoppingJerk", encoding='utf8') or "1.5")  # m/s^3
-    self.max_output_jerk = float(params.get("LongitudinalMaxOutputJerk", encoding='utf8') or "2.5")  # m/s^3
+    self.max_output_jerk = float(params.get("LongitudinalMaxOutputJerk", encoding='utf8') or "2.0")  # m/s^3
     self.starting_speed_threshold = float(params.get("LongitudinalStartingSpeedThreshold", encoding='utf8') or "3.0")  # m/s
-    self.starting_accel_multiplier = float(params.get("LongitudinalStartingAccelMultiplier", encoding='utf8') or "0.7")
+    self.starting_accel_multiplier = float(params.get("LongitudinalStartingAccelMultiplier", encoding='utf8') or "0.8")
     self.starting_accel_limit = float(params.get("LongitudinalStartingAccelLimit", encoding='utf8') or "0.8")
-    self.adaptive_error_threshold = float(params.get("LongitudinalAdaptiveErrorThreshold", encoding='utf8') or "0.5")
+    self.adaptive_error_threshold = float(params.get("LongitudinalAdaptiveErrorThreshold", encoding='utf8') or "0.6")
     self.adaptive_speed_threshold = float(params.get("LongitudinalAdaptiveSpeedThreshold", encoding='utf8') or "5.0")  # m/s
 
   def reset(self):
