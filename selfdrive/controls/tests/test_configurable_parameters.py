@@ -45,6 +45,10 @@ class TestConfigurableParameters:
         self.CP.longitudinalTuning.kiV = [0.0, 0.5, 0.2]
 
         self.CP_SP = Mock()
+        from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
+        self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
         self.CI = Mock()
         self.CI.get_steer_feedforward_function.return_value = Mock()
         self.CI.torque_from_lateral_accel.return_value = Mock()
@@ -110,6 +114,7 @@ class TestConfigurableParameters:
             'LateralMaxAngleRate': '3.0',
             'LateralHighSpeedThreshold': '20.0',
             'LateralHighSpeedKiLimit': '0.10',
+            'LateralMaxJerk': '6.0',
             'LongitudinalMaxJerk': '3.0',
             'LongitudinalMaxStoppingJerk': '2.0',
             'LongitudinalMaxOutputJerk': '3.0',
@@ -149,7 +154,7 @@ class TestConfigurableParameters:
         # Test when params.get returns None - Update the mock to return None for all calls
         mock_params.get.return_value = b""  # Return empty bytes which will cause fallback to defaults
 
-        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
+        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01, mock_params)
         # Should fall back to default values
         assert controller.max_angle_rate == 2.0
         assert controller.high_speed_threshold == 15.0

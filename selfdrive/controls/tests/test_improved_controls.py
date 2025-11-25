@@ -33,23 +33,63 @@ class TestLateralControlImprovements(unittest.TestCase):
     
     def setUp(self):
         """Set up test environment."""
+        from unittest.mock import MagicMock
         self.CP = Mock()
         self.CP.lateralTuning = Mock()
+        self.CP.lateralTuning.pid.kf = 0.00006  # Feedforward factor - needs to be float, not Mock
+        self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
+        self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kiV = [0.0, 0.5, 0.2]
+        # Set up torque parameters properly (needed for LatControlTorque)
+        torque_mock = Mock()
+        torque_mock.steeringAngleDeadzoneDeg = 0.1  # Default deadzone in degrees
+        self.CP.lateralTuning.torque = torque_mock
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
         self.CP.minSteerSpeed = 0.5
         self.CP.steerActuatorDelay = 0.1
-        
+
         self.CP_SP = Mock()
+        from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
+        self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
         self.CI = Mock()
         self.CI.get_steer_feedforward_function.return_value = lambda x, y: 0.0  # Return a function that returns float
 
         # Mock parameters
         self.params = Mock()
+
+        # Create mock params object for configurable parameters tests
+        self.mock_params = MagicMock()
+        param_defaults = {
+            "LongitudinalMaxJerk": "2.2",
+            "LongitudinalMaxStoppingJerk": "1.5",
+            "LongitudinalMaxOutputJerk": "2.0",
+            "LongitudinalStartingSpeedThreshold": "3.0",
+            "LongitudinalStartingAccelMultiplier": "0.8",
+            "LongitudinalStartingAccelLimit": "0.8",
+            "LongitudinalAdaptiveErrorThreshold": "0.6",
+            "LongitudinalAdaptiveSpeedThreshold": "5.0",
+            "LateralMaxJerk": "5.0",
+            "LateralHighSpeedThreshold": "15.0",
+            "LateralHighSpeedKiLimit": "0.15",
+            "LateralCurvatureKiScaler": "0.2",
+            "LateralMaxAngleRate": "2.0"
+        }
+
+        def mock_get(key, block=False):
+            if key in param_defaults:
+                return param_defaults[key].encode()  # Params.get returns bytes
+            else:
+                return b""
+
+        self.mock_params.get.side_effect = mock_get
         
     def test_pid_lateral_control_smoothing(self):
         """Test that PID lateral controller applies steering angle rate limiting."""
-        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
+        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
         
         # Simulate a scenario where desired steering angle would change rapidly
         CS = Mock()
@@ -86,7 +126,7 @@ class TestLateralControlImprovements(unittest.TestCase):
     
     def test_torque_lateral_control_jerk_limiting(self):
         """Test that torque lateral controller applies jerk limiting."""
-        controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
+        controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
         
         # Mock the model data
         CS = Mock()
@@ -127,6 +167,7 @@ class TestLongitudinalControlImprovements(unittest.TestCase):
     
     def setUp(self):
         """Set up test environment."""
+        from unittest.mock import MagicMock
         self.CP = Mock()
         self.CP.vEgoStopping = 0.25
         self.CP.vEgoStarting = 0.5
@@ -134,17 +175,57 @@ class TestLongitudinalControlImprovements(unittest.TestCase):
         self.CP.stoppingDecelRate = 0.8
         self.CP.startAccel = 1.0
         self.CP.startingState = True
+        self.CP.lateralTuning = Mock()
+        self.CP.lateralTuning.pid.kf = 0.00006  # Feedforward factor - needed for PID controller
+        self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
+        self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kiV = [0.0, 0.5, 0.2]
+        # Set up torque parameters properly (needed for LatControlTorque)
+        torque_mock = Mock()
+        torque_mock.steeringAngleDeadzoneDeg = 0.1  # Default deadzone in degrees
+        self.CP.lateralTuning.torque = torque_mock
         self.CP.longitudinalTuning = Mock()
         self.CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
         self.CP.longitudinalTuning.kpV = [1.0, 0.8, 0.5]
         self.CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
         self.CP.longitudinalTuning.kiV = [0.0, 0.5, 0.2]
-        
+
         self.CP_SP = Mock()
-    
+        from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
+        self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
+
+        # Create mock params object for configurable parameters tests
+        self.mock_params = MagicMock()
+        param_defaults = {
+            "LongitudinalMaxJerk": "2.2",
+            "LongitudinalMaxStoppingJerk": "1.5",
+            "LongitudinalMaxOutputJerk": "2.0",
+            "LongitudinalStartingSpeedThreshold": "3.0",
+            "LongitudinalStartingAccelMultiplier": "0.8",
+            "LongitudinalStartingAccelLimit": "0.8",
+            "LongitudinalAdaptiveErrorThreshold": "0.6",
+            "LongitudinalAdaptiveSpeedThreshold": "5.0",
+            "LateralMaxJerk": "5.0",
+            "LateralHighSpeedThreshold": "15.0",
+            "LateralHighSpeedKiLimit": "0.15",
+            "LateralCurvatureKiScaler": "0.2",
+            "LateralMaxAngleRate": "2.0"
+        }
+
+        def mock_get(key, block=False):
+            if key in param_defaults:
+                return param_defaults[key].encode()  # Params.get returns bytes
+            else:
+                return b""
+
+        self.mock_params.get.side_effect = mock_get
+
     def test_longitudinal_control_jerk_limiting(self):
         """Test that longitudinal controller applies jerk limiting."""
-        controller = LongControl(self.CP, self.CP_SP)
+        controller = LongControl(self.CP, self.CP_SP, self.mock_params)
         
         # Mock car state
         CS = Mock()
@@ -175,7 +256,7 @@ class TestLongitudinalControlImprovements(unittest.TestCase):
     
     def test_longitudinal_control_stopping_smoother(self):
         """Test that stopping behavior is smoother."""
-        controller = LongControl(self.CP, self.CP_SP)
+        controller = LongControl(self.CP, self.CP_SP, self.mock_params)
         
         CS = Mock()
         CS.vEgo = 5.0  # 5 m/s
@@ -244,7 +325,8 @@ class TestSafetyFeaturesImprovements(unittest.TestCase):
         # Create a longitudinal planner
         CP = Mock()
         CP.openpilotLongitudinalControl = True
-        planner = LongitudinalPlanner(CP)
+        CP_SP = Mock()
+        planner = LongitudinalPlanner(CP, CP_SP)
 
         # This test checks that the enhanced FCW logic exists
         # The actual implementation is in longitudinal_planner.py
@@ -257,16 +339,58 @@ class TestSpeedLimitImprovements(unittest.TestCase):
     
     def setUp(self):
         """Set up test environment."""
+        from unittest.mock import MagicMock
         self.CP = Mock()
         self.CP.openpilotLongitudinalControl = True
         self.CP.pcmCruise = True
-        
+        # Set up lateral tuning parameters that may be used by controllers
+        self.CP.lateralTuning = Mock()
+        self.CP.lateralTuning.pid.kf = 0.00006  # Feedforward factor - needed for PID controller
+        self.CP.lateralTuning.pid.kpBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kpV = [1.0, 0.8, 0.5]
+        self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
+        self.CP.lateralTuning.pid.kiV = [0.0, 0.5, 0.2]
+        # Set up torque parameters properly (needed for LatControlTorque)
+        torque_mock = Mock()
+        torque_mock.steeringAngleDeadzoneDeg = 0.1  # Default deadzone in degrees
+        self.CP.lateralTuning.torque = torque_mock
+
         self.CP_SP = Mock()
-        
+        from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
+        self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
+
         # Mock parameters
         self.params = Mock()
         self.params.get_bool.return_value = True
         self.params.get.return_value = None
+
+        # Create mock params object for configurable parameters tests
+        self.mock_params = MagicMock()
+        param_defaults = {
+            "LongitudinalMaxJerk": "2.2",
+            "LongitudinalMaxStoppingJerk": "1.5",
+            "LongitudinalMaxOutputJerk": "2.0",
+            "LongitudinalStartingSpeedThreshold": "3.0",
+            "LongitudinalStartingAccelMultiplier": "0.8",
+            "LongitudinalStartingAccelLimit": "0.8",
+            "LongitudinalAdaptiveErrorThreshold": "0.6",
+            "LongitudinalAdaptiveSpeedThreshold": "5.0",
+            "LateralMaxJerk": "5.0",
+            "LateralHighSpeedThreshold": "15.0",
+            "LateralHighSpeedKiLimit": "0.15",
+            "LateralCurvatureKiScaler": "0.2",
+            "LateralMaxAngleRate": "2.0"
+        }
+
+        def mock_get(key, block=False):
+            if key in param_defaults:
+                return param_defaults[key].encode()  # Params.get returns bytes
+            else:
+                return b""
+
+        self.mock_params.get.side_effect = mock_get
     
     def test_speed_limit_resolver_interpolation(self):
         """Test that speed limit resolver applies smooth transitions."""
@@ -350,6 +474,7 @@ class TestConfigurableParameters(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        from unittest.mock import MagicMock
         self.CP = Mock()
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
@@ -360,6 +485,10 @@ class TestConfigurableParameters(unittest.TestCase):
         self.CP.lateralTuning.pid.kiBP = [0.0, 5.0, 35.0]
         self.CP.lateralTuning.pid.kiV = [0.0, 0.5, 0.2]
         self.CP.lateralTuning.pid.kf = 0.00006
+        # Torque parameters are needed for LatControlTorque
+        torque_mock = Mock()
+        torque_mock.steeringAngleDeadzoneDeg = 0.1  # Default deadzone in degrees
+        self.CP.lateralTuning.torque = torque_mock
         self.CP.vEgoStopping = 0.25
         self.CP.vEgoStarting = 0.5
         self.CP.stopAccel = -2.0
@@ -372,14 +501,44 @@ class TestConfigurableParameters(unittest.TestCase):
         self.CP.longitudinalTuning.kiV = [0.0, 0.5, 0.2]
 
         self.CP_SP = Mock()
+        from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
+        self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
+        self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
         self.CI = Mock()
         self.CI.get_steer_feedforward_function.return_value = lambda x, y: 0.0  # Return a function that returns float
         self.CI.torque_from_lateral_accel.return_value = Mock()
         self.CI.lateral_accel_from_torque.return_value = Mock()
 
+        # Create mock params object for configurable parameters tests
+        self.mock_params = MagicMock()
+        param_defaults = {
+            "LongitudinalMaxJerk": "2.2",
+            "LongitudinalMaxStoppingJerk": "1.5",
+            "LongitudinalMaxOutputJerk": "2.0",
+            "LongitudinalStartingSpeedThreshold": "3.0",
+            "LongitudinalStartingAccelMultiplier": "0.8",
+            "LongitudinalStartingAccelLimit": "0.8",
+            "LongitudinalAdaptiveErrorThreshold": "0.6",
+            "LongitudinalAdaptiveSpeedThreshold": "5.0",
+            "LateralMaxJerk": "5.0",
+            "LateralHighSpeedThreshold": "15.0",
+            "LateralHighSpeedKiLimit": "0.15",
+            "LateralCurvatureKiScaler": "0.2",
+            "LateralMaxAngleRate": "2.0"
+        }
+
+        def mock_get(key, block=False):
+            if key in param_defaults:
+                return param_defaults[key].encode()  # Params.get returns bytes
+            else:
+                return b""
+
+        self.mock_params.get.side_effect = mock_get
+
     def test_latcontrol_pid_configurable_parameters(self):
         """Test that latcontrol_pid uses configurable parameters."""
-        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01)
+        controller = LatControlPID(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
 
         # Check that configurable parameters exist as instance attributes
         self.assertTrue(hasattr(controller, 'max_angle_rate'))
@@ -388,7 +547,7 @@ class TestConfigurableParameters(unittest.TestCase):
 
     def test_latcontrol_torque_configurable_parameters(self):
         """Test that latcontrol_torque uses configurable parameters."""
-        controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01)
+        controller = LatControlTorque(self.CP, self.CP_SP, self.CI, 0.01, self.mock_params)
 
         # Check that configurable parameters exist as instance attributes
         self.assertTrue(hasattr(controller, 'max_lateral_jerk'))
@@ -397,7 +556,7 @@ class TestConfigurableParameters(unittest.TestCase):
 
     def test_longcontrol_configurable_parameters(self):
         """Test that longcontrol uses configurable parameters."""
-        controller = LongControl(self.CP, self.CP_SP)
+        controller = LongControl(self.CP, self.CP_SP, self.mock_params)
 
         # Check that configurable parameters exist as instance attributes
         self.assertTrue(hasattr(controller, 'max_jerk'))
