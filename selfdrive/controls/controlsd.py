@@ -178,7 +178,7 @@ class Controls(ControlsExt):
         continue
 
       if not math.isfinite(attr):
-        cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
+        cloudlog.error(f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}")
         # Implement a recovery by setting to a safe value instead of 0.0
         if p in ['steeringAngleDeg', 'curvature']:
           # For steering-related values, use current measurement as fallback

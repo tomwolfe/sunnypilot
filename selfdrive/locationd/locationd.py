@@ -115,7 +115,7 @@ class LocationEstimator:
     """
     # Check for non-finite values and replace them with reasonable defaults
     if not np.isfinite(input_array).all():
-      cloudlog.warning(f"{input_name} contains non-finite values, replacing with zeros")
+      cloudlog.warning(f"{input_name} contains non-finite values {input_array}, replacing with zeros")
       input_array = np.where(np.isfinite(input_array), input_array, 0.0)
 
     # Bound the values to prevent extreme inputs
