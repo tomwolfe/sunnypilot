@@ -339,9 +339,7 @@ class TestHardwareResourceImprovements(unittest.TestCase):
 
         # Check that the thermal performance factor attribute is initialized
         # The actual implementation is in controlsd.py where thermal_performance_factor is set
-        control = Controls(CP, CI, sm, pm, camerad,
-                          Params(), Mock(),
-                          Mock(), Mock())
+        control = Controls()
 
         # After initialization, thermal_performance_factor should be set
         self.assertTrue(hasattr(control, 'thermal_performance_factor'))

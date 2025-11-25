@@ -189,7 +189,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Enhanced FCW logic - trigger based on multiple criteria
     self.fcw = (mpc_crash_warning and not sm['carState'].standstill) or \
                (time_to_collision < emergency_brake_threshold and relative_speed > 1.0) or \
-               (lead_one.aLead - a_ego > 2.0 and lead_one.dRel < 50 and v_ego > 10)  # Lead vehicle braking hard
+               (lead_one.aLeadK - a_ego > 2.0 and lead_one.dRel < 50 and v_ego > 10)  # Lead vehicle braking hard
 
     # Also consider model predictions for FCW
     model_fcw = sm['modelV2'].meta.hardBrakePredicted and not sm['carState'].brakePressed \
