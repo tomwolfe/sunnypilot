@@ -32,6 +32,15 @@ else
     brew up
 fi
 
+# Install gcc-arm-embedded first separately to handle potential checksum issues
+if ! brew install --cask gcc-arm-embedded; then
+  echo "Failed to install gcc-arm-embedded due to checksum mismatch. Attempting to clear cache and retry..."
+  # Remove the cached file that's causing the checksum mismatch
+  rm -f /Users/runner/Library/Caches/Homebrew/downloads/*--arm-gnu-toolchain-*-arm-none-eabi.pkg || true
+  # Try to install again with --force to overwrite any cached files
+  brew install --cask gcc-arm-embedded --force
+fi
+
 brew bundle --file=- <<-EOS
 brew "git-lfs"
 brew "capnp"
@@ -45,7 +54,7 @@ brew "llvm"
 brew "openssl@3.0"
 brew "qt@5"
 brew "zeromq"
-cask "gcc-arm-embedded"
+# gcc-arm-embedded is already installed separately above
 brew "portaudio"
 brew "gcc@13"
 EOS
