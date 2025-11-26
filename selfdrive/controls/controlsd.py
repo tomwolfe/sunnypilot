@@ -342,6 +342,43 @@ class Controls(ControlsExt):
     prediction = activity_level * 0.7 + max(0, trend) * 0.3  # Weight activity more heavily
     return min(1.0, prediction)  # Cap at 1.0
 
+  def _adjust_control_for_thermal_conditions(self, actuators, CS, long_plan, model_v2):
+    """
+    Adjust control outputs based on thermal conditions for improved thermal management.
+
+    Args:
+        actuators: The control actuators to adjust
+        CS: Current car state
+        long_plan: Longitudinal plan
+        model_v2: Model predictions
+
+    Returns:
+        Modified actuators adjusted for thermal conditions
+    """
+    # Apply thermal-based adjustments to control outputs
+    if self.performance_compensation_factor < 0.8:  # Under thermal stress
+      # Reduce aggressiveness of control commands to reduce computation/actuator load
+      thermal_aggression_factor = self.performance_compensation_factor / 0.8
+
+      # Reduce longitudinal acceleration aggressiveness
+      if hasattr(actuators, 'accel'):
+        # Apply smoother transitions in acceleration
+        actuators.accel = actuators.accel * thermal_aggression_factor
+
+      # Reduce lateral control aggressiveness
+      if hasattr(actuators, 'curvature'):
+        # Reduce curvature when under thermal stress to reduce computational load
+        actuators.curvature = actuators.curvature * thermal_aggression_factor
+
+      if hasattr(actuators, 'steeringAngleDeg'):
+        # Gentle steering adjustments under thermal stress
+        actuators.steeringAngleDeg = actuators.steeringAngleDeg * thermal_aggression_factor
+
+      # Log thermal adjustments being made
+      cloudlog.debug(f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, stress_level={self.thermal_stress_level}")
+
+    return actuators
+
   def state_control(self):
     CS = self.sm['carState']
 
@@ -453,6 +490,9 @@ class Controls(ControlsExt):
 
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
+
+    # Apply thermal-based adjustments to control outputs
+    actuators = self._adjust_control_for_thermal_conditions(actuators, CS, long_plan, model_v2)
 
     # Enhanced finite value checks with recovery mechanism
     for p in ACTUATOR_FIELDS:

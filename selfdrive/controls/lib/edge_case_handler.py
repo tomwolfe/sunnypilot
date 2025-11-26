@@ -482,10 +482,137 @@ class EdgeCaseHandler:
         if avg_distance_change > 5.0:  # Large average changes in lead distance
           indicators += 1
 
+      # 5. Sudden appearance of lead vehicle (could indicate cut-in or system failure detection)
+      if (radar_state.leadOne.status and
+          radar_state.leadOne.dRel < 50.0 and
+          car_state.vEgo > 10.0):
+        # If previous frames showed no lead but now there is one close by
+        recent_lead_distances = [l['dRel'] for l in valid_leads if l['dRel'] is not None]
+        if recent_lead_distances and all(d > 80 for d in recent_lead_distances):  # No lead seen recently but one appeared close
+          indicators += 1
+
+      # 6. Lead vehicle doing unusual maneuvers (e.g., sudden lane changes)
+      if (radar_state.leadOne.status and
+          abs(radar_state.leadOne.aRel) > 3.0 and
+          radar_state.leadOne.dRel < 60.0):  # Large acceleration change close by
+        indicators += 1
+
+      # 7. Multiple vehicles with inconsistent behavior (potential traffic incident)
+      if (radar_state.leadOne.status and radar_state.leadTwo.status and
+          radar_state.leadOne.dRel < 60.0 and radar_state.leadTwo.dRel < 120.0):
+        relative_behavior_diff = abs(radar_state.leadOne.vRel - radar_state.leadTwo.vRel)
+        if relative_behavior_diff > 8.0:  # Significant difference in relative speeds
+          indicators += 1
+
     except AttributeError:
       pass
 
     return indicators >= 2  # At least 2 indicators for unusual traffic
+
+  def detect_traffic_incident_or_congestion(self, radar_state, car_state: car.CarState) -> dict:
+    """
+    Enhanced detection for traffic incidents or congestion that require special handling
+
+    Args:
+      radar_state: Radar sensor data
+      car_state: Current car state
+
+    Returns:
+      dict: Incident detection results with confidence scores
+    """
+    if radar_state is None:
+      return {
+        'incident_detected': False,
+        'congestion_detected': False,
+        'confidence': 0.0,
+        'recommended_action': 'normal'
+      }
+
+    incident_indicators = 0
+    congestion_indicators = 0
+
+    try:
+      # Check for traffic incident indicators
+      if radar_state.leadOne.status:
+        # Very slow lead vehicle when traffic should be flowing
+        if (radar_state.leadOne.vLead < 2.0 and
+            car_state.vEgo > 15.0 and
+            radar_state.leadOne.dRel < 80.0):
+          incident_indicators += 1
+          congestion_indicators += 1  # Could be both incident or congestion
+
+        # Sudden stop of lead vehicle
+        if (radar_state.leadOne.vLead < 0.5 and
+            radar_state.leadOne.aRel < -2.0 and  # Heavy braking
+            radar_state.leadOne.dRel < 50.0):
+          incident_indicators += 1
+
+      if radar_state.leadTwo.status:
+        # Lead vehicle 2 moving much slower than lead vehicle 1 (could indicate lane closure/accident)
+        if (radar_state.leadOne.status and
+            radar_state.leadOne.vLead > 5.0 and
+            radar_state.leadTwo.vLead < 2.0 and
+            radar_state.leadTwo.dRel < radar_state.leadOne.dRel + 30.0):
+          incident_indicators += 1
+
+      # Check for congestion patterns
+      # Multiple slow vehicles in close proximity
+      slow_vehicle_count = 0
+      if radar_state.leadOne.status and radar_state.leadOne.vLead < 5.0:
+        slow_vehicle_count += 1
+      if radar_state.leadTwo.status and radar_state.leadTwo.vLead < 5.0:
+        slow_vehicle_count += 1
+
+      if slow_vehicle_count >= 2:
+        congestion_indicators += 1
+        # If both leads are very slow but ego vehicle is fast, likely congestion
+        if car_state.vEgo > 15.0 and max(radar_state.leadOne.vLead, radar_state.leadTwo.vLead) < 2.0:
+          congestion_indicators += 1
+
+      # Check for stop-and-go patterns (classic congestion)
+      if hasattr(self, '_previous_speeds') and len(self._previous_speeds) > 20:
+        recent_v_ego = [s for s in self._previous_speeds[-20:] if s is not None]
+        if len(recent_v_ego) > 10:
+          speed_variance = np.var(recent_v_ego)
+          # High speed variance with low average speed indicates stop-and-go
+          avg_speed = sum(recent_v_ego) / len(recent_v_ego)
+          if speed_variance > 10.0 and avg_speed < 8.0:
+            congestion_indicators += 1
+
+      # Store current data for future trend analysis
+      if not hasattr(self, '_previous_speeds'):
+        self._previous_speeds = []
+      self._previous_speeds.append(car_state.vEgo)
+      self._previous_speeds = self._previous_speeds[-30:]  # Keep last 30 values
+
+    except (AttributeError, TypeError):
+      pass
+
+    # Determine confidence levels
+    incident_confidence = min(1.0, incident_indicators * 0.3)
+    congestion_confidence = min(1.0, congestion_indicators * 0.3)
+
+    # Determine if an incident or congestion is detected
+    incident_detected = incident_confidence > 0.3
+    congestion_detected = congestion_confidence > 0.3
+
+    # Determine recommended action based on detection
+    recommended_action = 'normal'
+    if incident_detected and congestion_detected:
+      recommended_action = 'caution_and_reduce_speed'
+    elif incident_detected:
+      recommended_action = 'increase_caution'
+    elif congestion_detected:
+      recommended_action = 'prepare_for_stop_and_go'
+
+    return {
+      'incident_detected': incident_detected,
+      'congestion_detected': congestion_detected,
+      'confidence': max(incident_confidence, congestion_confidence),
+      'recommended_action': recommended_action,
+      'incident_confidence': incident_confidence,
+      'congestion_confidence': congestion_confidence
+    }
 
   def handle_unusual_scenarios(self, car_state: car.CarState,
                               radar_state=None, model_data=None) -> dict:
@@ -508,11 +635,18 @@ class EdgeCaseHandler:
       'weather_impact': self.detect_weather_impact(car_state, radar_state, model_data),
       'rough_road': self.detect_rough_road_conditions(car_state),
       'unusual_traffic': self.detect_unusual_traffic_patterns(radar_state, car_state),
+      'traffic_incident': False,
+      'traffic_congestion': False,
       'recommended_speed': car_state.vCruise * 0.8 if car_state.vCruise > 0 else car_state.vEgo,  # Default: reduce speed by 20%
       'caution_required': False,
       'adaptive_control_needed': False,
       'confidence_score': 0.0
     }
+
+    # Enhanced traffic incident and congestion detection
+    traffic_analysis = self.detect_traffic_incident_or_congestion(radar_state, car_state)
+    scenarios['traffic_incident'] = traffic_analysis['incident_detected']
+    scenarios['traffic_congestion'] = traffic_analysis['congestion_detected']
 
     # Set recommended speed based on detected scenarios
     if scenarios['sharp_curve'] and car_state.vEgo > self.sharp_curve_speed_threshold:
@@ -548,6 +682,16 @@ class EdgeCaseHandler:
     if scenarios['unusual_traffic']:
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
+
+    if scenarios['traffic_incident']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      scenarios['recommended_speed'] = min(scenarios['recommended_speed'], car_state.vCruise * 0.5)  # Significant reduction for incidents
+
+    if scenarios['traffic_congestion']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      scenarios['recommended_speed'] = min(scenarios['recommended_speed'], car_state.vCruise * 0.6)  # Moderate reduction for congestion
 
     # Calculate overall confidence in the detection
     positive_detections = sum(1 for k, v in scenarios.items()
@@ -623,12 +767,26 @@ class EdgeCaseHandler:
       modifications['min_gap'] = 3.5             # More distance in unusual traffic
       modifications['caution_mode'] = True
 
+    if scenarios.get('traffic_incident', False):
+      modifications['longitudinal_factor'] = 0.5  # Very conservative for traffic incidents
+      modifications['lateral_factor'] = 0.7       # More careful steering
+      modifications['min_gap'] = 5.0             # Maximum distance for safety
+      modifications['speed_limit_factor'] = 0.4  # Significant speed reduction
+      modifications['caution_mode'] = True
+
+    if scenarios.get('traffic_congestion', False):
+      modifications['longitudinal_factor'] = 0.6  # Conservative for stop-and-go
+      modifications['min_gap'] = 4.0             # More distance for buffer
+      modifications['speed_limit_factor'] = 0.6  # Reduced speed for congestion
+      modifications['steering_sensitivity'] = 0.8  # Reduced sensitivity in dense traffic
+      modifications['caution_mode'] = True
+
     # Apply conservative limits to prevent over-correction
     modifications['longitudinal_factor'] = max(0.3, modifications['longitudinal_factor'])
     modifications['lateral_factor'] = max(0.5, modifications['lateral_factor'])
     modifications['min_gap'] = min(6.0, modifications['min_gap'])  # Don't be too conservative
-    modifications['speed_limit_factor'] = max(0.5, modifications['speed_limit_factor'])
-    modifications['steering_sensitivity'] = max(0.5, modifications['steering_sensitivity'])
+    modifications['speed_limit_factor'] = max(0.3, modifications['speed_limit_factor'])  # Adjusted min for incidents
+    modifications['steering_sensitivity'] = max(0.3, modifications['steering_sensitivity'])  # Adjusted min for traffic
 
     if detected_scenarios:
       cloudlog.debug(f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
