@@ -62,7 +62,7 @@ class SafetyManager:
       # Use defaults if parameters are invalid
       pass
 
-  def monitor_steering_safety(self, car_state: car.CarState, control_output: car.CarControl.ActuatorsOutput) -> bool:
+  def monitor_steering_safety(self, car_state: car.CarState, control_output: car.CarControl.Actuators) -> bool:
     """
     Monitor steering safety by checking for unexpected torques or rapid changes.
     
@@ -97,7 +97,7 @@ class SafetyManager:
     
     return True
 
-  def monitor_longitudinal_safety(self, car_state: car.CarState, control_output: car.CarControl.ActuatorsOutput) -> bool:
+  def monitor_longitudinal_safety(self, car_state: car.CarState, control_output: car.CarControl.Actuators) -> bool:
     """
     Monitor longitudinal safety by checking for unexpected acceleration changes.
     
@@ -178,7 +178,7 @@ class SafetyManager:
     
     return True
 
-  def check_safety_violations(self, car_state: car.CarState, control_output: car.CarControl.ActuatorsOutput, model_data=None) -> tuple[bool, str]:
+  def check_safety_violations(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None) -> tuple[bool, str]:
     """
     Perform comprehensive safety check and return whether the system is safe.
     
@@ -220,7 +220,7 @@ class SafetyManager:
     
     return True, "safe"
 
-  def get_safety_recommendation(self, car_state: car.CarState, control_output: car.CarControl.ActuatorsOutput, model_data=None) -> log.SelfdriveState.AlertStatus:
+  def get_safety_recommendation(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None) -> log.SelfdriveState.AlertStatus:
     """
     Get safety-based alert recommendation for the UI.
     
