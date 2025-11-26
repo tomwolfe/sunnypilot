@@ -33,6 +33,7 @@ _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on 
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
 # depending on the actual maximum absolute lateral acceleration predicted on the turn ahead.
+# The new middle point (2.0 m/s² -> -0.6 m/s²) provides smoother transition for medium curves
 _ENTERING_SMOOTH_DECEL_V = [-0.2, -0.6, -1.]  # min decel value allowed on ENTERING state
 _ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.]  # absolute value of lat acc ahead
 
@@ -176,7 +177,9 @@ class SmartCruiseControlVision:
       a_target = np.interp(self.current_lat_acc, _TURNING_ACC_BP, _TURNING_ACC_V)
     # LEAVING
     elif self.state == VisionState.leaving:
-      # When leaving, we provide a comfortable acceleration to regain speed.
+      # When leaving, we provide interpolated acceleration to smoothly regain speed.
+      # As lateral acceleration decreases, gradually reduce positive acceleration from _LEAVING_ACC to 0.2 m/s²
+      # This creates a more natural and comfortable transition as the vehicle exits the turn
       a_target = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
                            [_LEAVING_ACC, 0.2])
     else:
