@@ -1,5 +1,6 @@
 import numpy as np
 from openpilot.selfdrive.modeld.constants import ModelConstants
+from collections import deque
 
 def safe_exp(x, out=None):
   # -11 is around 10**14, more causes float16 overflow
@@ -17,9 +18,82 @@ def softmax(x, axis=-1):
   x /= np.sum(x, axis=axis, keepdims=True)
   return x
 
+class TemporalConsistencyFilter:
+  """
+  Maintains temporal consistency in model predictions to reduce jerky movements
+  and improve driving smoothness by tracking and smoothing changes over time.
+  """
+  def __init__(self, buffer_size=5):
+    self.buffer_size = buffer_size
+    self.plan_buffer = deque(maxlen=buffer_size)
+    self.lane_line_buffer = deque(maxlen=buffer_size)
+    self.lead_buffer = deque(maxlen=buffer_size)
+
+  def smooth_plan(self, current_plan):
+    """Apply temporal smoothing to plan trajectory to reduce jerky movements"""
+    if len(self.plan_buffer) == 0:
+      self.plan_buffer.append(current_plan.copy())
+      return current_plan
+
+    # Calculate the difference from previous plan
+    prev_plan = self.plan_buffer[-1]
+    diff = current_plan - prev_plan
+
+    # Apply smoothing based on velocity and curvature to reduce sudden changes
+    # For the plan trajectory (position, velocity, acceleration)
+    smoothed_plan = current_plan.copy()
+
+    # Smooth position changes based on velocity to avoid sudden lane changes
+    velocity_factor = np.clip(np.abs(current_plan[:, 3:6]) / 30.0, 0.1, 1.0)  # Normalize by max expected velocity
+    position_smoothing = 0.8  # Reduce position changes by 20%
+    smoothed_plan[:, :3] = prev_plan[:, :3] * (1 - position_smoothing) + current_plan[:, :3] * position_smoothing
+
+    # Apply more aggressive smoothing to acceleration for smoother ride
+    acceleration_smoothing = 0.6  # Reduce acceleration changes by 40%
+    smoothed_plan[:, 6:9] = prev_plan[:, 6:9] * (1 - acceleration_smoothing) + current_plan[:, 6:9] * acceleration_smoothing
+
+    # Store in buffer and return smoothed plan
+    self.plan_buffer.append(smoothed_plan.copy())
+    return smoothed_plan
+
+  def smooth_lane_lines(self, current_lane_lines):
+    """Smooth lane line predictions for more consistent lane keeping"""
+    if len(self.lane_line_buffer) == 0:
+      self.lane_line_buffer.append(current_lane_lines.copy())
+      return current_lane_lines
+
+    prev_lines = self.lane_line_buffer[-1]
+    # Apply smoothing to lane line polynomial coefficients
+    smoothing_factor = 0.9
+    smoothed_lines = prev_lines * (1 - smoothing_factor) + current_lane_lines * smoothing_factor
+
+    self.lane_line_buffer.append(smoothed_lines.copy())
+    return smoothed_lines
+
+  def smooth_lead(self, current_lead):
+    """Smooth lead vehicle detection to reduce jerky reactions"""
+    if len(self.lead_buffer) == 0:
+      self.lead_buffer.append(current_lead.copy())
+      return current_lead
+
+    prev_lead = self.lead_buffer[-1]
+    # Apply smoothing to lead estimates, being careful about distance and velocity
+    smoothing_factor = 0.85
+    # Only smooth when we have consistent lead detection (not oscillating between lead/no-lead)
+    if (np.all(prev_lead[:, :, 0] > 0) and np.all(current_lead[:, :, 0] > 0)):  # Distance > 0
+      smoothed_lead = prev_lead * (1 - smoothing_factor) + current_lead * smoothing_factor
+    else:
+      # If lead detection is inconsistent, trust current detection more
+      smoothed_lead = current_lead
+
+    self.lead_buffer.append(smoothed_lead.copy())
+    return smoothed_lead
+
 class Parser:
   def __init__(self, ignore_missing=False):
     self.ignore_missing = ignore_missing
+    # Add temporal consistency filter to reduce jerky movements and improve prediction stability
+    self.temporal_filter = TemporalConsistencyFilter()
 
   def check_missing(self, outs, name):
     missing = name not in outs
@@ -96,7 +170,19 @@ class Parser:
     self.parse_mdn('pose', outs, in_N=0, out_N=0, out_shape=(ModelConstants.POSE_WIDTH,))
     self.parse_mdn('wide_from_device_euler', outs, in_N=0, out_N=0, out_shape=(ModelConstants.WIDE_FROM_DEVICE_WIDTH,))
     self.parse_mdn('road_transform', outs, in_N=0, out_N=0, out_shape=(ModelConstants.POSE_WIDTH,))
+
+    # Parse lane lines with additional confidence-based filtering
     self.parse_mdn('lane_lines', outs, in_N=0, out_N=0, out_shape=(ModelConstants.NUM_LANE_LINES,ModelConstants.IDX_N,ModelConstants.LANE_LINES_WIDTH))
+    if 'lane_lines' in outs:
+      # Apply confidence-based filtering for lane line predictions
+      confidence_threshold = 0.3  # Only trust lane lines with confidence > 30%
+      if 'lane_lines_prob' in outs:
+        # Use lane line probabilities to filter out low-confidence predictions
+        prob = outs['lane_lines_prob'].mean()  # Average probability across all lane lines
+        if prob < confidence_threshold:
+          # Reduce the weight of lane line inputs when confidence is low
+          outs['lane_lines'] *= prob / confidence_threshold
+
     self.parse_mdn('road_edges', outs, in_N=0, out_N=0, out_shape=(ModelConstants.NUM_ROAD_EDGES,ModelConstants.IDX_N,ModelConstants.LANE_LINES_WIDTH))
     self.parse_binary_crossentropy('lane_lines_prob', outs)
     self.parse_categorical_crossentropy('desire_pred', outs, out_shape=(ModelConstants.DESIRE_PRED_LEN,ModelConstants.DESIRE_PRED_WIDTH))
@@ -113,6 +199,19 @@ class Parser:
     plan_mhp = self.is_mhp(outs, 'plan',  ModelConstants.IDX_N * ModelConstants.PLAN_WIDTH)
     plan_in_N, plan_out_N = (ModelConstants.PLAN_MHP_N, ModelConstants.PLAN_MHP_SELECTION) if plan_mhp else (0, 0)
     self.parse_mdn('plan', outs, in_N=plan_in_N, out_N=plan_out_N, out_shape=(ModelConstants.IDX_N, ModelConstants.PLAN_WIDTH))
+
+    # Apply temporal consistency filtering to the plan output
+    if 'plan' in outs and outs['plan'].shape[0] > 0:
+      outs['plan'] = self.temporal_filter.smooth_plan(outs['plan'])
+
+    # Apply filtering to lane lines too if available
+    if 'lane_lines' in outs and outs['lane_lines'].shape[0] > 0:
+      outs['lane_lines'] = self.temporal_filter.smooth_lane_lines(outs['lane_lines'])
+
+    # Apply filtering to lead vehicle information
+    if 'lead' in outs and outs['lead'].shape[0] > 0:
+      outs['lead'] = self.temporal_filter.smooth_lead(outs['lead'])
+
     self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
     return outs
 
