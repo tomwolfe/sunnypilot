@@ -915,12 +915,7 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
     # Validate and limit desired curvature based on physical limits
     curvature = model_output['action'].desiredCurvature
-    if abs(curvature) > 0.5:  # Beyond reasonable curvature (radius < 2m at high speed)
-      max_safe_curvature = 0.3  # Conservative limit
-      corrected_curvature = max(-max_safe_curvature, min(max_safe_curvature, curvature))
-      if abs(corrected_curvature - curvature) > 0.001:
-        modifications_made.append(f"Curvature limited from {curvature:.4f} to {corrected_curvature:.4f}")
-        model_output['action'].desiredCurvature = corrected_curvature
+
 
   if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
     # Validate and limit desired acceleration based on physical limits
@@ -937,13 +932,13 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
     # Add a validation flag to model output to indicate when major corrections were made
     if 'meta' not in model_output:
       model_output['meta'] = {}
-    if not hasattr(model_output['meta'], 'validation_applied'):
+    if 'validation_applied' not in model_output['meta']:
       model_output['meta']['validation_applied'] = True
   else:
     # Set validation flag to false when no changes were needed
     if 'meta' not in model_output:
       model_output['meta'] = {}
-    if not hasattr(model_output['meta'], 'validation_applied'):
+    if 'validation_applied' not in model_output['meta']:
       model_output['meta']['validation_applied'] = False
 
   return model_output

@@ -240,7 +240,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     extended_collision_risk = False
     if (sm['radarState'].leadTwo.status and
         lead_one.dRel < 60.0 and
-        sm['radarState'].leadTwo.dRel < lead_one.dRel + 30.0 and  # Second lead is close behind first
+        sm['radarState'].leadTwo.dRel < lead_one.dRel + 20.0 and  # Second lead is close behind first
         sm['radarState'].leadTwo.vRel < -2.0):  # Second lead is approaching rapidly
         extended_collision_risk = True
 
