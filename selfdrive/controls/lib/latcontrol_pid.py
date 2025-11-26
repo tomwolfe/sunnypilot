@@ -63,6 +63,13 @@ class LatControlPID(LatControl):
       return max_val
     return value
 
+  def _restore_original_pid_gains(self, original_kp_values, original_ki_values):
+    """
+    Restores the original PID gain values after temporary modifications.
+    """
+    self.pid._k_p = (self.pid._k_p[0], original_kp_values)
+    self.pid._k_i = (self.pid._k_i[0], original_ki_values)
+
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
@@ -137,9 +144,6 @@ class LatControlPID(LatControl):
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
 
-        # Restore original gains after update
-        self.pid._k_p = (self.pid._k_p[0], original_kp_values)
-        self.pid._k_i = (self.pid._k_i[0], original_ki_values)
       else:
         # Speed-adaptive gains for low speeds
         gain_reduction = 1.0 - (1.0 - speed_factor) * 0.3  # Up to 30% gain at very low speeds
@@ -157,9 +161,8 @@ class LatControlPID(LatControl):
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
 
-        # Restore original gains after update
-        self.pid._k_p = (self.pid._k_p[0], original_kp_values)
-        self.pid._k_i = (self.pid._k_i[0], original_ki_values)
+      # Restore original gains after update
+      self._restore_original_pid_gains(original_kp_values, original_ki_values)
 
       # Add output rate limiting for even smoother actuation
       if hasattr(self, '_prev_output_torque'):

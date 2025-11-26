@@ -118,7 +118,7 @@ class Controls(ControlsExt):
 
     if hasattr(self.CP, 'centerToFront'):
       # Longer wheelbase vehicles may have different dynamics requiring different processing
-      wheelbase = self.CP.mass * self.CP.wheelbase  # Proxy for vehicle size
+      wheelbase = self.CP.wheelbase  # Proxy for vehicle size
       size_factor = min(1.3, max(0.9, wheelbase / 3000.0))  # Normalize around typical values
       self.vehicle_thermal_model['adaptive_control_damping'] = size_factor
 
@@ -185,7 +185,7 @@ class Controls(ControlsExt):
         thermal_inertia = self.vehicle_thermal_model['thermal_inertia_factor']
         smoothing_factor = 0.9 if system_stress <= self.prev_thermal_factor else 0.7
         # Apply vehicle-specific thermal inertia
-        smoothing_factor = smoothing_factor * thermal_inertia + (1 - thermal_inertia) * 0.9
+        smoothing_factor *= thermal_inertia
         self.thermal_performance_factor = (smoothing_factor * self.prev_thermal_factor +
                                           (1 - smoothing_factor) * system_stress)
       else:
