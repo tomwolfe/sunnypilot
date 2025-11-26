@@ -11,7 +11,6 @@ import numpy as np
 from cereal import car, log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
-from opendbc.car.interfaces import LatCtrlState, StateTrans
 from openpilot.common.swaglog import cloudlog
 
 
