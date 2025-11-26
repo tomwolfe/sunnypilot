@@ -69,17 +69,20 @@ class TestVisionController(unittest.TestCase):
 
   def test_smoother_turn_entry_and_exit(self):
     vision_controller = SmartCruiseControlVision()
-    # Need to set the controller as enabled to make it transition to enabled state
+    # Directly enable the feature since in test environment params may not work as expected
+    # The enabled property is read from params in real system, but we override for testing
     vision_controller.enabled = True
 
     v_ego = 20.0
     a_ego = 0.0
     v_cruise_setpoint = 25.0
 
-    # First, enable the controller to move to the enabled state
+    # First, enable the controller by calling update with long_enabled=True
     sm = self._create_mock_sm(v_ego, np.zeros(len(ModelConstants.T_IDXS)), 0.0)
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
-    self.assertEqual(vision_controller.state, VisionState.enabled)
+    # The state should now be enabled (1) since both long_enabled=True and enabled=True
+    self.assertEqual(vision_controller.state, VisionState.enabled,
+                     f"Expected enabled state (1), got {vision_controller.state}")
 
     # Test Entering state with smoother deceleration
     # Simulate a predicted curve that should trigger the new mid-point in the lookup table
@@ -91,7 +94,8 @@ class TestVisionController(unittest.TestCase):
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
     # After update, the controller should have transitioned if max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH
     # Since max_pred_lat_acc is 2.0 and threshold is 1.3, it should transition to entering
-    self.assertIn(vision_controller.state, [VisionState.entering, VisionState.enabled])  # It may stay in enabled if other conditions aren't met
+    self.assertIn(vision_controller.state, [VisionState.entering, VisionState.enabled],
+                  f"Expected entering (2) or enabled (1), got {vision_controller.state}")
 
     # Now let's force a test where we know the entering state will trigger
     # Set the controller to enabled state first
@@ -132,7 +136,7 @@ class TestVisionController(unittest.TestCase):
   def test_entering_state_lookup_table(self):
     """Test the new 3-point lookup table in the ENTERING state."""
     vision_controller = SmartCruiseControlVision()
-    # Need to set the controller as enabled to make it transition to enabled state
+    # Directly enable the feature since in test environment params may not work as expected
     vision_controller.enabled = True
 
     v_ego = 20.0
@@ -204,7 +208,7 @@ class TestVisionController(unittest.TestCase):
   def test_speed_dependent_behavior(self):
     """Test the new speed-dependent acceleration scaling."""
     vision_controller = SmartCruiseControlVision()
-    # Need to set the controller as enabled to make it transition to enabled state
+    # Directly enable the feature since in test environment params may not work as expected
     vision_controller.enabled = True
 
     a_ego = 0.0
