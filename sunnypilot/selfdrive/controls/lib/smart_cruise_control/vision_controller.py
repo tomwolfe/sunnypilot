@@ -45,9 +45,14 @@ _ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.]  # absolute value of lat acc ahead
 _TURNING_ACC_V = [0.5, 0., -0.4]  # acc value
 _TURNING_ACC_BP = [1.5, 2.3, 3.]  # absolute value of current lat acc
 
-_LEAVING_ACC = 0.5  # Conformable acceleration to regain speed while leaving a turn.
+_LEAVING_ACC = 0.5  # Base acceleration to regain speed while leaving a turn.
 # This value was empirically determined to balance smooth acceleration and timely speed recovery
 # after exiting a turn, contributing to a more natural driving sensation.
+
+# Speed-dependent parameters for enhanced curve handling
+# These values scale the acceleration parameters based on vehicle speed to better account
+# for vehicle dynamics at different speeds
+_SPEED_ADAPTATION_FACTOR = 1.0  # Adjusts the sensitivity of the system based on speed
 
 
 class SmartCruiseControlVision:
@@ -175,7 +180,11 @@ class SmartCruiseControlVision:
     # ENTERING
     elif self.state == VisionState.entering:
       # when not overshooting, target a smooth deceleration in preparation for a sharp turn to come.
-      a_target = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
+      # Apply speed adaptation to better handle different driving conditions
+      base_decel = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
+      # Scale the deceleration based on speed for improved safety and comfort at different speeds
+      speed_factor = max(1.0, self.v_ego / 20.0)  # Gentle scaling based on speed vs. reference speed
+      a_target = base_decel * speed_factor
     # TURNING
     elif self.state == VisionState.turning:
       # When turning, we provide a target acceleration that is comfortable for the lateral acceleration felt.
@@ -188,8 +197,12 @@ class SmartCruiseControlVision:
       # The interpolation range (_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH) and the target acceleration
       # (from _LEAVING_ACC down to 0.2 m/s²) were empirically tuned to provide a gradual, human-like
       # acceleration profile. Further evaluation may be needed to ensure optimality across all speeds.
-      a_target = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
-                           [_LEAVING_ACC, 0.2])
+      # Apply speed-dependent scaling for better performance at different speeds
+      base_leaving_acc = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
+                                   [_LEAVING_ACC, 0.2])
+      # Adjust leaving acceleration based on current speed to improve comfort
+      speed_factor = min(1.2, self.v_ego / 15.0) if self.v_ego > 0 else 1.0  # Cap the adjustment factor
+      a_target = base_leaving_acc * speed_factor
     else:
       raise NotImplementedError(f"SCC-V state not supported: {self.state}")
 
