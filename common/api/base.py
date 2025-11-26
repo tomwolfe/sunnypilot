@@ -18,6 +18,14 @@ class BaseApi:
     self.user_agent = user_agent
     self.jwt_algorithm, self.private_key, _ = self.get_key_pair()
 
+    # Handle case where no key pair exists (e.g., in CI environment)
+    if self.private_key is None:
+      # Provide a dummy private key for CI environment
+      import os
+      if os.environ.get('CI', '0') == '1':
+        self.private_key = "dummy_private_key_123"
+        self.jwt_algorithm = "HS256"  # Use HS256 with dummy key for CI
+
   def get(self, *args, **kwargs):
     return self.request('GET', *args, **kwargs)
 

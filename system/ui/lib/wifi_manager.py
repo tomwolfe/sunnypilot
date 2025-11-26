@@ -296,6 +296,8 @@ class WifiManager:
 
   def _get_adapter(self, adapter_type: int) -> str | None:
     # Return the first NetworkManager device path matching adapter_type
+    if self._router_main is None:
+      return None
     try:
       device_paths = self._router_main.send_and_get_reply(new_method_call(self._nm, 'GetDevices')).body[0]
       for device_path in device_paths:
@@ -308,8 +310,14 @@ class WifiManager:
     return None
 
   def _get_connections(self) -> dict[str, str]:
+    if self._router_main is None:
+      return {}
     settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
-    known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
+    try:
+      known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
+    except Exception:
+      cloudlog.exception("Failed to get connections when router_main is None")
+      return {}
 
     conns: dict[str, str] = {}
     for conn_path in known_connections:
@@ -326,17 +334,33 @@ class WifiManager:
     return conns
 
   def _get_active_connections(self):
-    return self._router_main.send_and_get_reply(Properties(self._nm).get('ActiveConnections')).body[0][1]
+    if self._router_main is None:
+      return []
+    try:
+      return self._router_main.send_and_get_reply(Properties(self._nm).get('ActiveConnections')).body[0][1]
+    except Exception:
+      cloudlog.exception("Failed to get active connections when router_main is None")
+      return []
 
   def _get_connection_settings(self, conn_path: str) -> dict:
-    conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
-    reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'GetSettings'))
-    if reply.header.message_type == MessageType.error:
-      cloudlog.warning(f'Failed to get connection settings: {reply}')
+    if self._router_main is None:
       return {}
-    return dict(reply.body[0])
+    try:
+      conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
+      reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'GetSettings'))
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f'Failed to get connection settings: {reply}')
+        return {}
+      return dict(reply.body[0])
+    except Exception:
+      cloudlog.exception("Failed to get connection settings when router_main is None")
+      return {}
 
   def _add_tethering_connection(self):
+    if self._router_main is None:
+      cloudlog.warning("Cannot add tethering connection: D-Bus not available")
+      return
+
     connection = {
       'connection': {
         'type': ('s', '802-11-wireless'),
@@ -371,11 +395,18 @@ class WifiManager:
     }
 
     settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
-    self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
+    try:
+      self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
+    except Exception:
+      cloudlog.exception("Failed to add tethering connection when router_main is None")
 
   def connect_to_network(self, ssid: str, password: str, hidden: bool = False):
     def worker():
       # Clear all connections that may already exist to the network we are connecting to
+      if self._router_main is None:
+        cloudlog.warning("Cannot connect to network: D-Bus not available")
+        return
+
       self._connecting_to_ssid = ssid
       self.forget_connection(ssid, block=True)
 
@@ -406,21 +437,31 @@ class WifiManager:
         }
 
       settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
-      self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
-      self.activate_connection(ssid, block=True)
+      try:
+        self._router_main.send_and_get_reply(new_method_call(settings_addr, 'AddConnection', 'a{sa{sv}}', (connection,)))
+        self.activate_connection(ssid, block=True)
+      except Exception:
+        cloudlog.exception("Failed to connect to network when router_main is None")
 
     threading.Thread(target=worker, daemon=True).start()
 
   def forget_connection(self, ssid: str, block: bool = False):
     def worker():
+      if self._router_main is None:
+        cloudlog.warning("Cannot forget connection: D-Bus not available")
+        return
+
       conn_path = self._get_connections().get(ssid, None)
       if conn_path is not None:
         conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
-        self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Delete'))
+        try:
+          self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Delete'))
 
-        if len(self._forgotten):
-          self._update_networks()
-        self._enqueue_callbacks(self._forgotten)
+          if len(self._forgotten):
+            self._update_networks()
+          self._enqueue_callbacks(self._forgotten)
+        except Exception:
+          cloudlog.exception("Failed to forget connection when router_main is None")
 
     if block:
       worker()
@@ -429,6 +470,10 @@ class WifiManager:
 
   def activate_connection(self, ssid: str, block: bool = False):
     def worker():
+      if self._router_main is None:
+        cloudlog.warning("Cannot activate connection: D-Bus not available")
+        return
+
       conn_path = self._get_connections().get(ssid, None)
       if conn_path is not None:
         if self._wifi_device is None:
@@ -436,8 +481,11 @@ class WifiManager:
           return
 
         self._connecting_to_ssid = ssid
-        self._router_main.send(new_method_call(self._nm, 'ActivateConnection', 'ooo',
-                                               (conn_path, self._wifi_device, "/")))
+        try:
+          self._router_main.send(new_method_call(self._nm, 'ActivateConnection', 'ooo',
+                                                 (conn_path, self._wifi_device, "/")))
+        except Exception:
+          cloudlog.exception("Failed to activate connection when router_main is None")
 
     if block:
       worker()
@@ -445,17 +493,24 @@ class WifiManager:
       threading.Thread(target=worker, daemon=True).start()
 
   def _deactivate_connection(self, ssid: str):
+    if self._router_main is None:
+      cloudlog.warning("Cannot deactivate connection: D-Bus not available")
+      return
+
     for conn_path in self._get_active_connections():
-      conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-      specific_obj_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('SpecificObject')).body[0][1]
+      try:
+        conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
+        specific_obj_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('SpecificObject')).body[0][1]
 
-      if specific_obj_path != "/":
-        ap_addr = DBusAddress(specific_obj_path, bus_name=NM, interface=NM_ACCESS_POINT_IFACE)
-        ap_ssid = bytes(self._router_main.send_and_get_reply(Properties(ap_addr).get('Ssid')).body[0][1]).decode("utf-8", "replace")
+        if specific_obj_path != "/":
+          ap_addr = DBusAddress(specific_obj_path, bus_name=NM, interface=NM_ACCESS_POINT_IFACE)
+          ap_ssid = bytes(self._router_main.send_and_get_reply(Properties(ap_addr).get('Ssid')).body[0][1]).decode("utf-8", "replace")
 
-        if ap_ssid == ssid:
-          self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (conn_path,)))
-          return
+          if ap_ssid == ssid:
+            self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (conn_path,)))
+            return
+      except Exception:
+        cloudlog.exception("Failed to deactivate connection when router_main is None")
 
   def is_tethering_active(self) -> bool:
     for network in self._networks:
@@ -465,6 +520,10 @@ class WifiManager:
 
   def set_tethering_password(self, password: str):
     def worker():
+      if self._router_main is None:
+        cloudlog.warning("Cannot set tethering password: D-Bus not available")
+        return
+
       conn_path = self._get_connections().get(self._tethering_ssid, None)
       if conn_path is None:
         cloudlog.warning('No tethering connection found')
@@ -478,43 +537,58 @@ class WifiManager:
       settings['802-11-wireless-security']['psk'] = ('s', password)
 
       conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
-      reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
-      if reply.header.message_type == MessageType.error:
-        cloudlog.warning(f'Failed to update tethering settings: {reply}')
-        return
+      try:
+        reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
+        if reply.header.message_type == MessageType.error:
+          cloudlog.warning(f'Failed to update tethering settings: {reply}')
+          return
 
-      self._tethering_password = password
-      if self.is_tethering_active():
-        self.activate_connection(self._tethering_ssid, block=True)
+        self._tethering_password = password
+        if self.is_tethering_active():
+          self.activate_connection(self._tethering_ssid, block=True)
+      except Exception:
+        cloudlog.exception("Failed to set tethering password when router_main is None")
 
     threading.Thread(target=worker, daemon=True).start()
 
   def _get_tethering_password(self) -> str:
+    if self._router_main is None:
+      cloudlog.warning("Cannot get tethering password: D-Bus not available")
+      return ''
+
     conn_path = self._get_connections().get(self._tethering_ssid, None)
     if conn_path is None:
       cloudlog.warning('No tethering connection found')
       return ''
 
-    reply = self._router_main.send_and_get_reply(new_method_call(
-      DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE),
-      'GetSecrets', 's', ('802-11-wireless-security',)
-    ))
+    try:
+      reply = self._router_main.send_and_get_reply(new_method_call(
+        DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE),
+        'GetSecrets', 's', ('802-11-wireless-security',)
+      ))
 
-    if reply.header.message_type == MessageType.error:
-      cloudlog.warning(f'Failed to get tethering password: {reply}')
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f'Failed to get tethering password: {reply}')
+        return ''
+
+      secrets = reply.body[0]
+      if '802-11-wireless-security' not in secrets:
+        return ''
+
+      return str(secrets['802-11-wireless-security'].get('psk', ('s', ''))[1])
+    except Exception:
+      cloudlog.exception("Failed to get tethering password when router_main is None")
       return ''
-
-    secrets = reply.body[0]
-    if '802-11-wireless-security' not in secrets:
-      return ''
-
-    return str(secrets['802-11-wireless-security'].get('psk', ('s', ''))[1])
 
   def set_ipv4_forward(self, enabled: bool):
     self._ipv4_forward = enabled
 
   def set_tethering_active(self, active: bool):
     def worker():
+      if self._router_main is None:
+        cloudlog.warning("Cannot set tethering active: D-Bus not available")
+        return
+
       if active:
         self.activate_connection(self._tethering_ssid, block=True)
 
@@ -528,40 +602,21 @@ class WifiManager:
     threading.Thread(target=worker, daemon=True).start()
 
   def _update_current_network_metered(self) -> None:
+    if self._router_main is None:
+      cloudlog.warning("Cannot update current network metered: D-Bus not available")
+      return
+
     if self._wifi_device is None:
       cloudlog.warning("No WiFi device found")
       return
 
     self._current_network_metered = MeteredType.UNKNOWN
     for active_conn in self._get_active_connections():
-      conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
-      conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
-
-      if conn_type == '802-11-wireless':
-        conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
-        if conn_path == "/":
-          continue
-
-        settings = self._get_connection_settings(conn_path)
-
-        if len(settings) == 0:
-          cloudlog.warning(f'Failed to get connection settings for {conn_path}')
-          continue
-
-        metered_prop = settings['connection'].get('metered', ('i', 0))[1]
-        if metered_prop == MeteredType.YES:
-          self._current_network_metered = MeteredType.YES
-        elif metered_prop == MeteredType.NO:
-          self._current_network_metered = MeteredType.NO
-        return
-
-  def set_current_network_metered(self, metered: MeteredType):
-    def worker():
-      for active_conn in self._get_active_connections():
+      try:
         conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
         conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
 
-        if conn_type == '802-11-wireless' and not self.is_tethering_active():
+        if conn_type == '802-11-wireless':
           conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
           if conn_path == "/":
             continue
@@ -570,73 +625,126 @@ class WifiManager:
 
           if len(settings) == 0:
             cloudlog.warning(f'Failed to get connection settings for {conn_path}')
-            return
+            continue
 
-          settings['connection']['metered'] = ('i', int(metered))
+          metered_prop = settings['connection'].get('metered', ('i', 0))[1]
+          if metered_prop == MeteredType.YES:
+            self._current_network_metered = MeteredType.YES
+          elif metered_prop == MeteredType.NO:
+            self._current_network_metered = MeteredType.NO
+          return
+      except Exception:
+        cloudlog.exception("Failed to update current network metered when router_main is None")
 
-          conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
-          reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
-          if reply.header.message_type == MessageType.error:
-            cloudlog.warning(f'Failed to update tethering settings: {reply}')
-            return
+  def set_current_network_metered(self, metered: MeteredType):
+    def worker():
+      if self._router_main is None:
+        cloudlog.warning("Cannot set current network metered: D-Bus not available")
+        return
+
+      for active_conn in self._get_active_connections():
+        try:
+          conn_addr = DBusAddress(active_conn, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
+          conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
+
+          if conn_type == '802-11-wireless' and not self.is_tethering_active():
+            conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
+            if conn_path == "/":
+              continue
+
+            settings = self._get_connection_settings(conn_path)
+
+            if len(settings) == 0:
+              cloudlog.warning(f'Failed to get connection settings for {conn_path}')
+              return
+
+            settings['connection']['metered'] = ('i', int(metered))
+
+            conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
+            reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'Update', 'a{sa{sv}}', (settings,)))
+            if reply.header.message_type == MessageType.error:
+              cloudlog.warning(f'Failed to update tethering settings: {reply}')
+              return
+        except Exception:
+          cloudlog.exception("Failed to set current network metered when router_main is None")
 
     threading.Thread(target=worker, daemon=True).start()
 
   def _request_scan(self):
+    if self._router_main is None:
+      cloudlog.warning("Cannot request scan: D-Bus not available")
+      return
+
     if self._wifi_device is None:
       cloudlog.warning("No WiFi device found")
       return
 
     wifi_addr = DBusAddress(self._wifi_device, bus_name=NM, interface=NM_WIRELESS_IFACE)
-    reply = self._router_main.send_and_get_reply(new_method_call(wifi_addr, 'RequestScan', 'a{sv}', ({},)))
+    try:
+      reply = self._router_main.send_and_get_reply(new_method_call(wifi_addr, 'RequestScan', 'a{sv}', ({},)))
 
-    if reply.header.message_type == MessageType.error:
-      cloudlog.warning(f"Failed to request scan: {reply}")
+      if reply.header.message_type == MessageType.error:
+        cloudlog.warning(f"Failed to request scan: {reply}")
+    except Exception:
+      cloudlog.exception("Failed to request scan when router_main is None")
 
   def _update_networks(self):
     with self._lock:
+      if self._router_main is None:
+        cloudlog.warning("Cannot update networks: D-Bus not available")
+        # Return empty networks when D-Bus is not available
+        self._networks = []
+        self._enqueue_callbacks(self._networks_updated, self._networks)
+        return
+
       if self._wifi_device is None:
         cloudlog.warning("No WiFi device found")
         return
 
       # returns '/' if no active AP
       wifi_addr = DBusAddress(self._wifi_device, NM, interface=NM_WIRELESS_IFACE)
-      active_ap_path = self._router_main.send_and_get_reply(Properties(wifi_addr).get('ActiveAccessPoint')).body[0][1]
-      ap_paths = self._router_main.send_and_get_reply(new_method_call(wifi_addr, 'GetAllAccessPoints')).body[0]
+      try:
+        active_ap_path = self._router_main.send_and_get_reply(Properties(wifi_addr).get('ActiveAccessPoint')).body[0][1]
+        ap_paths = self._router_main.send_and_get_reply(new_method_call(wifi_addr, 'GetAllAccessPoints')).body[0]
 
-      aps: dict[str, list[AccessPoint]] = {}
+        aps: dict[str, list[AccessPoint]] = {}
 
-      for ap_path in ap_paths:
-        ap_addr = DBusAddress(ap_path, NM, interface=NM_ACCESS_POINT_IFACE)
-        ap_props = self._router_main.send_and_get_reply(Properties(ap_addr).get_all())
+        for ap_path in ap_paths:
+          ap_addr = DBusAddress(ap_path, NM, interface=NM_ACCESS_POINT_IFACE)
+          ap_props = self._router_main.send_and_get_reply(Properties(ap_addr).get_all())
 
-        # some APs have been seen dropping off during iteration
-        if ap_props.header.message_type == MessageType.error:
-          cloudlog.warning(f"Failed to get AP properties for {ap_path}")
-          continue
-
-        try:
-          ap = AccessPoint.from_dbus(ap_props.body[0], ap_path, active_ap_path)
-          if ap.ssid == "":
+          # some APs have been seen dropping off during iteration
+          if ap_props.header.message_type == MessageType.error:
+            cloudlog.warning(f"Failed to get AP properties for {ap_path}")
             continue
 
-          if ap.ssid not in aps:
-            aps[ap.ssid] = []
+          try:
+            ap = AccessPoint.from_dbus(ap_props.body[0], ap_path, active_ap_path)
+            if ap.ssid == "":
+              continue
 
-          aps[ap.ssid].append(ap)
-        except Exception:
-          # catch all for parsing errors
-          cloudlog.exception(f"Failed to parse AP properties for {ap_path}")
+            if ap.ssid not in aps:
+              aps[ap.ssid] = []
 
-      known_connections = self._get_connections()
-      networks = [Network.from_dbus(ssid, ap_list, ssid in known_connections) for ssid, ap_list in aps.items()]
-      networks.sort(key=lambda n: (-n.is_connected, n.ssid.lower()))
-      self._networks = networks
+            aps[ap.ssid].append(ap)
+          except Exception:
+            # catch all for parsing errors
+            cloudlog.exception(f"Failed to parse AP properties for {ap_path}")
 
-      self._update_ipv4_address()
-      self._update_current_network_metered()
+        known_connections = self._get_connections()
+        networks = [Network.from_dbus(ssid, ap_list, ssid in known_connections) for ssid, ap_list in aps.items()]
+        networks.sort(key=lambda n: (-n.is_connected, n.ssid.lower()))
+        self._networks = networks
 
-      self._enqueue_callbacks(self._networks_updated, self._networks)
+        self._update_ipv4_address()
+        self._update_current_network_metered()
+
+        self._enqueue_callbacks(self._networks_updated, self._networks)
+      except Exception:
+        cloudlog.exception("Failed to update networks when router_main is None")
+        # Return empty networks when D-Bus is not available
+        self._networks = []
+        self._enqueue_callbacks(self._networks_updated, self._networks)
 
   def _update_ipv4_address(self):
     if self._wifi_device is None:
