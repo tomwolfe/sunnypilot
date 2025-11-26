@@ -19,10 +19,27 @@ def test_improved_longitudinal_control_jerk_limiting():
   class MockCarParamsSP:
     enableGasInterceptor = False
     neuralNetworkLateralControl = type('obj', (object,), {'model': type('obj', (object,), {'path': ''})})()
-  
+
+  # Create mock params to avoid parameter lookup errors
+  class MockParams:
+    def get(self, key):
+      # Return default values for the parameters LongControl tries to access
+      param_defaults = {
+        "LongitudinalMaxJerk": "2.2",
+        "LongitudinalMaxStoppingJerk": "1.5",
+        "LongitudinalMaxOutputJerk": "2.0",
+        "LongitudinalStartingSpeedThreshold": "3.0",
+        "LongitudinalStartingAccelMultiplier": "0.8",
+        "LongitudinalStartingAccelLimit": "0.8",
+        "LongitudinalAdaptiveErrorThreshold": "0.6",
+        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+      }
+      return param_defaults.get(key, None)
+
   CP_SP = MockCarParamsSP()
-  
-  long_control = LongControl(CP, CP_SP)
+  mock_params = MockParams()
+
+  long_control = LongControl(CP, CP_SP, params=mock_params)
   
   # Simulate car state
   CS = car.CarState.new_message()
@@ -36,9 +53,9 @@ def test_improved_longitudinal_control_jerk_limiting():
   
   # Update with first target
   output_accel_1 = long_control.update(True, CS, a_target_1, False, accel_limits)
-  
+
   # Update with second target (should be jerk-limited)
-  CS.aEgo = output_accel_1  # Update ego acceleration
+  CS.aEgo = float(output_accel_1)  # Update ego acceleration, convert numpy.float64 to Python float
   output_accel_2 = long_control.update(True, CS, a_target_2, False, accel_limits)
   
   # Verify that acceleration doesn't change too rapidly due to jerk limiting
@@ -56,14 +73,31 @@ def test_adaptive_pid_in_longitudinal_control():
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
-  
+
   class MockCarParamsSP:
     enableGasInterceptor = False
     neuralNetworkLateralControl = type('obj', (object,), {'model': type('obj', (object,), {'path': ''})})()
-  
+
+  # Create mock params to avoid parameter lookup errors
+  class MockParams:
+    def get(self, key):
+      # Return default values for the parameters LongControl tries to access
+      param_defaults = {
+        "LongitudinalMaxJerk": "2.2",
+        "LongitudinalMaxStoppingJerk": "1.5",
+        "LongitudinalMaxOutputJerk": "2.0",
+        "LongitudinalStartingSpeedThreshold": "3.0",
+        "LongitudinalStartingAccelMultiplier": "0.8",
+        "LongitudinalStartingAccelLimit": "0.8",
+        "LongitudinalAdaptiveErrorThreshold": "0.6",
+        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+      }
+      return param_defaults.get(key, None)
+
   CP_SP = MockCarParamsSP()
-  
-  long_control = LongControl(CP, CP_SP)
+  mock_params = MockParams()
+
+  long_control = LongControl(CP, CP_SP, params=mock_params)
   
   # Set up test conditions for adaptive control
   CS = car.CarState.new_message()
@@ -91,14 +125,31 @@ def test_low_speed_crawl_control():
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
-  
+
   class MockCarParamsSP:
     enableGasInterceptor = False
     neuralNetworkLateralControl = type('obj', (object,), {'model': type('obj', (object,), {'path': ''})})()
-  
+
+  # Create mock params to avoid parameter lookup errors
+  class MockParams:
+    def get(self, key):
+      # Return default values for the parameters LongControl tries to access
+      param_defaults = {
+        "LongitudinalMaxJerk": "2.2",
+        "LongitudinalMaxStoppingJerk": "1.5",
+        "LongitudinalMaxOutputJerk": "2.0",
+        "LongitudinalStartingSpeedThreshold": "3.0",
+        "LongitudinalStartingAccelMultiplier": "0.8",
+        "LongitudinalStartingAccelLimit": "0.8",
+        "LongitudinalAdaptiveErrorThreshold": "0.6",
+        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+      }
+      return param_defaults.get(key, None)
+
   CP_SP = MockCarParamsSP()
-  
-  long_control = LongControl(CP, CP_SP)
+  mock_params = MockParams()
+
+  long_control = LongControl(CP, CP_SP, params=mock_params)
   
   # Test at very low speed (should apply additional smoothing)
   CS = car.CarState.new_message()
