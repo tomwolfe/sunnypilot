@@ -604,7 +604,7 @@ class EdgeCaseHandler:
       modifications['min_gap'] = max(modifications['min_gap'], 5.0)             # Maximum distance when sudden objects detected
       modifications['caution_mode'] = True
 
-    if scenarios['weather_impact']:
+    if scenarios.get('weather_impact', False):
       modifications['longitudinal_factor'] = 0.6  # More conservative longitudinal in weather
       modifications['lateral_factor'] = 0.8      # More conservative lateral in weather
       modifications['min_gap'] = 4.0             # Increase gap significantly in weather

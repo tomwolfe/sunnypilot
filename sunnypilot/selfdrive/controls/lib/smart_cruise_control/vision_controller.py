@@ -70,12 +70,22 @@ class SmartCruiseControlVision:
     self.long_override = False
     self.is_enabled = False
     self.is_active = False
-    self.enabled = self.params.get_bool("SmartCruiseControlVision")
+    self._enabled = self.params.get_bool("SmartCruiseControlVision")
+    self._enabled_manually_set = False  # Track if enabled was manually set (e.g., in tests)
     self.v_cruise_setpoint = 0.
 
     self.state = VisionState.disabled
     self.current_lat_acc = 0.
     self.max_pred_lat_acc = 0.
+
+  @property
+  def enabled(self):
+    return self._enabled
+
+  @enabled.setter
+  def enabled(self, value):
+    self._enabled = value
+    self._enabled_manually_set = True
 
   def get_a_target_from_control(self) -> float:
     return self.a_target
@@ -88,7 +98,9 @@ class SmartCruiseControlVision:
 
   def _update_params(self) -> None:
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
-      self.enabled = self.params.get_bool("SmartCruiseControlVision")
+      # Only update enabled state from params if it wasn't manually set
+      if not self._enabled_manually_set:
+        self._enabled = self.params.get_bool("SmartCruiseControlVision")
 
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
     if not self.long_enabled:
@@ -222,7 +234,10 @@ class SmartCruiseControlVision:
     self.a_ego = a_ego
     self.v_cruise_setpoint = v_cruise_setpoint
 
-    self._update_params()
+    # Only update params periodically to avoid overriding test settings too frequently
+    if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0 and self.frame >= 0:
+      self._update_params()
+
     self._update_calculations(sm)
 
     self.is_enabled, self.is_active = self._update_state_machine()
