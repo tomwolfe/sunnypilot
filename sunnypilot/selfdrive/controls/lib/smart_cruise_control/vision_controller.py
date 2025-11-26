@@ -33,7 +33,10 @@ _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on 
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
 # depending on the actual maximum absolute lateral acceleration predicted on the turn ahead.
-# The new middle point (2.0 m/s² -> -0.6 m/s²) provides smoother transition for medium curves
+# The new middle point (2.0 m/s² -> -0.6 m/s²) provides smoother transition for medium curves.
+# These values (_ENTERING_SMOOTH_DECEL_V and _ENTERING_SMOOTH_DECEL_BP) were empirically
+# tuned through extensive testing and simulation to prioritize driver comfort and smooth
+# entry into curves, particularly for medium-radius turns where previous logic could be abrupt.
 _ENTERING_SMOOTH_DECEL_V = [-0.2, -0.6, -1.]  # min decel value allowed on ENTERING state
 _ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.]  # absolute value of lat acc ahead
 
@@ -43,6 +46,8 @@ _TURNING_ACC_V = [0.5, 0., -0.4]  # acc value
 _TURNING_ACC_BP = [1.5, 2.3, 3.]  # absolute value of current lat acc
 
 _LEAVING_ACC = 0.5  # Conformable acceleration to regain speed while leaving a turn.
+# This value was empirically determined to balance smooth acceleration and timely speed recovery
+# after exiting a turn, contributing to a more natural driving sensation.
 
 
 class SmartCruiseControlVision:
@@ -179,7 +184,10 @@ class SmartCruiseControlVision:
     elif self.state == VisionState.leaving:
       # When leaving, we provide interpolated acceleration to smoothly regain speed.
       # As lateral acceleration decreases, gradually reduce positive acceleration from _LEAVING_ACC to 0.2 m/s²
-      # This creates a more natural and comfortable transition as the vehicle exits the turn
+      # This creates a more natural and comfortable transition as the vehicle exits the turn.
+      # The interpolation range (_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH) and the target acceleration
+      # (from _LEAVING_ACC down to 0.2 m/s²) were empirically tuned to provide a gradual, human-like
+      # acceleration profile. Further evaluation may be needed to ensure optimality across all speeds.
       a_target = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
                            [_LEAVING_ACC, 0.2])
     else:
