@@ -2,6 +2,7 @@
 import math
 import threading
 import time
+from collections import deque
 from numbers import Number
 
 from cereal import car, log
