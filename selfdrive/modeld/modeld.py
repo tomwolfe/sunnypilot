@@ -425,7 +425,16 @@ class ModelState(ModelStateBase):
             outputs['meta'] = {}
           outputs['meta']['confidence_boost'] = 1.0 + (consistent_count / 10.0)  # Small boost for consistency
 
-    return outputs
+    # Apply road model validation to ensure physical reasonableness
+    # This catches physically impossible predictions that could cause safety issues
+    from openpilot.selfdrive.controls.lib.road_model_validator import road_model_validator
+    v_ego = getattr(self, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+    corrected_outputs, is_valid = road_model_validator.validate_model_output(outputs, v_ego)
+
+    if not is_valid:
+      cloudlog.warning("Model output required safety corrections through road model validation")
+
+    return corrected_outputs
 
 
 def main(demo=False):
@@ -690,6 +699,9 @@ def main(demo=False):
                        f"CPU: {cpu_usage_raw:.1f}%")
 
       if model_output is not None:
+        # Store v_ego in the model for validation purposes
+        model._v_ego_for_validation = v_ego
+
         # Add safety checks to model output to ensure valid values
         model_output = _validate_model_output(model_output)
 
@@ -745,40 +757,119 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   Returns:
     Validated model output with safe values
   """
+  import logging
+
+  # Track any modifications made during validation
+  modifications_made = []
+
   # Validate plan outputs
   if 'plan' in model_output:
     plan = model_output['plan']
     # Ensure plan values are within safe bounds
     if isinstance(plan, np.ndarray) and plan.ndim >= 2:
-      # Example: clip acceleration values to safe ranges
-      # Assuming Plan.ACCELERATION and Plan.VELOCITY are defined elsewhere
+      # Clip acceleration values to safe ranges
       if plan.shape[1] > 6:  # Check if acceleration column exists (assuming it's at index 6)
+        original_acc = plan[:, 6].copy()
         # Acceleration should be within reasonable bounds (-5 to 3 m/s^2)
         plan[:, 6] = np.clip(plan[:, 6], -5.0, 3.0)
 
+        # Log if significant modifications were made
+        clipped_indices = np.where(original_acc != plan[:, 6])[0]
+        if len(clipped_indices) > 0:
+          # Calculate percentage of values that were clipped
+          clipped_percentage = len(clipped_indices) / len(original_acc) * 100
+          if clipped_percentage > 1.0:  # Only log if more than 1% of values were modified
+            max_clip = np.max(np.abs(original_acc[clipped_indices] - plan[clipped_indices, 6]))
+            modifications_made.append(f"Acceleration clipping: {clipped_percentage:.1f}% modified, max clip: {max_clip:.2f}")
+
       # Ensure velocity values are physically reasonable
       if plan.shape[1] > 0:  # Check if velocity column exists (assuming it's at index 0)
+        original_vel = plan[:, 0].copy()
         plan[:, 0] = np.clip(plan[:, 0], 0.0, 100.0)  # Max 100 m/s (~360 km/h)
+
+        # Log if significant modifications were made
+        clipped_indices = np.where(original_vel != plan[:, 0])[0]
+        if len(clipped_indices) > 0:
+          clipped_percentage = len(clipped_indices) / len(original_vel) * 100
+          if clipped_percentage > 1.0:  # Only log if more than 1% of values were modified
+            max_clip = np.max(np.abs(original_vel[clipped_indices] - plan[clipped_indices, 0]))
+            modifications_made.append(f"Velocity clipping: {clipped_percentage:.1f}% modified, max clip: {max_clip:.2f}")
 
   # Validate lane line outputs
   if 'laneLines' in model_output:
     lane_lines = model_output['laneLines']
     if isinstance(lane_lines, np.ndarray):
-      # Remove any NaN or infinite values that could cause issues downstream
+      original_lanes = lane_lines.copy()
+      # Remove any NaN or infinite values and clip to reasonable bounds
       lane_lines = np.nan_to_num(lane_lines, nan=0.0, posinf=10.0, neginf=-10.0)
+      # Clip to reasonable bounds for polynomial coefficients
+      lane_lines = np.clip(lane_lines, -10.0, 10.0)
       model_output['laneLines'] = lane_lines
+
+      # Log significant modifications to lane lines
+      modified_mask = np.abs(original_lanes - lane_lines) > 0.001
+      if np.any(modified_mask):
+        modification_percentage = np.sum(modified_mask) / original_lanes.size * 100
+        if modification_percentage > 5.0:  # Only log if more than 5% of values were modified
+          max_mod = np.max(np.abs(original_lanes - lane_lines))
+          modifications_made.append(f"Lane line validation: {modification_percentage:.1f}% modified, max change: {max_mod:.3f}")
 
   # Validate lead outputs
   if 'leadsV3' in model_output:
     leads = model_output['leadsV3']
     if isinstance(leads, np.ndarray):
+      original_leads = leads.copy()
       # Ensure lead distances are positive and within reasonable range
-      # Set invalid distances to None/0 to be handled by downstream logic
+      # Set invalid distances to 0 to be handled by downstream logic
       if leads.size > 0 and leads.ndim > 1:
         for i in range(min(leads.shape[0], 2)):  # Check first two leads
           if leads.shape[1] > 0:  # dRel column exists
             if leads[i, 0] < 0 or leads[i, 0] > 200:  # Invalid distance
               leads[i, 0] = 0  # Set to 0, will be handled downstream
+          # Also validate vRel (relative velocity) and tOffset
+          if leads.shape[1] > 1:  # vRel column exists
+            # Limit relative velocity to reasonable values (-50 to +50 m/s)
+            leads[i, 1] = np.clip(leads[i, 1], -50.0, 50.0)
+          if leads.shape[1] > 2:  # tOffset column exists
+            # Limit tOffset to reasonable values (-5 to +5 seconds)
+            leads[i, 2] = np.clip(leads[i, 2], -5.0, 5.0)
+
+      # Log significant modifications to leads
+      modified_mask = np.abs(original_leads - leads) > 0.001
+      if np.any(modified_mask):
+        modification_percentage = np.sum(modified_mask) / original_leads.size * 100
+        if modification_percentage > 5.0:
+          modifications_made.append(f"Lead validation: {modification_percentage:.1f}% modified")
+
+  # Validate meta outputs (desire state, etc.)
+  if 'meta' in model_output and 'desire_state' in model_output['meta']:
+    desire_state = model_output['meta']['desire_state']
+    if isinstance(desire_state, np.ndarray):
+      original_desire = desire_state.copy()
+      # Ensure desire state probabilities sum to approximately 1 (or are in valid range)
+      desire_state = np.clip(desire_state, 0.0, 1.0)
+      # Normalize if needed to maintain probability distribution
+      if np.sum(desire_state) > 0:
+        model_output['meta']['desire_state'] = desire_state / np.sum(desire_state)
+
+      modified_mask = np.abs(original_desire - model_output['meta']['desire_state']) > 0.001
+      if np.any(modified_mask):
+        modification_percentage = np.sum(modified_mask) / original_desire.size * 100
+        if modification_percentage > 10.0:  # Higher threshold for desire state
+          modifications_made.append(f"Desire state validation: {modification_percentage:.1f}% modified")
+
+  # Log validation modifications if any significant changes were made
+  if modifications_made:
+    cloudlog.warning(f"Model output validation modified significant values: {', '.join(modifications_made)}")
+    # Add a validation flag to model output to indicate when major corrections were made
+    if 'meta' not in model_output:
+      model_output['meta'] = {}
+    model_output['meta']['validation_applied'] = True
+  else:
+    # Set validation flag to false when no changes were needed
+    if 'meta' not in model_output:
+      model_output['meta'] = {}
+    model_output['meta']['validation_applied'] = False
 
   return model_output
 
