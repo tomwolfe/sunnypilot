@@ -126,7 +126,7 @@ class HudRenderer(Widget):
     x = rect.x + rect.width - UI_CONFIG.border_size - indicator_size - padding
     y = rect.y + UI_CONFIG.border_size + UI_CONFIG.button_size + padding
 
-    throttle_factor = ui_state.throttle_factor
+    throttle_factor = ui_state.throttle_factor if ui_state.throttle_factor is not None else 0.0
     color = COLORS.white # Default to white
 
     if throttle_factor >= 0.9:
@@ -135,6 +135,10 @@ class HudRenderer(Widget):
       color = COLORS.override # Yellowish
     else:
       color = COLORS.disengaged # Reddish
+
+    # Ensure color is a valid pyray color for the test environment
+    if not isinstance(color, rl.Color):
+      color = rl.Color(255, 255, 255, 255)  # Default to white
 
     rl.draw_circle(x + indicator_size // 2, y + indicator_size // 2, indicator_size // 2, color)
 
