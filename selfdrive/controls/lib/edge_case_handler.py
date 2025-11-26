@@ -267,56 +267,57 @@ class EdgeCaseHandler:
       scenarios['adaptive_control_needed'] = True
     
     return scenarios
-  
-    def get_adaptive_control_modifications(self, car_state: car.CarState,
-                                         scenarios: dict) -> dict:
-      """
-      Get control modifications to adapt to detected edge cases and scenarios.
-      
-      Args:
-        car_state: Current car state
-        scenarios: Dictionary with detected scenarios from handle_unusual_scenarios
-        
-      Returns:
-        Dictionary with control modifications
-      """
-      modifications = {
-        'longitudinal_factor': 1.0,  # Factor to apply to longitudinal control (0.8 = 20% more conservative)
-        'lateral_factor': 1.0,      # Factor to apply to lateral control
-        'min_gap': 2.0,             # Minimum time gap to maintain
-        'caution_mode': False       # Whether to enable caution mode
-      }
-  
-      # Log detected scenarios for debugging and analysis
-      detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed']]
-      if detected_scenarios:
-        cloudlog.debug(f"EdgeCaseHandler: Detected scenarios: {', '.join(detected_scenarios)}. Applying adaptive control.")
-      
-      if scenarios['caution_required']:
-        modifications['caution_mode'] = True
-        modifications['longitudinal_factor'] = 0.8  # More conservative longitudinal control
-        modifications['lateral_factor'] = 0.9      # More conservative lateral control
-        modifications['min_gap'] = 3.0             # Increase minimum gap to 3 seconds
-        
-      if scenarios['sharp_curve']:
-        modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.7)      # Extra conservative in curves
-        modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.7)
-        
-      if scenarios['construction_zone']:
-        modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.6) # Extra conservative in construction zones
-        modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.8)
-        modifications['min_gap'] = max(modifications['min_gap'], 4.0)             # Extra distance in construction zones
-        
-      if scenarios['sudden_object']:
-        modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.5) # Very conservative when objects detected
-        modifications['min_gap'] = max(modifications['min_gap'], 5.0)             # Maximum distance when sudden objects detected
-  
-      if detected_scenarios:
-        cloudlog.debug(f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
-                        f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, "
-                        f"caution_mode={modifications['caution_mode']}")
-      
-      return modifications
+
+  def get_adaptive_control_modifications(self, car_state: car.CarState,
+                                       scenarios: dict) -> dict:
+    """
+    Get control modifications to adapt to detected edge cases and scenarios.
+
+    Args:
+      car_state: Current car state
+      scenarios: Dictionary with detected scenarios from handle_unusual_scenarios
+
+    Returns:
+      Dictionary with control modifications
+    """
+    modifications = {
+      'longitudinal_factor': 1.0,  # Factor to apply to longitudinal control (0.8 = 20% more conservative)
+      'lateral_factor': 1.0,      # Factor to apply to lateral control
+      'min_gap': 2.0,             # Minimum time gap to maintain
+      'caution_mode': False       # Whether to enable caution mode
+    }
+
+    # Log detected scenarios for debugging and analysis
+    detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed']]
+    if detected_scenarios:
+      cloudlog.debug(f"EdgeCaseHandler: Detected scenarios: {', '.join(detected_scenarios)}. Applying adaptive control.")
+
+    if scenarios['caution_required']:
+      modifications['caution_mode'] = True
+      modifications['longitudinal_factor'] = 0.8  # More conservative longitudinal control
+      modifications['lateral_factor'] = 0.9      # More conservative lateral control
+      modifications['min_gap'] = 3.0             # Increase minimum gap to 3 seconds
+
+    if scenarios['sharp_curve']:
+      modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.7)      # Extra conservative in curves
+      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.7)
+
+    if scenarios['construction_zone']:
+      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.6) # Extra conservative in construction zones
+      modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.8)
+      modifications['min_gap'] = max(modifications['min_gap'], 4.0)             # Extra distance in construction zones
+
+    if scenarios['sudden_object']:
+      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.5) # Very conservative when objects detected
+      modifications['min_gap'] = max(modifications['min_gap'], 5.0)             # Maximum distance when sudden objects detected
+
+    if detected_scenarios:
+      cloudlog.debug(f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
+                      f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, "
+                      f"caution_mode={modifications['caution_mode']}")
+
+    return modifications
+
   def reset_state(self):
     """Reset edge case detection state."""
     self.steering_angle_history.clear()

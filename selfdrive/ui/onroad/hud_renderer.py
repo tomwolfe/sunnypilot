@@ -144,7 +144,7 @@ class HudRenderer(Widget):
       # Handle case when rl.Color isn't properly available
       color = rl.Color(255, 255, 255, 255)  # Default to white
 
-    rl.draw_circle(x + indicator_size // 2, y + indicator_size // 2, indicator_size // 2, color)
+    rl.draw_circle(int(x + indicator_size // 2), int(y + indicator_size // 2), int(indicator_size // 2), color)
 
     button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
     button_y = rect.y + UI_CONFIG.border_size

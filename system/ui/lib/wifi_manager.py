@@ -235,6 +235,15 @@ class WifiManager:
       self._last_network_update = 0.0
 
   def _monitor_state(self):
+    if self._conn_monitor is None:
+      cloudlog.warning("Cannot monitor state: D-Bus not available")
+      while not self._exit:
+        if not self._active:
+          time.sleep(1)
+          continue
+        time.sleep(1)
+      return
+
     rule = MatchRule(
       type="signal",
       interface=NM_DEVICE_IFACE,
@@ -243,7 +252,11 @@ class WifiManager:
     )
 
     # Filter for StateChanged signal
-    self._conn_monitor.send_and_get_reply(message_bus.AddMatch(rule))
+    try:
+      self._conn_monitor.send_and_get_reply(message_bus.AddMatch(rule))
+    except Exception:
+      cloudlog.exception("Error monitoring state when conn_monitor is None")
+      return
 
     with self._conn_monitor.filter(rule, bufsize=SIGNAL_QUEUE_SIZE) as q:
       while not self._exit:
@@ -255,6 +268,10 @@ class WifiManager:
         try:
           msg = self._conn_monitor.recv_until_filtered(q, timeout=1)
         except TimeoutError:
+          continue
+        except Exception:
+          cloudlog.exception("Error receiving filtered message when conn_monitor is None")
+          time.sleep(1)
           continue
 
         new_state, previous_state, change_reason = msg.body
@@ -315,8 +332,8 @@ class WifiManager:
     settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
     try:
       known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
-    except Exception:
-      cloudlog.exception("Failed to get connections when router_main is None")
+    except Exception as e:
+      cloudlog.exception(f"Failed to get connections: {e}")
       return {}
 
     conns: dict[str, str] = {}
@@ -834,6 +851,10 @@ class WifiManager:
     threading.Thread(target=worker, daemon=True).start()
 
   def _get_lte_connection_path(self) -> str | None:
+    if self._router_main is None:
+      cloudlog.warning("Cannot get LTE connection path: D-Bus not available")
+      return None
+
     try:
       settings_addr = DBusAddress(NM_SETTINGS_PATH, bus_name=NM, interface=NM_SETTINGS_IFACE)
       known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
@@ -847,6 +868,10 @@ class WifiManager:
     return None
 
   def _activate_modem_connection(self, connection_path: str):
+    if self._router_main is None:
+      cloudlog.warning("Cannot activate modem connection: D-Bus not available")
+      return
+
     try:
       modem_device = self._get_adapter(NM_DEVICE_TYPE_MODEM)
       if modem_device and connection_path:
@@ -863,7 +888,13 @@ class WifiManager:
         self._state_thread.join()
 
       if self._router_main is not None:
-        self._router_main.close()
-        self._router_main.conn.close()
+        try:
+          self._router_main.close()
+          self._router_main.conn.close()
+        except Exception:
+          cloudlog.exception("Error closing router_main")
       if self._conn_monitor is not None:
-        self._conn_monitor.close()
+        try:
+          self._conn_monitor.close()
+        except Exception:
+          cloudlog.exception("Error closing conn_monitor")
