@@ -137,6 +137,8 @@ class LongControl:
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
+      self.last_output_accel = output_accel
+      return output_accel
 
     elif self.long_control_state == LongCtrlState.stopping:
       # Enhanced stopping with smoother deceleration profile
@@ -149,6 +151,8 @@ class LongControl:
         desired_decel = max_jerk * DT_CTRL
         output_accel = max(output_accel - desired_decel, self.CP.stopAccel)
       self.reset()
+      self.last_output_accel = output_accel
+      return output_accel
 
     elif self.long_control_state == LongCtrlState.starting:
       # Enhanced starting with smoother acceleration
@@ -158,6 +162,8 @@ class LongControl:
       else:
         output_accel = self.CP.startAccel
       self.reset()
+      self.last_output_accel = output_accel
+      return output_accel
 
     else:  # LongCtrlState.pid
       # Enhanced adaptive jerk control based on driving context
@@ -241,6 +247,8 @@ class LongControl:
         output_accel = self._prev_output_accel * (1 - very_low_speed_smoothing) + output_accel * very_low_speed_smoothing
 
       self._prev_output_accel = output_accel
+      self.last_output_accel = output_accel
+      return output_accel
 
   def _calculate_adaptive_output_jerk_limit(self, CS, a_target_limited, current_output_accel):
     """
@@ -267,11 +275,17 @@ class LongControl:
     # Reduce jerk when following lead vehicle closely
     if hasattr(CS, 'radarState') and CS.radarState is not None:
         try:
-            if CS.radarState.leadOne.status and CS.radarState.leadOne.dRel < 30.0:
-                base_output_jerk_limit *= 0.85  # More conservative when close to lead
-                if CS.radarState.leadOne.dRel < 15.0:  # Very close
-                    base_output_jerk_limit *= 0.7  # Much more conservative
-        except AttributeError:
+            if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
+                lead_one = CS.radarState.leadOne
+                dRel = getattr(lead_one, 'dRel', None)
+
+                # Only proceed if dRel is an actual number
+                if isinstance(dRel, (int, float)):
+                    if dRel < 30.0:
+                        base_output_jerk_limit *= 0.85  # More conservative when close to lead
+                        if dRel < 15.0:  # Very close
+                            base_output_jerk_limit *= 0.7  # Much more conservative
+        except (AttributeError, TypeError):
             pass
 
     # Reduce jerk at higher speeds for stability
@@ -336,70 +350,6 @@ class LongControl:
     self.pid.control = old_control
     self.pid.speed = old_speed
 
-    # Apply compensation factor to limit maximum acceleration during high thermal stress
-    if compensation_factor < 0.8:
-      # Reduce acceleration limits proportionally to thermal compensation factor
-      self.pid.neg_limit = old_neg_limit * compensation_factor
-      self.pid.pos_limit = old_pos_limit * compensation_factor
-
-    # Apply final acceleration limits
-    self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
-    return self.last_output_accel
-
-  def update_thermal_compensation(self, thermal_stress_level, compensation_factor):
-    """
-    Update longitudinal controller parameters based on thermal stress level to maintain
-    consistent acceleration/deceleration performance under different thermal conditions.
-
-    Args:
-      thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
-      compensation_factor: Factor (0.0-1.0) indicating overall system compensation needed
-    """
-    # Store current PID state to preserve during reinitialization
-    old_p = self.pid.p
-    old_i = self.pid.i
-    old_d = self.pid.d
-    old_f = self.pid.f
-    old_control = self.pid.control
-    old_speed = self.pid.speed
-    old_pos_limit = self.pid.pos_limit
-    old_neg_limit = self.pid.neg_limit
-
-    # Adjust PID parameters based on thermal stress to maintain consistent longitudinal control
-    original_ki_v = self.CP.longitudinalTuning.kiV
-    original_kp_v = self.CP.longitudinalTuning.kpV
-
-    if thermal_stress_level >= 2:  # High or very high thermal stress
-      # Create new PID with reduced gains to prevent accumulation during thermal throttling
-      new_ki_v = [min(ki_val, original_ki_v[0] * 0.7) for ki_val in original_ki_v]  # Reduce by 30%
-      new_kp_v = [min(kp_val, original_kp_v[0] * 0.9) for kp_val in original_kp_v]  # Reduce by 10%
-
-      # Create a new PID controller with adjusted parameters
-      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, new_kp_v),
-                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
-                               rate=1 / DT_CTRL)
-    elif thermal_stress_level == 1:  # Moderate thermal stress
-      # Mild adjustment for moderate stress
-      new_ki_v = [min(ki_val, original_ki_v[0] * 0.85) for ki_val in original_ki_v]  # Reduce by 15%
-
-      # Create a new PID controller with adjusted parameters
-      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, original_kp_v),
-                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
-                               rate=1 / DT_CTRL)
-
-    # Restore PID state to preserve continuity
-    self.pid.p = old_p
-    self.pid.i = old_i
-    self.pid.d = old_d
-    self.pid.f = old_f
-    self.pid.control = old_control
-    self.pid.speed = old_speed
-
-    # Apply compensation factor to limit maximum acceleration during high thermal stress
-    if compensation_factor < 0.8:
-      # Reduce acceleration limits proportionally to thermal compensation factor
-      self.pid.neg_limit = old_neg_limit * compensation_factor
-      self.pid.pos_limit = old_pos_limit * compensation_factor
 
   def _calculate_adaptive_jerk_limit(self, CS, a_target):
     """
@@ -418,11 +368,19 @@ class LongControl:
     # Reduce jerk if approaching lead vehicle rapidly
     if hasattr(CS, 'radarState') and CS.radarState is not None:
         try:
-            if CS.radarState.leadOne.status and CS.radarState.leadOne.dRel < 50.0:
-                approach_rate = abs(CS.radarState.leadOne.vRel)
-                if approach_rate > 5.0:  # Approaching rapidly
-                    base_jerk_limit *= 0.7  # More conservative
-        except AttributeError:
+            if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
+                # Check if attributes are actual numeric values (not Mock objects) before comparison
+                lead_one = CS.radarState.leadOne
+                dRel = getattr(lead_one, 'dRel', None)
+                vRel = getattr(lead_one, 'vRel', None)
+
+                # Only proceed if both values are actual numbers
+                if isinstance(dRel, (int, float)) and isinstance(vRel, (int, float)):
+                    if dRel < 50.0:
+                        approach_rate = abs(vRel)
+                        if approach_rate > 5.0:  # Approaching rapidly
+                            base_jerk_limit *= 0.7  # More conservative
+        except (AttributeError, TypeError):
             pass
 
     # Increase jerk allowance during initial acceleration from standstill
