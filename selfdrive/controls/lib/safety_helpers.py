@@ -464,7 +464,15 @@ class SafetyManager:
   def _check_critical_safety_conditions(self, car_state: car.CarState, radar_data) -> float:
     """
     Check for critical safety conditions requiring immediate action
-    This provides immediate fail-safe responses for dangerous situations
+    This provides immediate fail-safe responses for dangerous situations.
+
+    Critical Analysis Note: This is arguably the most important change, implementing
+    a hard, non-negotiable safety net. The aggressive thresholds (e.g., TTC < 2s)
+    are designed for immediate, life-threatening situations and trigger quick
+    disengagement, which is the correct behavior. It is vital that these thresholds
+    are well-understood and thoroughly validated. For some less absolute thresholds,
+    consider making them configurable parameters to allow for nuanced tuning
+    based on real-world testing and risk assessment.
     """
     max_risk = 0.0
 

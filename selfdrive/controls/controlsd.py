@@ -349,6 +349,13 @@ class Controls(ControlsExt, ModelStateBase):
     """
     Adjust control outputs based on thermal conditions for improved thermal management.
 
+    This function proactively reduces control aggressiveness to prevent thermal runaway.
+    Critical Analysis Note: The primary risk is over-compensation. Robust monitoring
+    and telemetry for `performance_compensation_factor` and its effects on
+    `accel`, `curvature`, and `steeringAngleDeg` are crucial for tuning.
+    Consider implementing a "safe mode" or fallback mechanism if thermal
+    monitoring data becomes unreliable or leads to excessive control reduction.
+
     Args:
         actuators: The control actuators to adjust
         CS: Current car state
