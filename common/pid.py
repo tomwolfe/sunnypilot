@@ -43,14 +43,21 @@ class PIDController:
     self.pos_limit = pos_limit
     self.neg_limit = neg_limit
 
-  def update(self, error, error_rate=0.0, speed=0.0, feedforward=0., freeze_integrator=False):
+  def update(self, error, error_rate=0.0, speed=0.0, feedforward=0., freeze_integrator=False,
+             k_p_override=None, k_i_override=None, k_d_override=None):
     self.speed = speed
-    self.p = self.k_p * float(error)
-    self.d = self.k_d * error_rate
+    
+    # Use override values if provided, otherwise use interpolated values
+    current_k_p = k_p_override if k_p_override is not None else self.k_p
+    current_k_i = k_i_override if k_i_override is not None else self.k_i
+    current_k_d = k_d_override if k_d_override is not None else self.k_d
+
+    self.p = current_k_p * float(error)
+    self.d = current_k_d * error_rate
     self.f = feedforward
 
     if not freeze_integrator:
-      i = self.i + self.k_i * self.i_dt * error
+      i = self.i + current_k_i * self.i_dt * error
 
       # Don't allow windup if already clipping
       test_control = self.p + i + self.d + self.f
