@@ -42,6 +42,8 @@ def test_enhanced_lane_change_safety_assessment():
   
   class MockCarState:
     vEgo = 25.0  # 25 m/s
+    leftBlindspot = False
+    rightBlindspot = False
   
   model_data = MockModelData()
   radar_data = MockRadarData()
@@ -57,13 +59,13 @@ def test_enhanced_lane_change_safety_assessment():
 def test_lane_change_timer_and_delay_logic():
   """Test the lane change timer and delay logic."""
   dh = DesireHelper()
-  
+
   # Test the timer progression
   initial_timer = dh.lane_change_timer
   dh.lane_change_timer += 0.1  # Simulate time passing
-  
+
   assert dh.lane_change_timer > initial_timer, "Timer should increment"
-  
+
   # Test auto lane change allowed logic
   class MockCarState:
     vEgo = 30.0
@@ -72,13 +74,15 @@ def test_lane_change_timer_and_delay_logic():
     brakePressed = False
     steeringPressed = False
     steeringTorque = 50
-  
+    leftBlindspot = False
+    rightBlindspot = False
+
   car_state = MockCarState()
   lane_change_prob = 0.8  # High probability
-  
+
   # Update to test the new parameters
   dh.update(car_state, True, lane_change_prob, None, None)  # Should work with new signature
-  
+
   print("✓ Lane change timer and delay logic test passed")
 
 
@@ -88,7 +92,7 @@ def test_auto_lane_change_controller_modes():
   alc = dh.alc
   
   # Test different modes and their delay values
-  from selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode, AUTO_LANE_CHANGE_TIMER
+  from sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode, AUTO_LANE_CHANGE_TIMER
   
   assert AutoLaneChangeMode.NUDGELESS in AUTO_LANE_CHANGE_TIMER
   assert AutoLaneChangeMode.ONE_SECOND in AUTO_LANE_CHANGE_TIMER

@@ -272,7 +272,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LongitudinalStartingSpeedThreshold", {PERSISTENT | BACKUP, FLOAT, "3.0"}}, // From LongControl default
     {"LongitudinalStartingAccelMultiplier", {PERSISTENT | BACKUP, FLOAT, "0.8"}},
     {"LongitudinalStartingAccelLimit", {PERSISTENT | BACKUP, FLOAT, "0.8"}},
+    {"LongitudinalAdaptiveErrorThreshold", {PERSISTENT | BACKUP, FLOAT, "0.6"}},
+    {"LongitudinalAdaptiveSpeedThreshold", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
     {"LateralMaxJerk", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
+    {"SafetyMaxUnexpectedTorque", {PERSISTENT | BACKUP, FLOAT, "200.0"}},
+    {"SafetyMaxAccelerationChange", {PERSISTENT | BACKUP, FLOAT, "5.0"}},
+    {"SafetyMaxSteeringRate", {PERSISTENT | BACKUP, FLOAT, "100.0"}},
+    {"SafetyMinModelConfidence", {PERSISTENT | BACKUP, FLOAT, "0.5"}},
     {"LateralCurvatureKiScaler", {PERSISTENT | BACKUP, FLOAT, "0.2"}},
     {"ModelExecutionThrottleFactor", {PERSISTENT | BACKUP, FLOAT, "1.0"}}, // User-settable factor (0.0 to 1.0) to simulate thermal conditions and fine-tune model execution performance. Values below 1.0 will throttle model inference frequency.
 };

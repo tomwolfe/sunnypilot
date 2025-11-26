@@ -137,6 +137,24 @@ cdef class Params:
       r = self.p.getBool(k, block)
     return r
 
+  def get_float(self, key, float default=0.0, bool block=False):
+    cdef string k = self.check_key(key)
+    cdef string val
+    with nogil:
+      val = self.p.get(k, block)
+
+    if val == b"":
+      if block:
+        # If we got no value while running in blocked mode
+        # it means we got an interrupt while waiting
+        raise KeyboardInterrupt
+      else:
+        return default
+    try:
+      return float(val.decode("utf-8"))
+    except (ValueError, TypeError):
+      return default
+
   def _put_cast(self, key, dat):
     cdef string k = self.check_key(key)
     cdef ParamKeyType t = self.p.getKeyType(k)
