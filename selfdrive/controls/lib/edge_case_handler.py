@@ -513,6 +513,13 @@ class EdgeCaseHandler:
     """
     Enhanced detection for traffic incidents or congestion that require special handling
 
+    Critical Analysis Note: This method significantly improves situational awareness
+    but has a high potential for false positives. Tuning is critical.
+    Consider making thresholds (e.g., for `indicators`) configurable
+    parameters to facilitate real-world tuning without code changes.
+    Ensure clear and comprehensive logging when an incident is detected
+    to aid in debugging and understanding system behavior.
+
     Args:
       radar_state: Radar sensor data
       car_state: Current car state

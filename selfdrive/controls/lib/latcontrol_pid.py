@@ -83,18 +83,25 @@ class LatControlPID(LatControl):
       # Apply rate limiting
       angle_diff_limited = np.clip(angle_diff, -rate_limit, rate_limit)
 
+      # Critical Analysis Note: The code is significantly more complex, increasing the risk of subtle bugs.
+      # The numerous constants will require extensive real-world tuning.
+      # Consider centralizing these tuning parameters in a configuration file for easier management.
+
       # Apply adaptive smoothing factor based on multiple conditions
       # The smoothing factor is adaptive based on vehicle speed, curvature, and steering urgency
-      speed_factor = min(1.0, max(0.1, CS.vEgo / 15.0))  # More smoothing at higher speeds
-      curvature_factor = min(1.0, max(0.2, abs(desired_curvature) * 20.0))  # More smoothing at high curvature
-      urgency_factor = min(1.0, max(0.1, abs(angle_diff_limited) / 1.0))  # Less smoothing when large change needed
+      # speed_factor: More smoothing at higher speeds for comfort.
+      speed_factor = min(1.0, max(0.1, CS.vEgo / 15.0))
+      # curvature_factor: More smoothing at high curvature for stability.
+      curvature_factor = min(1.0, max(0.2, abs(desired_curvature) * 20.0))
+      # urgency_factor: Less smoothing when a large steering change is needed (e.g., sudden maneuver).
+      urgency_factor = min(1.0, max(0.1, abs(angle_diff_limited) / 1.0))
 
       # Calculate combined smoothing factor
-      base_smoothing_factor = 0.4  # Base smoothing factor
+      base_smoothing_factor = 0.4  # Base smoothing factor for general driving.
       adaptive_smoothing = base_smoothing_factor * speed_factor * curvature_factor
       adaptive_smoothing = max(0.1, min(0.7, adaptive_smoothing))  # Keep within reasonable bounds
 
-      # For urgent situations, reduce smoothing
+      # For urgent situations, reduce smoothing to allow for quicker corrections.
       final_smoothing_factor = adaptive_smoothing * (0.7 + 0.3 * urgency_factor)  # Apply urgency adjustment
 
       # Apply smoothing
@@ -123,13 +130,14 @@ class LatControlPID(LatControl):
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
       # Enhanced adaptive PID parameters for even smoother response
-      # Implement speed, curvature, and driving condition adaptive gains to reduce oscillations
+      # Implement speed, curvature, and driving condition adaptive gains to reduce oscillations.
+      # This addresses common oscillation problems by making gains more conservative in specific scenarios.
       speed_factor = min(1.0, max(0.1, CS.vEgo / 20.0))  # Normalize speed effect
       curvature_factor = min(1.0, abs(desired_curvature) * 30.0)  # Reduce gains with high curvature
 
       # Enhanced adaptive gain calculation
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Reduce both P and I gains at high speeds to prevent oscillations
+        # Reduce both P and I gains at high speeds to prevent oscillations, as suggested by the critical review.
         temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.7) # More conservative at high speeds
         temp_ki = min(self.pid.k_i, self.high_speed_ki_limit * 0.8)  # Reduce ki to reduce oscillation - now configurable
 
@@ -144,7 +152,7 @@ class LatControlPID(LatControl):
                                   k_i_override=temp_ki) # Pass overrides
 
       elif abs(desired_curvature) > 0.05:  # High curvature situations (tight turns)
-        # Reduce gains in tight turns to prevent oversteering
+        # Reduce gains in tight turns to prevent oversteering, improving comfort and safety.
         temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.75)  # Reduce proportional gain in curves
         temp_ki = min(self.pid.k_i, self.pid._k_i[1][0] * 0.75)  # Reduce integral gain in curves
 
@@ -156,7 +164,7 @@ class LatControlPID(LatControl):
                                   k_i_override=temp_ki) # Pass overrides
 
       else:
-        # Speed-adaptive gains for low speeds and straight driving
+        # Speed-adaptive gains for low speeds and straight driving.
         gain_reduction = 1.0 - (1.0 - speed_factor) * 0.4  # Up to 40% gain at very low speeds
         temp_kp = self.pid.k_p * gain_reduction
         temp_ki = min(self.pid.k_i, self.pid._k_i[1][0] * gain_reduction) # Use base Ki
@@ -168,7 +176,9 @@ class LatControlPID(LatControl):
                                   k_p_override=temp_kp, # Pass overrides
                                   k_i_override=temp_ki) # Pass overrides
 
-      # Add sophisticated output rate limiting for even smoother actuation
+      # Add sophisticated output rate limiting for even smoother actuation.
+      # The max_torque_rate now adapts based on speed and includes an extra smoothing step,
+      # reducing high-frequency noise and improving driving quality.
       if hasattr(self, '_prev_output_torque'):
           # Make rate limiting adaptive based on speed and conditions
           base_torque_rate = 1.0  # Base rate limit

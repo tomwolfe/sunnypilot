@@ -252,6 +252,12 @@ class LongControl:
     """
     Calculate adaptive output jerk limits based on driving context and stability.
 
+    Critical Analysis Note: This function ensures that the system's acceleration output
+    remains smooth and safe, dynamically adjusting based on various factors. This is
+    fundamental for comfort and safety. Logging the dynamic adjustments to the
+    jerk limit and their impact on `output_accel` is crucial for understanding
+    system behavior under different driving conditions and for future tuning.
+
     Args:
         CS: CarState object
         a_target_limited: Limited target acceleration after jerk limiting
@@ -352,6 +358,13 @@ class LongControl:
   def _calculate_adaptive_jerk_limit(self, CS, a_target):
     """
     Calculate adaptive jerk limits based on driving context and vehicle state.
+
+    Critical Analysis Note: The adaptive jerk limits, especially the `distance_factor`
+    logic, are a critical safety feature and a major improvement for longitudinal control.
+    They ensure the vehicle does not aggressively accelerate towards a lead vehicle,
+    significantly reducing collision risk. Comprehensive logging of the calculated
+    jerk limits and the factors influencing them (e.g., `distance_factor`) is
+    highly recommended for real-world validation and debugging.
 
     Args:
         CS: CarState object containing current vehicle state

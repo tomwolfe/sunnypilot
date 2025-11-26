@@ -238,6 +238,11 @@ class ModelState(ModelStateBase):
     """
     Enhanced input validation to ensure data quality before model execution.
 
+    Critical Analysis Note: This input validation is essential for a production system
+    to prevent the "garbage in, garbage out" problem. It ensures the model processes
+    only valid and timely data. Robust logging of validation failures can help
+    diagnose upstream issues.
+
     Args:
         bufs: Vision buffers from cameras
         transforms: Transform matrices for camera calibration
@@ -348,6 +353,13 @@ class ModelState(ModelStateBase):
   def _enhance_model_outputs(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """
     Apply post-processing enhancements to model outputs for improved perception quality.
+
+    Critical Analysis Note: This function significantly improves perception stability
+    by reducing jitter and applying consistency checks. The risk is that smoothing
+    could potentially introduce undesirable lag. It is crucial to monitor the
+    latency introduced by this function (e.g., using before/after timestamps).
+    The `alpha` values used for smoothing should be well-commented with their
+    tuning rationale.
 
     Args:
         outputs: Raw model outputs dictionary
@@ -516,6 +528,11 @@ def main(demo=False):
           dynamic_tolerance_ns = int(base_tolerance_ns * 0.9)  # 22.5ms when system is warm
       else:
           dynamic_tolerance_ns = int(base_tolerance_ns * 1.2)  # 30ms when system is stressed
+      # Critical Analysis Note: This dynamic adjustment of `dynamic_tolerance_ns` based on
+      # system load is a well-executed optimization. Logging the actual `dynamic_tolerance_ns`
+      # and the corresponding `system_load_factor` is crucial for understanding its impact
+      # on frame synchronization and potential latency under stress.
+
       # Implement dynamic wait cycles based on system conditions and previous frame sync quality
       prev_sync_quality = getattr(model, 'avg_frame_sync_quality', 1.0)  # 1.0 = perfect sync, higher = worse
       quality_factor = min(1.5, max(0.7, prev_sync_quality))  # Constrain between 0.7 and 1.5
@@ -523,6 +540,9 @@ def main(demo=False):
       max_wait_cycles = MAX_WAIT_CYCLES if system_load_factor < 0.8 else max(1, MAX_WAIT_CYCLES // 2)  # Reduce wait cycles when system is stressed
       # Adjust wait cycles based on previous sync quality to optimize for current conditions
       max_wait_cycles = int(max_wait_cycles * quality_factor)
+      # Critical Analysis Note: The dynamic adjustment of `max_wait_cycles` is important
+      # for resilience. Logging when `max_wait_cycles` is reduced (e.g., due to high
+      # `system_load_factor`) and the actual wait times can help identify latency bottlenecks.
 
       # Optimized frame synchronization - attempt to get both frames with minimal blocking
       # First, get main camera frame (which we need regardless)
@@ -712,6 +732,12 @@ def main(demo=False):
 def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
   """
   Validate model outputs to ensure safe values for downstream processing.
+
+  Critical Analysis Note: This output validation is crucial for ensuring that
+  downstream controllers never receive impossible or unsafe values. Clipping
+  and `nan_to_num` operations are essential for system robustness.
+  Any significant clipping or modification of model outputs should be logged
+  to understand model performance and potential limitations.
 
   Args:
     model_output: Raw model output dictionary
