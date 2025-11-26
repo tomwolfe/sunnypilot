@@ -238,7 +238,7 @@ class SafetyManager:
       if self.safety_violation_count >= self.max_safety_violations:
         return log.SelfdriveState.AlertStatus.critical
       else:
-        return log.SelfdriveState.AlertStatus.warning
+        return log.SelfdriveState.AlertStatus.userPrompt
     else:
       return log.SelfdriveState.AlertStatus.normal
 
