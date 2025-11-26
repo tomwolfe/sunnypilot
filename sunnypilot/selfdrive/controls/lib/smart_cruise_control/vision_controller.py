@@ -108,7 +108,13 @@ class SmartCruiseControlVision:
       max_curve = self.max_pred_lat_acc / (v_ego**2)
 
       # Get the target velocity for the maximum curve
-      self.v_target = (_A_LAT_REG_MAX / max_curve) ** 0.5
+      # Handle case where max_curve is zero to avoid division by zero
+      if max_curve > 1e-6:  # small threshold to avoid division by zero
+        self.v_target = (_A_LAT_REG_MAX / max_curve) ** 0.5
+      else:
+        # If max_curve is zero (or very small), set v_target to a reasonable value
+        # This would be the maximum allowed speed based on the system's maximum lateral acceleration
+        self.v_target = v_ego  # Use current speed as a reasonable fallback
 
   def _update_state_machine(self) -> tuple[bool, bool]:
     # ENABLED, ENTERING, TURNING, LEAVING, OVERRIDING
