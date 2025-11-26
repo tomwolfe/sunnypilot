@@ -187,19 +187,30 @@ class LongControl:
 
       # Apply adaptive gains if needed
       if ki_reduction_enabled:
-        temp_ki = min(self.pid.ki * adaptive_ki_factor, self.CP.longitudinalTuning.kiV[0] * 0.5)
+        temp_ki = min(self.pid.k_i * adaptive_ki_factor, self.CP.longitudinalTuning.kiV[0] * 0.5)
         temp_pid = PIDController((self.CP.longitudinalTuning.kpBP, self.CP.longitudinalTuning.kpV),
                                  (self.CP.longitudinalTuning.kiBP, [temp_ki] * len(self.CP.longitudinalTuning.kiV)),
                                  rate=1 / DT_CTRL)
         temp_pid.neg_limit = self.pid.neg_limit
         temp_pid.pos_limit = self.pid.pos_limit
-        temp_pid.error_integral = self.pid.error_integral  # Preserve integral term
+        # Preserve integral term by copying from original PID
+        temp_pid.i = self.pid.i
+        temp_pid.p = self.pid.p
+        temp_pid.d = self.pid.d
+        temp_pid.f = self.pid.f
+        temp_pid.control = self.pid.control
+        temp_pid.speed = self.pid.speed
 
         output_accel = temp_pid.update(error, speed=CS.vEgo,
                                        feedforward=a_target_limited)
 
-        # Preserve the original PID's integral term for next iteration
-        self.pid.error_integral = temp_pid.error_integral
+        # Preserve the integral term from temp PID for next iteration
+        self.pid.i = temp_pid.i
+        self.pid.p = temp_pid.p
+        self.pid.d = temp_pid.d
+        self.pid.f = temp_pid.f
+        self.pid.control = temp_pid.control
+        self.pid.speed = temp_pid.speed
       else:
         output_accel = self.pid.update(error, speed=CS.vEgo,
                                        feedforward=a_target_limited)
@@ -242,21 +253,48 @@ class LongControl:
       thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
       compensation_factor: Factor (0.0-1.0) indicating overall system compensation needed
     """
+    # Store current PID state to preserve during reinitialization
+    old_p = self.pid.p
+    old_i = self.pid.i
+    old_d = self.pid.d
+    old_f = self.pid.f
+    old_control = self.pid.control
+    old_speed = self.pid.speed
+    old_pos_limit = self.pid.pos_limit
+    old_neg_limit = self.pid.neg_limit
+
     # Adjust PID parameters based on thermal stress to maintain consistent longitudinal control
+    original_ki_v = self.CP.longitudinalTuning.kiV
+    original_kp_v = self.CP.longitudinalTuning.kpV
+
     if thermal_stress_level >= 2:  # High or very high thermal stress
-      # Reduce integral gain to prevent accumulation during thermal throttling
-      if hasattr(self, 'pid') and hasattr(self.pid, 'k_i'):
-        self.pid.k_i = min(self.pid.k_i, self.CP.longitudinalTuning.kiV[0] * 0.7)  # Reduce by 30%
-      # Reduce proportional gain to avoid oscillations during thermal stress
-      if hasattr(self, 'pid') and hasattr(self.pid, 'k_p'):
-        self.pid.k_p = min(self.pid.k_p, self.CP.longitudinalTuning.kpV[0] * 0.9)  # Reduce by 10%
+      # Create new PID with reduced gains to prevent accumulation during thermal throttling
+      new_ki_v = [min(ki_val, original_ki_v[0] * 0.7) for ki_val in original_ki_v]  # Reduce by 30%
+      new_kp_v = [min(kp_val, original_kp_v[0] * 0.9) for kp_val in original_kp_v]  # Reduce by 10%
+
+      # Create a new PID controller with adjusted parameters
+      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, new_kp_v),
+                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
+                               rate=1 / DT_CTRL)
     elif thermal_stress_level == 1:  # Moderate thermal stress
       # Mild adjustment for moderate stress
-      if hasattr(self, 'pid') and hasattr(self.pid, 'k_i'):
-        self.pid.k_i = min(self.pid.k_i, self.CP.longitudinalTuning.kiV[0] * 0.85)  # Reduce by 15%
+      new_ki_v = [min(ki_val, original_ki_v[0] * 0.85) for ki_val in original_ki_v]  # Reduce by 15%
+
+      # Create a new PID controller with adjusted parameters
+      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, original_kp_v),
+                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
+                               rate=1 / DT_CTRL)
+
+    # Restore PID state to preserve continuity
+    self.pid.p = old_p
+    self.pid.i = old_i
+    self.pid.d = old_d
+    self.pid.f = old_f
+    self.pid.control = old_control
+    self.pid.speed = old_speed
 
     # Apply compensation factor to limit maximum acceleration during high thermal stress
     if compensation_factor < 0.8:
       # Reduce acceleration limits proportionally to thermal compensation factor
-      self.pid.neg_limit = self.pid.neg_limit * compensation_factor
-      self.pid.pos_limit = self.pid.pos_limit * compensation_factor
+      self.pid.neg_limit = old_neg_limit * compensation_factor
+      self.pid.pos_limit = old_pos_limit * compensation_factor

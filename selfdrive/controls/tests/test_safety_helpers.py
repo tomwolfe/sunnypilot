@@ -101,8 +101,8 @@ def test_safety_recommendation():
   # Test safety recommendation
   from cereal import log
   recommendation = safety_manager.get_safety_recommendation(CS, control_output, None)
-  assert recommendation in [log.SelfdriveState.AlertStatus.normal, 
-                           log.SelfdriveState.AlertStatus.warning,
+  assert recommendation in [log.SelfdriveState.AlertStatus.normal,
+                           log.SelfdriveState.AlertStatus.userPrompt,
                            log.SelfdriveState.AlertStatus.critical]
   
   print("✓ Safety recommendation test passed")
