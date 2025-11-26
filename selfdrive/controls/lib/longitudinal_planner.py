@@ -166,15 +166,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     v_ego = sm['carState'].vEgo
     a_ego = sm['carState'].aEgo
 
-          # Calculate time to collision based on current trajectories
+    # Calculate time to collision based on current trajectories
 
-    
+    time_to_collision = float('inf')
 
-          time_to_collision = float('inf')
+    distance_to_collision = float('inf')
 
-          distance_to_collision = float('inf')
-
-          relative_speed = 0.0
+    relative_speed = 0.0
     if lead_one.status and lead_one.dRel > 0:
       relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
       if relative_speed > 0:  # Approaching lead vehicle
