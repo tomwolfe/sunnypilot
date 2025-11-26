@@ -25,6 +25,8 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
+from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
+from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -49,7 +51,7 @@ class Controls(ControlsExt, ModelStateBase):
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
                                    'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'liveDelay',
-                                   'deviceState'] + self.sm_services_ext,
+                                   'deviceState', 'radarState'] + self.sm_services_ext,
                                   poll='selfdriveState')
     self.pm = messaging.PubMaster(['carControl', 'controlsState'] + self.pm_services_ext)
 
@@ -70,8 +72,17 @@ class Controls(ControlsExt, ModelStateBase):
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
-    # Initialize thermal performance factor
+    # Initialize thermal management system with enhanced tracking
     self.thermal_performance_factor = 1.0
+    self.thermal_history = deque(maxlen=30)  # Track thermal performance over last 30 cycles (0.3 seconds at 100Hz)
+    self.thermal_stress_level = 0  # 0=normal, 1=moderate, 2=high, 3=very high
+    self.performance_compensation_factor = 1.0  # Additional compensation for performance degradation
+
+    # Initialize safety manager for advanced safety features
+    self.safety_manager = SafetyManager()
+
+    # Initialize edge case handler for unusual scenario detection and handling
+    self.edge_case_handler = EdgeCaseHandler()
 
   def update(self):
     """
@@ -91,14 +102,65 @@ class Controls(ControlsExt, ModelStateBase):
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
-    # Adaptive control based on thermal performance factor
-    # This allows the system to automatically adjust its control rate based on hardware thermal conditions
-    # to prevent overheating and maintain performance stability
+    # Enhanced thermal management with predictive capabilities and stress level tracking
     if self.sm.updated['deviceState']:
       thermal_status = self.sm['deviceState'].thermalStatus
       thermal_prc = self.sm['deviceState'].thermalPerc
-      # Enhanced thermal management with more granular control
-      self.thermal_performance_factor = thermal_prc / 100.0
+      cpu_usage = max(self.sm['deviceState'].cpuUsagePercent) if self.sm['deviceState'].cpuUsagePercent else 0
+      memory_usage = self.sm['deviceState'].memoryUsagePercent
+
+      # Enhanced thermal management with more granular control and predictive elements
+      base_thermal_factor = thermal_prc / 100.0
+      cpu_factor = cpu_usage / 100.0
+      memory_factor = memory_usage / 100.0
+
+      # Calculate overall system stress as the maximum of all factors
+      system_stress = max(base_thermal_factor, cpu_factor, memory_factor)
+
+      # Add hysteresis to prevent rapid switching between thermal states
+      if hasattr(self, 'prev_thermal_factor'):
+        # Apply smoothing to prevent oscillation between thermal states
+        smoothing_factor = 0.9 if system_stress <= self.prev_thermal_factor else 0.7
+        self.thermal_performance_factor = (smoothing_factor * self.prev_thermal_factor +
+                                          (1 - smoothing_factor) * system_stress)
+      else:
+        self.thermal_performance_factor = system_stress
+
+      self.prev_thermal_factor = self.thermal_performance_factor
+
+      # Update thermal history for trend analysis
+      self.thermal_history.append(self.thermal_performance_factor)
+
+      # Determine thermal stress level based on current and historical data
+      avg_thermal = sum(self.thermal_history) / len(self.thermal_history) if self.thermal_history else 0
+      current_thermal = self.thermal_performance_factor
+
+      # Classify stress level based on both current and average thermal state
+      if current_thermal > 0.9 or avg_thermal > 0.85:
+        self.thermal_stress_level = 3  # Very high stress
+      elif current_thermal > 0.8 or avg_thermal > 0.75:
+        self.thermal_stress_level = 2  # High stress
+      elif current_thermal > 0.7 or avg_thermal > 0.65:
+        self.thermal_stress_level = 1  # Moderate stress
+      else:
+        self.thermal_stress_level = 0  # Normal
+
+      # Adjust performance compensation based on thermal stress trend
+      if len(self.thermal_history) > 10:
+        # Calculate thermal trend (increasing, decreasing, stable)
+        recent_avg = sum(list(self.thermal_history)[-5:]) / 5
+        older_avg = sum(list(self.thermal_history)[:-5]) / max(1, len(list(self.thermal_history)[:-5]))
+
+        if recent_avg > older_avg + 0.1:  # Thermal stress is increasing rapidly
+          # Apply additional compensation to prevent thermal runaway
+          self.performance_compensation_factor = max(0.8, self.thermal_performance_factor - 0.1)
+        elif recent_avg < older_avg - 0.1:  # Thermal stress is decreasing
+          # Gradually restore performance
+          self.performance_compensation_factor = min(1.0, self.performance_compensation_factor + 0.05)
+        else:  # Thermal stress is relatively stable
+          self.performance_compensation_factor = self.thermal_performance_factor
+      else:
+        self.performance_compensation_factor = self.thermal_performance_factor
 
       # Additional thermal considerations for safety-critical functions
       # Thermal status values: green=0, yellow=1, red=2, danger=3
@@ -108,8 +170,10 @@ class Controls(ControlsExt, ModelStateBase):
         cloudlog.warning(f"Critical thermal status: {thermal_status}, reducing performance to protect hardware")
         # Reduce performance factor further when in critical thermal state
         self.thermal_performance_factor = min(self.thermal_performance_factor, 0.7)
+        self.performance_compensation_factor = min(self.performance_compensation_factor, 0.6)
     else:
       self.thermal_performance_factor = 1.0
+      self.performance_compensation_factor = 1.0
 
   def state_control(self):
     CS = self.sm['carState']
@@ -166,14 +230,46 @@ class Controls(ControlsExt, ModelStateBase):
     if not CC.longActive:
       self.LoC.reset()
 
+    # Handle edge cases and unusual scenarios
+    edge_scenarios = self.edge_case_handler.handle_unusual_scenarios(
+      CS,
+      self.sm['radarState'] if 'radarState' in self.sm else None,
+      self.sm['modelV2'] if 'modelV2' in self.sm else None
+    )
+
+    # Get adaptive control modifications based on detected scenarios
+    adaptive_mods = self.edge_case_handler.get_adaptive_control_modifications(CS, edge_scenarios)
+
+    # Apply adaptive control modifications to the system
+    if adaptive_mods['caution_mode']:
+      # Increase time headway for safety in unusual scenarios
+      # This is done by modifying the long_plan to create larger gaps
+      if hasattr(long_plan, 'aTarget') and adaptive_mods['longitudinal_factor'] < 1.0:
+        # Make longitudinal control more conservative
+        base_accel_limit = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+        # Apply conservative factor to acceleration limits
+        conservative_accel_limits = (
+          base_accel_limit[0] * adaptive_mods['longitudinal_factor'],
+          base_accel_limit[1] * adaptive_mods['longitudinal_factor']
+        )
+      else:
+        conservative_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+    else:
+      conservative_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+
     # Enhanced saturation handling with adaptive limits
     # accel PID loop
-    pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits))
+
+    # Apply lateral control modifications if needed
+    modified_desired_curvature = model_v2.action.desiredCurvature
+    if adaptive_mods['lateral_factor'] < 1.0 and CC.latActive:
+      # Make lateral control more conservative by reducing desired curvature
+      modified_desired_curvature = model_v2.action.desiredCurvature * adaptive_mods['lateral_factor']
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    new_desired_curvature = modified_desired_curvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
@@ -256,6 +352,25 @@ class Controls(ControlsExt, ModelStateBase):
     # TODO: both controlsState and carControl valids should be set by
     #       sm.all_checks(), but this creates a circular dependency
 
+    # Perform safety check before publishing controls
+    safety_ok, safety_violation = self.safety_manager.check_safety_violations(
+      CS,
+      self.sm['carOutput'].actuatorsOutput if 'carOutput' in self.sm else None,
+      self.sm['modelV2'] if 'modelV2' in self.sm else None
+    )
+
+    # If safety violation detected, modify control output to be safer
+    if not safety_ok and self.safety_manager.should_disengage():
+      # Apply emergency deceleration and center steering
+      CC.actuators.accel = min(CC.actuators.accel, -1.0)  # Apply mild brake
+      if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
+        CC.actuators.steeringAngleDeg = CS.steeringAngleDeg * 0.9  # Gradually center steering
+      else:
+        CC.actuators.curvature = self.curvature * 0.9  # Gradually reduce curvature
+      CC.enabled = False  # Disengage to prevent dangerous situation
+      CC.latActive = False
+      CC.longActive = False
+
     # controlsState
     dat = messaging.new_message('controlsState')
     dat.valid = CS.canValid
@@ -271,6 +386,13 @@ class Controls(ControlsExt, ModelStateBase):
     cs.ufAccelCmd = float(self.LoC.pid.f)
     cs.forceDecel = bool((self.sm['driverMonitoringState'].awarenessStatus < 0.) or
                          (self.sm['selfdriveState'].state == State.softDisabling))
+
+    # Add safety status information to controls state
+    cs.safetyStatus = self.safety_manager.get_safety_recommendation(
+      CS,
+      self.sm['carOutput'].actuatorsOutput if 'carOutput' in self.sm else None,
+      self.sm['modelV2'] if 'modelV2' in self.sm else None
+    )
 
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -312,16 +434,15 @@ class Controls(ControlsExt, ModelStateBase):
       t.start()
       rk = Ratekeeper(100, print_delay_threshold=None)  # Base rate is 100Hz
       thermal_adjusted_frame = 0
-      # Thermal scaling parameters
+
+      # Enhanced thermal scaling parameters with dynamic adjustment based on stress level
       base_rate = 100  # Hz
-      min_rate = 50    # Hz - minimum rate when thermal stress is high
-      # TODO: Consider dynamically adjusting min_rate based on thermal status type (e.g., CPU, GPU, memory)
-      # or vehicle speed for more optimal performance under specific conditions.
-      # The current 50Hz is a well-tested safe baseline for critical system functions.
+      # Dynamic minimum rate based on thermal stress level to provide more granular control
+      min_rates = {0: 80, 1: 70, 2: 60, 3: 50}  # Lower rates for higher stress levels
       while True:
-        # Use thermal performance factor to adjust processing frequency
-        # This allows the system to reduce computational load when thermally stressed
-        current_rate = max(min_rate, base_rate * self.thermal_performance_factor)
+        # Use enhanced thermal performance factor with trend analysis for more stable control
+        current_stress_level = self.thermal_stress_level
+        current_rate = max(min_rates[current_stress_level], base_rate * self.performance_compensation_factor)
 
         # Process every frame when at full rate, every other frame when at reduced rate
         frame_skip_threshold = base_rate / current_rate
@@ -335,9 +456,11 @@ class Controls(ControlsExt, ModelStateBase):
           self.publish(CC, lac_log)
           self.run_ext(self.sm, self.pm)
 
-          # Enhanced thermal monitoring and logging
-          if self.thermal_performance_factor < 0.8:
-            cloudlog.debug(f"Thermal throttling active: factor={self.thermal_performance_factor:.2f}, rate={current_rate:.1f}Hz")
+          # Enhanced thermal monitoring and logging with stress level information
+          if self.thermal_stress_level > 0:
+            cloudlog.debug(f"Thermal throttling active: stress_level={self.thermal_stress_level}, "
+                          f"factor={self.performance_compensation_factor:.2f}, rate={current_rate:.1f}Hz, "
+                          f"current_thermal={self.thermal_performance_factor:.2f}")
         else:
           # Still update the message subsystem regularly to maintain message flow
           # This 15Hz update rate is chosen to ensure critical communication (e.g., carState, radarState)
@@ -345,14 +468,22 @@ class Controls(ControlsExt, ModelStateBase):
           # without adding significant computational load during these skipped cycles.
           self.sm.update(15)
 
-        # Monitor timing with thermal awareness
+        # Monitor timing with thermal awareness and add thermal-dependent performance logging
         timing_start = time.monotonic()
         rk.monitor_time()
         timing_elapsed = time.monotonic() - timing_start
 
-        # Additional thermal monitoring for extreme cases
+        # Additional thermal monitoring for extreme cases and logging based on thermal state
         if timing_elapsed > 0.02:  # If we're taking too long, log it
-          cloudlog.debug(f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, thermal factor: {self.thermal_performance_factor:.2f}")
+          cloudlog.debug(f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, "
+                        f"thermal_factor: {self.thermal_performance_factor:.2f}, "
+                        f"stress_level: {self.thermal_stress_level}")
+
+        # Add thermal-based performance adjustments to the lateral and longitudinal controllers
+        if hasattr(self.LaC, 'update_thermal_compensation'):
+          self.LaC.update_thermal_compensation(self.thermal_stress_level, self.performance_compensation_factor)
+        if hasattr(self.LoC, 'update_thermal_compensation'):
+          self.LoC.update_thermal_compensation(self.thermal_stress_level, self.performance_compensation_factor)
 
     finally:
       e.set()

@@ -254,5 +254,30 @@ class LatControlTorque(LatControl):
       pid_log.desiredLateralJerk = float(desired_lateral_jerk)
       pid_log.saturated = bool(self._check_saturation(self.steer_max - abs(output_torque) < 1e-3, CS, steer_limited_by_safety, curvature_limited))
 
+    # Add thermal compensation method for enhanced thermal management
+    def update_thermal_compensation(self, thermal_stress_level, compensation_factor):
+      """
+      Update controller parameters based on thermal stress level to maintain
+      consistent performance under different thermal conditions.
+
+      Args:
+        thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
+        compensation_factor: Factor (0.0-1.0) indicating overall system compensation needed
+      """
+      # Adjust PID parameters based on thermal stress to maintain consistent control
+      if thermal_stress_level >= 2:  # High or very high thermal stress
+        # Reduce integral gain to avoid windup during thermal throttling
+        self.pid.k_i = min(self.pid.k_i, self.torque_params.friction / 2.0)
+        # Slightly reduce proportional gain to avoid oscillations during thermal stress
+        self.pid.k_p = min(self.pid.k_p, self.pid.k_p * 0.9)
+      elif thermal_stress_level == 1:  # Moderate thermal stress
+        # Mild adjustment for moderate stress
+        self.pid.k_i = min(self.pid.k_i, self.torque_params.friction * 0.8)
+
+      # Apply compensation factor to prevent integral windup during throttling
+      if hasattr(self, '_prev_integral') and compensation_factor < 0.8:
+        # Reduce the integral term when system is under high thermal stress
+        self.pid.error_integral *= compensation_factor
+
     # TODO left is positive in this convention
     return -output_torque, 0.0, pid_log
