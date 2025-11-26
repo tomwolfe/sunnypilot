@@ -178,6 +178,7 @@ class TestVisionController(unittest.TestCase):
   def test_leaving_state_interpolation(self):
     """Test the interpolation logic in the LEAVING state."""
     vision_controller = SmartCruiseControlVision()
+    vision_controller.enabled = True
     v_ego = 20.0
     a_ego = 0.0
     v_cruise_setpoint = 25.0

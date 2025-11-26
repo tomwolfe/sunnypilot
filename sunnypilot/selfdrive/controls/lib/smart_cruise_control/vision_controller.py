@@ -144,7 +144,7 @@ class SmartCruiseControlVision:
           if self.v_ego <= MIN_V:
             pass
           # If significant lateral acceleration is predicted ahead, then move to Entering turn state.
-          elif self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH:
+          elif self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH - 1e-6:
             self.state = VisionState.entering
 
         # OVERRIDING
@@ -173,7 +173,7 @@ class SmartCruiseControlVision:
           if self.current_lat_acc >= _TURNING_LAT_ACC_TH:
             self.state = VisionState.turning
           # Finish if current lateral acceleration goes below a threshold.
-          elif self.current_lat_acc < _FINISH_LAT_ACC_TH:
+          elif self.current_lat_acc < _FINISH_LAT_ACC_TH - 1e-6:
             self.state = VisionState.enabled
 
     # DISABLED
@@ -186,23 +186,17 @@ class SmartCruiseControlVision:
 
     enabled = self.state in ENABLED_STATES
     active = self.state in ACTIVE_STATES
-
     return enabled, active
 
   def _update_solution(self) -> float:
-    # DISABLED, ENABLED, OVERRIDING
-    if self.state not in ACTIVE_STATES:
-      # when not overshooting, calculate v_turn as the speed at the prediction horizon when following
-      # the smooth deceleration.
-      a_target = self.a_ego
-    # ENTERING
-    elif self.state == VisionState.entering:
-      # when not overshooting, target a smooth deceleration in preparation for a sharp turn to come.
-      # Apply speed adaptation to better handle different driving conditions
-      base_decel = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
-      # Scale the deceleration based on speed for improved safety and comfort at different speeds
-      speed_factor = max(1.0, self.v_ego / 20.0)  # Gentle scaling based on speed vs. reference speed
-      a_target = base_decel * speed_factor
+    a_target = self.a_ego  # Default value
+
+    # In enabled or entering state, calculate deceleration for a curve ahead
+    if self.state in (VisionState.enabled, VisionState.entering):
+      if self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH - 1e-6: # Use the threshold for entering state
+        base_decel = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
+        speed_factor = max(1.0, self.v_ego / 20.0)
+        a_target = base_decel * speed_factor
     # TURNING
     elif self.state == VisionState.turning:
       # When turning, we provide a target acceleration that is comfortable for the lateral acceleration felt.
@@ -221,8 +215,6 @@ class SmartCruiseControlVision:
       # Adjust leaving acceleration based on current speed to improve comfort
       speed_factor = min(1.2, self.v_ego / 15.0) if self.v_ego > 0 else 1.0  # Cap the adjustment factor
       a_target = base_leaving_acc * speed_factor
-    else:
-      raise NotImplementedError(f"SCC-V state not supported: {self.state}")
 
     return a_target
 
