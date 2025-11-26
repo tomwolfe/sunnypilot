@@ -33,8 +33,8 @@ _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on 
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
 # depending on the actual maximum absolute lateral acceleration predicted on the turn ahead.
-_ENTERING_SMOOTH_DECEL_V = [-0.2, -1.]  # min decel value allowed on ENTERING state
-_ENTERING_SMOOTH_DECEL_BP = [1.3, 3.]  # absolute value of lat acc ahead
+_ENTERING_SMOOTH_DECEL_V = [-0.2, -0.6, -1.]  # min decel value allowed on ENTERING state
+_ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.]  # absolute value of lat acc ahead
 
 # Lookup table for the acceleration for the TURNING state
 # depending on the current lateral acceleration of the vehicle.
@@ -177,7 +177,8 @@ class SmartCruiseControlVision:
     # LEAVING
     elif self.state == VisionState.leaving:
       # When leaving, we provide a comfortable acceleration to regain speed.
-      a_target = _LEAVING_ACC
+      a_target = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
+                           [_LEAVING_ACC, 0.2])
     else:
       raise NotImplementedError(f"SCC-V state not supported: {self.state}")
 
