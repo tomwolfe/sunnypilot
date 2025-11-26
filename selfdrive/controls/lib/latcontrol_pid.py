@@ -71,8 +71,8 @@ class LatControlPID(LatControl):
     angle_steers_des_no_offset = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
     angle_steers_des = angle_steers_des_no_offset + params.angleOffsetDeg
 
-    # Apply advanced smoothing to reduce abrupt steering angle changes
-    # Use both rate limiting and low-pass filtering for smoother response
+    # Enhanced smoothing to reduce abrupt steering angle changes
+    # Use both rate limiting and adaptive smoothing for smoother response
     if hasattr(self, '_prev_angle_steers_des'):
       max_angle_rate = self.max_angle_rate  # degrees per second - now configurable
       rate_limit = max_angle_rate * self.dt
@@ -83,14 +83,23 @@ class LatControlPID(LatControl):
       # Apply rate limiting
       angle_diff_limited = np.clip(angle_diff, -rate_limit, rate_limit)
 
-      # Apply a smooth transition using a weighted average to avoid jerks
-      # The smoothing factor is adaptive based on vehicle speed
+      # Apply adaptive smoothing factor based on multiple conditions
+      # The smoothing factor is adaptive based on vehicle speed, curvature, and steering urgency
       speed_factor = min(1.0, max(0.1, CS.vEgo / 15.0))  # More smoothing at higher speeds
-      smoothing_factor = 0.3 * speed_factor  # Adjust between 0.03 (low speed) and 0.3 (high speed)
+      curvature_factor = min(1.0, max(0.2, abs(desired_curvature) * 20.0))  # More smoothing at high curvature
+      urgency_factor = min(1.0, max(0.1, abs(angle_diff_limited) / 1.0))  # Less smoothing when large change needed
+
+      # Calculate combined smoothing factor
+      base_smoothing_factor = 0.4  # Base smoothing factor
+      adaptive_smoothing = base_smoothing_factor * speed_factor * curvature_factor
+      adaptive_smoothing = max(0.1, min(0.7, adaptive_smoothing))  # Keep within reasonable bounds
+
+      # For urgent situations, reduce smoothing
+      final_smoothing_factor = adaptive_smoothing * (0.7 + 0.3 * urgency_factor)  # Apply urgency adjustment
 
       # Apply smoothing
       target_desired = self._prev_angle_steers_des + angle_diff_limited
-      angle_steers_des = (1.0 - smoothing_factor) * self._prev_angle_steers_des + smoothing_factor * target_desired
+      angle_steers_des = (1.0 - final_smoothing_factor) * self._prev_angle_steers_des + final_smoothing_factor * target_desired
     self._prev_angle_steers_des = angle_steers_des
 
     error = angle_steers_des - CS.steeringAngleDeg
@@ -102,24 +111,42 @@ class LatControlPID(LatControl):
       pid_log.active = False
 
     else:
-      # offset does not contribute to resistive torque
+      # Enhanced feedforward calculation with adaptive compensation
       ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
+
+      # Add adaptive feedforward compensation based on vehicle state
+      if CS.vEgo > 5.0:  # Only apply at meaningful speeds
+        # Adjust feedforward based on curvature demand and vehicle speed
+        ff_curvature_adjustment = 1.0 + (abs(desired_curvature) * 0.1)  # Slight boost for high curvature
+        ff *= ff_curvature_adjustment
+
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
       # Enhanced adaptive PID parameters for even smoother response
-      # Implement speed and curvature adaptive gains to reduce oscillations
-      # Calculate adaptive gain reduction based on vehicle state
+      # Implement speed, curvature, and driving condition adaptive gains to reduce oscillations
       speed_factor = min(1.0, max(0.1, CS.vEgo / 20.0))  # Normalize speed effect
       curvature_factor = min(1.0, abs(desired_curvature) * 30.0)  # Reduce gains with high curvature
 
-      # More sophisticated gain adaptation
+      # Enhanced adaptive gain calculation
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Reduce both P and I gains at high speeds to prevent oscillations
-        temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.8) # Use base Kp
-        temp_ki = min(self.pid.k_i, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
+        temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.7) # More conservative at high speeds
+        temp_ki = min(self.pid.k_i, self.high_speed_ki_limit * 0.8)  # Reduce ki to reduce oscillation - now configurable
 
         # Add feedforward compensation at high speeds for better tracking
-        ff *= (1.0 + curvature_factor * 0.2)  # Slight boost when tracking tight curves at high speed
+        ff *= (1.0 + curvature_factor * 0.15)  # Moderate boost when tracking tight curves at high speed
+
+        output_torque = self.pid.update(error,
+                                  feedforward=ff,
+                                  speed=CS.vEgo,
+                                  freeze_integrator=freeze_integrator,
+                                  k_p_override=temp_kp, # Pass overrides
+                                  k_i_override=temp_ki) # Pass overrides
+
+      elif abs(desired_curvature) > 0.05:  # High curvature situations (tight turns)
+        # Reduce gains in tight turns to prevent oversteering
+        temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.75)  # Reduce proportional gain in curves
+        temp_ki = min(self.pid.k_i, self.pid._k_i[1][0] * 0.75)  # Reduce integral gain in curves
 
         output_torque = self.pid.update(error,
                                   feedforward=ff,
@@ -129,8 +156,8 @@ class LatControlPID(LatControl):
                                   k_i_override=temp_ki) # Pass overrides
 
       else:
-        # Speed-adaptive gains for low speeds
-        gain_reduction = 1.0 - (1.0 - speed_factor) * 0.3  # Up to 30% gain at very low speeds
+        # Speed-adaptive gains for low speeds and straight driving
+        gain_reduction = 1.0 - (1.0 - speed_factor) * 0.4  # Up to 40% gain at very low speeds
         temp_kp = self.pid.k_p * gain_reduction
         temp_ki = min(self.pid.k_i, self.pid._k_i[1][0] * gain_reduction) # Use base Ki
 
@@ -141,14 +168,25 @@ class LatControlPID(LatControl):
                                   k_p_override=temp_kp, # Pass overrides
                                   k_i_override=temp_ki) # Pass overrides
 
-      # Add output rate limiting for even smoother actuation
+      # Add sophisticated output rate limiting for even smoother actuation
       if hasattr(self, '_prev_output_torque'):
-          max_torque_rate = min(2.0, max(0.5, CS.vEgo * 0.1))  # Adaptive torque rate limit
+          # Make rate limiting adaptive based on speed and conditions
+          base_torque_rate = 1.0  # Base rate limit
+          if CS.vEgo > 15.0:  # At highway speeds
+            max_torque_rate = min(1.5, max(0.3, CS.vEgo * 0.05))  # Lower rate at high speeds
+          else:  # At lower speeds
+            max_torque_rate = min(2.5, max(0.5, CS.vEgo * 0.1))  # Higher rate at low speeds when needed
+
           torque_change_limit = max_torque_rate * self.dt
           torque_change = output_torque - self._prev_output_torque
           torque_change_limited = np.clip(torque_change, -torque_change_limit, torque_change_limit)
           output_torque = self._prev_output_torque + torque_change_limited
-      self._prev_output_torque = output_torque
+
+          # Additional smoothing for very small changes to reduce noise
+          if abs(torque_change_limited) < 0.05:  # Very small change
+            output_torque = self._prev_output_torque * 0.8 + output_torque * 0.2  # Extra smoothing
+      else:
+        self._prev_output_torque = output_torque  # Initialize if not set
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

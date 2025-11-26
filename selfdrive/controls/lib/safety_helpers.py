@@ -454,7 +454,57 @@ class SafetyManager:
       if recent_trend > 0.05:  # Risk is increasing rapidly
         total_risk = min(1.0, total_risk * 1.2)  # Boost risk score if increasing
 
+    # Enhanced safety layer: Critical fail-safes for immediate danger
+    critical_risks = self._check_critical_safety_conditions(car_state, radar_data)
+    if critical_risks > 0.9:
+      total_risk = max(total_risk, critical_risks)
+
     return total_risk
+
+  def _check_critical_safety_conditions(self, car_state: car.CarState, radar_data) -> float:
+    """
+    Check for critical safety conditions requiring immediate action
+    This provides immediate fail-safe responses for dangerous situations
+    """
+    max_risk = 0.0
+
+    # Check for immediate collision risk
+    if radar_data and hasattr(radar_data, 'leadOne') and radar_data.leadOne.status:
+      lead = radar_data.leadOne
+      if lead.dRel < 20.0 and lead.vRel < -1.0:  # Very close and closing fast
+        # Calculate time to collision
+        if lead.vRel < -0.1:  # Approaching lead
+          time_to_collision = lead.dRel / abs(lead.vRel)
+          if time_to_collision < 2.0:  # Less than 2 seconds - critical danger
+            max_risk = max(max_risk, 0.95)
+          elif time_to_collision < 3.0:  # Less than 3 seconds - high danger
+            max_risk = max(max_risk, 0.85)
+
+    # Check for vehicle system faults that require immediate disengagement
+    if hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent:
+      max_risk = max(max_risk, 0.95)  # Critical fault requiring immediate stop
+
+    if hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed:
+      max_risk = max(max_risk, 0.9)  # System not allowed to control vehicle
+
+    # Check for dangerous vehicle dynamics
+    if (hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo') and
+        car_state.vEgo > 5.0 and abs(car_state.aEgo) > 5.0):
+      # Excessive acceleration/deceleration at speed
+      max_risk = max(max_risk, 0.7)
+
+    # Check for brake and gas pedal conflict
+    if (hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and
+        car_state.brakePressed and car_state.gasPressed):
+      max_risk = max(max_risk, 0.75)  # Dangerous situation
+
+    # Check for dangerous steering angle or rate
+    if (hasattr(car_state, 'steeringAngleDeg') and hasattr(car_state, 'steeringRateDeg') and
+        abs(car_state.steeringAngleDeg) > 45 and abs(car_state.steeringRateDeg) > 100):
+      # Extreme angle with high rate of change - dangerous
+      max_risk = max(max_risk, 0.8)
+
+    return max_risk
 
   def _assess_control_stability(self, car_state: car.CarState, control_output) -> float:
     """

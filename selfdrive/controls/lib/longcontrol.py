@@ -231,14 +231,12 @@ class LongControl:
       if a_target_limited < -2.0:  # Hard braking situation
         emergency_factor = 2.0  # Allow more aggressive response
 
-      output_jerk_limit = max_output_jerk * DT_CTRL * emergency_factor
-      output_accel_change = output_accel - self._prev_output_accel
-
-      # Apply adaptive jerk limiting based on current driving situation
-      if abs(output_accel_change) > output_jerk_limit:
-        output_accel = self._prev_output_accel + np.clip(output_accel_change,
-                                                         -output_jerk_limit,
-                                                         output_jerk_limit)
+      # Apply jerk smoothing to ensure smooth acceleration transitions
+      output_accel = self._apply_jerk_smoothing(
+          self._prev_output_accel,
+          output_accel,
+          max_output_jerk * emergency_factor
+      )
 
       # Additional smoothing for very low-speed situations to prevent jerky movements
       if CS.vEgo < 5.0:  # Below 18 km/h (5 m/s)
@@ -395,10 +393,50 @@ class LongControl:
                 grade_factor = 1.0 + 0.3 * abs(CS.roadGrade)  # Increase jerk limit slightly on grades
                 base_jerk_limit = min(10.0, base_jerk_limit * grade_factor)  # Cap at reasonable value
 
+    # Apply smooth acceleration profiles at highway speeds for fuel efficiency and comfort
+    if CS.vEgo > 20.0 and abs(a_target) < 1.0:  # At highway speeds with gentle acceleration requests
+        base_jerk_limit *= 0.8  # More conservative for smooth highway driving
+
+    # Reduce jerk when following lead vehicle at close distance
+    if hasattr(CS, 'radarState') and CS.radarState is not None:
+        try:
+            if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
+                lead_one = CS.radarState.leadOne
+                dRel = getattr(lead_one, 'dRel', None)
+                if isinstance(dRel, (int, float)) and dRel < 30.0:
+                    # Be increasingly conservative as distance decreases
+                    distance_factor = max(0.3, dRel / 30.0)  # Range from 0.3 (very close) to 1.0 (30m)
+                    base_jerk_limit *= distance_factor
+        except (AttributeError, TypeError):
+            pass
+
     # Apply limits to ensure safety
     base_jerk_limit = max(0.5, min(10.0, base_jerk_limit))  # Reasonable bounds
 
     return base_jerk_limit
+
+  def _apply_jerk_smoothing(self, current_accel, target_accel, max_jerk, dt=DT_CTRL):
+    """
+    Apply jerk smoothing to limit the rate of change of acceleration.
+
+    Args:
+        current_accel: Current acceleration value
+        target_accel: Target acceleration value
+        max_jerk: Maximum jerk limit in m/s^3
+        dt: Time step
+
+    Returns:
+        Smoothed acceleration value respecting jerk limits
+    """
+    # Calculate the maximum allowed change in acceleration based on jerk limit
+    max_accel_change = max_jerk * dt
+
+    # Limit the change in acceleration
+    accel_change = target_accel - current_accel
+    limited_accel_change = max(-max_accel_change, min(max_accel_change, accel_change))
+
+    # Return the new acceleration value
+    return current_accel + limited_accel_change
 
   def _update_acceleration_profile(self, CS, a_target, lead_distance, lead_velocity):
     """
