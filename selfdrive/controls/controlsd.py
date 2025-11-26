@@ -329,21 +329,53 @@ class Controls(ControlsExt, ModelStateBase):
 
   def _calculate_predicted_thermal_rise(self, recent_activity, thermal_history, horizon):
     """
-    Predict thermal rise based on control activity patterns
+    Predict thermal rise based on control activity patterns with enhanced predictive model
     """
-    # Simple predictive model: higher sustained activity predicts higher thermal rise
-    activity_level = min(1.0, recent_activity / 0.7)  # Normalize to 0-1 based on 70% activity threshold
+    # Enhanced predictive model: consider multiple factors for thermal prediction
+    base_activity_level = min(1.0, recent_activity / 0.7)  # Normalize to 0-1 based on 70% activity threshold
 
-    # Analyze trend in thermal history
+    # Calculate recent thermal trend with weighted analysis for better prediction
     trend = 0.0
     if len(thermal_history) > 5:
-      recent_avg = sum(list(thermal_history)[-3:]) / 3
-      older_avg = sum(list(thermal_history)[-6:-3]) / 3
-      trend = max(-0.5, min(0.5, recent_avg - older_avg)) / 0.5  # Normalize trend to -1, 1
+      # Use exponentially weighted moving average for recent values (last 3)
+      recent_window = list(thermal_history)[-3:]
+      recent_avg = sum(recent_window[i] * (i + 1) for i in range(len(recent_window))) / sum(range(1, len(recent_window) + 1))
 
-    # Combine activity and trend for prediction
-    prediction = activity_level * 0.7 + max(0, trend) * 0.3  # Weight activity more heavily
-    return min(1.0, prediction)  # Cap at 1.0
+      # Use simple average for older values (previous 3 before recent)
+      older_start_idx = max(0, len(thermal_history) - 6)
+      older_window = list(thermal_history)[older_start_idx:len(thermal_history) - 3]
+      if older_window:
+        older_avg = sum(older_window) / len(older_window)
+      else:
+        older_avg = recent_avg  # Fallback if not enough history
+
+      # Calculate normalized trend with enhanced sensitivity to rapid changes
+      trend_raw = recent_avg - older_avg
+      trend = max(-0.8, min(0.8, trend_raw)) / 0.8  # Normalize trend to -1, 1 with higher sensitivity
+
+    # Consider vehicle-specific thermal characteristics for more accurate prediction
+    vehicle_thermal_factor = self.vehicle_thermal_model['vehicle_specific_multiplier']
+
+    # Account for environmental factors if available (road grade, ambient temp, etc.)
+    CS = self.sm['carState'] if 'carState' in self.sm else None
+    environmental_factor = 1.0
+    if CS is not None:
+      # Road grade factor: uphill driving generates more heat
+      if hasattr(CS, 'roadGrade') and CS.roadGrade is not None:
+        if isinstance(CS.roadGrade, (int, float)):
+          if CS.roadGrade > 0.05:  # Uphill with grade > 5%
+            environmental_factor += min(0.3, CS.roadGrade)  # Add up to 30% extra thermal prediction
+          elif CS.roadGrade < -0.05:  # Downhill with grade > 5% (braking generates heat too)
+            environmental_factor += min(0.15, abs(CS.roadGrade))  # Add up to 15% for downhill
+
+    # Combine all factors for comprehensive prediction
+    prediction = (base_activity_level * 0.5 +  # Weight activity moderately
+                  max(0, trend) * 0.3 +  # Weight positive trend
+                  (vehicle_thermal_factor - 1.0) * 0.1 +  # Vehicle-specific adjustment
+                  (environmental_factor - 1.0) * 0.1)  # Environmental adjustment
+
+    # Apply bounds and return
+    return min(1.0, max(0.0, prediction))  # Ensure in [0.0, 1.0] range
 
   def _adjust_control_for_thermal_conditions(self, actuators, CS, long_plan, model_v2):
     """
@@ -365,27 +397,48 @@ class Controls(ControlsExt, ModelStateBase):
     Returns:
         Modified actuators adjusted for thermal conditions
     """
-    # Apply thermal-based adjustments to control outputs
-    if self.performance_compensation_factor < 0.8:  # Under thermal stress
-      # Reduce aggressiveness of control commands to reduce computation/actuator load
-      thermal_aggression_factor = self.performance_compensation_factor / 0.8
+    # Apply thermal-based adjustments to control outputs with enhanced logic
+    if self.performance_compensation_factor < 0.9:  # Under thermal stress (lowered threshold for more proactive management)
+      # Calculate thermal aggression factor based on multiple factors
+      thermal_aggression_factor = self.performance_compensation_factor / 0.9  # Adjusted threshold
 
-      # Reduce longitudinal acceleration aggressiveness
+      # Reduce longitudinal acceleration aggressiveness with speed-dependent scaling
       if hasattr(actuators, 'accel'):
         # Apply smoother transitions in acceleration
-        actuators.accel = actuators.accel * thermal_aggression_factor
+        # At high speeds, be more conservative to reduce computational load
+        speed_factor = min(1.0, max(0.7, (30.0 - CS.vEgo) / 30.0))  # More conservative at higher speeds
+        actuators.accel = actuators.accel * thermal_aggression_factor * speed_factor
 
-      # Reduce lateral control aggressiveness
+      # Reduce lateral control aggressiveness with speed and curvature-dependent scaling
       if hasattr(actuators, 'curvature'):
-        # Reduce curvature when under thermal stress to reduce computational load
-        actuators.curvature = actuators.curvature * thermal_aggression_factor
+        # At high speeds or high curvature, be more conservative as lateral computation is more intensive
+        lateral_speed_factor = min(1.0, max(0.6, (40.0 - CS.vEgo) / 40.0))
+        # For high curvature situations, be even more conservative
+        curvature_factor = max(0.7, 1.0 - min(0.3, abs(actuators.curvature) * 50.0))  # More conservative with high curvature
+        thermal_lateral_factor = thermal_aggression_factor * lateral_speed_factor * curvature_factor
+        actuators.curvature = actuators.curvature * thermal_lateral_factor
 
       if hasattr(actuators, 'steeringAngleDeg'):
-        # Gentle steering adjustments under thermal stress
-        actuators.steeringAngleDeg = actuators.steeringAngleDeg * thermal_aggression_factor
+        # Gentle steering adjustments under thermal stress, with adaptive scaling
+        # At high speeds, be more conservative with steering changes
+        steering_speed_factor = min(1.0, max(0.7, (25.0 - CS.vEgo) / 25.0))
+        thermal_steering_factor = thermal_aggression_factor * steering_speed_factor
+        actuators.steeringAngleDeg = actuators.steeringAngleDeg * thermal_steering_factor
 
-      # Log thermal adjustments being made
-      cloudlog.debug(f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, stress_level={self.thermal_stress_level}")
+      # Enhanced logging with more detailed information
+      cloudlog.debug(f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, "
+                     f"stress_level={self.thermal_stress_level}, vEgo={CS.vEgo:.1f}m/s, "
+                     f"speed_factor={speed_factor:.2f if hasattr(actuators, 'accel') else 'N/A'}, "
+                     f"curvature={actuators.curvature:.3f}")
+
+    # Additional conservative measures under critical thermal conditions
+    if self.performance_compensation_factor < 0.6:  # Critical thermal stress
+      # Apply additional safety margins
+      if hasattr(actuators, 'accel'):
+        # Further limit acceleration changes to prevent thermal runaway
+        actuators.accel = max(min(actuators.accel, 1.5), -2.0)  # Limit to reasonable values under thermal stress
+      if hasattr(actuators, 'curvature'):
+        actuators.curvature = max(min(actuators.curvature, 0.2), -0.2)  # Limit to gentle curves under critical stress
 
     return actuators
 
@@ -510,6 +563,7 @@ class Controls(ControlsExt, ModelStateBase):
       if not isinstance(attr, Number):
         continue
 
+      # Check for finite values and reasonable bounds
       if not math.isfinite(attr):
         cloudlog.error(f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}")
         # Implement a recovery by setting to a safe value instead of 0.0
@@ -523,6 +577,32 @@ class Controls(ControlsExt, ModelStateBase):
         else:
           # Default fallback to 0.0
           setattr(actuators, p, 0.0)
+      # Additional safety validation for extreme values
+      elif p == 'accel':
+        # Check for excessive acceleration commands that exceed physical limits
+        if abs(attr) > 5.0:  # More than 0.5g acceleration is extreme
+          cloudlog.warning(f"Excessive acceleration command detected: {attr} m/s^2, limiting to safe value")
+          limited_accel = max(-5.0, min(5.0, attr))
+          setattr(actuators, p, limited_accel)
+          CC.hudControl.visualAlert = log.ControlsState.AlertStatus.warning
+      elif p in ['steeringAngleDeg']:
+        # Check for excessive steering angle commands beyond physical limits
+        if abs(attr) > 90.0:  # Steering angle beyond 90 degrees should never happen
+          cloudlog.error(f"Excessive steering angle command detected: {attr} deg, limiting to safe value")
+          limited_steering = max(-90.0, min(90.0, attr))
+          setattr(actuators, p, limited_steering)
+          CC.hudControl.visualAlert = log.ControlsState.AlertStatus.critical
+      elif p in ['curvature']:
+        # Check for excessive curvature commands (very tight turns at speed)
+        if abs(attr) > 0.5 and CS.vEgo > 5.0:  # Very high curvature at speed is dangerous
+          # Calculate max safe curvature based on speed: curvature = max_lat_accel / vEgo^2
+          max_lat_accel = 3.0  # Conservative maximum lateral acceleration in m/s^2
+          max_safe_curvature = max_lat_accel / (CS.vEgo ** 2)
+          if abs(attr) > max_safe_curvature:
+            cloudlog.warning(f"Excessive curvature command detected: {attr} vs max safe {max_safe_curvature} at speed {CS.vEgo}, limiting")
+            limited_curvature = max(-max_safe_curvature, min(max_safe_curvature, attr))
+            setattr(actuators, p, limited_curvature)
+            CC.hudControl.visualAlert = log.ControlsState.AlertStatus.warning
 
     # Enhanced saturation handling in controls state
     if saturation_detected:
@@ -866,6 +946,7 @@ class Controls(ControlsExt, ModelStateBase):
       if not isinstance(attr, Number):
         continue
 
+      # Check for finite values and reasonable bounds
       if not math.isfinite(attr):
         cloudlog.error(f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}")
         # Implement a recovery by setting to a safe value instead of 0.0
@@ -879,6 +960,32 @@ class Controls(ControlsExt, ModelStateBase):
         else:
           # Default fallback to 0.0
           setattr(actuators, p, 0.0)
+      # Additional safety validation for extreme values
+      elif p == 'accel':
+        # Check for excessive acceleration commands that exceed physical limits
+        if abs(attr) > 5.0:  # More than 0.5g acceleration is extreme
+          cloudlog.warning(f"Excessive acceleration command detected: {attr} m/s^2, limiting to safe value")
+          limited_accel = max(-5.0, min(5.0, attr))
+          setattr(actuators, p, limited_accel)
+          CC.hudControl.visualAlert = log.ControlsState.AlertStatus.warning
+      elif p in ['steeringAngleDeg']:
+        # Check for excessive steering angle commands beyond physical limits
+        if abs(attr) > 90.0:  # Steering angle beyond 90 degrees should never happen
+          cloudlog.error(f"Excessive steering angle command detected: {attr} deg, limiting to safe value")
+          limited_steering = max(-90.0, min(90.0, attr))
+          setattr(actuators, p, limited_steering)
+          CC.hudControl.visualAlert = log.ControlsState.AlertStatus.critical
+      elif p in ['curvature']:
+        # Check for excessive curvature commands (very tight turns at speed)
+        if abs(attr) > 0.5 and CS.vEgo > 5.0:  # Very high curvature at speed is dangerous
+          # Calculate max safe curvature based on speed: curvature = max_lat_accel / vEgo^2
+          max_lat_accel = 3.0  # Conservative maximum lateral acceleration in m/s^2
+          max_safe_curvature = max_lat_accel / (CS.vEgo ** 2)
+          if abs(attr) > max_safe_curvature:
+            cloudlog.warning(f"Excessive curvature command detected: {attr} vs max safe {max_safe_curvature} at speed {CS.vEgo}, limiting")
+            limited_curvature = max(-max_safe_curvature, min(max_safe_curvature, attr))
+            setattr(actuators, p, limited_curvature)
+            CC.hudControl.visualAlert = log.ControlsState.AlertStatus.warning
 
     # Enhanced saturation handling in controls state
     if saturation_detected:

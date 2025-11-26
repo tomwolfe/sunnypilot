@@ -445,8 +445,11 @@ class SelfdriveD(CruiseHelper):
 
     # Enhanced FCW with additional safety checks using radar data
     time_to_collision = float('inf')
+    time_to_collision_alt = float('inf')  # Alternative TTC calculation with velocity-based prediction
     relative_speed = 0.0
     radar_based_fcw = False
+    multi_lead_fcw = False  # Check for additional lead vehicles
+
     if self.sm.updated['radarState'] and self.sm['radarState'].leadOne.status:
         lead_one = self.sm['radarState'].leadOne
         v_ego = CS.vEgo
@@ -454,15 +457,60 @@ class SelfdriveD(CruiseHelper):
             relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
             if relative_speed > 0:  # Approaching lead vehicle
                 time_to_collision = lead_one.dRel / relative_speed
+            # Calculate alternative TTC with acceleration consideration
+            if hasattr(lead_one, 'aRel') and lead_one.aRel != 0:
+                # Use quadratic formula to account for acceleration: x = v*t + 0.5*a*t^2
+                # Distance to collision = dRel - (vRel*t + 0.5*aRel*t^2) = 0
+                # Solving: 0.5*aRel*t^2 + vRel*t - dRel = 0
+                a_rel = lead_one.aRel
+                v_rel = lead_one.vRel
+                d_rel = lead_one.dRel
+                discriminant = v_rel**2 + 2*a_rel*d_rel
+                if discriminant >= 0:
+                    alt_ttc = (-v_rel + math.sqrt(discriminant)) / a_rel if a_rel != 0 else d_rel / (-v_rel) if v_rel != 0 else float('inf')
+                    if alt_ttc > 0:  # Only consider positive time solutions
+                        time_to_collision_alt = min(time_to_collision, alt_ttc)
 
         # Enhanced radar-based FCW with speed-adaptive thresholds
         # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
         relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
-        radar_based_fcw = (time_to_collision < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
+        # Use the minimum TTC calculated (with or without acceleration consideration)
+        effective_ttc = min(time_to_collision, time_to_collision_alt)
+        radar_based_fcw = (effective_ttc < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
                           and not CS.brakePressed and self.enabled)
 
-    if ((planner_fcw or model_fcw or radar_based_fcw) and not self.CP.notCar):
-      self.events.add(EventName.fcw)
+    # Check for multiple lead vehicles that could indicate complex traffic situations
+    if self.sm.updated['radarState']:
+        radar_state = self.sm['radarState']
+        lead_vehicles = []
+        # Check for multiple lead vehicles that might not be the primary lead
+        if hasattr(radar_state, 'leadTwo') and radar_state.leadTwo.status and radar_state.leadTwo.dRel < 50:
+            lead_vehicles.append(radar_state.leadTwo)
+        if hasattr(radar_state, 'leadThree') and radar_state.leadThree.status and radar_state.leadThree.dRel < 50:
+            lead_vehicles.append(radar_state.leadThree)
+
+        for lead in lead_vehicles:
+            if lead.status and lead.dRel > 0:
+                rel_speed = v_ego - lead.vRel
+                if rel_speed > 0:
+                    ttc = lead.dRel / rel_speed
+                    if ttc < 2.5:  # Multiple vehicle TTC
+                        multi_lead_fcw = True
+                        break
+
+    # Enhanced collision risk assessment combining multiple factors
+    enhanced_fcw = ((planner_fcw or model_fcw or radar_based_fcw or multi_lead_fcw) and not self.CP.notCar)
+
+    # Additional check: if model confidence is low but radar indicates danger, still trigger FCW
+    if not enhanced_fcw and radar_based_fcw:
+        # If radar says there's danger but model doesn't, potentially indicate model uncertainty
+        if hasattr(self.sm['modelV2'], 'meta') and hasattr(self.sm['modelV2'].meta, 'validation_applied'):
+            if self.sm['modelV2'].meta.validation_applied:
+                # Model needed significant corrections, prioritize radar data
+                enhanced_fcw = True
+
+    if enhanced_fcw:
+        self.events.add(EventName.fcw)
 
     # GPS checks
     gps_ok = self.sm.recv_frame[self.gps_location_service] > 0 and (self.sm.frame - self.sm.recv_frame[self.gps_location_service]) * DT_CTRL < 2.0

@@ -376,7 +376,8 @@ class LongControl:
     # Base jerk limit
     base_jerk_limit = self.max_jerk
 
-    # Reduce jerk if approaching lead vehicle rapidly
+    # Advanced safety logic for lead vehicle detection
+    lead_safety_factor = 1.0
     if hasattr(CS, 'radarState') and CS.radarState is not None:
         try:
             if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
@@ -384,44 +385,63 @@ class LongControl:
                 lead_one = CS.radarState.leadOne
                 dRel = getattr(lead_one, 'dRel', None)
                 vRel = getattr(lead_one, 'vRel', None)
+                aLead = getattr(lead_one, 'aRel', None)  # Lead acceleration if available
 
                 # Only proceed if both values are actual numbers
                 if isinstance(dRel, (int, float)) and isinstance(vRel, (int, float)):
-                    if dRel < 50.0:
-                        approach_rate = abs(vRel)
-                        if approach_rate > 5.0:  # Approaching rapidly
-                            base_jerk_limit *= 0.7  # More conservative
+                    # Calculate time-to-collision (TTC) for more sophisticated safety logic
+                    if dRel > 0 and CS.vEgo > vRel:  # Lead vehicle is ahead and we're approaching
+                        ttc = dRel / (CS.vEgo - vRel) if (CS.vEgo - vRel) > 0.1 else float('inf')
+                        if ttc < 2.0:  # Less than 2 seconds to potential collision
+                            lead_safety_factor = 0.3  # Very conservative
+                        elif ttc < 4.0:  # Less than 4 seconds, still close
+                            lead_safety_factor = 0.5
+                        elif dRel < 20.0:  # Close distance even with safe TTC
+                            lead_safety_factor = 0.7
+                        elif vRel < -2.0:  # Lead vehicle decelerating rapidly
+                            lead_safety_factor = 0.6
+                    elif dRel < 5.0:  # Very close regardless of relative velocity
+                        lead_safety_factor = 0.2  # Extremely conservative
+
+                    # Additional factor based on lead acceleration if available
+                    if aLead is not None and isinstance(aLead, (int, float)) and aLead < -1.0:
+                        # Lead vehicle braking hard, be more conservative
+                        lead_safety_factor *= 0.8
         except (AttributeError, TypeError):
             pass
+
+    base_jerk_limit *= lead_safety_factor
 
     # Increase jerk allowance during initial acceleration from standstill
     if CS.vEgo < 5.0 and a_target > 0:  # Starting from stop
         base_jerk_limit *= 1.3  # Allow more aggressive initial acceleration
 
-    # Adjust for road grade if available (would need to be passed in from main control)
+    # Adjust for road grade with enhanced logic
     if hasattr(CS, 'roadGrade') and CS.roadGrade is not None:
         # Check if roadGrade is a numeric value (not a Mock object) before using abs()
         if isinstance(CS.roadGrade, (int, float)):
             if abs(CS.roadGrade) > 0.05:  # Significant grade
-                grade_factor = 1.0 + 0.3 * abs(CS.roadGrade)  # Increase jerk limit slightly on grades
-                base_jerk_limit = min(10.0, base_jerk_limit * grade_factor)  # Cap at reasonable value
+                # Adjust jerk differently for uphill vs downhill
+                if CS.roadGrade > 0:  # Uphill
+                    grade_factor = 1.0 + 0.2 * abs(CS.roadGrade)  # Slightly increase jerk for uphill
+                else:  # Downhill
+                    grade_factor = 1.0 - 0.3 * abs(CS.roadGrade)  # Decrease jerk for downhill (braking concern)
+                base_jerk_limit = min(10.0, max(0.5, base_jerk_limit * grade_factor))  # Cap at reasonable values
 
     # Apply smooth acceleration profiles at highway speeds for fuel efficiency and comfort
     if CS.vEgo > 20.0 and abs(a_target) < 1.0:  # At highway speeds with gentle acceleration requests
         base_jerk_limit *= 0.8  # More conservative for smooth highway driving
 
-    # Reduce jerk when following lead vehicle at close distance
-    if hasattr(CS, 'radarState') and CS.radarState is not None:
-        try:
-            if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
-                lead_one = CS.radarState.leadOne
-                dRel = getattr(lead_one, 'dRel', None)
-                if isinstance(dRel, (int, float)) and dRel < 30.0:
-                    # Be increasingly conservative as distance decreases
-                    distance_factor = max(0.3, dRel / 30.0)  # Range from 0.3 (very close) to 1.0 (30m)
-                    base_jerk_limit *= distance_factor
-        except (AttributeError, TypeError):
-            pass
+    # Reduce jerk in adverse weather conditions if available (from model or external sensors)
+    if hasattr(CS, 'weather') and CS.weather is not None:
+        # This would require weather data integration - placeholder for future enhancement
+        if CS.weather in ['rain', 'snow', 'ice']:  # Simplified weather conditions
+            base_jerk_limit *= 0.6  # More conservative in adverse conditions
+
+    # Adjust based on current acceleration vs target (smooth transitions)
+    current_accel_error = abs(CS.aEgo - a_target)
+    if current_accel_error > 1.0:  # Large change needed, be more conservative
+        base_jerk_limit = min(base_jerk_limit, 3.0)  # Cap jerk when making large adjustments
 
     # Apply limits to ensure safety
     base_jerk_limit = max(0.5, min(10.0, base_jerk_limit))  # Reasonable bounds
