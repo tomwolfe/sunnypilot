@@ -85,11 +85,42 @@ class Controls(ControlsExt):
     self.thermal_stress_level = 0  # 0=normal, 1=moderate, 2=high, 3=very high
     self.performance_compensation_factor = 1.0  # Additional compensation for performance degradation
 
+    # Vehicle-specific thermal model parameters
+    # These parameters adjust thermal response based on vehicle type and driving conditions
+    self.vehicle_thermal_model = {
+        'base_thermal_factor': 1.0,
+        'dynamic_thermal_adjustment': 0.0,
+        'vehicle_specific_multiplier': 1.0,
+        'adaptive_control_damping': 1.0,
+        'thermal_inertia_factor': 0.95,  # Factor for thermal momentum (0.0 to 1.0, where 1.0 = no momentum)
+    }
+
+    # Initialize vehicle-specific thermal parameters from car params if available
+    self._init_vehicle_thermal_parameters()
+
     # Initialize safety manager for advanced safety features
     self.safety_manager = SafetyManager()
 
     # Initialize edge case handler for unusual scenario detection and handling
     self.edge_case_handler = EdgeCaseHandler()
+
+  def _init_vehicle_thermal_parameters(self):
+    """
+    Initialize vehicle-specific thermal model parameters based on car parameters.
+    Different vehicle types have different thermal characteristics (engine size, cooling system, etc.)
+    """
+    # Set vehicle-specific thermal parameters based on vehicle characteristics
+    # This affects how the system responds thermally under different driving conditions
+    if hasattr(self.CP, 'mass'):
+      # Heavier vehicles may generate more system load
+      mass_factor = min(1.5, max(0.8, self.CP.mass / 1500.0))  # Normalize around 1500kg
+      self.vehicle_thermal_model['vehicle_specific_multiplier'] = mass_factor
+
+    if hasattr(self.CP, 'centerToFront'):
+      # Longer wheelbase vehicles may have different dynamics requiring different processing
+      wheelbase = self.CP.mass * self.CP.wheelbase  # Proxy for vehicle size
+      size_factor = min(1.3, max(0.9, wheelbase / 3000.0))  # Normalize around typical values
+      self.vehicle_thermal_model['adaptive_control_damping'] = size_factor
 
   def update(self):
     """
@@ -141,12 +172,20 @@ class Controls(ControlsExt):
       # This provides a holistic view of the system's current load.
       system_stress = max(base_thermal_factor, cpu_factor, memory_factor, temp_stress)
 
+      # Apply vehicle-specific thermal model adjustment
+      # Different vehicles have different thermal characteristics based on mass, size, etc.
+      vehicle_thermal_modifier = self.vehicle_thermal_model['vehicle_specific_multiplier']
+      system_stress = min(1.0, system_stress * vehicle_thermal_modifier)
+
       # Apply hysteresis and smoothing to `thermal_performance_factor` to prevent rapid, destabilizing oscillations
       # between performance states. A higher smoothing factor is used when stress is decreasing to gradually
       # restore performance, while a lower factor is used when stress is increasing to react more quickly.
       if hasattr(self, 'prev_thermal_factor'):
-        # Apply smoothing to prevent oscillation between thermal states
+        # Apply thermal inertia with vehicle-specific adjustment
+        thermal_inertia = self.vehicle_thermal_model['thermal_inertia_factor']
         smoothing_factor = 0.9 if system_stress <= self.prev_thermal_factor else 0.7
+        # Apply vehicle-specific thermal inertia
+        smoothing_factor = smoothing_factor * thermal_inertia + (1 - thermal_inertia) * 0.9
         self.thermal_performance_factor = (smoothing_factor * self.prev_thermal_factor +
                                           (1 - smoothing_factor) * system_stress)
       else:
@@ -229,6 +268,19 @@ class Controls(ControlsExt):
         control_activity += min(1.0, curvature_change * 10.0)  # Normalize to 0-1
       self._prev_desired_curvature = self.desired_curvature
 
+    # Add vehicle-specific and driving context to control activity
+    CS = self.sm['carState'] if 'carState' in self.sm else None
+    if CS is not None:
+      # Higher speeds and more aggressive driving generate more heat
+      speed_factor = min(1.0, CS.vEgo / 35.0)  # Normalize at highway speeds
+      control_activity = min(1.0, control_activity + speed_factor * 0.2)
+
+      # Include vEgo and aEgo for thermal prediction
+      if hasattr(CS, 'aEgo') and CS.vEgo > 1.0:
+        # Aggressive longitudinal maneuvers generate heat
+        accel_brake_intensity = min(1.0, abs(CS.aEgo) / 2.0)
+        control_activity = min(1.0, control_activity + accel_brake_intensity * 0.15)
+
     # Add this control activity to history
     self._control_activity_history.append(control_activity)
 
@@ -236,13 +288,17 @@ class Controls(ControlsExt):
     if len(self._control_activity_history) >= 10:
       recent_control_activity = sum(list(self._control_activity_history)[-10:]) / 10.0
 
-      # Predict thermal rise based on sustained activity
+      # Predict thermal rise based on sustained activity and vehicle-specific factors
       prediction_horizon = 3  # Look ahead 3 cycles
       predicted_thermal_rise = self._calculate_predicted_thermal_rise(
           recent_control_activity,
           self.thermal_history,
           prediction_horizon
       )
+
+      # Adjust prediction based on vehicle-specific thermal parameters
+      vehicle_adaptive_factor = self.vehicle_thermal_model['adaptive_control_damping']
+      predicted_thermal_rise = predicted_thermal_rise * vehicle_adaptive_factor
 
       # Blend current thermal state with predicted state to be proactive
       current_thermal_factor = self.thermal_performance_factor
