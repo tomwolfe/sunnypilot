@@ -365,11 +365,21 @@ class Controls(ControlsExt):
           elif CS.roadGrade < -0.05:  # Downhill with grade > 5% (braking generates heat too)
             environmental_factor += min(0.15, abs(CS.roadGrade))  # Add up to 15% for downhill
 
+    # Enhanced prediction incorporating control complexity
+    control_complexity_factor = 0.0
+    if CS is not None:
+      # Calculate complexity based on multiple simultaneous control demands
+      lateral_demand = abs(self.desired_curvature) * CS.vEgo**2  # Lateral acceleration requirement
+      longitudinal_demand = abs(self.sm['longitudinalPlan'].aTarget) if 'longitudinalPlan' in self.sm else 0
+      complexity_score = (lateral_demand * 0.4 + longitudinal_demand * 0.3) / 5.0  # Normalize
+      control_complexity_factor = min(0.2, complexity_score)  # Max 20% additional thermal prediction
+
     # Combine all factors for comprehensive prediction
-    prediction = (base_activity_level * 0.5 +  # Weight activity moderately
-                  max(0, trend) * 0.3 +  # Weight positive trend
+    prediction = (base_activity_level * 0.4 +  # Weight activity moderately
+                  max(0, trend) * 0.25 +  # Weight positive trend
                   (vehicle_thermal_factor - 1.0) * 0.1 +  # Vehicle-specific adjustment
-                  (environmental_factor - 1.0) * 0.1)  # Environmental adjustment
+                  (environmental_factor - 1.0) * 0.1 +  # Environmental adjustment
+                  control_complexity_factor * 0.15)  # Control complexity adjustment
 
     # Apply bounds and return
     return min(1.0, max(0.0, prediction))  # Ensure in [0.0, 1.0] range

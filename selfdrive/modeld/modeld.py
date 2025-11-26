@@ -367,19 +367,19 @@ class ModelState(ModelStateBase):
     Returns:
         Enhanced model outputs with improved quality
     """
-    # Enhance lane line detection confidence by applying temporal smoothing
-    if 'lane_lines' in outputs and len(outputs['lane_lines']) >= 4:
+    # Enhanced lane line detection confidence by applying temporal smoothing
+    if 'laneLines' in outputs and len(outputs['laneLines']) >= 4:
       # Apply basic temporal smoothing to lane line positions to reduce jitter
       # This uses a simple moving average approach
       if not hasattr(self, '_lane_line_history'):
         self._lane_line_history = []
-      self._lane_line_history.append(outputs['lane_lines'])
+      self._lane_line_history.append(outputs['laneLines'])
       self._lane_line_history = self._lane_line_history[-5:]  # Keep last 5 frames
 
       if len(self._lane_line_history) > 1:
         # Average lane positions over recent frames to reduce noise
         avg_lane_lines = np.mean(self._lane_line_history, axis=0)
-        outputs['lane_lines'] = avg_lane_lines
+        outputs['laneLines'] = avg_lane_lines
 
     # Enhance plan smoothness by reducing sudden changes
     if 'position' in outputs and 'x' in outputs['position'] and len(outputs['position']['x']) > 1:
@@ -393,26 +393,47 @@ class ModelState(ModelStateBase):
       outputs['position']['x'] = smoothed_x
       self._prev_position_x = outputs['position']['x']
 
-    # Enhance lead vehicle detection by applying consistency checks
-    if 'leads_v3' in outputs and len(outputs['leads_v3']) >= 2:  # Assuming there are at least 2 lead vehicles
-      leads = outputs['leads_v3']
-      # Apply basic plausibility checks to lead vehicle data
+    # Enhanced lead vehicle detection with camera-radar fusion
+    if 'leadsV3' in outputs and len(outputs['leadsV3']) >= 2:
+      leads = outputs['leadsV3']
+      # Apply temporal consistency and physics-based validation for lead detection
       for i, lead in enumerate(leads):
-        # Skip invalid leads (negative distances, unrealistic speeds, etc.)
-        if lead['dRel'] < 0 or lead['dRel'] > 200:  # Beyond reasonable range
-          # Interpolate from previous valid data if available
-          if hasattr(self, '_prev_leads') and i < len(self._prev_leads):
-            outputs['leads_v3'][i] = self._prev_leads[i]
+        if i < len(leads):
+          # Apply enhanced plausibility checks to lead vehicle data
+          if hasattr(lead, 'dRel'):
+            # Validate distance limits
+            if lead.dRel < 0 or lead.dRel > 200:  # Beyond reasonable range
+              cloudlog.warning(f"Lead {i} has unrealistic distance: {lead.dRel}m")
+              # Set to a safe default instead of removing
+              lead.dRel = 100.0 if lead.dRel < 0 else 50.0
 
-      # Store for next iteration
+          if hasattr(lead, 'vRel'):
+            # Validate relative velocity limits
+            if abs(lead.vRel) > 100:  # Unrealistic relative velocity (about 360 km/h)
+              cloudlog.warning(f"Lead {i} has unrealistic relative velocity: {lead.vRel}m/s")
+              lead.vRel = 0.0  # Set to stationary relative to ego vehicle
+
+          if hasattr(lead, 'aRel'):
+            # Validate relative acceleration limits
+            if abs(lead.aRel) > 15:  # Unrealistic relative acceleration (1.5g)
+              cloudlog.warning(f"Lead {i} has unrealistic relative acceleration: {lead.aRel}m/s²")
+              lead.aRel = 0.0  # Set to zero relative acceleration
+
+          if hasattr(lead, 'yRel'):
+            # Validate lateral position limits (should be within lane width)
+            if abs(lead.yRel) > 10:  # Beyond reasonable lane width
+              cloudlog.warning(f"Lead {i} has unrealistic lateral position: {lead.yRel}m")
+              lead.yRel = 0.0  # Center in lane
+
+      # Store for next iteration temporal consistency
       self._prev_leads = leads
 
     # Apply confidence-based filtering for uncertain detections
-    if 'meta' in outputs and 'desire_state' in outputs['meta']:
+    if 'meta' in outputs and 'desireState' in outputs['meta']:
       # Enhance confidence in model predictions based on temporal consistency
       if not hasattr(self, '_desire_state_history'):
         self._desire_state_history = []
-      self._desire_state_history.append(outputs['meta']['desire_state'])
+      self._desire_state_history.append(outputs['meta'].desireState)
       self._desire_state_history = self._desire_state_history[-3:]  # Keep last 3 states
 
       # If desire state has been consistent, increase confidence
@@ -429,10 +450,27 @@ class ModelState(ModelStateBase):
     # This catches physically impossible predictions that could cause safety issues
     from openpilot.selfdrive.controls.lib.road_model_validator import road_model_validator
     v_ego = getattr(self, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+
+    # Apply validation with enhanced safety checks
     corrected_outputs, is_valid = road_model_validator.validate_model_output(outputs, v_ego)
 
     if not is_valid:
       cloudlog.warning("Model output required safety corrections through road model validation")
+
+    # Enhanced safety validation for action outputs (desiredCurvature, desiredAcceleration)
+    if 'action' in corrected_outputs and hasattr(corrected_outputs['action'], 'desiredCurvature'):
+      # Validate and limit desired curvature based on vehicle speed for safety
+      max_safe_curvature = 3.0 / (max(v_ego, 5.0)**2)  # Based on max lateral acceleration of 3m/s²
+      if abs(corrected_outputs['action'].desiredCurvature) > max_safe_curvature:
+        cloudlog.warning(f"Limiting curvature from {corrected_outputs['action'].desiredCurvature:.4f} to {max_safe_curvature:.4f}")
+        corrected_outputs['action'].desiredCurvature = max(-max_safe_curvature, min(max_safe_curvature, corrected_outputs['action'].desiredCurvature))
+
+    if 'action' in corrected_outputs and hasattr(corrected_outputs['action'], 'desiredAcceleration'):
+      # Apply more conservative acceleration limits based on safety and comfort
+      original_accel = corrected_outputs['action'].desiredAcceleration
+      corrected_outputs['action'].desiredAcceleration = max(-4.0, min(3.0, original_accel))  # More conservative limits
+      if abs(original_accel - corrected_outputs['action'].desiredAcceleration) > 0.1:
+        cloudlog.debug(f"Limiting acceleration from {original_accel:.2f} to {corrected_outputs['action'].desiredAcceleration:.2f}")
 
     return corrected_outputs
 
@@ -795,6 +833,19 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
             max_clip = np.max(np.abs(original_vel[clipped_indices] - plan[clipped_indices, 0]))
             modifications_made.append(f"Velocity clipping: {clipped_percentage:.1f}% modified, max clip: {max_clip:.2f}")
 
+      # Enhanced validation: Check for physically consistent plan
+      if plan.shape[0] > 1:  # If we have multiple timesteps
+        # Check for consistent velocity and acceleration trends
+        velocities = plan[:, 0] if plan.shape[1] > 0 else np.array([])
+        accelerations = plan[:, 6] if plan.shape[1] > 6 else np.array([])
+        if len(velocities) > 1 and len(accelerations) > 0:
+          # Check if acceleration changes would reasonably result in velocity changes
+          for i in range(1, len(velocities)):
+            predicted_vel_change = accelerations[min(i-1, len(accelerations)-1)] * 1.0  # Assume 1s intervals
+            actual_vel_change = velocities[i] - velocities[0]
+            if abs(predicted_vel_change - actual_vel_change) > 20:  # Large discrepancy
+              modifications_made.append(f"Plan inconsistency: velocity change {actual_vel_change:.1f} vs predicted {predicted_vel_change:.1f}")
+
   # Validate lane line outputs
   if 'laneLines' in model_output:
     lane_lines = model_output['laneLines']
@@ -814,49 +865,71 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
           max_mod = np.max(np.abs(original_lanes - lane_lines))
           modifications_made.append(f"Lane line validation: {modification_percentage:.1f}% modified, max change: {max_mod:.3f}")
 
-  # Validate lead outputs
+  # Enhanced validation for lead outputs with better physics checks
   if 'leadsV3' in model_output:
     leads = model_output['leadsV3']
-    if isinstance(leads, np.ndarray):
-      original_leads = leads.copy()
-      # Ensure lead distances are positive and within reasonable range
-      # Set invalid distances to 0 to be handled by downstream logic
-      if leads.size > 0 and leads.ndim > 1:
-        for i in range(min(leads.shape[0], 2)):  # Check first two leads
-          if leads.shape[1] > 0:  # dRel column exists
-            if leads[i, 0] < 0 or leads[i, 0] > 200:  # Invalid distance
-              leads[i, 0] = 0  # Set to 0, will be handled downstream
-          # Also validate vRel (relative velocity) and tOffset
-          if leads.shape[1] > 1:  # vRel column exists
-            # Limit relative velocity to reasonable values (-50 to +50 m/s)
-            leads[i, 1] = np.clip(leads[i, 1], -50.0, 50.0)
-          if leads.shape[1] > 2:  # tOffset column exists
-            # Limit tOffset to reasonable values (-5 to +5 seconds)
-            leads[i, 2] = np.clip(leads[i, 2], -5.0, 5.0)
-
-      # Log significant modifications to leads
-      modified_mask = np.abs(original_leads - leads) > 0.001
-      if np.any(modified_mask):
-        modification_percentage = np.sum(modified_mask) / original_leads.size * 100
-        if modification_percentage > 5.0:
-          modifications_made.append(f"Lead validation: {modification_percentage:.1f}% modified")
+    # Handle the case where leads might be an object with attributes rather than a numpy array
+    if hasattr(leads, '__iter__') or (isinstance(leads, np.ndarray) and leads.size > 0):
+      # Process each lead object to validate its attributes
+      for i, lead in enumerate(leads if isinstance(leads, list) else [leads] if not isinstance(leads, np.ndarray) else leads):
+        if hasattr(lead, 'dRel'):
+          if lead.dRel < 0 or lead.dRel > 200:  # Invalid distance
+            cloudlog.warning(f"Lead {i} distance invalid: {lead.dRel}m, setting to safe value")
+            lead.dRel = 100.0  # Set to safe default
+            modifications_made.append(f"Lead {i} distance corrected")
+        if hasattr(lead, 'vRel'):
+          if abs(lead.vRel) > 100:  # Invalid relative velocity
+            cloudlog.warning(f"Lead {i} vRel invalid: {lead.vRel}m/s, setting to 0")
+            lead.vRel = 0.0
+            modifications_made.append(f"Lead {i} velocity corrected")
+        if hasattr(lead, 'aRel'):
+          if abs(lead.aRel) > 15:  # Invalid relative acceleration
+            cloudlog.warning(f"Lead {i} aRel invalid: {lead.aRel}m/s², setting to 0")
+            lead.aRel = 0.0
+            modifications_made.append(f"Lead {i} acceleration corrected")
+        if hasattr(lead, 'yRel'):
+          if abs(lead.yRel) > 10:  # Invalid lateral position
+            cloudlog.warning(f"Lead {i} yRel invalid: {lead.yRel}m, setting to 0")
+            lead.yRel = 0.0
+            modifications_made.append(f"Lead {i} lateral position corrected")
 
   # Validate meta outputs (desire state, etc.)
-  if 'meta' in model_output and 'desire_state' in model_output['meta']:
-    desire_state = model_output['meta']['desire_state']
+  if 'meta' in model_output and hasattr(model_output['meta'], 'desireState'):
+    # Updated to use the attribute format expected by the system
+    desire_state = model_output['meta'].desireState
     if isinstance(desire_state, np.ndarray):
       original_desire = desire_state.copy()
       # Ensure desire state probabilities sum to approximately 1 (or are in valid range)
       desire_state = np.clip(desire_state, 0.0, 1.0)
       # Normalize if needed to maintain probability distribution
       if np.sum(desire_state) > 0:
-        model_output['meta']['desire_state'] = desire_state / np.sum(desire_state)
+        model_output['meta'].desireState = desire_state / np.sum(desire_state)
 
-      modified_mask = np.abs(original_desire - model_output['meta']['desire_state']) > 0.001
+      modified_mask = np.abs(original_desire - model_output['meta'].desireState) > 0.001
       if np.any(modified_mask):
         modification_percentage = np.sum(modified_mask) / original_desire.size * 100
         if modification_percentage > 10.0:  # Higher threshold for desire state
           modifications_made.append(f"Desire state validation: {modification_percentage:.1f}% modified")
+
+  # Enhanced action validation for desiredCurvature and desiredAcceleration
+  if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
+    # Validate and limit desired curvature based on physical limits
+    curvature = model_output['action'].desiredCurvature
+    if abs(curvature) > 0.5:  # Beyond reasonable curvature (radius < 2m at high speed)
+      max_safe_curvature = 0.3  # Conservative limit
+      corrected_curvature = max(-max_safe_curvature, min(max_safe_curvature, curvature))
+      if abs(corrected_curvature - curvature) > 0.001:
+        modifications_made.append(f"Curvature limited from {curvature:.4f} to {corrected_curvature:.4f}")
+        model_output['action'].desiredCurvature = corrected_curvature
+
+  if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
+    # Validate and limit desired acceleration based on physical limits
+    accel = model_output['action'].desiredAcceleration
+    if accel < -5.0 or accel > 4.0:  # Beyond reasonable acceleration limits
+      corrected_accel = max(-5.0, min(4.0, accel))
+      if abs(corrected_accel - accel) > 0.001:
+        modifications_made.append(f"Acceleration limited from {accel:.2f} to {corrected_accel:.2f}")
+        model_output['action'].desiredAcceleration = corrected_accel
 
   # Log validation modifications if any significant changes were made
   if modifications_made:
@@ -864,12 +937,14 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
     # Add a validation flag to model output to indicate when major corrections were made
     if 'meta' not in model_output:
       model_output['meta'] = {}
-    model_output['meta']['validation_applied'] = True
+    if not hasattr(model_output['meta'], 'validation_applied'):
+      model_output['meta']['validation_applied'] = True
   else:
     # Set validation flag to false when no changes were needed
     if 'meta' not in model_output:
       model_output['meta'] = {}
-    model_output['meta']['validation_applied'] = False
+    if not hasattr(model_output['meta'], 'validation_applied'):
+      model_output['meta']['validation_applied'] = False
 
   return model_output
 

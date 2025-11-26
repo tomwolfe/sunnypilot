@@ -49,18 +49,18 @@ class RoadModelValidator:
     def validate_lane_lines(self, lane_lines: np.ndarray, lane_line_probs: np.ndarray = None) -> Tuple[np.ndarray, bool]:
         """
         Validate lane line detections for physical reasonableness.
-        
+
         Args:
             lane_lines: Array of lane line polynomial coefficients [n_lanes, 5] (for degree 4 polynomial)
             lane_line_probs: Array of lane line probabilities [n_lanes]
-            
+
         Returns:
             Tuple of (corrected_lane_lines, is_valid)
         """
         if lane_lines is None or len(lane_lines) == 0:
             cloudlog.debug("Lane lines validation: no data to validate")
             return lane_lines, False
-            
+
         # Make a copy to modify
         corrected_lines = lane_lines.copy()
         is_valid = True
@@ -71,14 +71,14 @@ class RoadModelValidator:
                 cloudlog.warning(f"Lane line {i} has insufficient coefficients")
                 is_valid = False
                 continue
-                
+
             # Check that higher-order coefficients are reasonable
             # For road polynomials, higher-order terms should be small
             if len(line_coeffs) > 2 and abs(line_coeffs[2]) > 0.01:  # x^2 coefficient
                 cloudlog.warning(f"Excessive x^2 coefficient for lane line {i}: {line_coeffs[2]}")
                 corrected_lines[i][2] = np.clip(line_coeffs[2], -0.01, 0.01)
                 is_valid = False
-                
+
             if len(line_coeffs) > 3 and abs(line_coeffs[3]) > 0.001:  # x^3 coefficient
                 cloudlog.warning(f"Excessive x^3 coefficient for lane line {i}: {line_coeffs[3]}")
                 corrected_lines[i][3] = np.clip(line_coeffs[3], -0.001, 0.001)
@@ -94,9 +94,9 @@ class RoadModelValidator:
                 if len(line_coeffs) >= 3:
                     first_deriv = line_coeffs[1] + 2*line_coeffs[2]*distance + (3*line_coeffs[3]*distance**2 if len(line_coeffs) > 3 else 0)
                     second_deriv = 2*line_coeffs[2] + (6*line_coeffs[3]*distance if len(line_coeffs) > 3 else 0) + (12*line_coeffs[4]*distance**2 if len(line_coeffs) > 4 else 0)
-                    
+
                     curvature = abs(second_deriv) / (1 + first_deriv**2)**1.5 if 1 + first_deriv**2 > 0.1 else abs(second_deriv)
-                    
+
                     if abs(curvature) > self.max_lane_curvature:
                         cloudlog.warning(f"Lane line {i} has excessive curvature {curvature:.3f} at {distance}m: {line_coeffs}")
                         # Apply correction by reducing higher-order coefficients
@@ -111,10 +111,23 @@ class RoadModelValidator:
             line_0_at_10m = np.polyval(np.flip(corrected_lines[0]), 10.0)
             line_1_at_10m = np.polyval(np.flip(corrected_lines[1]), 10.0)
             distance_between_lines = abs(line_0_at_10m - line_1_at_10m)
-            
+
             if distance_between_lines < self.min_lane_distance or distance_between_lines > self.max_lane_distance:
                 cloudlog.warning(f"Lane line distance not reasonable: {distance_between_lines:.2f}m")
                 is_valid = False
+
+        # Enhanced temporal consistency check with previous frame
+        if self.prev_lane_lines is not None and len(self.prev_lane_lines) > 0:
+            # Compare current detection with previous to detect anomalies
+            if len(corrected_lines) != len(self.prev_lane_lines):
+                cloudlog.debug("Lane detection count changed significantly from previous frame")
+
+            # Check for excessive deviation from previous frame (temporal consistency)
+            for i in range(min(len(corrected_lines), len(self.prev_lane_lines))):
+                line_diff = np.abs(corrected_lines[i] - self.prev_lane_lines[i])
+                if np.any(line_diff > 0.5):  # Significant deviation threshold
+                    cloudlog.debug(f"Lane line {i} deviated significantly from previous frame: {line_diff}")
+                    is_valid = False
 
         # If lane probabilities are provided, validate against thresholds
         if lane_line_probs is not None and len(lane_line_probs) == len(corrected_lines):
