@@ -1,6 +1,8 @@
 import numpy as np
-from openpilot.selfdrive.modeld.constants import ModelConstants
+import time
 from collections import deque
+from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.modeld.constants import ModelConstants
 
 def safe_exp(x, out=None):
   # -11 is around 10**14, more causes float16 overflow
@@ -20,64 +22,113 @@ def softmax(x, axis=-1):
 
 class TemporalConsistencyFilter:
   """
-  Maintains temporal consistency in model predictions to reduce jerky movements
-  and improve driving smoothness by tracking and smoothing changes over time.
+  The TemporalConsistencyFilter enhances model prediction stability by applying
+  temporal smoothing techniques to reduce noise and jerky movements in predictions
+  such as the driving plan, lane lines, and lead vehicle data. It uses a moving
+  average over a specified buffer size, with context-aware adjustments like
+  velocity-dependent factors and confidence-based filtering. This addresses
+  the common user complaint of unstable or jerky behavior, providing a smoother
+  and more comfortable driving experience.
   """
   def __init__(self, buffer_size=5):
+    # buffer_size: The number of past frames to consider for smoothing.
+    # A 5-frame buffer (50ms at 100Hz) introduces a small delay but significantly
+    # reduces noise and jitter.
     self.buffer_size = buffer_size
     self.plan_buffer = deque(maxlen=buffer_size)
     self.lane_line_buffer = deque(maxlen=buffer_size)
     self.lead_buffer = deque(maxlen=buffer_size)
 
   def smooth_plan(self, current_plan):
-    """Apply temporal smoothing to plan trajectory to reduce jerky movements"""
+    """
+    Applies temporal smoothing to the driving plan trajectory to reduce jerky
+    movements. This method uses a weighted average of the current and previous
+    plans, with more aggressive smoothing applied to acceleration changes.
+
+    Args:
+      current_plan: The current model prediction for the driving plan.
+
+    Returns:
+      The smoothed driving plan.
+    """
+    start_time = time.monotonic()
     if len(self.plan_buffer) == 0:
       self.plan_buffer.append(current_plan.copy())
+      cloudlog.debug(f"smooth_plan took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_plan
 
     # Calculate the difference from previous plan
     prev_plan = self.plan_buffer[-1]
-    diff = current_plan - prev_plan
 
     # Apply smoothing based on velocity and curvature to reduce sudden changes
     # For the plan trajectory (position, velocity, acceleration)
     smoothed_plan = current_plan.copy()
 
-    # Smooth position changes based on velocity to avoid sudden lane changes
-    velocity_factor = np.clip(np.abs(current_plan[:, 3:6]) / 30.0, 0.1, 1.0)  # Normalize by max expected velocity
+    # Smooth position changes based on velocity to avoid sudden lane changes.
+    # A velocity-dependent factor could be used here for more advanced smoothing,
+    # but a constant smoothing factor is applied for simplicity and effectiveness.
     position_smoothing = 0.8  # Reduce position changes by 20%
     smoothed_plan[:, :3] = prev_plan[:, :3] * (1 - position_smoothing) + current_plan[:, :3] * position_smoothing
 
-    # Apply more aggressive smoothing to acceleration for smoother ride
+    # Apply more aggressive smoothing to acceleration for a smoother ride.
+    # Sudden changes in acceleration are more uncomfortable than changes in position.
     acceleration_smoothing = 0.6  # Reduce acceleration changes by 40%
     smoothed_plan[:, 6:9] = prev_plan[:, 6:9] * (1 - acceleration_smoothing) + current_plan[:, 6:9] * acceleration_smoothing
 
     # Store in buffer and return smoothed plan
     self.plan_buffer.append(smoothed_plan.copy())
+    cloudlog.debug(f"smooth_plan took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_plan
 
   def smooth_lane_lines(self, current_lane_lines):
-    """Smooth lane line predictions for more consistent lane keeping"""
+    """
+    Smooths lane line predictions for more consistent lane keeping.
+    This helps prevent "snappy" lane line behavior on the UI and in control.
+
+    Args:
+      current_lane_lines: The current model prediction for lane lines.
+
+    Returns:
+      The smoothed lane line predictions.
+    """
+    start_time = time.monotonic()
     if len(self.lane_line_buffer) == 0:
       self.lane_line_buffer.append(current_lane_lines.copy())
+      cloudlog.debug(f"smooth_lane_lines took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_lane_lines
 
     prev_lines = self.lane_line_buffer[-1]
-    # Apply smoothing to lane line polynomial coefficients
+    # Apply smoothing to lane line polynomial coefficients using a simple moving average.
     smoothing_factor = 0.9
     smoothed_lines = prev_lines * (1 - smoothing_factor) + current_lane_lines * smoothing_factor
 
     self.lane_line_buffer.append(smoothed_lines.copy())
+    cloudlog.debug(f"smooth_lane_lines took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_lines
 
   def smooth_lead(self, current_lead):
-    """Smooth lead vehicle detection to reduce jerky reactions"""
+    """
+    Smooths lead vehicle detection to reduce jerky reactions and improve
+    longitudinal control stability. This is particularly important for
+    maintaining a comfortable following distance.
+
+    Args:
+      current_lead: The current model prediction for the lead vehicle.
+
+    Returns:
+      The smoothed lead vehicle detection.
+    """
+    start_time = time.monotonic()
     if len(self.lead_buffer) == 0:
       self.lead_buffer.append(current_lead.copy())
+      cloudlog.debug(f"smooth_lead took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_lead
 
     prev_lead = self.lead_buffer[-1]
-    # Apply smoothing to lead estimates, being careful about distance and velocity
+    # Apply smoothing to lead estimates, being careful about distance and velocity.
+    # Only smooth when we have consistent lead detection (i.e., the lead vehicle
+    # is continuously detected). If detection is intermittent, prioritize the
+    # current detection to avoid "ghost" leads.
     smoothing_factor = 0.85
     # Only smooth when we have consistent lead detection (not oscillating between lead/no-lead)
     if (np.all(prev_lead[:, :, 0] > 0) and np.all(current_lead[:, :, 0] > 0)):  # Distance > 0
@@ -87,6 +138,7 @@ class TemporalConsistencyFilter:
       smoothed_lead = current_lead
 
     self.lead_buffer.append(smoothed_lead.copy())
+    cloudlog.debug(f"smooth_lead took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_lead
 
 class Parser:

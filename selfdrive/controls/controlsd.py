@@ -74,6 +74,15 @@ class Controls(ControlsExt, ModelStateBase):
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
     # Initialize thermal management system with enhanced tracking
+    # thermal_performance_factor: Represents the current overall system stress (thermal, CPU, memory).
+    #   A value of 1.0 means no stress, lower values indicate higher stress.
+    #   It's a smoothed value derived from the maximum of thermal, CPU, and memory percentages.
+    # thermal_history: A deque that tracks the thermal_performance_factor over the last 30 cycles (0.3 seconds at 100Hz).
+    #   Used for trend analysis to predict future thermal behavior.
+    # thermal_stress_level: Categorizes the system's stress into discrete levels (0-3).
+    #   0=normal, 1=moderate, 2=high, 3=very high. This provides context-aware control.
+    # performance_compensation_factor: An additional factor that further reduces performance based on rapidly increasing
+    #   thermal stress trends. It acts as a proactive cushion against thermal runaway.
     self.thermal_performance_factor = 1.0
     self.thermal_history = deque(maxlen=30)  # Track thermal performance over last 30 cycles (0.3 seconds at 100Hz)
     self.thermal_stress_level = 0  # 0=normal, 1=moderate, 2=high, 3=very high
@@ -110,15 +119,20 @@ class Controls(ControlsExt, ModelStateBase):
       cpu_usage = max(self.sm['deviceState'].cpuUsagePercent) if self.sm['deviceState'].cpuUsagePercent else 0
       memory_usage = self.sm['deviceState'].memoryUsagePercent
 
+      cloudlog.debug(f"Thermal management inputs: thermal_prc={thermal_prc:.2f}, cpu_usage={cpu_usage:.2f}, memory_usage={memory_usage:.2f}")
+
       # Enhanced thermal management with more granular control and predictive elements
       base_thermal_factor = thermal_prc / 100.0
       cpu_factor = cpu_usage / 100.0
       memory_factor = memory_usage / 100.0
 
-      # Calculate overall system stress as the maximum of all factors
+      # Calculate overall system stress as the maximum of all factors (thermal, CPU, memory).
+      # This provides a holistic view of the system's current load.
       system_stress = max(base_thermal_factor, cpu_factor, memory_factor)
 
-      # Add hysteresis to prevent rapid switching between thermal states
+      # Apply hysteresis and smoothing to `thermal_performance_factor` to prevent rapid, destabilizing oscillations
+      # between performance states. A higher smoothing factor is used when stress is decreasing to gradually
+      # restore performance, while a lower factor is used when stress is increasing to react more quickly.
       if hasattr(self, 'prev_thermal_factor'):
         # Apply smoothing to prevent oscillation between thermal states
         smoothing_factor = 0.9 if system_stress <= self.prev_thermal_factor else 0.7
@@ -132,7 +146,8 @@ class Controls(ControlsExt, ModelStateBase):
       # Update thermal history for trend analysis
       self.thermal_history.append(self.thermal_performance_factor)
 
-      # Determine thermal stress level based on current and historical data
+      # Determine thermal stress level based on current and historical data.
+      # This allows for context-aware control adjustments.
       avg_thermal = sum(self.thermal_history) / len(self.thermal_history) if self.thermal_history else 0
       current_thermal = self.thermal_performance_factor
 
@@ -146,7 +161,9 @@ class Controls(ControlsExt, ModelStateBase):
       else:
         self.thermal_stress_level = 0  # Normal
 
-      # Adjust performance compensation based on thermal stress trend
+      # Adjust performance compensation based on thermal stress trend.
+      # If stress is rapidly increasing, proactively apply extra compensation as a "cushion."
+      # If stress is decreasing, gradually restore performance.
       if len(self.thermal_history) > 10:
         # Calculate thermal trend (increasing, decreasing, stable)
         recent_avg = sum(list(self.thermal_history)[-5:]) / 5
@@ -438,10 +455,13 @@ class Controls(ControlsExt, ModelStateBase):
 
       # Enhanced thermal scaling parameters with dynamic adjustment based on stress level
       base_rate = 100  # Hz
-      # Dynamic minimum rate based on thermal stress level to provide more granular control
+      # `min_rates` provides dynamic, context-aware control. It maps thermal stress levels to minimum allowed control loop frequencies.
+      # This ensures that even under moderate stress, the system doesn't throttle too aggressively, preserving responsiveness.
       min_rates = {0: 80, 1: 70, 2: 60, 3: 50}  # Lower rates for higher stress levels
       while True:
-        # Use enhanced thermal performance factor with trend analysis for more stable control
+        # `current_rate` is adaptively calculated based on the current thermal stress level and the
+        # `performance_compensation_factor`. This dynamically adjusts the control loop frequency
+        # to maintain system stability and hardware protection under varying thermal conditions.
         current_stress_level = self.thermal_stress_level
         current_rate = max(min_rates[current_stress_level], base_rate * self.performance_compensation_factor)
 

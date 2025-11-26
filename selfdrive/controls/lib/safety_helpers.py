@@ -12,6 +12,7 @@ from cereal import car, log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from opendbc.car.interfaces import LatCtrlState, StateTrans
+from openpilot.common.swaglog import cloudlog
 
 
 class SafetyManager:
@@ -34,8 +35,13 @@ class SafetyManager:
     self.max_steering_rate = self.params.get_float("SafetyMaxSteeringRate", 100.0)  # deg/s
     self.min_model_prediction_confidence = self.params.get_float("SafetyMinModelConfidence", 0.5)
     
-    # Safety state
+    # Safety state variables
+    # safety_violation_count: Accumulates violations. It's a soft counter; a single transient
+    #   issue won't immediately cause disengagement. It gradually decreases if no new violations occur.
     self.safety_violation_count = 0
+    # max_safety_violations: The threshold for consecutive safety violations that triggers
+    #   a critical disengagement. This prevents single, transient glitches from causing
+    #   a major annoyance for users, only disengaging after persistent problems.
     self.max_safety_violations = 3  # Maximum violations before disengagement
     self.safety_engaged = True  # Whether safety system is actively monitoring
     self.violation_threshold = 0.5  # Threshold for triggering safety actions
@@ -140,11 +146,20 @@ class SafetyManager:
     # specific confidence metrics provided by the model
     try:
       if hasattr(model_data, 'meta') and hasattr(model_data.meta, 'engageProb'):
+        engage_prob = model_data.meta.engageProb
+        if not (0.0 <= engage_prob <= 1.0):
+          cloudlog.warning(f"Safety: engageProb out of bounds: {engage_prob:.2f}. Clamping to 0.0.")
+          engage_prob = 0.0 # Treat as unsafe if out of bounds
         # If engagement probability is too low, consider it unsafe
-        if model_data.meta.engageProb < self.min_model_prediction_confidence:
+        if engage_prob < self.min_model_prediction_confidence:
+          cloudlog.debug(f"Safety: Low model engageProb: {engage_prob:.2f} (threshold: {self.min_model_prediction_confidence:.2f})")
           return False
-    except (AttributeError, TypeError):
-      pass
+      elif hasattr(model_data, 'meta'): # meta exists but engageProb is missing
+        cloudlog.warning("Safety: Model meta data found, but engageProb is missing.")
+        return False # Consider unsafe if critical data is missing
+    except (AttributeError, TypeError) as e:
+      cloudlog.error(f"Safety: Error accessing engageProb from model_data: {e}")
+      return False # Treat as unsafe due to data access error
     
     # Check for sudden, unrealistic model predictions
     # Example: very high curvature that would be unachievable at current speed
@@ -182,19 +197,25 @@ class SafetyManager:
     # Check steering safety
     if not self.monitor_steering_safety(car_state, control_output):
       self.safety_violation_count += 1
+      cloudlog.debug(f"Safety violation: unsafe_steering. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_steering"
     
     # Check longitudinal safety
     if not self.monitor_longitudinal_safety(car_state, control_output):
       self.safety_violation_count += 1
+      cloudlog.debug(f"Safety violation: unsafe_longitudinal. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_longitudinal"
     
     # Check model prediction safety
     if not self.monitor_model_prediction_safety(model_data):
       self.safety_violation_count += 1
+      cloudlog.debug(f"Safety violation: unsafe_model_predictions. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_model_predictions"
     
     # Reset violation count on successful safety check
+    # The safety_violation_count gradually decreases (by 0.1 per cycle) when no new violations
+    # are detected. This mechanism allows the system to recover from transient, non-persistent
+    # issues without immediately triggering a disengagement, balancing safety with usability.
     if self.safety_violation_count > 0:
       self.safety_violation_count = max(0, self.safety_violation_count - 0.1)  # Gradually decrease
     
