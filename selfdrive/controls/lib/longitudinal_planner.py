@@ -236,12 +236,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                  distance_to_collision < 50 and  # Only if close enough to be relevant
                  sm['carState'].aEgo < -1.25) # Re-added safeguard: prevent FCW during strong acceleration (original value)
 
+    # 6. Additional safety criterion: Predictive collision assessment using multiple lead vehicles
+    extended_collision_risk = False
+    if (sm['radarState'].leadTwo.status and
+        lead_one.dRel < 60.0 and
+        sm['radarState'].leadTwo.dRel < lead_one.dRel + 30.0 and  # Second lead is close behind first
+        sm['radarState'].leadTwo.vRel < -2.0):  # Second lead is approaching rapidly
+        extended_collision_risk = True
+
     # Combine all FCW triggers
     self.fcw = (imminent_collision or
                 distance_collision or
                 lead_braking_emergency or
                 mpc_and_sensors_warning or
-                (model_fcw and v_ego > 5))
+                (model_fcw and v_ego > 5) or
+                extended_collision_risk)
 
     # Additional safety logic: consider relative acceleration
     # NOTE: This trigger is potentially aggressive and may cause false positives during lane changes or merging.

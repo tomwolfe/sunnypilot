@@ -682,6 +682,9 @@ class SafetyManager:
         risk = max(risk, self._assess_surrounding_vehicle_tracks_risk(radar_data))
         risk = max(risk, self._assess_dense_traffic_risk(radar_data))
 
+        # Enhanced risk assessment: Traffic pattern analysis
+        risk = max(risk, self._assess_traffic_pattern_risk(radar_data))
+
       except AttributeError as e:
         cloudlog.debug(f"Radar data attribute error in risk assessment: {e}")
         pass
@@ -690,7 +693,48 @@ class SafetyManager:
     if environment_data:
       # This would include weather, visibility, traffic density data
       # For now, placeholder
-      pass
+      risk = max(risk, self._assess_environment_data_risk(environment_data))
+
+    return risk
+
+  def _assess_traffic_pattern_risk(self, radar_data) -> float:
+    """
+    Assess risk based on traffic patterns and flow
+    """
+    risk = 0.0
+
+    # Assess traffic flow consistency
+    if radar_data.leadOne.status and radar_data.leadTwo.status:
+      # Calculate relative speeds and positions to detect dangerous patterns
+      rel_speed_diff = abs(radar_data.leadOne.vRel - radar_data.leadTwo.vRel)
+      distance_diff = abs(radar_data.leadTwo.dRel - radar_data.leadOne.dRel)
+
+      # High relative speed difference with close distance creates dangerous situation
+      if distance_diff < 30.0 and rel_speed_diff > 10.0:
+        risk = max(risk, 0.6)  # High risk traffic pattern
+
+      # Check for potential cut-in situations
+      if (distance_diff < 15.0 and
+          radar_data.leadOne.vRel > radar_data.leadTwo.vRel + 5.0 and  # First lead is pulling away from second
+          radar_data.leadTwo.dRel < 50.0):  # Both leads are close
+        risk = max(risk, 0.5)  # Potential lane change/cut-in risk
+
+    return risk
+
+  def _assess_environment_data_risk(self, environment_data) -> float:
+    """
+    Assess risk from environment data (weather, visibility, etc.)
+    """
+    risk = 0.0
+
+    # Placeholder for environment data processing
+    # Would typically include weather data, visibility metrics, etc.
+    # For now, we'll look for any environmental risk indicators
+    if hasattr(environment_data, 'weatherRisk') and environment_data.weatherRisk > 0.7:
+      risk = max(risk, environment_data.weatherRisk * 0.6)
+
+    if hasattr(environment_data, 'visibility') and environment_data.visibility < 0.3:  # Poor visibility
+      risk = max(risk, 0.4)
 
     return risk
 
