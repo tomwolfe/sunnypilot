@@ -298,12 +298,31 @@ class LongitudinalMpc:
 
   @staticmethod
   def extrapolate_lead(x_lead, v_lead, a_lead, a_lead_tau):
+    """
+    Extrapolates the lead vehicle's future trajectory based on current acceleration.
+
+    For normal braking (a_lead >= -1.5 m/s²), uses the traditional exponential decay model.
+    For hard braking (a_lead < -1.5 m/s²), assumes constant deceleration for 1.5 seconds
+    followed by zero acceleration to better model real-world emergency braking scenarios.
+
+    Args:
+        x_lead: Current lead vehicle distance
+        v_lead: Current lead vehicle velocity
+        a_lead: Current lead vehicle acceleration
+        a_lead_tau: Time constant for lead acceleration decay
+
+    Returns:
+        lead_xv: Array of lead vehicle positions and velocities over the prediction horizon
+    """
     # If lead is braking hard, assume constant deceleration for a short time
+    # This is a safety-critical improvement: hard braking typically means the lead vehicle
+    # maintains near-constant deceleration for a period before stopping or releasing brakes
     if a_lead < -1.5:
-      t_brake_constant = 1.5
-      a_lead_traj = np.ones_like(T_IDXS) * a_lead
-      a_lead_traj[T_IDXS > t_brake_constant] = 0.0
+      t_brake_constant = 1.5  # seconds - conservative estimate for hard braking duration
+      a_lead_traj = np.ones_like(T_IDXS) * a_lead  # Maintain constant deceleration initially
+      a_lead_traj[T_IDXS > t_brake_constant] = 0.0  # Assume deceleration stops after threshold
     else:
+      # Traditional model: exponentially decaying acceleration
       a_lead_traj = a_lead * np.exp(-a_lead_tau * (T_IDXS**2)/2.)
     v_lead_traj = np.clip(v_lead + np.cumsum(T_DIFFS * a_lead_traj), 0.0, 1e8)
     x_lead_traj = x_lead + np.cumsum(T_DIFFS * v_lead_traj)

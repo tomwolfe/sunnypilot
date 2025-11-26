@@ -171,6 +171,26 @@ def create_maneuvers(kwargs):
       speed_lead_values=[20., 20., 0.],
       breakpoints=[0., 15., 20.0],
       **kwargs,
+    ),
+    Maneuver(
+      'following lead car at 25m/s, lead brakes hard at 3.5m/s^2',
+      duration=50.,
+      initial_speed=25.,
+      lead_relevancy=True,
+      initial_distance_lead=50.,
+      speed_lead_values=[25., 25., 0.],
+      breakpoints=[0., 10., 18.57],  # 10 + (25-0)/3.5 seconds to stop
+      **kwargs,
+    ),
+    Maneuver(
+      'following lead car at 30m/s, lead brakes hard at 2m/s^2 (boundary case)',
+      duration=50.,
+      initial_speed=30.,
+      lead_relevancy=True,
+      initial_distance_lead=60.,
+      speed_lead_values=[30., 30., 0.],
+      breakpoints=[0., 8., 23.0],  # 8 + (30-0)/2 seconds to stop
+      **kwargs,
     )]
   if not kwargs['force_decel']:
     # controls relies on planner commanding to move for stock-ACC resume spamming
