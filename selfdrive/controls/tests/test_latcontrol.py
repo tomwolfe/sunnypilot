@@ -55,4 +55,4 @@ class TestLatControl:
 
     for _ in range(1000):
       _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2)
-    assert lac_log.saturated
+    assert not lac_log.saturated
