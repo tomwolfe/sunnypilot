@@ -71,14 +71,26 @@ class LatControlPID(LatControl):
     angle_steers_des_no_offset = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
     angle_steers_des = angle_steers_des_no_offset + params.angleOffsetDeg
 
-    # Apply smoothing to reduce abrupt steering angle changes
-    # Limit the rate of change of desired steering angle
+    # Apply advanced smoothing to reduce abrupt steering angle changes
+    # Use both rate limiting and low-pass filtering for smoother response
     if hasattr(self, '_prev_angle_steers_des'):
       max_angle_rate = self.max_angle_rate  # degrees per second - now configurable
       rate_limit = max_angle_rate * self.dt
+
+      # Calculate desired change
       angle_diff = angle_steers_des - self._prev_angle_steers_des
+
+      # Apply rate limiting
       angle_diff_limited = np.clip(angle_diff, -rate_limit, rate_limit)
-      angle_steers_des = self._prev_angle_steers_des + angle_diff_limited
+
+      # Apply a smooth transition using a weighted average to avoid jerks
+      # The smoothing factor is adaptive based on vehicle speed
+      speed_factor = min(1.0, max(0.1, CS.vEgo / 15.0))  # More smoothing at higher speeds
+      smoothing_factor = 0.3 * speed_factor  # Adjust between 0.03 (low speed) and 0.3 (high speed)
+
+      # Apply smoothing
+      target_desired = self._prev_angle_steers_des + angle_diff_limited
+      angle_steers_des = (1.0 - smoothing_factor) * self._prev_angle_steers_des + smoothing_factor * target_desired
     self._prev_angle_steers_des = angle_steers_des
 
     error = angle_steers_des - CS.steeringAngleDeg
@@ -94,30 +106,69 @@ class LatControlPID(LatControl):
       ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
-      # Adaptive PID parameters for smoother response
-      # Reduce integral gain at high speed to prevent oscillations
-      original_ki_values = self.pid._k_i[1]  # Store original ki values (tuple)
+      # Enhanced adaptive PID parameters for even smoother response
+      # Implement speed and curvature adaptive gains to reduce oscillations
+      original_kp_values = self.pid._k_p[1]
+      original_ki_values = self.pid._k_i[1]
+
+      # Calculate adaptive gain reduction based on vehicle state
+      speed_factor = min(1.0, max(0.1, CS.vEgo / 20.0))  # Normalize speed effect
+      curvature_factor = min(1.0, abs(desired_curvature) * 30.0)  # Reduce gains with high curvature
+
+      # More sophisticated gain adaptation
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Temporarily reduce integral gain to prevent oscillations at high speeds
-        # This is more robust than creating temporary PID controllers
+        # Reduce both P and I gains at high speeds to prevent oscillations
+        temp_kp = min(self.pid.k_p, original_kp_values[0] * 0.8) if len(original_kp_values) > 0 else self.pid.k_p * 0.8
         temp_ki = min(self.pid.k_i, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-        # We can't directly modify the property of PIDController, so we need to update the internal values temporarily
-        # Create new array that maintains the same length as original, with all values set to temp_ki
+
+        # Create new tuples for temporary gain values
+        temp_kp_array = [temp_kp] * len(original_kp_values)
         temp_ki_array = [temp_ki] * len(original_ki_values)
-        # Create new tuple to replace the original
-        new_ki_structure = (self.pid._k_i[0], tuple(temp_ki_array))  # Keep speed points, update ki values
-        self.pid._k_i = new_ki_structure
+
+        # Apply temporary gains
+        self.pid._k_p = (self.pid._k_p[0], tuple(temp_kp_array))
+        self.pid._k_i = (self.pid._k_i[0], tuple(temp_ki_array))
+
+        # Add feedforward compensation at high speeds for better tracking
+        ff *= (1.0 + curvature_factor * 0.2)  # Slight boost when tracking tight curves at high speed
+
         output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
-        # Restore original ki values after update
+
+        # Restore original gains after update
+        self.pid._k_p = (self.pid._k_p[0], original_kp_values)
         self.pid._k_i = (self.pid._k_i[0], original_ki_values)
       else:
+        # Speed-adaptive gains for low speeds
+        gain_reduction = 1.0 - (1.0 - speed_factor) * 0.3  # Up to 30% gain at very low speeds
+        temp_kp = self.pid.k_p * gain_reduction
+        temp_ki = min(self.pid.k_i, original_ki_values[0] * gain_reduction) if len(original_ki_values) > 0 else self.pid.k_i * gain_reduction
+
+        temp_kp_array = [temp_kp] * len(original_kp_values)
+        temp_ki_array = [temp_ki] * len(original_ki_values)
+
+        self.pid._k_p = (self.pid._k_p[0], tuple(temp_kp_array))
+        self.pid._k_i = (self.pid._k_i[0], tuple(temp_ki_array))
+
         output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
                                   freeze_integrator=freeze_integrator)
+
+        # Restore original gains after update
+        self.pid._k_p = (self.pid._k_p[0], original_kp_values)
+        self.pid._k_i = (self.pid._k_i[0], original_ki_values)
+
+      # Add output rate limiting for even smoother actuation
+      if hasattr(self, '_prev_output_torque'):
+          max_torque_rate = min(2.0, max(0.5, CS.vEgo * 0.1))  # Adaptive torque rate limit
+          torque_change_limit = max_torque_rate * self.dt
+          torque_change = output_torque - self._prev_output_torque
+          torque_change_limited = np.clip(torque_change, -torque_change_limit, torque_change_limit)
+          output_torque = self._prev_output_torque + torque_change_limited
+      self._prev_output_torque = output_torque
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

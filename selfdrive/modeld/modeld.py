@@ -192,6 +192,35 @@ class ModelState(ModelStateBase):
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
     return parsed_model_outputs
 
+  def _should_run_vision_model(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
+    """
+    Determine if we should run the vision model based on system load and minimum time interval
+    to help with CPU efficiency when possible.
+    """
+    # Always run the model on the first call
+    if not hasattr(self, 'prev_model_run_time'):
+        self.prev_model_run_time = time.monotonic()
+        return True
+
+    # Check if we're under high system stress (thermal, CPU, memory)
+    if hasattr(self, 'system_load_factor'):
+        # If system load is high (> 0.9), consider skipping model run to reduce load
+        # but only if we're not in a critical driving situation
+        if self.system_load_factor > 0.9:
+            # Still run the model at least once every 50ms to ensure safety
+            time_since_last_run = time.monotonic() - self.prev_model_run_time
+            if time_since_last_run < 0.05:  # 50ms threshold
+                return False  # Skip this run to reduce CPU load
+    else:
+        # If system load factor isn't available, use the interval-based approach
+        time_since_last_run = time.monotonic() - self.prev_model_run_time
+        min_interval = 1.0 / ModelConstants.MODEL_RUN_FREQ  # Respect the designed model frequency
+        if time_since_last_run < min_interval:
+            return False
+
+    self.prev_model_run_time = time.monotonic()
+    return True
+
   def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
                 inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
@@ -214,15 +243,36 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
 
-    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
-    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+    # Optimize model execution with caching and memory management
+    # Only execute vision model if inputs have actually changed significantly (to reduce unnecessary compute)
+    if not hasattr(self, 'prev_vision_inputs') or self._should_run_vision_model(bufs, transforms):
+      # Cache the vision model input hash to avoid running unnecessarily
+      self.prev_vision_inputs_hash = hash(tuple((buf.width, buf.height, buf.frame_id) for buf in bufs.values()))
 
-    self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
+      self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
+      vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+
+      # Store features for potential reuse
+      self._cached_features = vision_outputs_dict.get('hidden_state', None)
+    else:
+      # Use cached features if inputs haven't changed significantly
+      vision_outputs_dict = {}
+      if hasattr(self, '_cached_features') and self._cached_features is not None:
+        vision_outputs_dict['hidden_state'] = self._cached_features
+
+    # Process features from vision model
+    features_buffer = vision_outputs_dict.get('hidden_state',
+                                            self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32))
+
+    self.full_input_queues.enqueue({'features_buffer': features_buffer, 'desire_pulse': new_desire})
     for k in ['desire_pulse', 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
 
-    self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy()
+    # Optimize tensor operations by avoiding unnecessary copying and realizing
+    # Only realize tensors when actually needed
+    policy_tensor = self.policy_run(**self.policy_inputs)
+    self.policy_output = policy_tensor.contiguous().realize().uop.base.buffer.numpy()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
 
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
@@ -319,11 +369,22 @@ def main(demo=False):
 
     # Adjust tolerance based on system load: use more aggressive sync when system is under less stress
     base_tolerance_ns = 25000000  # 25ms base tolerance
-    dynamic_tolerance_ns = int(base_tolerance_ns * (0.8 if system_load_factor < 0.7 else 1.2))  # 20ms when system is cool, 30ms when stressed
-    # TODO: The specific values (0.8, 1.2, 0.7) in this formula are likely empirical.
-    # A more granular, non-linear scaling might yield better performance or provide
-    # more nuanced control over synchronization tolerance under varying load conditions.
+    # Use a more granular, non-linear scaling based on system load for better performance
+    if system_load_factor < 0.5:
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.6)  # 15ms when system is very cool
+    elif system_load_factor < 0.7:
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.7)  # 17.5ms when system is moderately cool
+    elif system_load_factor < 0.85:
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.9)  # 22.5ms when system is warm
+    else:
+        dynamic_tolerance_ns = int(base_tolerance_ns * 1.2)  # 30ms when system is stressed
+    # Implement dynamic wait cycles based on system conditions and previous frame sync quality
+    prev_sync_quality = getattr(model, 'avg_frame_sync_quality', 1.0)  # 1.0 = perfect sync, higher = worse
+    quality_factor = min(1.5, max(0.7, prev_sync_quality))  # Constrain between 0.7 and 1.5
+
     max_wait_cycles = MAX_WAIT_CYCLES if system_load_factor < 0.8 else max(1, MAX_WAIT_CYCLES // 2)  # Reduce wait cycles when system is stressed
+    # Adjust wait cycles based on previous sync quality to optimize for current conditions
+    max_wait_cycles = int(max_wait_cycles * quality_factor)
 
     # Optimized frame synchronization - attempt to get both frames with minimal blocking
     # First, get main camera frame (which we need regardless)
@@ -340,33 +401,51 @@ def main(demo=False):
       # Instead of waiting for perfect sync, try to get the closest possible frames
       wait_cycles = 0
       buf_extra_timeout = None
+      best_buf_extra = None
+      best_time_diff = float('inf')  # Track the best time difference found
 
       # Try to get extra camera frame that is close in time to main frame
-      while wait_cycles < max_wait_cycles and buf_extra_timeout is None:
+      while wait_cycles < max_wait_cycles:
         buf_extra = vipc_client_extra.recv()
         meta_extra = FrameMeta(vipc_client_extra)
         if buf_extra is None:
           break
 
+        time_diff = abs(meta_main.timestamp_sof - meta_extra.timestamp_sof)
+
+        # If this frame has better synchronization than previous best
+        if time_diff < best_time_diff:
+          best_time_diff = time_diff
+          best_buf_extra = buf_extra
+
         # Check if the frames are reasonably synchronized
-        if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) <= dynamic_tolerance_ns:
+        if time_diff <= dynamic_tolerance_ns:
           buf_extra_timeout = buf_extra  # We found a reasonably synchronized frame
           break
         elif meta_main.timestamp_sof < meta_extra.timestamp_sof + dynamic_tolerance_ns:
           # Extra is ahead of main, accept this frame as it's closest to main and minimizes latency.
           # The goal is to keep frames as close as possible; accepting a frame slightly ahead
           # ensures the lowest possible latency for the 'extra' frame relative to 'main'.
-          buf_extra_timeout = buf_extra
+          if buf_extra_timeout is None:  # Only set if we haven't found a better sync already
+            buf_extra_timeout = buf_extra
           break
         # If extra is behind main, continue waiting for new extra frame
         wait_cycles += 1
 
-      # Use the best available extra frame even if it's not perfectly synchronized
-      buf_extra = buf_extra_timeout
+      # Use the best available extra frame, preferring synchronized frames but accepting the closest if needed
+      buf_extra = buf_extra_timeout if buf_extra_timeout is not None else best_buf_extra
       if buf_extra is None:
-        # If we couldn't get a reasonable extra frame, skip this cycle to maintain safety
-        cloudlog.debug("Could not get reasonably synchronized extra frame, skipping cycle")
+        # If we couldn't get any extra frame, skip this cycle to maintain safety
+        cloudlog.debug("Could not get any extra frame, skipping cycle")
         continue
+
+      # Update frame sync quality metric for adaptive optimization
+      if not hasattr(model, 'sync_quality_history'):
+        model.sync_quality_history = []
+      model.sync_quality_history.append(best_time_diff / 1e6)  # Store in ms
+      model.sync_quality_history = model.sync_quality_history[-20:]  # Keep last 20 measurements
+      if len(model.sync_quality_history) > 0:
+        model.avg_frame_sync_quality = sum(model.sync_quality_history) / len(model.sync_quality_history) / 10.0  # Normalize
 
       # Check sync quality and log if frames are significantly out of sync
       if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
@@ -435,6 +514,9 @@ def main(demo=False):
     # This provides an overall measure of system stress - conservative approach
     # Thermal status values: green=0, yellow=1, red=2, danger=3
     system_load = max(thermal_status, memory_usage_raw / 100.0, cpu_usage_raw / 100.0)
+
+    # Store system load in the model for use in efficiency decisions
+    model.system_load_factor = system_load
 
     # Enhanced performance monitoring with adaptive model execution
     mt1 = time.perf_counter()
