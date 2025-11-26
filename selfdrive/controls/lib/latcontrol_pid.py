@@ -63,13 +63,6 @@ class LatControlPID(LatControl):
       return max_val
     return value
 
-  def _restore_original_pid_gains(self, original_kp_values, original_ki_values):
-    """
-    Restores the original PID gain values after temporary modifications.
-    """
-    self.pid._k_p = (self.pid._k_p[0], original_kp_values)
-    self.pid._k_i = (self.pid._k_i[0], original_ki_values)
-
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay):
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
@@ -115,9 +108,6 @@ class LatControlPID(LatControl):
 
       # Enhanced adaptive PID parameters for even smoother response
       # Implement speed and curvature adaptive gains to reduce oscillations
-      original_kp_values = self.pid._k_p[1]
-      original_ki_values = self.pid._k_i[1]
-
       # Calculate adaptive gain reduction based on vehicle state
       speed_factor = min(1.0, max(0.1, CS.vEgo / 20.0))  # Normalize speed effect
       curvature_factor = min(1.0, abs(desired_curvature) * 30.0)  # Reduce gains with high curvature
@@ -125,16 +115,8 @@ class LatControlPID(LatControl):
       # More sophisticated gain adaptation
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
         # Reduce both P and I gains at high speeds to prevent oscillations
-        temp_kp = min(self.pid.k_p, original_kp_values[0] * 0.8) if len(original_kp_values) > 0 else self.pid.k_p * 0.8
+        temp_kp = min(self.pid.k_p, self.pid._k_p[1][0] * 0.8) # Use base Kp
         temp_ki = min(self.pid.k_i, self.high_speed_ki_limit)  # Reduce ki to reduce oscillation - now configurable
-
-        # Create new tuples for temporary gain values
-        temp_kp_array = [temp_kp] * len(original_kp_values)
-        temp_ki_array = [temp_ki] * len(original_ki_values)
-
-        # Apply temporary gains
-        self.pid._k_p = (self.pid._k_p[0], tuple(temp_kp_array))
-        self.pid._k_i = (self.pid._k_i[0], tuple(temp_ki_array))
 
         # Add feedforward compensation at high speeds for better tracking
         ff *= (1.0 + curvature_factor * 0.2)  # Slight boost when tracking tight curves at high speed
@@ -142,27 +124,22 @@ class LatControlPID(LatControl):
         output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
-                                  freeze_integrator=freeze_integrator)
+                                  freeze_integrator=freeze_integrator,
+                                  k_p_override=temp_kp, # Pass overrides
+                                  k_i_override=temp_ki) # Pass overrides
 
       else:
         # Speed-adaptive gains for low speeds
         gain_reduction = 1.0 - (1.0 - speed_factor) * 0.3  # Up to 30% gain at very low speeds
         temp_kp = self.pid.k_p * gain_reduction
-        temp_ki = min(self.pid.k_i, original_ki_values[0] * gain_reduction) if len(original_ki_values) > 0 else self.pid.k_i * gain_reduction
-
-        temp_kp_array = [temp_kp] * len(original_kp_values)
-        temp_ki_array = [temp_ki] * len(original_ki_values)
-
-        self.pid._k_p = (self.pid._k_p[0], tuple(temp_kp_array))
-        self.pid._k_i = (self.pid._k_i[0], tuple(temp_ki_array))
+        temp_ki = min(self.pid.k_i, self.pid._k_i[1][0] * gain_reduction) # Use base Ki
 
         output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
-                                  freeze_integrator=freeze_integrator)
-
-      # Restore original gains after update
-      self._restore_original_pid_gains(original_kp_values, original_ki_values)
+                                  freeze_integrator=freeze_integrator,
+                                  k_p_override=temp_kp, # Pass overrides
+                                  k_i_override=temp_ki) # Pass overrides
 
       # Add output rate limiting for even smoother actuation
       if hasattr(self, '_prev_output_torque'):

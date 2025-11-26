@@ -547,6 +547,69 @@ class SafetyManager:
     # Return risk (1.0 - confidence)
     return max(0.0, 1.0 - prediction_confidence)
 
+  def _assess_lead_vehicle_risk(self, radar_data) -> float:
+    risk = 0.0
+    if radar_data.leadOne.status:
+      # Calculate time to collision with lead vehicle
+      relative_speed = radar_data.leadOne.vRel
+      if relative_speed > 0.1:  # Approaching lead vehicle
+        time_to_collision = radar_data.leadOne.dRel / relative_speed if relative_speed > 0.1 else float('inf')
+        if time_to_collision < 1.5:  # Extremely critical (less than 1.5 seconds)
+          risk = max(risk, 0.95)
+        elif time_to_collision < 2.0:  # Critical (less than 2 seconds)
+          risk = max(risk, 0.8)
+        elif time_to_collision < 2.5:  # High risk (less than 2.5 seconds)
+          risk = max(risk, 0.6)
+        elif time_to_collision < 3.0:  # Moderate risk (less than 3 seconds)
+          risk = max(risk, 0.4)
+    return risk
+
+  def _assess_lead_deceleration_risk(self, radar_data) -> float:
+    risk = 0.0
+    if radar_data.leadOne.status:
+      # If lead vehicle is braking hard relative to our speed
+      lead_deceleration = radar_data.leadOne.aRel if hasattr(radar_data.leadOne, 'aRel') else 0
+      if lead_deceleration < -2.0:  # Lead vehicle braking hard
+        if radar_data.leadOne.dRel < 40.0:  # Within 40m
+          risk = max(risk, 0.6)
+    return risk
+
+  def _assess_multiple_vehicle_risk(self, radar_data) -> float:
+    risk = 0.0
+    if radar_data.leadOne.status and radar_data.leadTwo.status:
+      # Check for potential cut-in between vehicles
+      spacing = radar_data.leadTwo.dRel - radar_data.leadOne.dRel
+      if spacing < 8.0 and radar_data.leadOne.dRel < 50.0:  # Close spacing and not too far
+        # Check if middle vehicle is moving laterally (potential lane change)
+        if hasattr(radar_data.leadOne, 'yRel') and hasattr(radar_data.leadTwo, 'yRel'):
+          lateral_separation = abs(radar_data.leadTwo.yRel - radar_data.leadOne.yRel)
+          if lateral_separation < 5.0:  # Vehicles close laterally too
+            risk = max(risk, 0.5)
+    return risk
+
+  def _assess_surrounding_vehicle_tracks_risk(self, radar_data) -> float:
+    risk = 0.0
+    if hasattr(radar_data, 'tracks') and len(radar_data.tracks) > 0:
+      for track in radar_data.tracks:
+        if track.status and track.dRel < 60.0:  # Within 60m
+          # Calculate potential collision time for this track
+          relative_speed_track = track.vRel if hasattr(track, 'vRel') else 0
+          if relative_speed_track > 0.5:  # Approaching
+            time_to_collision_track = track.dRel / relative_speed_track if relative_speed_track > 0.5 else float('inf')
+            if time_to_collision_track < 2.5:
+              risk = max(risk, 0.3)
+    return risk
+
+  def _assess_dense_traffic_risk(self, radar_data) -> float:
+    risk = 0.0
+    close_vehicles = 0
+    for lead in [radar_data.leadOne, radar_data.leadTwo]:
+      if lead.status and lead.dRel < 30.0:
+        close_vehicles += 1
+    if close_vehicles >= 2:
+      risk = max(risk, 0.4)  # High density traffic increases risk
+    return risk
+
   def _assess_environmental_risk(self, radar_data, environment_data) -> float:
     """
     Assess risk from environmental factors
@@ -555,59 +618,11 @@ class SafetyManager:
 
     if radar_data:
       try:
-        # 1. Lead vehicle risk - calculate time to collision more robustly
-        if radar_data.leadOne.status:
-          # Calculate time to collision with lead vehicle
-          relative_speed = radar_data.leadOne.vRel  # vRel is positive when approaching (negative when moving away)
-          if relative_speed > 0.1:  # Approaching lead vehicle
-            time_to_collision = radar_data.leadOne.dRel / relative_speed if relative_speed > 0.1 else float('inf')
-            if time_to_collision < 1.5:  # Extremely critical (less than 1.5 seconds)
-              risk = max(risk, 0.95)
-            elif time_to_collision < 2.0:  # Critical (less than 2 seconds)
-              risk = max(risk, 0.8)
-            elif time_to_collision < 2.5:  # High risk (less than 2.5 seconds)
-              risk = max(risk, 0.6)
-            elif time_to_collision < 3.0:  # Moderate risk (less than 3 seconds)
-              risk = max(risk, 0.4)
-
-        # 2. Lead vehicle deceleration risk
-        if radar_data.leadOne.status:
-          # If lead vehicle is braking hard relative to our speed
-          lead_deceleration = radar_data.leadOne.aRel if hasattr(radar_data.leadOne, 'aRel') else 0
-          if lead_deceleration < -2.0:  # Lead vehicle braking hard
-            if radar_data.leadOne.dRel < 40.0:  # Within 40m
-              risk = max(risk, 0.6)
-
-        # 3. Multiple vehicle risk and cut-in detection
-        if radar_data.leadOne.status and radar_data.leadTwo.status:
-          # Check for potential cut-in between vehicles
-          spacing = radar_data.leadTwo.dRel - radar_data.leadOne.dRel
-          if spacing < 8.0 and radar_data.leadOne.dRel < 50.0:  # Close spacing and not too far
-            # Check if middle vehicle is moving laterally (potential lane change)
-            if hasattr(radar_data.leadOne, 'yRel') and hasattr(radar_data.leadTwo, 'yRel'):
-              lateral_separation = abs(radar_data.leadTwo.yRel - radar_data.leadOne.yRel)
-              if lateral_separation < 5.0:  # Vehicles close laterally too
-                risk = max(risk, 0.5)
-
-        # 4. Surrounding vehicle risk from all radar tracks
-        # Process all tracks to identify potential merging/cut-in vehicles
-        if hasattr(radar_data, 'tracks') and len(radar_data.tracks) > 0:
-          for track in radar_data.tracks:
-            if track.status and track.dRel < 60.0:  # Within 60m
-              # Calculate potential collision time for this track
-              relative_speed_track = track.vRel if hasattr(track, 'vRel') else 0
-              if relative_speed_track > 0.5:  # Approaching
-                time_to_collision_track = track.dRel / relative_speed_track if relative_speed_track > 0.5 else float('inf')
-                if time_to_collision_track < 2.5:
-                  risk = max(risk, 0.3)
-
-        # 5. Dense traffic risk (multiple vehicles close by)
-        close_vehicles = 0
-        for lead in [radar_data.leadOne, radar_data.leadTwo]:
-          if lead.status and lead.dRel < 30.0:
-            close_vehicles += 1
-        if close_vehicles >= 2:
-          risk = max(risk, 0.4)  # High density traffic increases risk
+        risk = max(risk, self._assess_lead_vehicle_risk(radar_data))
+        risk = max(risk, self._assess_lead_deceleration_risk(radar_data))
+        risk = max(risk, self._assess_multiple_vehicle_risk(radar_data))
+        risk = max(risk, self._assess_surrounding_vehicle_tracks_risk(radar_data))
+        risk = max(risk, self._assess_dense_traffic_risk(radar_data))
 
       except AttributeError as e:
         cloudlog.debug(f"Radar data attribute error in risk assessment: {e}")
@@ -621,40 +636,44 @@ class SafetyManager:
 
     return risk
 
-  def _assess_vehicle_health(self, car_state: car.CarState) -> float:
-    """
-    Assess health of vehicle systems
-    """
+  def _check_system_faults(self, car_state: car.CarState) -> float:
     risk = 0.0
-
-    # Check for any system faults or unusual readings
     if hasattr(car_state, 'steerFaultTemporary') and car_state.steerFaultTemporary:
       risk = max(risk, 0.7)
     if hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent:
       risk = max(risk, 0.9)
+    return risk
 
-    # Check for unusual sensor readings
+  def _check_unusual_sensor_readings(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if hasattr(car_state, 'steeringAngleDeg'):
-      # Check if steering angle is at extreme values frequently
       if abs(car_state.steeringAngleDeg) > 60:  # Extreme angle
         risk = max(risk, 0.3)
+    return risk
 
-    # Check for unstable vehicle dynamics
+  def _check_unstable_vehicle_dynamics(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo'):
       if car_state.vEgo > 10 and abs(car_state.aEgo) > 4.0:  # High acceleration/deceleration
         risk = max(risk, 0.4)
+    return risk
 
-    # Check for potentially dangerous sensor inconsistencies
+  def _check_sensor_inconsistencies(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if (hasattr(car_state, 'vEgo') and hasattr(car_state, 'vCruise') and
         car_state.vEgo > car_state.vCruise + 15.0):  # Significant difference between ego and cruise speed
       risk = max(risk, 0.5)
+    return risk
 
-    # Check for brake/gas pedal inconsistencies
+  def _check_pedal_inconsistencies(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if (hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and
         car_state.brakePressed and car_state.gasPressed):  # Both pressed simultaneously
       risk = max(risk, 0.6)
+    return risk
 
-    # Check for speed sensor inconsistencies
+  def _check_wheel_speed_inconsistencies(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if hasattr(car_state, 'wheelSpeeds') and hasattr(car_state, 'vEgo'):
       avg_wheel_speed = 0.0
       valid_wheel_speeds = 0
@@ -676,11 +695,28 @@ class SafetyManager:
         speed_diff = abs(avg_wheel_speed - car_state.vEgo)
         if speed_diff > 5.0 and car_state.vEgo > 5.0:  # Significant difference at higher speeds
           risk = max(risk, 0.4)
+    return risk
 
-    # Check for steering rate inconsistencies (could indicate actuator issues)
+  def _check_steering_rate_inconsistencies(self, car_state: car.CarState) -> float:
+    risk = 0.0
     if (hasattr(car_state, 'steeringRateDeg') and hasattr(car_state, 'steeringTorque') and
         abs(car_state.steeringRateDeg) > 100 and abs(car_state.steeringTorque) < 10):  # High rate, low torque
       risk = max(risk, 0.3)
+    return risk
+
+  def _assess_vehicle_health(self, car_state: car.CarState) -> float:
+    """
+    Assess health of vehicle systems
+    """
+    risk = 0.0
+
+    risk = max(risk, self._check_system_faults(car_state))
+    risk = max(risk, self._check_unusual_sensor_readings(car_state))
+    risk = max(risk, self._check_unstable_vehicle_dynamics(car_state))
+    risk = max(risk, self._check_sensor_inconsistencies(car_state))
+    risk = max(risk, self._check_pedal_inconsistencies(car_state))
+    risk = max(risk, self._check_wheel_speed_inconsistencies(car_state))
+    risk = max(risk, self._check_steering_rate_inconsistencies(car_state))
 
     return risk
 
