@@ -303,7 +303,8 @@ class LongitudinalMpc:
 
     For normal braking (a_lead >= -1.5 m/s²), uses the traditional exponential decay model.
     For hard braking (a_lead < -1.5 m/s²), assumes constant deceleration for 1.5 seconds
-    followed by zero acceleration to better model real-world emergency braking scenarios.
+    followed by a gradual transition to zero acceleration to better model real-world
+    emergency braking scenarios with enhanced safety margins.
 
     Args:
         x_lead: Current lead vehicle distance
@@ -320,7 +321,15 @@ class LongitudinalMpc:
     if a_lead < -1.5:
       t_brake_constant = 1.5  # seconds - conservative estimate for hard braking duration
       a_lead_traj = np.ones_like(T_IDXS) * a_lead  # Maintain constant deceleration initially
-      a_lead_traj[T_IDXS > t_brake_constant] = 0.0  # Assume deceleration stops after threshold
+      # Gradually transition to zero acceleration after the constant braking period
+      # instead of an abrupt change, which provides a more conservative and realistic model
+      mask_after_constant = T_IDXS > t_brake_constant
+      if np.any(mask_after_constant):
+        # Apply exponential decay starting from the point after constant braking
+        # This creates a smoother transition and maintains a conservative safety margin
+        time_after_brake = T_IDXS[mask_after_constant] - t_brake_constant
+        # Use a conservative decay model that maintains some deceleration beyond the initial period
+        a_lead_traj[mask_after_constant] = a_lead * np.exp(-0.5 * time_after_brake)
     else:
       # Traditional model: exponentially decaying acceleration
       a_lead_traj = a_lead * np.exp(-a_lead_tau * (T_IDXS**2)/2.)
