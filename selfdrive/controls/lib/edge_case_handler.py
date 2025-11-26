@@ -612,13 +612,13 @@ class EdgeCaseHandler:
       modifications['steering_sensitivity'] = 0.7  # Reduce steering sensitivity in weather
       modifications['caution_mode'] = True
 
-    if scenarios['rough_road']:
+    if scenarios.get('rough_road', False):
       modifications['longitudinal_factor'] = 0.8  # Be more careful on rough roads
       modifications['lateral_factor'] = 0.9
       modifications['steering_sensitivity'] = 0.7  # Reduce steering sensitivity on rough roads
       modifications['caution_mode'] = True
 
-    if scenarios['unusual_traffic']:
+    if scenarios.get('unusual_traffic', False):
       modifications['longitudinal_factor'] = 0.7  # More conservative in unusual traffic
       modifications['min_gap'] = 3.5             # More distance in unusual traffic
       modifications['caution_mode'] = True

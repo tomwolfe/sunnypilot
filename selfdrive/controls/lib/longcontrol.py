@@ -388,9 +388,12 @@ class LongControl:
         base_jerk_limit *= 1.3  # Allow more aggressive initial acceleration
 
     # Adjust for road grade if available (would need to be passed in from main control)
-    if hasattr(CS, 'roadGrade') and abs(CS.roadGrade) > 0.05:  # Significant grade
-        grade_factor = 1.0 + 0.3 * abs(CS.roadGrade)  # Increase jerk limit slightly on grades
-        base_jerk_limit = min(10.0, base_jerk_limit * grade_factor)  # Cap at reasonable value
+    if hasattr(CS, 'roadGrade') and CS.roadGrade is not None:
+        # Check if roadGrade is a numeric value (not a Mock object) before using abs()
+        if isinstance(CS.roadGrade, (int, float)):
+            if abs(CS.roadGrade) > 0.05:  # Significant grade
+                grade_factor = 1.0 + 0.3 * abs(CS.roadGrade)  # Increase jerk limit slightly on grades
+                base_jerk_limit = min(10.0, base_jerk_limit * grade_factor)  # Cap at reasonable value
 
     # Apply limits to ensure safety
     base_jerk_limit = max(0.5, min(10.0, base_jerk_limit))  # Reasonable bounds
