@@ -191,16 +191,29 @@ class LatControlTorque(LatControl):
       # maximum 1.5 to prevent excessive response to transient errors, validated through testing
       error_magnitude_factor = np.clip(self.filtered_error_magnitude, 0.8, 1.5)  # Boost gains for large errors
 
+      # 4. Thermal-aware gain adjustment: adjust gains based on thermal stress to maintain stability
+      if hasattr(self, 'thermal_stress_level') and hasattr(self, 'thermal_performance_factor'):
+        # Reduce gains under thermal stress to maintain stability
+        thermal_stability_factor = self.thermal_performance_factor  # 1.0 = no stress, lower = more stress
+        if self.thermal_stress_level >= 2:  # High/very high thermal stress
+          # More aggressive gain reduction under high thermal stress
+          thermal_stability_factor = max(0.6, thermal_stability_factor)  # Don't go below 60% of normal
+        elif self.thermal_stress_level == 1:  # Moderate thermal stress
+          thermal_stability_factor = max(0.8, thermal_stability_factor)  # Don't go below 80% of normal
+      else:
+        # Default thermal factor if not provided (assume normal conditions)
+        thermal_stability_factor = 1.0
+
       # Calculate adjusted gains using all factors
       # For Kd, use a more conservative approach to reduce noise sensitivity
-      adjusted_kp = self.pid.k_p * curvature_factor * speed_factor * error_magnitude_factor
-      adjusted_ki = self.pid.k_i * curvature_factor * speed_factor
+      adjusted_kp = self.pid.k_p * curvature_factor * speed_factor * error_magnitude_factor * thermal_stability_factor
+      adjusted_ki = self.pid.k_i * curvature_factor * speed_factor * thermal_stability_factor
       # Use a separate, more conservative factor for Kd to reduce noise sensitivity
       # Kd controls derivative action which is most sensitive to noise
       # Factor of 0.7 reduces the base magnitude, and bounds [0.8, 1.2] provide even more conservative
       # scaling than the main error factor to minimize derivative-induced oscillations
       kd_error_magnitude_factor = np.clip(self.filtered_error_magnitude * 0.7, 0.8, 1.2)  # More conservative for Kd
-      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * kd_error_magnitude_factor
+      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * kd_error_magnitude_factor * thermal_stability_factor
 
       # Apply high-speed specific constraints
       if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
@@ -266,6 +279,10 @@ class LatControlTorque(LatControl):
       thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
       compensation_factor: Factor (0.0-1.0) indicating overall system compensation needed
     """
+    # Store thermal parameters for use in the update method
+    self.thermal_stress_level = thermal_stress_level
+    self.thermal_performance_factor = compensation_factor
+
     # Adjust PID parameters based on thermal stress to maintain consistent control
     if thermal_stress_level >= 2:  # High or very high thermal stress
       # Reduce integral gain to avoid windup during thermal throttling
@@ -280,3 +297,15 @@ class LatControlTorque(LatControl):
     if hasattr(self, '_prev_integral') and compensation_factor < 0.8:
       # Reduce the integral term when system is under high thermal stress
       self.pid.error_integral *= compensation_factor
+
+  def update_thermal_params(self, thermal_stress_level, performance_compensation_factor):
+    """
+    Update the thermal parameters used in adaptive gain calculation.
+    This is called from the main control loop to pass thermal information to the lateral controller.
+
+    Args:
+      thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
+      performance_compensation_factor: Factor (0.0-1.0) indicating overall system performance capacity
+    """
+    self.thermal_stress_level = thermal_stress_level
+    self.thermal_performance_factor = performance_compensation_factor

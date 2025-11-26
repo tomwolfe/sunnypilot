@@ -7,6 +7,7 @@ scenarios that can occur during autonomous driving to improve system robustness.
 
 from collections import deque
 import numpy as np
+import time
 from cereal import car, log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
@@ -171,16 +172,16 @@ class EdgeCaseHandler:
     
     return False
 
-  def detect_construction_zone(self, car_state: car.CarState, 
+  def detect_construction_zone(self, car_state: car.CarState,
                               radar_state, model_data) -> bool:
     """
     Detect potential construction zones based on various indicators.
-    
+
     Args:
       car_state: Current car state
       radar_state: Radar sensor data
       model_data: Model predictions
-      
+
     Returns:
       True if construction zone detected, False otherwise
     """
@@ -188,23 +189,24 @@ class EdgeCaseHandler:
     # 1. Unusual steering patterns
     # 2. Frequent speed changes
     # 3. Multiple vehicles at low speeds
-    
+    # 4. Unusual lane line patterns from model data
+
     construction_indicators = 0
-    
+
     # Check for abnormal steering (lane changes not by system)
     if self.detect_abnormal_steering(car_state):
       construction_indicators += 1
-    
+
     # Check for speed variance
     current_speed = car_state.vEgo
     self.speed_history.append(current_speed)
-    
+
     if len(self.speed_history) > 20:  # Wait for sufficient history
       recent_speeds = list(self.speed_history)[-20:]
       speed_variance = np.var(recent_speeds)
       if speed_variance > self.speed_variance_threshold:
         construction_indicators += 1
-    
+
     # Check radar for multiple slow vehicles that might indicate construction
     if radar_state is not None:
       slow_vehicle_count = 0
@@ -213,27 +215,288 @@ class EdgeCaseHandler:
           slow_vehicle_count += 1
         if radar_state.leadTwo.status and radar_state.leadTwo.vLead < 8.0:
           slow_vehicle_count += 1
-          
+
         if slow_vehicle_count >= 1:  # At least one very slow vehicle
           construction_indicators += 1
       except AttributeError:
         pass
-    
-    # Additional model-based detection could go here
-    # For example, detecting lane line patterns that are different from normal
-    
+
+    # Additional model-based detection - check for lane line inconsistency
+    if model_data is not None and hasattr(model_data, 'lateralPlannerOutput'):
+      lane_inconsistency = self._check_lane_line_consistency(model_data.lateralPlannerOutput)
+      if lane_inconsistency:
+        construction_indicators += 1
+
+    # Check for frequent brake usage which might indicate construction
+    if hasattr(car_state, 'brakePressed') and car_state.brakePressed:
+      if not hasattr(self, '_brake_event_history'):
+        self._brake_event_history = []
+      self._brake_event_history.append(time.time())
+      # Keep only events from last 10 seconds
+      self._brake_event_history = [t for t in self._brake_event_history if time.time() - t < 10]
+
+      # If more than 3 brake events in 10 seconds, consider it unusual
+      if len(self._brake_event_history) > 3:
+        construction_indicators += 1
+
     return construction_indicators >= 2  # At least 2 indicators to declare construction zone
 
-  def handle_unusual_scenarios(self, car_state: car.CarState, 
+  def _check_lane_line_consistency(self, lateral_planner_output) -> bool:
+    """
+    Check if lane line detection is inconsistent with normal lane geometry
+
+    Args:
+      lateral_planner_output: Model output containing lane line data
+
+    Returns:
+      True if lane line inconsistency detected, False otherwise
+    """
+    if not hasattr(lateral_planner_output, 'laneLines'):
+      return False
+
+    lane_lines = lateral_planner_output.laneLines
+    if len(lane_lines) < 2:
+      return False  # Not enough lane lines to check consistency
+
+    # Check for unusual lane line positions or angles that might indicate construction
+    # Lane lines should follow expected geometric patterns
+    for i, line in enumerate(lane_lines):
+      # Check if lane line probability is low (indicating poor visibility/condition)
+      if line.prob < 0.5:
+        return True  # Low confidence in lane detection might indicate construction
+
+    # Check that lane lines are approximately parallel and at expected distance
+    if len(lane_lines) >= 2:
+      left_line = lane_lines[0]  # Assuming first is left lane
+      right_line = lane_lines[1]  # Assuming second is right lane
+
+      # Check if lane width is significantly different from expected at various points
+      lane_widths = []
+      for j in range(min(len(left_line.y), len(right_line.y))):
+        lane_width = abs(right_line.y[j] - left_line.y[j])
+        if lane_width > 0:  # Only if valid measurement
+          lane_widths.append(lane_width)
+
+      if lane_widths:
+        avg_lane_width = sum(lane_widths) / len(lane_widths)
+        # Standard lane widths are typically 3.7m on highways, allow some variation
+        if avg_lane_width < 2.5 or avg_lane_width > 5.0:  # Unusual width for construction
+          return True
+
+    return False
+
+  def _check_unusual_longitudinal_plan(self, longitudinal_plan) -> bool:
+    """
+    Check for unusual patterns in longitudinal planning that might indicate poor conditions
+
+    Args:
+      longitudinal_plan: Longitudinal plan data from model
+
+    Returns:
+      True if unusual longitudinal plan detected, False otherwise
+    """
+    # Check for frequent rapid acceleration/deceleration planning
+    if hasattr(longitudinal_plan, 'aEgo') and len(longitudinal_plan.aEgo) > 2:
+      accelerations = longitudinal_plan.aEgo
+      # Look for frequent sign changes in acceleration (indicating frequent speed changes)
+      sign_changes = 0
+      for i in range(1, len(accelerations)):
+        if (accelerations[i-1] > 0 and accelerations[i] < 0) or (accelerations[i-1] < 0 and accelerations[i] > 0):
+          sign_changes += 1
+
+      # If many acceleration sign changes per time period, it might indicate poor conditions
+      if sign_changes > len(accelerations) * 0.3:  # More than 30% are sign changes
+        return True
+
+    return False
+
+  def detect_weather_impact(self, car_state: car.CarState, radar_state, model_data) -> bool:
+    """
+    Detect signs of adverse weather conditions that may impact driving
+
+    Args:
+      car_state: Current car state
+      radar_state: Radar sensor data
+      model_data: Model predictions
+
+    Returns:
+      True if weather impact detected, False otherwise
+    """
+    weather_indicators = 0
+
+    # 1. Radar-based detection of precipitation affecting detection
+    # This would typically involve checking for increased noise or reduced detection range
+    # which isn't directly available in this structure, so we'll simulate with other indicators
+
+    # 2. Visibility-based detection from model data
+    if model_data is not None:
+      visibility_score = self._assess_visibility_from_model(model_data)
+      if visibility_score < 0.3:  # Poor visibility
+        weather_indicators += 1
+
+    # 3. Driving behavior indicators - more frequent small steering corrections might indicate poor visibility
+    if hasattr(car_state, 'steeringTorque') and abs(car_state.steeringTorque) < 50:  # Light steering
+      # Check if accompanied by frequent corrections
+      if len(self.steering_angle_history) > 5:
+        recent_angles = list(self.steering_angle_history)[-5:]
+        if len(set(recent_angles)) > 3:  # Multiple different steering angles
+          weather_indicators += 1
+
+    # 4. Speed reduction without obvious reason (other than traffic)
+    if (car_state.vEgo < car_state.vCruise * 0.7 and
+        (radar_state is None or (not radar_state.leadOne.status or radar_state.leadOne.dRel > 50.0))):
+      # Driving significantly below set speed with no lead vehicle
+      weather_indicators += 1
+
+    # 5. Unusual brake light activity (if available in car state)
+    # This would detect other vehicles braking more frequently in poor conditions
+
+    return weather_indicators >= 2  # At least 2 indicators for weather impact
+
+  def _assess_visibility_from_model(self, model_data) -> float:
+    """
+    Assess visibility based on model data quality and confidence
+
+    Args:
+      model_data: Model predictions
+
+    Returns:
+      Visibility score (0.0 to 1.0, where 1.0 is clear visibility)
+    """
+    score = 1.0
+
+    # Check for poor lane line visibility
+    if hasattr(model_data, 'lateralPlannerOutput'):
+      lane_lines = model_data.lateralPlannerOutput.laneLines
+      visible_lane_lines = sum(1 for line in lane_lines if line.prob > 0.5)  # High confidence lines
+
+      if len(lane_lines) > 0:
+        visibility_ratio = visible_lane_lines / len(lane_lines)
+        score *= visibility_ratio  # Reduce score based on low-confidence lane lines
+
+    # Check for poor lead vehicle detection confidence
+    if hasattr(model_data, 'longitudinalPlan'):
+      # This would be where we check for model confidence in lead detection
+      # For now, we'll just return the score based on lane line visibility
+      pass
+
+    return max(0.0, min(1.0, score))
+
+  def detect_rough_road_conditions(self, car_state: car.CarState) -> bool:
+    """
+    Detect rough road conditions from vehicle dynamics
+
+    Args:
+      car_state: Current car state
+
+    Returns:
+      True if rough road conditions detected, False otherwise
+    """
+    if not hasattr(self, '_acceleration_history'):
+      self._acceleration_history = []
+
+    # Track lateral and longitudinal acceleration variance as indicators of road roughness
+    if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo'):
+      self._acceleration_history.append({
+        'time': time.time(),
+        'long_accel': car_state.aEgo,
+        'speed': car_state.vEgo
+      })
+      # Keep only recent values (last 1 second at 100Hz)
+      cutoff_time = time.time() - 1.0
+      self._acceleration_history = [a for a in self._acceleration_history if a['time'] > cutoff_time]
+
+      if len(self._acceleration_history) >= 50:  # At least 0.5 seconds of data
+        long_accels = [a['long_accel'] for a in self._acceleration_history]
+        acceleration_variance = np.var(long_accels)
+
+        # Threshold would be calibrated based on vehicle characteristics
+        # High variance in acceleration can indicate rough road surface
+        rough_road_threshold = 0.8
+        if acceleration_variance > rough_road_threshold and car_state.vEgo > 5.0:
+          return True
+
+    # Also check steering corrections as proxy for road irregularities
+    if len(self.steering_angle_history) >= 10:
+      recent_angles = list(self.steering_angle_history)[-10:]
+      angle_variance = np.var(recent_angles)
+      # High steering variation might indicate need to correct for road irregularities
+      high_steering_variation_threshold = 10.0
+      if angle_variance > high_steering_variation_threshold and car_state.vEgo > 5.0:
+        return True
+
+    return False
+
+  def detect_unusual_traffic_patterns(self, radar_state, car_state: car.CarState) -> bool:
+    """
+    Detect unusual traffic patterns that may indicate incidents, construction, or poor conditions
+
+    Args:
+      radar_state: Radar sensor data
+      car_state: Current car state
+
+    Returns:
+      True if unusual traffic patterns detected, False otherwise
+    """
+    if radar_state is None:
+      return False
+
+    indicators = 0
+
+    try:
+      # 1. Multiple vehicles at unusual distances/speeds
+      if (radar_state.leadOne.status and radar_state.leadOne.dRel < 5.0 and
+          car_state.vEgo > 15.0 and radar_state.leadOne.vRel < -5.0):  # Very close, closing fast
+        indicators += 1
+
+      # 2. Unusual spacing patterns - vehicles too close together for normal conditions
+      if (radar_state.leadOne.status and radar_state.leadTwo.status and
+          radar_state.leadOne.dRel < 50.0 and radar_state.leadTwo.dRel < 100.0):
+        spacing = radar_state.leadTwo.dRel - radar_state.leadOne.dRel
+        if spacing < 10.0 and spacing > 0:  # Unusually close spacing
+          indicators += 1
+
+      # 3. Very slow traffic when it should be moving
+      if (radar_state.leadOne.status and radar_state.leadOne.vLead < 5.0 and
+          car_state.vEgo > 15.0):  # Lead moving very slowly
+        indicators += 1
+
+      # 4. Frequent lead vehicle changes (could indicate weaving between construction zones)
+      if not hasattr(self, '_previous_leads'):
+        self._previous_leads = []
+      self._previous_leads.append({
+        'time': time.time(),
+        'dRel': radar_state.leadOne.dRel if radar_state.leadOne.status else None,
+        'vRel': radar_state.leadOne.vRel if radar_state.leadOne.status else None
+      })
+      # Keep last 20 entries (~0.2 seconds at 100Hz)
+      self._previous_leads = self._previous_leads[-20:]
+
+      # Check for frequent lead changes
+      valid_leads = [l for l in self._previous_leads if l['dRel'] is not None and l['dRel'] < 50.0]
+      if len(valid_leads) > 10:  # Sufficient data
+        # Look for rapid changes in distance to lead (indicating frequent lead changes)
+        distances = [l['dRel'] for l in valid_leads]
+        distance_changes = [abs(distances[i] - distances[i-1]) for i in range(1, len(distances))]
+        avg_distance_change = sum(distance_changes) / len(distance_changes) if distance_changes else 0
+        if avg_distance_change > 5.0:  # Large average changes in lead distance
+          indicators += 1
+
+    except AttributeError:
+      pass
+
+    return indicators >= 2  # At least 2 indicators for unusual traffic
+
+  def handle_unusual_scenarios(self, car_state: car.CarState,
                               radar_state=None, model_data=None) -> dict:
     """
     Analyze current situation and identify any unusual scenarios or edge cases.
-    
+
     Args:
       car_state: Current car state
       radar_state: Radar sensor data (optional)
       model_data: Model predictions (optional)
-      
+
     Returns:
       Dictionary containing detected scenarios and recommended actions
     """
@@ -242,30 +505,55 @@ class EdgeCaseHandler:
       'construction_zone': self.detect_construction_zone(car_state, radar_state, model_data),
       'abnormal_steering': self.detect_abnormal_steering(car_state),
       'sudden_object': self.detect_sudden_objects(radar_state, model_data),
+      'weather_impact': self.detect_weather_impact(car_state, radar_state, model_data),
+      'rough_road': self.detect_rough_road_conditions(car_state),
+      'unusual_traffic': self.detect_unusual_traffic_patterns(radar_state, car_state),
       'recommended_speed': car_state.vCruise * 0.8 if car_state.vCruise > 0 else car_state.vEgo,  # Default: reduce speed by 20%
       'caution_required': False,
-      'adaptive_control_needed': False
+      'adaptive_control_needed': False,
+      'confidence_score': 0.0
     }
-    
+
     # Set recommended speed based on detected scenarios
     if scenarios['sharp_curve'] and car_state.vEgo > self.sharp_curve_speed_threshold:
       scenarios['recommended_speed'] = min(scenarios['recommended_speed'], self.sharp_curve_speed_threshold)
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
-      
+
     if scenarios['construction_zone']:
       scenarios['recommended_speed'] = min(scenarios['recommended_speed'], self.construction_zone_speed)
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
-      
+
     if scenarios['sudden_object']:
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
-      
+
     if scenarios['abnormal_steering']:
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
-    
+
+    if scenarios['weather_impact']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      # Further reduce speed in adverse weather
+      scenarios['recommended_speed'] = min(scenarios['recommended_speed'], car_state.vCruise * 0.6)
+
+    if scenarios['rough_road']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      # Reduce speed significantly on rough roads
+      scenarios['recommended_speed'] = min(scenarios['recommended_speed'], car_state.vCruise * 0.7)
+
+    if scenarios['unusual_traffic']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+
+    # Calculate overall confidence in the detection
+    positive_detections = sum(1 for k, v in scenarios.items()
+                             if k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score'] and v is True)
+    scenarios['confidence_score'] = min(1.0, positive_detections * 0.2)  # 0.2 per detection, max 1.0
+
     return scenarios
 
   def get_adaptive_control_modifications(self, car_state: car.CarState,
@@ -284,11 +572,13 @@ class EdgeCaseHandler:
       'longitudinal_factor': 1.0,  # Factor to apply to longitudinal control (0.8 = 20% more conservative)
       'lateral_factor': 1.0,      # Factor to apply to lateral control
       'min_gap': 2.0,             # Minimum time gap to maintain
-      'caution_mode': False       # Whether to enable caution mode
+      'caution_mode': False,      # Whether to enable caution mode
+      'speed_limit_factor': 1.0,  # Factor to reduce speed limit
+      'steering_sensitivity': 1.0  # Factor to adjust steering sensitivity
     }
 
     # Log detected scenarios for debugging and analysis
-    detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed']]
+    detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score']]
     if detected_scenarios:
       cloudlog.debug(f"EdgeCaseHandler: Detected scenarios: {', '.join(detected_scenarios)}. Applying adaptive control.")
 
@@ -306,14 +596,45 @@ class EdgeCaseHandler:
       modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.6) # Extra conservative in construction zones
       modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.8)
       modifications['min_gap'] = max(modifications['min_gap'], 4.0)             # Extra distance in construction zones
+      modifications['speed_limit_factor'] = 0.7  # Reduce speed in construction zones
+      modifications['caution_mode'] = True
 
     if scenarios['sudden_object']:
       modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.5) # Very conservative when objects detected
       modifications['min_gap'] = max(modifications['min_gap'], 5.0)             # Maximum distance when sudden objects detected
+      modifications['caution_mode'] = True
+
+    if scenarios['weather_impact']:
+      modifications['longitudinal_factor'] = 0.6  # More conservative longitudinal in weather
+      modifications['lateral_factor'] = 0.8      # More conservative lateral in weather
+      modifications['min_gap'] = 4.0             # Increase gap significantly in weather
+      modifications['speed_limit_factor'] = 0.75  # Reduce speed in adverse weather
+      modifications['steering_sensitivity'] = 0.7  # Reduce steering sensitivity in weather
+      modifications['caution_mode'] = True
+
+    if scenarios['rough_road']:
+      modifications['longitudinal_factor'] = 0.8  # Be more careful on rough roads
+      modifications['lateral_factor'] = 0.9
+      modifications['steering_sensitivity'] = 0.7  # Reduce steering sensitivity on rough roads
+      modifications['caution_mode'] = True
+
+    if scenarios['unusual_traffic']:
+      modifications['longitudinal_factor'] = 0.7  # More conservative in unusual traffic
+      modifications['min_gap'] = 3.5             # More distance in unusual traffic
+      modifications['caution_mode'] = True
+
+    # Apply conservative limits to prevent over-correction
+    modifications['longitudinal_factor'] = max(0.3, modifications['longitudinal_factor'])
+    modifications['lateral_factor'] = max(0.5, modifications['lateral_factor'])
+    modifications['min_gap'] = min(6.0, modifications['min_gap'])  # Don't be too conservative
+    modifications['speed_limit_factor'] = max(0.5, modifications['speed_limit_factor'])
+    modifications['steering_sensitivity'] = max(0.5, modifications['steering_sensitivity'])
 
     if detected_scenarios:
       cloudlog.debug(f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
                       f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, "
+                      f"speed_limit_factor={modifications['speed_limit_factor']:.2f}, "
+                      f"steering_sensitivity={modifications['steering_sensitivity']:.2f}, "
                       f"caution_mode={modifications['caution_mode']}")
 
     return modifications
