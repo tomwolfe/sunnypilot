@@ -160,9 +160,11 @@ class LongControl:
       self.reset()
 
     else:  # LongCtrlState.pid
+      # Enhanced adaptive jerk control based on driving context
+      # Calculate adaptive jerk limits based on lead vehicle behavior and road conditions
+      max_jerk = self._calculate_adaptive_jerk_limit(CS, a_target)
+
       # Apply jerk limitation to the target acceleration for smoother transitions
-      # Limit the rate of change of acceleration (jerk)
-      max_jerk = self.max_jerk  # m/s^3, limit how fast acceleration can change - now configurable
       jerk_limit = max_jerk * DT_CTRL
       a_target_change = a_target - self._prev_a_target
       a_target_limited = self._prev_a_target + np.clip(a_target_change, -jerk_limit, jerk_limit)
@@ -216,7 +218,7 @@ class LongControl:
                                        feedforward=a_target_limited)
 
       # Enhanced output smoothing with context-aware jerk limiting
-      max_output_jerk = self.max_output_jerk  # m/s^3, limit output jerk - now configurable
+      max_output_jerk = self._calculate_adaptive_output_jerk_limit(CS, a_target_limited, output_accel)  # m/s^3, limit output jerk adaptively
 
       # Increase jerk limit in emergency situations (e.g., hard braking needed)
       emergency_factor = 1.0
@@ -239,6 +241,106 @@ class LongControl:
         output_accel = self._prev_output_accel * (1 - very_low_speed_smoothing) + output_accel * very_low_speed_smoothing
 
       self._prev_output_accel = output_accel
+
+  def _calculate_adaptive_output_jerk_limit(self, CS, a_target_limited, current_output_accel):
+    """
+    Calculate adaptive output jerk limits based on driving context and stability.
+
+    Args:
+        CS: CarState object
+        a_target_limited: Limited target acceleration after jerk limiting
+        current_output_accel: Current acceleration output before limiting
+
+    Returns:
+        float: Adaptive output jerk limit in m/s^3
+    """
+    # Start with configurable base limit
+    base_output_jerk_limit = self.max_output_jerk
+
+    # Adjust based on difference between target and current acceleration
+    accel_error = abs(a_target_limited - current_output_accel)
+    if accel_error > 2.0:  # Large error - allow more aggressive correction
+        base_output_jerk_limit *= 1.2
+    elif accel_error < 0.5:  # Small error - be more conservative
+        base_output_jerk_limit *= 0.8
+
+    # Reduce jerk when following lead vehicle closely
+    if hasattr(CS, 'radarState') and CS.radarState is not None:
+        try:
+            if CS.radarState.leadOne.status and CS.radarState.leadOne.dRel < 30.0:
+                base_output_jerk_limit *= 0.85  # More conservative when close to lead
+                if CS.radarState.leadOne.dRel < 15.0:  # Very close
+                    base_output_jerk_limit *= 0.7  # Much more conservative
+        except AttributeError:
+            pass
+
+    # Reduce jerk at higher speeds for stability
+    if CS.vEgo > 25.0:  # Above ~90 km/h
+        base_output_jerk_limit *= 0.9
+
+    # Further reduce jerk if vehicle is already accelerating rapidly
+    if abs(current_output_accel) > 2.0:
+        base_output_jerk_limit *= 0.85  # Be more conservative when already accelerating hard
+
+    # Apply limits to ensure safety
+    base_output_jerk_limit = max(0.5, min(8.0, base_output_jerk_limit))  # Reasonable bounds
+
+    return base_output_jerk_limit
+
+  def update_thermal_compensation(self, thermal_stress_level, compensation_factor):
+    """
+    Update longitudinal controller parameters based on thermal stress level to maintain
+    consistent acceleration/deceleration performance under different thermal conditions.
+
+    Args:
+      thermal_stress_level: 0=normal, 1=moderate, 2=high, 3=very high
+      compensation_factor: Factor (0.0-1.0) indicating overall system compensation needed
+    """
+    # Store current PID state to preserve during reinitialization
+    old_p = self.pid.p
+    old_i = self.pid.i
+    old_d = self.pid.d
+    old_f = self.pid.f
+    old_control = self.pid.control
+    old_speed = self.pid.speed
+    old_pos_limit = self.pid.pos_limit
+    old_neg_limit = self.pid.neg_limit
+
+    # Adjust PID parameters based on thermal stress to maintain consistent longitudinal control
+    original_ki_v = self.CP.longitudinalTuning.kiV
+    original_kp_v = self.CP.longitudinalTuning.kpV
+
+    if thermal_stress_level >= 2:  # High or very high thermal stress
+      # Create new PID with reduced gains to prevent accumulation during thermal throttling
+      new_ki_v = [min(ki_val, original_ki_v[0] * 0.7) for ki_val in original_ki_v]  # Reduce by 30%
+      new_kp_v = [min(kp_val, original_kp_v[0] * 0.9) for kp_val in original_kp_v]  # Reduce by 10%
+
+      # Create a new PID controller with adjusted parameters
+      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, new_kp_v),
+                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
+                               rate=1 / DT_CTRL)
+    elif thermal_stress_level == 1:  # Moderate thermal stress
+      # Mild adjustment for moderate stress
+      new_ki_v = [min(ki_val, original_ki_v[0] * 0.85) for ki_val in original_ki_v]  # Reduce by 15%
+
+      # Create a new PID controller with adjusted parameters
+      self.pid = PIDController((self.CP.longitudinalTuning.kpBP, original_kp_v),
+                               (self.CP.longitudinalTuning.kiBP, new_ki_v),
+                               rate=1 / DT_CTRL)
+
+    # Restore PID state to preserve continuity
+    self.pid.p = old_p
+    self.pid.i = old_i
+    self.pid.d = old_d
+    self.pid.f = old_f
+    self.pid.control = old_control
+    self.pid.speed = old_speed
+
+    # Apply compensation factor to limit maximum acceleration during high thermal stress
+    if compensation_factor < 0.8:
+      # Reduce acceleration limits proportionally to thermal compensation factor
+      self.pid.neg_limit = old_neg_limit * compensation_factor
+      self.pid.pos_limit = old_pos_limit * compensation_factor
 
     # Apply final acceleration limits
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
@@ -298,3 +400,66 @@ class LongControl:
       # Reduce acceleration limits proportionally to thermal compensation factor
       self.pid.neg_limit = old_neg_limit * compensation_factor
       self.pid.pos_limit = old_pos_limit * compensation_factor
+
+  def _calculate_adaptive_jerk_limit(self, CS, a_target):
+    """
+    Calculate adaptive jerk limits based on driving context and vehicle state.
+
+    Args:
+        CS: CarState object containing current vehicle state
+        a_target: Target acceleration value
+
+    Returns:
+        float: Adaptive jerk limit in m/s^3
+    """
+    # Base jerk limit
+    base_jerk_limit = self.max_jerk
+
+    # Reduce jerk if approaching lead vehicle rapidly
+    if hasattr(CS, 'radarState') and CS.radarState is not None:
+        try:
+            if CS.radarState.leadOne.status and CS.radarState.leadOne.dRel < 50.0:
+                approach_rate = abs(CS.radarState.leadOne.vRel)
+                if approach_rate > 5.0:  # Approaching rapidly
+                    base_jerk_limit *= 0.7  # More conservative
+        except AttributeError:
+            pass
+
+    # Increase jerk allowance during initial acceleration from standstill
+    if CS.vEgo < 5.0 and a_target > 0:  # Starting from stop
+        base_jerk_limit *= 1.3  # Allow more aggressive initial acceleration
+
+    # Adjust for road grade if available (would need to be passed in from main control)
+    if hasattr(CS, 'roadGrade') and abs(CS.roadGrade) > 0.05:  # Significant grade
+        grade_factor = 1.0 + 0.3 * abs(CS.roadGrade)  # Increase jerk limit slightly on grades
+        base_jerk_limit = min(10.0, base_jerk_limit * grade_factor)  # Cap at reasonable value
+
+    # Apply limits to ensure safety
+    base_jerk_limit = max(0.5, min(10.0, base_jerk_limit))  # Reasonable bounds
+
+    return base_jerk_limit
+
+  def _update_acceleration_profile(self, CS, a_target, lead_distance, lead_velocity):
+    """
+    Update acceleration profile based on lead vehicle behavior.
+
+    Args:
+        CS: CarState object
+        a_target: Target acceleration
+        lead_distance: Distance to lead vehicle (if available)
+        lead_velocity: Velocity of lead vehicle (if available)
+    """
+    if not hasattr(self, '_acceleration_profile'):
+        self._acceleration_profile = {'approaching_lead': False, 'approach_rate': 0.0, 'distance_to_lead': float('inf')}
+
+    if lead_distance is not None and lead_velocity is not None:
+        # Calculate approach rate to lead vehicle
+        relative_velocity = CS.vEgo - lead_velocity
+        self._acceleration_profile['approach_rate'] = relative_velocity
+        self._acceleration_profile['distance_to_lead'] = lead_distance
+        self._acceleration_profile['approaching_lead'] = relative_velocity > 0.5 and lead_distance < 100.0
+    else:
+        # Default values when lead information not available
+        self._acceleration_profile['approaching_lead'] = False
+        self._acceleration_profile['approach_rate'] = 0.0
+        self._acceleration_profile['distance_to_lead'] = float('inf')

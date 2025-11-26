@@ -142,7 +142,20 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     # error as the input to the NNLC model. This is not ideal, and potentially degrades the NNLC
     # accuracy for cars that don't have this issue, but it's necessary until a better NNLC model
     # structure is used that doesn't create this issue when high-magnitude data is missing.
-    error_blend_factor = float(np.interp(abs(self._desired_lateral_accel), [1.0, 2.0], [0.0, 1.0]))
+
+    # Enhanced error blend calculation with multiple factors
+    curvature_factor = float(np.interp(abs(self._desired_curvature), [0.0, 0.05, 0.1, 0.2], [0.0, 0.3, 0.6, 1.0]))
+    speed_factor = float(np.interp(CS.vEgo, [0.0, 5.0, 15.0, 25.0], [0.5, 0.3, 0.0, 0.0]))  # Less blend at higher speeds
+    acceleration_factor = min(1.0, abs(self._desired_lateral_accel) / 2.0)  # More blend with higher lateral G
+
+    # Combine all factors with thermal considerations if available
+    error_blend_factor = min(1.0, curvature_factor * (1.0 + speed_factor) * acceleration_factor)
+
+    # Add thermal adjustment if thermal parameters are available
+    if hasattr(self.lac_torque, 'thermal_performance_factor'):
+        thermal_factor = max(0.3, self.lac_torque.thermal_performance_factor)  # Don't go below 30% of normal
+        error_blend_factor *= thermal_factor  # Reduce blending under thermal stress for stability
+
     if error_blend_factor > 0.0:  # blend in stronger error response when in high lat accel
       # NNFF inputs 5+ are optional, and if left out are replaced with 0.0 inside the NNFF class
       nnff_error_input = [CS.vEgo, self._setpoint - self._measurement, self.lateral_jerk_setpoint - self.lateral_jerk_measurement, 0.0]
