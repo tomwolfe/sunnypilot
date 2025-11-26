@@ -41,7 +41,8 @@ class ModelsLayout(Widget):
     return items
 
   def _get_current_throttle_factor_index(self) -> int:
-    current_value = float(self._params.get("ModelExecutionThrottleFactor", default=b"1.0"))
+    val = self._params.get("ModelExecutionThrottleFactor", return_default=True)
+    current_value = float(val) if val is not None else 1.0
     # Find the index of the closest value. If not exact, default to 1.0 (100%)
     try:
       return THROTTLE_FACTORS.index(current_value)
