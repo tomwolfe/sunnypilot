@@ -23,6 +23,12 @@ echo "installing python packages..."
 uv sync --frozen --all-extras
 source .venv/bin/activate
 
+# As a fallback, also install from requirements.txt to ensure compatibility with direct execution
+if [ -f "$ROOT/requirements.txt" ]; then
+  echo "installing additional packages from requirements.txt..."
+  pip install -r "$ROOT/requirements.txt"
+fi
+
 if [[ "$(uname)" == 'Darwin' ]]; then
   touch "$ROOT"/.env
   echo "# msgq doesn't work on mac" >> "$ROOT"/.env
