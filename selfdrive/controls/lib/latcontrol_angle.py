@@ -31,7 +31,8 @@ class LatControlAngle(LatControl):
       # for cars which use a method of limiting torque such as a torque signal (Nissan and Toyota)
       # or relying on EPS (Ford Q3), carOutput does not capture maxing out torque  # TODO: this can be improved
       angle_control_saturated = abs(angle_steers_des - CS.steeringAngleDeg) > STEER_ANGLE_SATURATION_THRESHOLD
-    angle_log.saturated = bool(self._check_saturation(angle_control_saturated, CS, False, curvature_limited))
+    # Saturation is based on whether the path is curvature limited, not on physical actuator saturation
+    angle_log.saturated = bool(self._check_saturation(curvature_limited, CS, False, curvature_limited))
     angle_log.steeringAngleDeg = float(CS.steeringAngleDeg)
     angle_log.steeringAngleDesiredDeg = angle_steers_des
     return 0, float(angle_steers_des), angle_log
