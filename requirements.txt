@@ -1,38 +1,75 @@
-sounddevice
-pyserial
-requests
-sympy
-crcmod
-tqdm
-smbus2
-cffi
-scons
-pycapnp==2.1.0
-Cython
-setuptools
-numpy>=2.0
-scipy
 aiohttp
 aiortc
-pyopenssl<24.3.0
-pyaudio
+av
+azure-identity
+azure-storage-blob
+casadi >=3.6.6
+cffi
+codespell
+crcmod
+Cython
+dbus-next
+dearpygui>=2.1.0
+dictdiffer
+future-fstrings
+hypothesis ==6.47.*
+inputs
+jeepney
+Jinja2
+json-rpc
 kaitaistruct
 libusb1
-spidev; platform_system=="Linux"
-onnx>=1.14.0
-pyzmq
-sentry-sdk
-xattr
-PyJWT
-json-rpc
-websocket_client
-casadi>=3.6.6
-future-fstrings
-inputs
-psutil
-pycryptodome
-setproctitle
-zstandard
-raylib<5.5.0.3
-qrcode
 mapbox-earcut
+matplotlib
+metadrive-simulator @ https://github.com/commaai/metadrive/releases/download/MetaDrive-minimal-0.4.2.4/metadrive_simulator-0.4.2.4-py3-none-any.whl ; (platform_machine != 'aarch64')
+mkdocs
+mypy
+natsort
+numpy >=2.0
+onnx >= 1.14.0
+opencv-python-headless
+parameterized >=0.8, <0.9
+pre-commit-hooks
+psutil
+pyaudio
+pyautogui
+pycapnp==2.1.0
+pycryptodome
+pygame
+PyJWT
+pyopencl; platform_machine != 'aarch64'
+pyopenssl < 24.3.0
+pyprof2calltree
+pyserial
+pytest
+pytest-asyncio
+pytest-cpp
+pytest-mock
+pytest-randomly
+pytest-repeat
+pytest-subtests
+pytest-timeout
+pytest-xdist @ git+https://github.com/sshane/pytest-xdist@2b4372bd62699fb412c4fe2f95bf9f01bd2018da
+pytools < 2024.1.11; platform_machine != 'aarch64'
+pywinctl
+pyzmq
+qrcode
+raylib < 5.5.0.3
+requests
+ruff
+scipy
+scons
+sentry-sdk
+setproctitle
+setuptools
+smbus2
+sounddevice
+spidev; platform_system == 'Linux'
+sympy
+tabulate
+tqdm
+types-requests
+types-tabulate
+websocket_client
+xattr
+zstandard
