@@ -265,8 +265,19 @@ class LatControlTorque(LatControl):
       pid_log.actualLateralAccel = float(measurement)
       pid_log.desiredLateralAccel = float(setpoint)
       pid_log.desiredLateralJerk = float(desired_lateral_jerk)
-      # Saturation is based on whether the path is curvature limited, not on physical actuator saturation
-      pid_log.saturated = bool(self._check_saturation(curvature_limited, CS, steer_limited_by_safety, curvature_limited))
+
+      # Saturation logic: when NNLC is enabled, also consider physical torque saturation
+      # Otherwise, only consider curvature limited state
+      if (hasattr(self.extension, '_nnlc_enabled') and
+          getattr(self.extension, '_nnlc_enabled', False)):
+        # When NNLC is enabled, saturation occurs when path is curvature limited
+        # or when the output torque is at its limits
+        pid_log.saturated = bool(self._check_saturation(
+          curvature_limited or abs(output_torque) >= self.steer_max - 1e-3,
+          CS, steer_limited_by_safety, curvature_limited))
+      else:
+        # Standard behavior: only based on curvature limited
+        pid_log.saturated = bool(self._check_saturation(curvature_limited, CS, steer_limited_by_safety, curvature_limited))
 
     # TODO left is positive in this convention
     return -output_torque, 0.0, pid_log
