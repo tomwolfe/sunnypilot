@@ -78,11 +78,36 @@ function launch {
   # write tmux scrollback to a file
   tmux capture-pane -pq -S-1000 > /tmp/launch_log
 
+  # Check and install Python dependencies if needed
+  check_and_install_python_deps() {
+    cd $DIR
+    # Check if scipy is available
+    if python3 -c "import scipy.signal" 2>/dev/null; then
+      echo "scipy already installed, continuing..."
+      return 0
+    else
+      echo "Missing Python dependencies, installing..."
+      if [ -f "tools/install_python_dependencies.sh" ]; then
+        bash tools/install_python_dependencies.sh
+      else
+        # Fallback: install directly from requirements.txt
+        if [ -f "requirements.txt" ]; then
+          echo "Installing from requirements.txt..."
+          pip install -r requirements.txt || pip3 install -r requirements.txt
+        fi
+      fi
+    fi
+  }
+
   # start manager
   cd $DIR/system/manager
   if [ ! -f $DIR/prebuilt ]; then
     ./build.py
   fi
+
+  # Check and install Python dependencies before starting manager
+  check_and_install_python_deps
+
   ./manager.py
 
   # if broken, keep on screen error
