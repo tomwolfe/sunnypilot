@@ -102,12 +102,12 @@ function launch {
           # Check network connectivity before attempting online install
           if ping -c 1 8.8.8.8 &> /dev/null; then
             echo "Network available, proceeding with online installation..."
-            python3 -m pip install -r requirements.txt
+            python3 -m pip install --no-cache-dir -r requirements.txt
           else
             echo "Warning: No network connection available for installing dependencies."
             echo "         Attempting offline installation with cached packages (if available)..."
             # Try installing with --find-links if there are local wheels
-            if python3 -m pip install --find-links /data/python_packages -r requirements.txt --no-index; then
+            if python3 -m pip install --no-cache-dir --find-links /data/python_packages -r requirements.txt --no-index; then
               echo "Offline installation successful"
             else
               echo "Error: Could not install dependencies - no network and no cached packages available"
@@ -129,7 +129,7 @@ function launch {
   fi
 
   # Check and install Python dependencies before starting manager
-  check_and_install_python_deps
+  check_and_install_python_deps || exit 1
 
   ./manager.py
 
