@@ -2,16 +2,9 @@ import os
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
 from parameterized import parameterized
-import pytest
-from unittest.mock import Mock
+
 
 from cereal import car, custom
-from opendbc.car import DT_CTRL
-from opendbc.car.structs import CarParams
-from opendbc.car.tests.test_car_interfaces import get_fuzzy_car_interface
-from opendbc.car.mock.values import CAR as MOCK
-from opendbc.car.values import PLATFORMS
-from openpilot.common.params import Params
 from openpilot.selfdrive.car.helpers import convert_carControlSP
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
@@ -31,7 +24,7 @@ class TestCarInterfaces:
   @settings(max_examples=MAX_EXAMPLES, deadline=None,
             phases=(Phase.reuse, Phase.generate, Phase.shrink))
   @given(data=st.data())
-  def test_car_interfaces(self, car_name, data):
+  def test_car_interfaces(self, car_name, data, mocker):
     car_interface = get_fuzzy_car_interface(car_name, data.draw)
     car_params = car_interface.CP.as_reader()
     car_params_sp = car_interface.CP_SP
@@ -65,8 +58,8 @@ class TestCarInterfaces:
     #  hypothesis also slows down significantly with just one more message draw
 
     # Create a mock params object to satisfy the interface expected by the controllers
-    mock_params = Mock()
-    mock_params.get = Mock(return_value=None)  # Default to return None for any parameter request
+    mock_params = mocker.Mock()
+    mock_params.get = mocker.Mock(return_value=None)  # Default to return None for any parameter request
 
     LongControl(car_params, car_params_sp, mock_params)
     if car_params.steerControlType == CarParams.SteerControlType.angle:

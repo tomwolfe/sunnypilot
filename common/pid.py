@@ -46,7 +46,7 @@ class PIDController:
   def update(self, error, error_rate=0.0, speed=0.0, feedforward=0., freeze_integrator=False,
              k_p_override=None, k_i_override=None, k_d_override=None):
     self.speed = speed
-    
+
     # Use override values if provided, otherwise use interpolated values
     current_k_p = k_p_override if k_p_override is not None else self.k_p
     current_k_i = k_i_override if k_i_override is not None else self.k_i

@@ -1,7 +1,6 @@
 import contextlib
 import gc
 import os
-from unittest.mock import MagicMock
 import pytest
 
 from openpilot.common.prefix import OpenpilotPrefix
@@ -102,9 +101,9 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture
-def mock_params():
+def mock_params(mocker):
   """Pytest fixture to create a mock Params object with configurable parameter values."""
-  mock_params_obj = MagicMock()
+  mock_params_obj = mocker.MagicMock()
 
   # Define default parameter values as used in the actual controllers
   param_defaults = {
