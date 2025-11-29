@@ -107,52 +107,48 @@ function launch {
       return 0
     else
       echo "Missing Python dependencies: ${missing_modules[*]}, installing..."
-      if [ -f "tools/install_python_dependencies.sh" ]; then
-        bash tools/install_python_dependencies.sh
-      else
-        # Fallback: install directly from requirements.txt
-        if [ -f "requirements.txt" ]; then
-          echo "Installing from requirements.txt..."
+      # Fallback: install directly from requirements.txt (removed insecure external script call)
+      if [ -f "requirements.txt" ]; then
+        echo "Installing from requirements.txt..."
 
-          # Ensure pip is up-to-date for compatibility
-          python3 -m pip install --upgrade pip 2>/dev/null || echo "Warning: Could not upgrade pip, continuing with current version"
+        # Ensure pip is up-to-date for compatibility
+        python3 -m pip install --upgrade pip 2>/dev/null || echo "Warning: Could not upgrade pip, continuing with current version"
 
-          # Check network connectivity before attempting online install
-          if ping -c 1 8.8.8.8 &> /dev/null; then
-            echo "Network available, proceeding with online installation..."
-            python3 -m pip install --no-cache-dir -r requirements.txt
-          else
-            echo "Warning: No network connection available for installing dependencies."
+        # Check network connectivity before attempting online install
+        if ping -c 1 8.8.8.8 &> /dev/null; then
+          echo "Network available, proceeding with online installation..."
+          python3 -m pip install --no-cache-dir -r requirements.txt
+        else
+          echo "Warning: No network connection available for installing dependencies."
 
-            # Ensure the cache directory exists
-            if [ ! -d "/data/python_packages" ]; then
-              echo "Creating cache directory: /data/python_packages"
-              mkdir -p /data/python_packages
-            fi
+          # Ensure the cache directory exists
+          if [ ! -d "/data/python_packages" ]; then
+            echo "Creating cache directory: /data/python_packages"
+            mkdir -p /data/python_packages
+          fi
 
-            # Check if cache directory has files
-            if [ -n "$(ls -A /data/python_packages 2>/dev/null)" ]; then
-              echo "Attempting offline installation with cached packages..."
-              # Try installing with --find-links if there are local wheels
-              if python3 -m pip install --no-cache-dir --find-links /data/python_packages -r requirements.txt --no-index; then
-                echo "Offline installation successful"
-              else
-                echo "Error: Could not install dependencies - no network and cached packages failed to install"
-                cd "$original_dir"  # Return to original directory
-                return 1
-              fi
+          # Check if cache directory has files
+          if [ -n "$(ls -A /data/python_packages 2>/dev/null)" ]; then
+            echo "Attempting offline installation with cached packages..."
+            # Try installing with --find-links if there are local wheels
+            if python3 -m pip install --no-cache-dir --find-links /data/python_packages -r requirements.txt --no-index; then
+              echo "Offline installation successful"
             else
-              echo "Error: Could not install dependencies - no network and no cached packages available in /data/python_packages"
-              echo "Please ensure offline packages are pre-loaded in /data/python_packages or connect to the internet."
+              echo "Error: Could not install dependencies - no network and cached packages failed to install"
               cd "$original_dir"  # Return to original directory
               return 1
             fi
+          else
+            echo "Error: Could not install dependencies - no network and no cached packages available in /data/python_packages"
+            echo "Please ensure offline packages are pre-loaded in /data/python_packages or connect to the internet."
+            cd "$original_dir"  # Return to original directory
+            return 1
           fi
-        else
-          echo "Error: requirements.txt not found, cannot install dependencies"
-          cd "$original_dir"  # Return to original directory
-          return 1
         fi
+      else
+        echo "Error: requirements.txt not found, cannot install dependencies"
+        cd "$original_dir"  # Return to original directory
+        return 1
       fi
     fi
 
