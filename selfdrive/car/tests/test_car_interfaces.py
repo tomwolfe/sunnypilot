@@ -6,15 +6,14 @@ from typing import Any
 from collections.abc import Callable
 
 from cereal import car, custom
-from opendbc.car import DT_CTRL
+from opendbc.car import DT_CTRL, structs
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.fingerprints import FW_VERSIONS
 from opendbc.car.fw_versions import FW_QUERY_CONFIGS
 from opendbc.car.interfaces import CarInterfaceBase
-from opendbc.car import structs
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.values import PLATFORMS
-from cereal.car import CarParams
+from opendbc.car.structs import CarParams
 
 from openpilot.selfdrive.car.helpers import convert_carControlSP
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle
