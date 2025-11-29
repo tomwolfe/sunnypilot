@@ -1,4 +1,4 @@
-import unittest
+import pytest
 import numpy as np
 
 from cereal import messaging, custom, log
@@ -55,7 +55,7 @@ def generate_controlsState(curvature):
   return msg_controls_state
 
 
-class TestVisionController(unittest.TestCase):
+class TestVisionController:
   def _create_mock_sm(self, v_ego, orientation_rate_z, curvature):
     # Create the modelV2 message with the specified parameters
     msg_model = generate_modelV2(v_ego, orientation_rate_z)
@@ -81,8 +81,7 @@ class TestVisionController(unittest.TestCase):
     sm = self._create_mock_sm(v_ego, np.zeros(len(ModelConstants.T_IDXS)), 0.0)
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
     # The state should now be enabled (1) since both long_enabled=True and enabled=True
-    self.assertEqual(vision_controller.state, VisionState.enabled,
-                     f"Expected enabled state (1), got {vision_controller.state}")
+    assert vision_controller.state == VisionState.enabled, f"Expected enabled state (1), got {vision_controller.state}"
 
     # Test Entering state with smoother deceleration
     # Simulate a predicted curve that should trigger the new mid-point in the lookup table
@@ -94,8 +93,7 @@ class TestVisionController(unittest.TestCase):
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
     # After update, the controller should have transitioned if max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH
     # Since max_pred_lat_acc is 2.0 and threshold is 1.3, it should transition to entering
-    self.assertIn(vision_controller.state, [VisionState.entering, VisionState.enabled],
-                  f"Expected entering (2) or enabled (1), got {vision_controller.state}")
+    assert vision_controller.state in [VisionState.entering, VisionState.enabled], f"Expected entering (2) or enabled (1), got {vision_controller.state}"
 
     # Now let's force a test where we know the entering state will trigger
     # Set the controller to enabled state first
@@ -113,7 +111,7 @@ class TestVisionController(unittest.TestCase):
 
     # Only assert the acceleration if we're in the entering state
     if vision_controller.state == VisionState.entering:
-        self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=1e-2)
+        assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2)
 
     # Test LEAVING state with smoother acceleration
     # First, force the controller into the LEAVING state
@@ -129,9 +127,8 @@ class TestVisionController(unittest.TestCase):
     expected_a_target = base_leaving_acc * speed_factor
 
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
-    self.assertEqual(vision_controller.state, VisionState.leaving)
-    self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=0.01,
-                         msg=f"Failed for leaving state, expected ~{expected_a_target}, got {vision_controller.a_target}")
+    assert vision_controller.state == VisionState.leaving
+    assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for leaving state, expected ~{expected_a_target}, got {vision_controller.a_target}"
 
   def test_entering_state_lookup_table(self):
     """Test the new 3-point lookup table in the ENTERING state."""
@@ -165,15 +162,13 @@ class TestVisionController(unittest.TestCase):
 
         # Only check acceleration if in entering state
         if vision_controller.state == VisionState.entering:
-            self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=1e-2,
-                                 msg=f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}")
+            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
         else:
             # We still want to make sure the acceleration is calculated correctly based on the lookup
             # even if the state didn't transition to entering due to other conditions
             base_decel = np.interp(lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
             expected_a_target = base_decel * speed_factor
-            self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=1e-2,
-                                 msg=f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}")
+            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
 
   def test_leaving_state_interpolation(self):
     """Test the interpolation logic in the LEAVING state."""
@@ -185,12 +180,12 @@ class TestVisionController(unittest.TestCase):
 
     # Test different lateral acceleration values in the LEAVING state
     test_cases = [
-      (1.1, 0.5),  # At _FINISH_LAT_ACC_TH, should return _LEAVING_ACC (0.5) before speed adjustment
-      (1.3, 0.2),  # At _LEAVING_LAT_ACC_TH, should return 0.2 before speed adjustment
-      (1.2, 0.35), # Mid-point between 1.1 and 1.3 should interpolate to ~0.35 before speed adjustment
+      1.1,  # At _FINISH_LAT_ACC_TH, should return _LEAVING_ACC (0.5) before speed adjustment
+      1.3,  # At _LEAVING_LAT_ACC_TH, should return 0.2 before speed adjustment
+      1.2, # Mid-point between 1.1 and 1.3 should interpolate to ~0.35 before speed adjustment
     ]
 
-    for lat_acc, expected_acc in test_cases:
+    for lat_acc in test_cases:
       vision_controller.state = VisionState.leaving
       # Create a mock sm with the appropriate length for orientationRate.z
       sm = self._create_mock_sm(v_ego, np.zeros(len(ModelConstants.T_IDXS)), lat_acc / (v_ego**2))
@@ -202,9 +197,8 @@ class TestVisionController(unittest.TestCase):
                                           [_LEAVING_ACC, 0.2]) * speed_factor
 
       vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
-      self.assertEqual(vision_controller.state, VisionState.leaving)
-      self.assertAlmostEqual(vision_controller.a_target, expected_acc_with_speed, delta=0.01,
-                           msg=f"Failed for lat_acc={lat_acc}, expected ~{expected_acc_with_speed}, got {vision_controller.a_target}")
+      assert vision_controller.state == VisionState.leaving
+      assert vision_controller.a_target == pytest.approx(expected_acc_with_speed, abs=0.01), f"Failed for lat_acc={lat_acc}, expected ~{expected_acc_with_speed}, got {vision_controller.a_target}"
 
   def test_speed_dependent_behavior(self):
     """Test the new speed-dependent acceleration scaling."""
@@ -234,8 +228,7 @@ class TestVisionController(unittest.TestCase):
       vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
 
       # Check acceleration calculation regardless of state transition
-      self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=0.01,
-                           msg=f"Failed for speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}")
+      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"
 
     # Test leaving state at different speeds
     for v_ego in test_speeds:
@@ -245,7 +238,7 @@ class TestVisionController(unittest.TestCase):
       sm = self._create_mock_sm(v_ego, np.zeros(len(ModelConstants.T_IDXS)), curvature_sim)
 
       vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
-      self.assertEqual(vision_controller.state, VisionState.leaving)
+      assert vision_controller.state == VisionState.leaving
 
       # Calculate expected acceleration with speed adjustment
       base_leaving_acc = np.interp(lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
@@ -253,8 +246,4 @@ class TestVisionController(unittest.TestCase):
       speed_factor = min(1.2, v_ego / 15.0) if v_ego > 0 else 1.0
       expected_a_target = base_leaving_acc * speed_factor
 
-      self.assertAlmostEqual(vision_controller.a_target, expected_a_target, delta=0.01,
-                           msg=f"Failed for leaving state at speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}")
-
-if __name__ == "__main__":
-  unittest.main()
+      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for leaving state at speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"

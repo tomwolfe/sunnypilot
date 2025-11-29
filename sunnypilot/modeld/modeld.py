@@ -315,7 +315,7 @@ def main(demo=False):
       r_lane_change_prob = desire_state[log.Desire.laneChangeRight]
       lane_change_prob = l_lane_change_prob + r_lane_change_prob
       # Update desire helper with model data and radar state for enhanced lane change decision making
-      DH.update(sm['carState'], sm['carControl'].latActive, lane_change_prob, model_v2, sm['radarState'] if 'radarState' in sm else None)
+      DH.update(sm['carState'], sm['carControl'].latActive, lane_change_prob, modelv2_send, sm['radarState'] if 'radarState' in sm else None)
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       mdv2sp_send.modelDataV2SP.laneTurnDirection = DH.lane_turn_direction

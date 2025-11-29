@@ -9,6 +9,7 @@ and fail-safe procedures.
 from collections import deque
 import numpy as np
 import time
+from typing import Any
 from cereal import car, log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
@@ -61,7 +62,7 @@ class SafetyManager:
     self._last_acceleration = 0.0
     self._last_update_time = 0.0
     self._initialized = False
-    
+
   def update_params(self):
     """Update safety parameters from system parameters"""
     try:
@@ -76,14 +77,12 @@ class SafetyManager:
   def monitor_steering_safety(self, car_state: car.CarState, control_output: car.CarControl.Actuators) -> bool:
     """
     Monitor steering safety by checking for unexpected torques or rapid changes.
-    
+
     Args:
       car_state: Current car state
-      control_output: Control system output
-      
-    Returns:
-      True if steering is safe, False otherwise
-    """
+                control_output: Control system output
+              Returns:
+                True if steering is safe, False otherwise    """
     # Check for excessive steering torque
     if abs(car_state.steeringTorque) > self.max_unexpected_torque:
       # Check if the high torque is expected based on our control request
@@ -91,37 +90,40 @@ class SafetyManager:
       if abs(car_state.steeringTorque) > expected_torque * 1.5:  # 150% of expected
         return False
     
-    # Check for rapid steering rate changes
-    current_angle = car_state.steeringAngleDeg
+        # Check for rapid steering rate changes
+    
+    
+    
+        current_angle = car_state.steeringAngleDeg
     if self._initialized:
       time_diff = DT_CTRL  # Fixed time step
       if time_diff > 0:
         steering_rate = abs(current_angle - self._last_steering_angle) / time_diff
         if steering_rate > self.max_steering_rate:
           return False
-    
+
     # Store current values for next iteration
     self.steering_torque_history.append(abs(car_state.steeringTorque))
     self.steering_angle_history.append(current_angle)
     self._last_steering_angle = current_angle
     self._initialized = True
-    
+
     return True
 
   def monitor_longitudinal_safety(self, car_state: car.CarState, control_output: car.CarControl.Actuators) -> bool:
     """
     Monitor longitudinal safety by checking for unexpected acceleration changes.
-    
+
     Args:
       car_state: Current car state
       control_output: Control system output
-      
+
     Returns:
       True if longitudinal control is safe, False otherwise
     """
     current_accel = car_state.aEgo
     self.acceleration_history.append(current_accel)
-    
+
     if len(self.acceleration_history) >= 2 and self._initialized:
       # Calculate acceleration change rate (jerk)
       if len(self.acceleration_history) >= 2:
@@ -129,13 +131,13 @@ class SafetyManager:
         if len(recent_acceleration) == 2:
           accel_change = abs(recent_acceleration[1] - recent_acceleration[0])
           jerk = accel_change / DT_CTRL  # Approximate jerk
-      
+
           if jerk > self.max_acceleration_change:
             return False
-    
+
     # Store current acceleration for next iteration
     self._last_acceleration = current_accel
-    
+
     return True
 
   def monitor_model_prediction_safety(self, model_data) -> bool:
@@ -274,13 +276,13 @@ class SafetyManager:
     current_prediction = {
         'curvature': getattr(model_data.action, 'desiredCurvature', 0),
         'acceleration': getattr(model_data.action, 'desiredAcceleration', 0),
-        'timestamp': time.time()  # Need to import time
+        'timestamp': time.monotonic()  # Need to import time
     }
 
     self._recent_predictions.append(current_prediction)
 
     # Keep only recent predictions (last 1 second worth)
-    cutoff_time = time.time() - 1.0
+    cutoff_time = time.monotonic() - 1.0
     self._recent_predictions = [p for p in self._recent_predictions if p['timestamp'] > cutoff_time]
 
     if len(self._recent_predictions) < 3:
@@ -343,59 +345,58 @@ class SafetyManager:
   def check_safety_violations(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None) -> tuple[bool, str]:
     """
     Perform comprehensive safety check and return whether the system is safe.
-    
+
     Args:
       car_state: Current car state
       control_output: Control system output
       model_data: Model predictions (optional)
-      
     Returns:
       Tuple of (is_safe, violation_reason)
     """
     if not self.safety_engaged:
       return True, "safety_disabled"
-    
+
     # Check steering safety
     if not self.monitor_steering_safety(car_state, control_output):
       self.safety_violation_count += 1
       cloudlog.debug(f"Safety violation: unsafe_steering. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_steering"
-    
+
     # Check longitudinal safety
     if not self.monitor_longitudinal_safety(car_state, control_output):
       self.safety_violation_count += 1
       cloudlog.debug(f"Safety violation: unsafe_longitudinal. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_longitudinal"
-    
+
     # Check model prediction safety
     if not self.monitor_model_prediction_safety(model_data):
       self.safety_violation_count += 1
       cloudlog.debug(f"Safety violation: unsafe_model_predictions. Count: {self.safety_violation_count:.1f}")
       return False, "unsafe_model_predictions"
-    
+
     # Reset violation count on successful safety check
     # The safety_violation_count gradually decreases (by 0.1 per cycle) when no new violations
     # are detected. This mechanism allows the system to recover from transient, non-persistent
     # issues without immediately triggering a disengagement, balancing safety with usability.
     if self.safety_violation_count > 0:
       self.safety_violation_count = max(0, self.safety_violation_count - 0.1)  # Gradually decrease
-    
+
     return True, "safe"
 
   def get_safety_recommendation(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None) -> log.SelfdriveState.AlertStatus:
     """
     Get safety-based alert recommendation for the UI.
-    
+
     Args:
       car_state: Current car state
       control_output: Control system output
       model_data: Model predictions (optional)
-      
+
     Returns:
       Alert status based on safety assessment
     """
     is_safe, violation_reason = self.check_safety_violations(car_state, control_output, model_data)
-    
+
     if not is_safe:
       if self.safety_violation_count >= self.max_safety_violations:
         return log.SelfdriveState.AlertStatus.critical
@@ -407,7 +408,7 @@ class SafetyManager:
   def should_disengage(self) -> bool:
     """
     Determine if the system should disengage based on safety violations.
-    
+
     Returns:
       True if system should disengage, False otherwise
     """
@@ -580,7 +581,7 @@ class SafetyManager:
 
     # Check for sudden, unexplained changes in model output that might indicate sensor noise
     if not hasattr(self, '_prev_model_outputs'):
-      self._prev_model_outputs = {}
+      self._prev_model_outputs: dict[str, Any] = {}
 
     # Store current model outputs for comparison in next cycle
     if hasattr(model_data, 'action'):
@@ -603,7 +604,7 @@ class SafetyManager:
       self._prev_model_outputs['_prev_action'] = current_action
 
     # Return risk (1.0 - confidence)
-    return max(0.0, 1.0 - prediction_confidence)
+    return float(max(0.0, 1.0 - prediction_confidence))
 
   def _assess_lead_vehicle_risk(self, radar_data) -> float:
     risk = 0.0
@@ -841,7 +842,7 @@ class SafetyManager:
     n = len(x)
     if n > 1:
       slope = (n * sum(x[i] * y[i] for i in range(n)) - sum(x) * sum(y)) / (n * sum(xi**2 for xi in x) - sum(x)**2)
-      return slope
+      return float(slope)
     return 0.0
 
   def get_graduated_safety_response(self, risk_level: float) -> dict:

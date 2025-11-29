@@ -914,7 +914,6 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   # Enhanced action validation for desiredCurvature and desiredAcceleration
   if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
     # Validate and limit desired curvature based on physical limits
-    curvature = model_output['action'].desiredCurvature
 
 
   if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
