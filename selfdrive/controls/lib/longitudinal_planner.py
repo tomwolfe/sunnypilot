@@ -201,19 +201,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Dynamic thresholds based on speed and driving context
     if v_ego < 5:  # Very low speeds (stationary or slow moving)
       emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
-      warning_threshold = 2.5
       distance_threshold = 8  # meters
     elif v_ego < 15:  # City speeds (~54 km/h)
       emergency_brake_threshold = 2.0
-      warning_threshold = 3.0
       distance_threshold = 15  # meters
     elif v_ego < 25:  # Highway speeds (~54-90 km/h)
       emergency_brake_threshold = 2.5
-      warning_threshold = 3.5
       distance_threshold = 30  # meters
     else:  # High speeds (>90 km/h)
       emergency_brake_threshold = 2.8
-      warning_threshold = 4.0
       distance_threshold = 45  # meters
 
     # Enhanced FCW logic - trigger based on multiple criteria

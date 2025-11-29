@@ -26,11 +26,11 @@ class LatControlAngle(LatControl):
 
     if self.use_steer_limited_by_safety:
       # these cars' carcontrollers calculate max lateral accel and jerk, so we can rely on carOutput for saturation
-      angle_control_saturated = steer_limited_by_safety
+      pass
     else:
       # for cars which use a method of limiting torque such as a torque signal (Nissan and Toyota)
       # or relying on EPS (Ford Q3), carOutput does not capture maxing out torque  # TODO: this can be improved
-      angle_control_saturated = abs(angle_steers_des - CS.steeringAngleDeg) > STEER_ANGLE_SATURATION_THRESHOLD
+      pass
     # Saturation is based on whether the path is curvature limited, not on physical actuator saturation
     angle_log.saturated = bool(self._check_saturation(curvature_limited, CS, False, curvature_limited))
     angle_log.steeringAngleDeg = float(CS.steeringAngleDeg)

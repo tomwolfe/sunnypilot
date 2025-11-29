@@ -108,7 +108,7 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   plan_position_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,0])
   plan_position_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,1])
   plan_position_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,2])
-  
+
   plan_velocity_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,0])
   plan_velocity_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,1])
   plan_velocity_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,2])
@@ -116,7 +116,7 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   plan_acceleration_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,0])
   plan_acceleration_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,1])
   plan_acceleration_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,2])
-  
+
   plan_orientation_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,0])
   plan_orientation_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,1])
   plan_orientation_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,2])

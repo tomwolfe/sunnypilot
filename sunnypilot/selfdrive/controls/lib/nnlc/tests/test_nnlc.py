@@ -1,6 +1,5 @@
 import numpy as np
 from parameterized import parameterized
-import pytest
 
 from cereal import car, log, messaging
 from opendbc.car.car_helpers import interfaces

@@ -1,13 +1,10 @@
 import pytest
 import numpy as np
 
-from cereal import messaging, custom, log
-from openpilot.common.params import Params
-from openpilot.common.realtime import DT_MDL
+from cereal import messaging, log
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.vision_controller import (
-    SmartCruiseControlVision, VisionState, _ENTERING_PRED_LAT_ACC_TH, _TURNING_LAT_ACC_TH,
-    _LEAVING_LAT_ACC_TH, _FINISH_LAT_ACC_TH, _LEAVING_ACC, _ENTERING_SMOOTH_DECEL_BP,
+    SmartCruiseControlVision, VisionState, _LEAVING_LAT_ACC_TH, _FINISH_LAT_ACC_TH, _LEAVING_ACC, _ENTERING_SMOOTH_DECEL_BP,
     _ENTERING_SMOOTH_DECEL_V
 )
 

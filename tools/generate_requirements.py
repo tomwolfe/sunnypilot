@@ -19,7 +19,7 @@ def generate_requirements_txt():
 
         # Extract direct dependencies from pyproject.toml
         pyproject_path = project_root / "pyproject.toml"
-        with open(pyproject_path, 'r') as f:
+        with open(pyproject_path) as f:
             pyproject_data = toml.load(f)
 
         # Extract dependencies from the [project] section
@@ -55,7 +55,7 @@ def verify_dependencies_match():
         pyproject_path = project_root / "pyproject.toml"
 
         # Extract dependencies from pyproject.toml
-        with open(pyproject_path, 'r') as f:
+        with open(pyproject_path) as f:
             pyproject_data = toml.load(f)
 
         # Get all dependencies (main + optional)
@@ -72,8 +72,8 @@ def verify_dependencies_match():
 
         # Read dependencies from requirements.txt
         requirements_path = project_root / "requirements.txt"
-        with open(requirements_path, 'r') as f:
-            req_deps = set(line.strip() for line in f if line.strip() and not line.startswith('#'))
+        with open(requirements_path) as f:
+            req_deps = {line.strip() for line in f if line.strip() and not line.startswith('#')}
 
         return all_pyproject_deps == req_deps
 

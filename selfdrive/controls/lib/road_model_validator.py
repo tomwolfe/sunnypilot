@@ -13,33 +13,31 @@ import numpy as np
 from typing import Any
 import math
 
-from cereal import log
 from openpilot.common.swaglog import cloudlog
-from opendbc.car import structs
 
 
 class RoadModelValidator:
     """Validates and corrects road model outputs from neural network."""
-    
+
     def __init__(self):
         """Initialize the road model validator with thresholds and parameters."""
         # Lane line validation parameters
         self.max_lane_curvature = 0.2  # Maximum reasonable lane curvature (1/m)
         self.min_lane_distance = 0.5   # Minimum distance between lanes (m)
         self.max_lane_distance = 5.0   # Maximum reasonable lateral distance (m)
-        
+
         # Path planning validation parameters
         self.max_path_curvature = 0.3  # Maximum reasonable path curvature (1/m)
         self.curvature_change_limit = 0.1  # Maximum allowed curvature change per meter
-        
+
         # Lead vehicle validation parameters
         self.min_lead_distance = 1.0   # Minimum valid lead distance (m)
         self.max_lead_distance = 200.0 # Maximum valid lead distance (m)
         self.max_lead_velocity = 100.0 # Maximum valid lead velocity (m/s)
-        
+
         # Confidence thresholds
         self.min_lane_confidence = 0.1 # Minimum confidence for lane detection
-        
+
         # Storage for previous values to enable temporal consistency checks
         self.prev_lane_lines = None
         self.prev_lane_line_probs = None
@@ -141,11 +139,11 @@ class RoadModelValidator:
     def validate_path_planning(self, position: np.ndarray, velocity: np.ndarray = None) -> tuple[np.ndarray, bool]:
         """
         Validate planned path for safety and physical reasonableness.
-        
+
         Args:
             position: Array of planned positions [timesteps, 2] (x, y) or [timesteps, 3] (x, y, z)
             velocity: Array of planned velocities [timesteps, 3] (x, y, z) if available
-            
+
         Returns:
             Tuple of (corrected_position, is_valid)
         """
@@ -163,17 +161,17 @@ class RoadModelValidator:
                 p_prev = position[i-1]
                 p_curr = position[i]
                 p_next = position[i+1]
-                
+
                 # Vector from prev to curr
                 v1 = p_curr[:2] - p_prev[:2]  # Only use x, y for curvature calculation
                 # Vector from curr to next
                 v2 = p_next[:2] - p_curr[:2]
-                
+
                 # Calculate angle between vectors
                 if np.linalg.norm(v1) > 0.1 and np.linalg.norm(v2) > 0.1:
                     cos_angle = np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0)
                     angle = math.acos(cos_angle)
-                    
+
                     # Approximate curvature as angle change per distance
                     dist = np.linalg.norm(v1)  # Approximate path length segment
                     if dist > 0:
@@ -181,7 +179,7 @@ class RoadModelValidator:
                         if abs(curvature) > self.max_path_curvature:
                             cloudlog.warning(f"Excessive path curvature {curvature:.3f} at index {i}")
                             is_valid = False
-                            
+
                             # Try to smooth this point
                             corrected_pos[i] = (corrected_pos[i-1] + corrected_pos[i+1]) / 2.0
 
@@ -190,16 +188,16 @@ class RoadModelValidator:
     def validate_lead_objects(self, leads_v3: list) -> tuple[list, bool]:
         """
         Validate lead vehicle detections.
-        
+
         Args:
             leads_v3: List of lead objects from model output
-            
+
         Returns:
             Tuple of (corrected_leads, is_valid)
         """
         if not leads_v3:
             return leads_v3, True  # Empty is valid
-            
+
         corrected_leads = []
         is_valid = True
 
@@ -207,7 +205,7 @@ class RoadModelValidator:
             if not hasattr(lead, 'dRel') or not hasattr(lead, 'vRel'):
                 cloudlog.warning(f"Lead {i} missing required attributes")
                 continue
-                
+
             # Validate distance
             if lead.dRel < self.min_lead_distance or lead.dRel > self.max_lead_distance:
                 cloudlog.warning(f"Lead {i} distance unreasonable: {lead.dRel}m")
@@ -239,17 +237,16 @@ class RoadModelValidator:
     def validate_model_output(self, model_output: dict[str, Any], v_ego: float) -> tuple[dict[str, Any], bool]:
         """
         Comprehensive validation of model outputs.
-        
+
         Args:
             model_output: Dictionary of model outputs from modelV2
             v_ego: Current vehicle speed
-            
+
         Returns:
             Tuple of (corrected_model_output, is_valid)
         """
-        original_output = model_output.copy()
         is_valid = True
-        
+
         # Validate lane lines
         if 'laneLines' in model_output:
             lane_lines, lane_valid = self.validate_lane_lines(model_output['laneLines'])
@@ -293,7 +290,7 @@ class RoadModelValidator:
         # Add validation flag to output
         if 'meta' not in model_output:
             model_output['meta'] = {}
-        
+
         # Preserve original validation flag and add our result
         original_validation = model_output['meta'].get('validation_applied', False)
         model_output['meta']['validation_applied'] = original_validation or not is_valid
@@ -306,7 +303,7 @@ class RoadModelValidator:
         # Store current values for next frame comparison
         if 'laneLines' in model_output:
             self.prev_lane_lines = model_output['laneLines'].copy() if model_output['laneLines'] is not None else None
-        
+
         if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
             self.prev_desired_curvature = model_output['action'].desiredCurvature
 

@@ -1,13 +1,11 @@
-import numpy as np
-from selfdrive.controls.lib.desire_helper import DesireHelper
-from cereal import log, car
+from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 
 
 def test_enhanced_lane_change_safety_assessment():
   """Test the enhanced lane change safety assessment."""
   dh = DesireHelper()
-  alc = dh.alc  # AutoLaneChangeController
-  
+  alc = dh.alc
+
   # Create mock model and radar data for testing
   class MockModelData:
     def __init__(self):
@@ -18,10 +16,10 @@ def test_enhanced_lane_change_safety_assessment():
         line.y = [0.0] * 33  # 33 points
         if i == 1:  # Left lane line
           line.y = [j * 0.1 for j in range(33)]  # Simulate lane line at positive y
-        elif i == 2:  # Right lane line  
+        elif i == 2:  # Right lane line
           line.y = [-j * 0.1 for j in range(33)]  # Simulate lane line at negative y
         self.laneLines.append(line)
-  
+
   class MockRadarData:
     def __init__(self):
       self.leadOne = type('obj', (object,), {
@@ -31,28 +29,28 @@ def test_enhanced_lane_change_safety_assessment():
         'yRel': 0.0,   # Lateral offset
         'vLead': 20.0
       })()
-      
+
       self.leadTwo = type('obj', (object,), {
-        'status': True, 
+        'status': True,
         'dRel': 80.0,
         'vRel': -2.0,
         'yRel': 3.5,   # In adjacent lane
         'vLead': 18.0
       })()
-  
+
   class MockCarState:
     vEgo = 25.0  # 25 m/s
     leftBlindspot = False
     rightBlindspot = False
-  
+
   model_data = MockModelData()
   radar_data = MockRadarData()
   car_state = MockCarState()
-  
+
   # Test the safety assessment
   is_safe = alc.update_lane_safety_assessment(model_data, car_state, radar_data)
   assert isinstance(is_safe, bool), "Safety assessment should return boolean"
-  
+
   print("✓ Enhanced lane change safety assessment test passed")
 
 
@@ -88,20 +86,18 @@ def test_lane_change_timer_and_delay_logic():
 
 def test_auto_lane_change_controller_modes():
   """Test different auto lane change modes."""
-  dh = DesireHelper()
-  alc = dh.alc
-  
+
   # Test different modes and their delay values
   from sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLaneChangeMode, AUTO_LANE_CHANGE_TIMER
-  
+
   assert AutoLaneChangeMode.NUDGELESS in AUTO_LANE_CHANGE_TIMER
   assert AutoLaneChangeMode.ONE_SECOND in AUTO_LANE_CHANGE_TIMER
   assert AutoLaneChangeMode.TWO_SECONDS in AUTO_LANE_CHANGE_TIMER
-  
+
   # Verify delay values are reasonable
   assert AUTO_LANE_CHANGE_TIMER[AutoLaneChangeMode.ONE_SECOND] == 1.0
   assert AUTO_LANE_CHANGE_TIMER[AutoLaneChangeMode.TWO_SECONDS] == 2.0
-  
+
   print("✓ Auto lane change controller modes test passed")
 
 

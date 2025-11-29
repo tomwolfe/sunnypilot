@@ -4,11 +4,8 @@ Test suite for modeld improvements in sunnypilot, specifically for model executi
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import time
-import numpy as np
+from unittest.mock import Mock
 
-from openpilot.selfdrive.modeld.modeld import ModelState
 
 
 class TestModelExecutionOptimization:
@@ -88,6 +85,6 @@ class TestControlRateAdaptation:
         thermal_factors = [1.0, 0.8, 0.6, 0.4]
         expected_rates = [100, 80, 60, 50]  # Minimum rate is 50
 
-        for factor, expected_rate in zip(thermal_factors, expected_rates):
+        for factor, expected_rate in zip(thermal_factors, expected_rates, strict=True):
             calculated_rate = max(50, int(base_rate * factor))
             assert calculated_rate == expected_rate

@@ -1,5 +1,4 @@
 from parameterized import parameterized
-import pytest
 
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.honda.values import CAR as HONDA

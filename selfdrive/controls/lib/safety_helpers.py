@@ -89,11 +89,9 @@ class SafetyManager:
       expected_torque = abs(control_output.torque) if control_output else 0
       if abs(car_state.steeringTorque) > expected_torque * 1.5:  # 150% of expected
         return False
-    
+
         # Check for rapid steering rate changes
-    
-    
-    
+
         current_angle = car_state.steeringAngleDeg
     if self._initialized:
       time_diff = DT_CTRL  # Fixed time step
@@ -300,8 +298,10 @@ class SafetyManager:
     max_acceleration_variance = 0.5 * (1.0 / max(0.1, confidence))
 
     if curvature_variance > max_curvature_variance or acceleration_variance > max_acceleration_variance:
-        cloudlog.debug(f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, "
-                      f"accel_var={acceleration_variance:.4f}, conf={confidence:.2f}")
+        cloudlog.debug(
+            f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, "
+            f"accel_var={acceleration_variance:.4f}, conf={confidence:.2f}"
+        )
         return False
 
     return True
@@ -688,7 +688,6 @@ class SafetyManager:
 
       except AttributeError as e:
         cloudlog.debug(f"Radar data attribute error in risk assessment: {e}")
-        pass
 
     # 3. Environmental factors if available
     if environment_data:

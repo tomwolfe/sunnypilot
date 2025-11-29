@@ -45,7 +45,7 @@ class ModelState(ModelStateBase):
   inputs: dict[str, np.ndarray]
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
   temporal_idxs: slice | np.ndarray
-  last_vision_outputs_dict: dict[str, np.ndarray] | None 
+  last_vision_outputs_dict: dict[str, np.ndarray] | None
 
   def __init__(self, context: CLContext, params: Params):
     ModelStateBase.__init__(self)
@@ -77,7 +77,7 @@ class ModelState(ModelStateBase):
     if initial_model_param_throttle_factor <= 0.0:
       self.frame_skip_threshold = 999999  # Skip all frames if throttle factor is zero
     else:
-      self.frame_skip_threshold = max(1, round(1.0 / initial_model_param_throttle_factor)) 
+      self.frame_skip_threshold = max(1, round(1.0 / initial_model_param_throttle_factor))
 
     # img buffers are managed in openCL transform code
     self.numpy_inputs = {}
@@ -152,8 +152,10 @@ class ModelState(ModelStateBase):
     # Also, if we are throttling, and it's not a frame to run the model, return previous outputs.
     if prepare_only or (self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None):
       if not prepare_only: # Only log if we are skipping due to throttle, not prepare_only
-        cloudlog.debug(f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
-                        f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}")
+        cloudlog.debug(
+            f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
+            f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}"
+        )
       return self.last_vision_outputs_dict if not prepare_only else None
 
     # If we reach here, it means we are going to run the model.
