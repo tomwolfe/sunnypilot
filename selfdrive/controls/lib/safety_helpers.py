@@ -299,8 +299,7 @@ class SafetyManager:
 
     if curvature_variance > max_curvature_variance or acceleration_variance > max_acceleration_variance:
         cloudlog.debug(
-            f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, "
-            f"accel_var={acceleration_variance:.4f}, conf={confidence:.2f}"
+            f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, accel_var={acceleration_variance:.4f}, conf={confidence:.2f}"
         )
         return False
 

@@ -1,5 +1,6 @@
 import numpy as np
 from parameterized import parameterized
+from unittest.mock import MagicMock
 
 from cereal import car, log, messaging
 from opendbc.car.car_helpers import interfaces
@@ -45,10 +46,9 @@ class TestNeuralNetworkLateralControl:
 
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN, GM.CHEVROLET_BOLT_EUV])
   def test_saturation(self, car_name):
-    from unittest.mock import MagicMock as Mock
 
     # Create mock params object similar to the conftest.py fixture
-    mock_params = Mock()
+    mock_params = MagicMock()
     param_defaults = {
       "LongitudinalMaxJerk": "2.2",
       "LongitudinalMaxStoppingJerk": "1.5",

@@ -1,4 +1,5 @@
 from parameterized import parameterized
+from unittest.mock import MagicMock
 
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.honda.values import CAR as HONDA
@@ -15,10 +16,9 @@ class TestNNTorqueModel:
 
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN])
   def test_load_model(self, car_name):
-    from unittest.mock import MagicMock as Mock
 
     # Create mock params object similar to the conftest.py fixture
-    mock_params = Mock()
+    mock_params = MagicMock()
     param_defaults = {
       "LongitudinalMaxJerk": "2.2",
       "LongitudinalMaxStoppingJerk": "1.5",

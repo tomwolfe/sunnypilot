@@ -13,6 +13,7 @@ import pickle
 import numpy as np
 import cereal.messaging as messaging
 from cereal import car, log
+from typing import Any
 from pathlib import Path
 from cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
@@ -783,7 +784,7 @@ def main(demo=False):
       time.sleep(0.1)  # Brief pause before continuing
       continue
 
-def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
   """
   Validate model outputs to ensure safe values for downstream processing.
 
@@ -939,16 +940,21 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   if modifications_made:
     cloudlog.warning(f"Model output validation modified significant values: {', '.join(modifications_made)}")
     # Add a validation flag to model output to indicate when major corrections were made
-    if 'meta' not in model_output:
-      model_output['meta'] = {}
-    if 'validation_applied' not in model_output['meta']:
-      model_output['meta']['validation_applied'] = True
+    if 'meta' in model_output and hasattr(model_output['meta'], '__setitem__'):
+      # For structured objects that support direct attribute setting, we skip this
+      # since we don't want to mix dictionary and object access patterns
+      pass
+    elif 'meta' in model_output and isinstance(model_output['meta'], dict):
+      if 'validation_applied' not in model_output['meta']:
+        model_output['meta']['validation_applied'] = True
   else:
     # Set validation flag to false when no changes were needed
-    if 'meta' not in model_output:
-      model_output['meta'] = {}
-    if 'validation_applied' not in model_output['meta']:
-      model_output['meta']['validation_applied'] = False
+    if 'meta' in model_output and hasattr(model_output['meta'], '__setitem__'):
+      # For structured objects that support direct attribute setting, we skip this
+      pass
+    elif 'meta' in model_output and isinstance(model_output['meta'], dict):
+      if 'validation_applied' not in model_output['meta']:
+        model_output['meta']['validation_applied'] = False
 
   return model_output
 

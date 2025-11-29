@@ -5,6 +5,7 @@ This ensures that all hardcoded values mentioned in the critical review have bee
 """
 
 import pytest
+from unittest.mock import MagicMock
 
 
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
@@ -156,6 +157,3 @@ class TestConfigurableParameters:
         assert controller.high_speed_ki_limit == 0.15
 
 
-if __name__ == "__main__":
-    # Run all tests
-    pytest.main()
