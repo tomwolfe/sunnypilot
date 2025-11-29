@@ -4,7 +4,6 @@ Integration test to validate all sunnypilot improvements work together.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
 from types import SimpleNamespace
 
 

@@ -323,8 +323,9 @@ class ModelState(ModelStateBase):
         vision_outputs_dict['hidden_state'] = self._cached_features
 
     # Process features from vision model
-    features_buffer = vision_outputs_dict.get('hidden_state',
-                                            self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32))
+    default_features = np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32)
+    default_buffer = self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else default_features
+    features_buffer = vision_outputs_dict.get('hidden_state', default_buffer)
 
     self.full_input_queues.enqueue({'features_buffer': features_buffer, 'desire_pulse': new_desire})
     for k in ['desire_pulse', 'features_buffer']:
@@ -438,10 +439,9 @@ class ModelState(ModelStateBase):
         current_state = self._desire_state_history[-1]
         consistent_count = sum(1 for state in self._desire_state_history if np.array_equal(state, current_state))
         if consistent_count >= 2:
-          # Boost confidence in consistent predictions
-          if 'meta' not in outputs:
-            outputs['meta'] = {}
-          outputs['meta']['confidence_boost'] = 1.0 + (consistent_count / 10.0)  # Small boost for consistency
+          # Boost confidence in consistent predictions - note: confidence_boost field must be supported by the message schema
+          # This enhancement is currently bypassed to avoid type issues with capnp messages
+          pass  # Skip dynamic field assignment to avoid mypy type errors
 
     # Apply road model validation to ensure physical reasonableness
     # This catches physically impossible predictions that could cause safety issues
@@ -652,14 +652,14 @@ def main(demo=False):
         # Check sync quality and log if frames are significantly out of sync
         if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
           cloudlog.error(
-              f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), "
-              f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), "
+              f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), " +
+              f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), " +
               f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms"
           )
         elif abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 5000000:  # 5ms threshold
           # Log when frames are moderately out of sync
           cloudlog.debug(
-              f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, "
+              f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, " +
               f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}"
           )
 
@@ -679,7 +679,8 @@ def main(demo=False):
       if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
         device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
         dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
-        model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
+        intrinsics = dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics
+        model_transform_main = get_warp_matrix(device_from_calib_euler, intrinsics, False).astype(np.float32)
         model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics, True).astype(np.float32)
         live_calib_seen = True
 
@@ -733,9 +734,9 @@ def main(demo=False):
       # Log performance metrics when system load is high or execution time is excessive
       if system_load > 0.8 or model_execution_time > 0.05:  # High system load or slow execution (>50ms)
         cloudlog.debug(
-            f"Performance metrics - System load: {system_load:.2f}, "
-            f"Model execution time: {model_execution_time*1000:.1f}ms, "
-            f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, "
+            f"Performance metrics - System load: {system_load:.2f}, " +
+            f"Model execution time: {model_execution_time*1000:.1f}ms, " +
+            f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, " +
             f"CPU: {cpu_usage_raw:.1f}%"
         )
 

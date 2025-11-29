@@ -125,7 +125,8 @@ class TestVisionController:
 
     vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
     assert vision_controller.state == VisionState.leaving
-    assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for leaving state, expected ~{expected_a_target}, got {vision_controller.a_target}"
+    error_msg = f"Failed for leaving state, expected ~{expected_a_target}, got {vision_controller.a_target}"
+    assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), error_msg
 
   def test_entering_state_lookup_table(self):
     """Test the new 3-point lookup table in the ENTERING state."""
@@ -159,13 +160,15 @@ class TestVisionController:
 
         # Only check acceleration if in entering state
         if vision_controller.state == VisionState.entering:
-            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+            error_msg = f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), error_msg
         else:
             # We still want to make sure the acceleration is calculated correctly based on the lookup
             # even if the state didn't transition to entering due to other conditions
             base_decel = np.interp(lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
             expected_a_target = base_decel * speed_factor
-            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+            error_msg = f"Failed for lat_acc={lat_acc}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+            assert vision_controller.a_target == pytest.approx(expected_a_target, abs=1e-2), error_msg
 
   def test_leaving_state_interpolation(self):
     """Test the interpolation logic in the LEAVING state."""
@@ -195,7 +198,8 @@ class TestVisionController:
 
       vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
       assert vision_controller.state == VisionState.leaving
-      assert vision_controller.a_target == pytest.approx(expected_acc_with_speed, abs=0.01), f"Failed for lat_acc={lat_acc}, expected ~{expected_acc_with_speed}, got {vision_controller.a_target}"
+      error_msg = f"Failed for lat_acc={lat_acc}, expected ~{expected_acc_with_speed}, got {vision_controller.a_target}"
+      assert vision_controller.a_target == pytest.approx(expected_acc_with_speed, abs=0.01), error_msg
 
   def test_speed_dependent_behavior(self):
     """Test the new speed-dependent acceleration scaling."""
@@ -225,7 +229,8 @@ class TestVisionController:
       vision_controller.update(sm, True, False, v_ego, a_ego, v_cruise_setpoint)
 
       # Check acceleration calculation regardless of state transition
-      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+      error_msg = f"Failed for speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), error_msg
 
     # Test leaving state at different speeds
     for v_ego in test_speeds:
@@ -243,4 +248,5 @@ class TestVisionController:
       speed_factor = min(1.2, v_ego / 15.0) if v_ego > 0 else 1.0
       expected_a_target = base_leaving_acc * speed_factor
 
-      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), f"Failed for leaving state at speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+      error_msg = f"Failed for leaving state at speed {v_ego}, expected ~{expected_a_target}, got {vision_controller.a_target}"
+      assert vision_controller.a_target == pytest.approx(expected_a_target, abs=0.01), error_msg

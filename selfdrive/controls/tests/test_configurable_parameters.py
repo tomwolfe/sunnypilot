@@ -5,7 +5,6 @@ This ensures that all hardcoded values mentioned in the critical review have bee
 """
 
 import pytest
-from unittest.mock import Mock
 
 
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
@@ -19,7 +18,7 @@ class TestConfigurableParameters:
     @pytest.fixture(autouse=True)
     def setup_method(self):
         """Set up test environment."""
-        self.CP = Mock()
+        self.CP = MagicMock()
         self.CP.steerRatio = 15.0
         self.CP.wheelbase = 2.7
         self.CP.minSteerSpeed = 0.5
@@ -40,15 +39,15 @@ class TestConfigurableParameters:
         self.CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
         self.CP.longitudinalTuning.kiV = [0.0, 0.5, 0.2]
 
-        self.CP_SP = Mock()
+        self.CP_SP = MagicMock()
         from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
         self.CP_SP.neuralNetworkLateralControl.model.path = MOCK_MODEL_PATH
         self.CP_SP.neuralNetworkLateralControl.model.name = "MOCK"
         self.CP_SP.neuralNetworkLateralControl.fuzzyFingerprint = False
-        self.CI = Mock()
-        self.CI.get_steer_feedforward_function.return_value = Mock()
-        self.CI.torque_from_lateral_accel.return_value = Mock()
-        self.CI.lateral_accel_from_torque.return_value = Mock()
+        self.CI = MagicMock()
+        self.CI.get_steer_feedforward_function.return_value = MagicMock()
+        self.CI.torque_from_lateral_accel.return_value = MagicMock()
+        self.CI.lateral_accel_from_torque.return_value = MagicMock()
 
     def test_latcontrol_pid_configurable_parameters(self, mock_params):
         """Test that latcontrol_pid uses configurable parameters."""

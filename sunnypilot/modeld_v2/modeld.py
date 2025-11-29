@@ -153,7 +153,7 @@ class ModelState(ModelStateBase):
     if prepare_only or (self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None):
       if not prepare_only: # Only log if we are skipping due to throttle, not prepare_only
         cloudlog.debug(
-            f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
+            f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, " +
             f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}"
         )
       return self.last_vision_outputs_dict if not prepare_only else None

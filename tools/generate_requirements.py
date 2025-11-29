@@ -3,7 +3,6 @@
 Script to generate requirements.txt from pyproject.toml
 This ensures consistency between the two dependency sources.
 """
-import subprocess
 import sys
 import os
 import toml

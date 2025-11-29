@@ -90,9 +90,8 @@ class SafetyManager:
       if abs(car_state.steeringTorque) > expected_torque * 1.5:  # 150% of expected
         return False
 
-        # Check for rapid steering rate changes
-
-        current_angle = car_state.steeringAngleDeg
+    # Check for rapid steering rate changes
+    current_angle: float = car_state.steeringAngleDeg
     if self._initialized:
       time_diff = DT_CTRL  # Fixed time step
       if time_diff > 0:
@@ -159,7 +158,8 @@ class SafetyManager:
 
     # If confidence is below threshold, consider unsafe
     if prediction_confidence < self.min_model_prediction_confidence:
-      cloudlog.debug(f"Safety: Low model prediction confidence: {prediction_confidence:.2f} (threshold: {self.min_model_prediction_confidence:.2f})")
+      threshold = self.min_model_prediction_confidence
+      cloudlog.debug(f"Safety: Low model prediction confidence: {prediction_confidence:.2f} (threshold: {threshold:.2f})")
       return False
 
     # Check for prediction consistency across frames
@@ -414,7 +414,7 @@ class SafetyManager:
     """
     return self.safety_violation_count >= self.max_safety_violations
 
-  def assess_comprehensive_risk(self, car_state: car.CarState, control_output, model_data=None,
+  def assess_comprehensive_risk(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None,
                                 radar_data=None, environment_data=None) -> float:
     """
     Comprehensive risk assessment combining multiple factors

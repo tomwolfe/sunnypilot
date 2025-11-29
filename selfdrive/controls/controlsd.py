@@ -81,7 +81,7 @@ class Controls(ControlsExt):
     # performance_compensation_factor: An additional factor that further reduces performance based on rapidly increasing
     #   thermal stress trends. It acts as a proactive cushion against thermal runaway.
     self.thermal_performance_factor = 1.0
-    self.thermal_history = deque(maxlen=30)  # Track thermal performance over last 30 cycles (0.3 seconds at 100Hz)
+    self.thermal_history: deque = deque(maxlen=30)  # Track thermal performance over last 30 cycles (0.3 seconds at 100Hz)
     self.thermal_stress_level = 0  # 0=normal, 1=moderate, 2=high, 3=very high
     self.performance_compensation_factor = 1.0  # Additional compensation for performance degradation
 
@@ -152,7 +152,7 @@ class Controls(ControlsExt):
       cpu_temp = max(self.sm['deviceState'].cpuTempC) if self.sm['deviceState'].cpuTempC else 0
 
       cloudlog.debug(
-          f"Thermal management inputs: thermal_prc={thermal_prc:.2f}, cpu_usage={cpu_usage:.2f}, "
+          f"Thermal management inputs: thermal_prc={thermal_prc:.2f}, cpu_usage={cpu_usage:.2f}, " +
           f"memory_usage={memory_usage:.2f}, cpu_temp={cpu_temp:.1f}C, gpu_temp={gpu_temp:.1f}C"
       )
 
@@ -437,9 +437,9 @@ class Controls(ControlsExt):
 
       # Enhanced logging with more detailed information
       cloudlog.debug(
-          f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, "
-          f"stress_level={self.thermal_stress_level}, vEgo={CS.vEgo:.1f}m/s, "
-          f"speed_factor={speed_factor:.2f if hasattr(actuators, 'accel') else 'N/A'}, "
+          f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, " +
+          f"stress_level={self.thermal_stress_level}, vEgo={CS.vEgo:.1f}m/s, " +
+          f"speed_factor={speed_factor:.2f if hasattr(actuators, 'accel') else 'N/A'}, " +
           f"curvature={actuators.curvature:.3f}"
       )
 
@@ -578,7 +578,7 @@ class Controls(ControlsExt):
       # Check for finite values and reasonable bounds
       if not math.isfinite(attr):
         cloudlog.error(
-            f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
+            f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, " +
             f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}"
         )
         # Implement a recovery by setting to a safe value instead of 0.0
@@ -802,9 +802,9 @@ class Controls(ControlsExt):
           # Enhanced thermal monitoring and logging with stress level information
           if self.thermal_stress_level > 0:
             cloudlog.debug(
-                f"Thermal throttling active: stress_level={self.thermal_stress_level}, "
-                f"factor={self.performance_compensation_factor:.2f}, rate={current_rate:.1f}Hz, "
-                f"current_thermal={self.thermal_performance_factor:.2f}, "
+                f"Thermal throttling active: stress_level={self.thermal_stress_level}, " +
+                f"factor={self.performance_compensation_factor:.2f}, rate={current_rate:.1f}Hz, " +
+                f"current_thermal={self.thermal_performance_factor:.2f}, " +
                 f"critical_rate={critical_rate:.1f}Hz, standard_rate={standard_rate:.1f}Hz"
             )
         else:
@@ -822,8 +822,8 @@ class Controls(ControlsExt):
         # Additional thermal monitoring for extreme cases and logging based on thermal state
         if timing_elapsed > 0.02:  # If we're taking too long, log it
           cloudlog.debug(
-              f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, "
-              f"thermal_factor: {self.thermal_performance_factor:.2f}, "
+              f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, " +
+              f"thermal_factor: {self.thermal_performance_factor:.2f}, " +
               f"stress_level: {self.thermal_stress_level}"
           )
 
@@ -961,8 +961,9 @@ class Controls(ControlsExt):
       if not isinstance(attr, Number):
         continue
 
+      if not math.isfinite(attr):
         cloudlog.error(
-            f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
+            f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, " +
             f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}"
         )
         # Implement a recovery by setting to a safe value instead of 0.0

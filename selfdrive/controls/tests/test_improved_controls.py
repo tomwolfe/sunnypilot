@@ -13,7 +13,6 @@ This test suite validates all the improvements made to:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
 from types import SimpleNamespace
 
 

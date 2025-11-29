@@ -158,7 +158,8 @@ class LongControl:
       # Enhanced starting with smoother acceleration
       # Apply gradual acceleration to avoid harsh takeoff
       if CS.vEgo < self.starting_speed_threshold:  # Below configurable threshold (default 10.8 km/h)
-        output_accel = min(self.CP.startAccel * self.starting_accel_multiplier, self.starting_accel_limit)  # More gentle start at very low speeds - now configurable
+        base_accel = self.CP.startAccel * self.starting_accel_multiplier
+        output_accel = min(base_accel, self.starting_accel_limit)  # More gentle start at very low speeds - now configurable
       else:
         output_accel = self.CP.startAccel
       self.reset()
