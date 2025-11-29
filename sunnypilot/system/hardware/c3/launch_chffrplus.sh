@@ -80,6 +80,12 @@ function launch {
 
   # Check and install Python dependencies if needed
   check_and_install_python_deps() {
+    # Check for root privileges
+    if [ "$EUID" -ne 0 ] && [ "$(id -u)" -ne 0 ]; then
+      echo "Error: This script must be run as root"
+      return 1
+    fi
+
     cd $DIR
     # Check if scipy is available
     if python3 -c "import scipy.signal" 2>/dev/null; then
@@ -93,7 +99,24 @@ function launch {
         # Fallback: install directly from requirements.txt
         if [ -f "requirements.txt" ]; then
           echo "Installing from requirements.txt..."
-          pip install -r requirements.txt || pip3 install -r requirements.txt
+          # Check network connectivity before attempting online install
+          if ping -c 1 8.8.8.8 &> /dev/null; then
+            echo "Network available, proceeding with online installation..."
+            python3 -m pip install -r requirements.txt
+          else
+            echo "Warning: No network connection available for installing dependencies."
+            echo "         Attempting offline installation with cached packages (if available)..."
+            # Try installing with --find-links if there are local wheels
+            if python3 -m pip install --find-links /data/python_packages -r requirements.txt --no-index; then
+              echo "Offline installation successful"
+            else
+              echo "Error: Could not install dependencies - no network and no cached packages available"
+              return 1
+            fi
+          fi
+        else
+          echo "Error: requirements.txt not found, cannot install dependencies"
+          return 1
         fi
       fi
     fi
