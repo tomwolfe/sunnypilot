@@ -53,7 +53,7 @@ class SafetyManager:
     # max_safety_violations: The threshold for consecutive safety violations that triggers
     #   a critical disengagement. This prevents single, transient glitches from causing
     #   a major annoyance for users, only disengaging after persistent problems.
-    self.max_safety_violations = 3  # Maximum violations before disengagement
+    self.max_safety_violations: int = 3  # Maximum violations before disengagement
     self.safety_engaged = True  # Whether safety system is actively monitoring
     self.violation_threshold = 0.5  # Threshold for triggering safety actions
 
