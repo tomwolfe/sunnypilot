@@ -29,13 +29,14 @@ def smooth_trajectory(data: Optional[np.ndarray]) -> np.ndarray:
   # Check if data is valid and has sufficient length
   if data is None or len(data) == 0 or len(data) < window_length:
       # Not enough data points to apply filter, return original
-      return np.array([]) if data is None else data
+      return np.array([], dtype=np.float32) if data is None else np.asarray(data)
 
   try:
-      return savgol_filter(data, window_length, polyorder)
+      result = savgol_filter(data, window_length, polyorder)
+      return np.asarray(result)
   except Exception:
       # If smoothing fails, return original data to maintain functionality
-      return data
+      return np.asarray(data if data is not None else [])
 
 
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):

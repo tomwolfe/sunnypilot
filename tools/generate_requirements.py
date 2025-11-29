@@ -19,7 +19,7 @@ def generate_requirements_txt():
         # Extract direct dependencies from pyproject.toml
         pyproject_path = project_root / "pyproject.toml"
         with open(pyproject_path) as f:
-            pyproject_data = toml.load(f)
+            pyproject_data: dict = toml.load(f)
 
         # Extract dependencies from the [project] section
         all_deps = set()
@@ -55,7 +55,7 @@ def verify_dependencies_match():
 
         # Extract dependencies from pyproject.toml
         with open(pyproject_path) as f:
-            pyproject_data = toml.load(f)
+            pyproject_data: dict = toml.load(f)
 
         # Get all dependencies (main + optional)
         all_pyproject_deps = set()

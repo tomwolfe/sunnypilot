@@ -14,6 +14,7 @@ This test suite validates all the improvements made to:
 
 import pytest
 from types import SimpleNamespace
+from unittest.mock import Mock, MagicMock
 
 
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque

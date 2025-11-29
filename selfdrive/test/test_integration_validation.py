@@ -5,6 +5,7 @@ Integration test to validate all sunnypilot improvements work together.
 
 import pytest
 from types import SimpleNamespace
+from unittest.mock import Mock, MagicMock
 
 
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID

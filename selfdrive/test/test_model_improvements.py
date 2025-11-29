@@ -4,6 +4,7 @@ Test suite for modeld improvements in sunnypilot, specifically for model executi
 """
 
 import pytest
+from unittest.mock import Mock
 
 
 

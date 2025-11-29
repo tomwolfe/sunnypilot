@@ -478,7 +478,11 @@ class EdgeCaseHandler:
       if len(valid_leads) > 10:  # Sufficient data
         # Look for rapid changes in distance to lead (indicating frequent lead changes)
         distances = [l['dRel'] for l in valid_leads]
-        distance_changes = [abs(distances[i] - distances[i-1]) for i in range(1, len(distances))]
+        # Ensure all values are non-None before calculating differences
+        if len(distances) > 1 and all(d is not None for d in distances):
+          distance_changes = [abs(distances[i] - distances[i-1]) for i in range(1, len(distances))]
+        else:
+          distance_changes = []
         avg_distance_change = sum(distance_changes) / len(distance_changes) if distance_changes else 0
         if avg_distance_change > 5.0:  # Large average changes in lead distance
           indicators += 1

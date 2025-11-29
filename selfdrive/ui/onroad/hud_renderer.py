@@ -137,11 +137,7 @@ class HudRenderer(Widget):
       color = COLORS.disengaged # Reddish
 
     # Ensure color is a valid pyray color for the test environment
-    try:
-      if not isinstance(color, rl.Color):
-        color = rl.Color(255, 255, 255, 255)  # Default to white
-    except TypeError:
-      # Handle case when rl.Color isn't properly available
+    if not isinstance(color, rl.Color):
       color = rl.Color(255, 255, 255, 255)  # Default to white
 
     rl.draw_circle(int(x + indicator_size // 2), int(y + indicator_size // 2), int(indicator_size // 2), color)
