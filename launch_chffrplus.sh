@@ -84,19 +84,110 @@ function launch {
     exit 1
   fi
 
-  if ! python3 -c "import scipy" 2>/dev/null; then
-    echo "scipy not found, installing Python dependencies from requirements.txt..."
-    # Use python3 -m pip to ensure we're installing for the same interpreter being checked
-    if python3 -m pip install -r "$DIR/requirements.txt"; then
-      echo "Python dependencies installed."
-    else
-      echo "ERROR: Failed to install Python dependencies from $DIR/requirements.txt"
-      exit 1 # Exit immediately on failure
-    fi
+  # Check if pip is available for python3
+  if ! python3 -m pip --version &> /dev/null; then
+    echo "ERROR: pip is not installed for python3"
+    exit 1
   fi
 
+  # Check if running in a virtual environment
+  if [[ "$VIRTUAL_ENV" ]]; then
+    echo "INFO: Running in virtual environment: $VIRTUAL_ENV"
+  else
+    echo "INFO: Not running in a virtual environment, dependencies will be installed system-wide"
+  fi
+
+  # Create a Python script to check if all required packages from requirements.txt are available
+  python_check_script=$(cat << 'PYTHON_CHECK_EOF'
+import sys
+import subprocess
+import re
+
+def parse_requirements(file_path):
+    """Parse requirements.txt and return a list of package names."""
+    packages = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and not line.startswith(';'):
+                # Extract package name (before ==, >=, <=, etc.)
+                package = re.split(r'[>=<!=]', line, 1)[0]
+                package = package.strip()
+                if package:
+                    packages.append(package)
+    return packages
+
+def check_imports(packages):
+    """Try to import each package and return list of missing packages."""
+    missing_packages = []
+    for package in packages:
+        try:
+            __import__(package)
+        except ImportError:
+            # Some packages have different import names than package names (e.g., 'scipy' vs 'scipy')
+            # Try variations
+            import_name = package.replace('-', '_')  # Common pattern
+            try:
+                __import__(import_name)
+            except ImportError:
+                missing_packages.append(package)
+    return missing_packages
+
+if __name__ == "__main__":
+    requirements_file = sys.argv[1] if len(sys.argv) > 1 else "requirements.txt"
+
+    try:
+        packages = parse_requirements(requirements_file)
+        missing = check_imports(packages)
+
+        if missing:
+            print(",".join(missing))
+            sys.exit(1)  # Exit with error code if packages are missing
+        else:
+            print("all_found")
+            sys.exit(0)  # Exit successfully if all packages are found
+    except FileNotFoundError:
+        print(f"ERROR: requirements.txt not found at {requirements_file}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+PYTHON_CHECK_EOF
+)
+
+  # Write the Python script to a temporary file and execute it
+  temp_script="/tmp/check_requirements.py"
+  echo "$python_check_script" > "$temp_script"
+
+  missing_packages=$(python3 "$temp_script" "$DIR/requirements.txt" 2>/dev/null)
+
+  if [ "$missing_packages" != "all_found" ] && [ "$missing_packages" != "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
+    if [ -n "$missing_packages" ]; then
+      echo "Missing Python packages detected: $missing_packages"
+      echo "Installing Python dependencies from requirements.txt..."
+      # Use python3 -m pip to ensure we're installing for the same interpreter being checked
+      if python3 -m pip install -r "$DIR/requirements.txt"; then
+        echo "Python dependencies installed."
+      else
+        echo "ERROR: Failed to install Python dependencies from $DIR/requirements.txt"
+        exit 1 # Exit immediately on failure
+      fi
+    fi
+  elif [ "$missing_packages" = "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
+    echo "ERROR: requirements.txt file not found at $DIR/requirements.txt"
+    exit 1
+  else
+    echo "All Python dependencies are already installed."
+  fi
+
+  # Clean up the temporary script
+  rm -f "$temp_script"
+
   # start manager
-  cd system/manager
+  if ! cd system/manager; then
+    echo "ERROR: system/manager directory not found"
+    exit 1
+  fi
   if [ ! -f $DIR/prebuilt ]; then
     ./build.py
   fi
