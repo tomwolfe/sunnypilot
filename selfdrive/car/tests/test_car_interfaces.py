@@ -75,7 +75,8 @@ class TestCarInterfaces:
   @settings(max_examples=MAX_EXAMPLES, deadline=None,
             phases=(Phase.reuse, Phase.generate, Phase.shrink))
   @given(data=st.data())
-  def test_car_interfaces(self, car_name, data, mocker):
+  def test_car_interfaces(self, car_name, data):
+    from unittest.mock import Mock
     car_interface = get_fuzzy_car_interface(car_name, data.draw)
     car_params = car_interface.CP.as_reader()
     car_params_sp = car_interface.CP_SP
@@ -109,8 +110,8 @@ class TestCarInterfaces:
     #  hypothesis also slows down significantly with just one more message draw
 
     # Create a mock params object to satisfy the interface expected by the controllers
-    mock_params = mocker.Mock()
-    mock_params.get = mocker.Mock(return_value=None)  # Default to return None for any parameter request
+    mock_params = Mock()
+    mock_params.get = Mock(return_value=None)  # Default to return None for any parameter request
 
     LongControl(car_params, car_params_sp, mock_params)
     if car_params.steerControlType == CarParams.SteerControlType.angle:

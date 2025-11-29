@@ -11,8 +11,8 @@ from openpilot.system.ui.widgets.list_view import multiple_button_item
 from openpilot.system.ui.lib.multilang import tr
 
 # Constants
-DESCRIPTION = ("User-settable factor (0.0 to 1.0) to simulate thermal conditions and fine-tune "
-               "model execution performance. Values below 1.0 will throttle model inference frequency.")
+DESCRIPTION = "User-settable factor (0.0 to 1.0) to simulate thermal conditions and fine-tune " \
+              "model execution performance. Values below 1.0 will throttle model inference frequency."
 THROTTLE_FACTORS = [0.0, 0.25, 0.5, 0.75, 1.0]
 BUTTON_TEXTS = ["0%", "25%", "50%", "75%", "100%"] # Representing percentage of full execution
 
