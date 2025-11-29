@@ -154,8 +154,8 @@ class Controls(ControlsExt, ModelStateBase):
       gpu_temp = max(self.sm['deviceState'].gpuTempC) if self.sm['deviceState'].gpuTempC else 0
       cpu_temp = max(self.sm['deviceState'].cpuTempC) if self.sm['deviceState'].cpuTempC else 0
 
-      cloudlog.debug((f"Thermal management inputs: thermal_prc={thermal_prc:.2f}, cpu_usage={cpu_usage:.2f}, "
-                      f"memory_usage={memory_usage:.2f}, cpu_temp={cpu_temp:.1f}C, gpu_temp={gpu_temp:.1f}C"))
+      cloudlog.debug(f"Thermal management inputs: thermal_prc={thermal_prc:.2f}, cpu_usage={cpu_usage:.2f}, "
+                      f"memory_usage={memory_usage:.2f}, cpu_temp={cpu_temp:.1f}C, gpu_temp={gpu_temp:.1f}C")
 
       # Enhanced thermal management with more granular control and predictive elements
       base_thermal_factor = thermal_prc / 100.0
@@ -437,10 +437,10 @@ class Controls(ControlsExt, ModelStateBase):
         actuators.steeringAngleDeg = actuators.steeringAngleDeg * thermal_steering_factor
 
       # Enhanced logging with more detailed information
-      cloudlog.debug((f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, "
+      cloudlog.debug(f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, "
                       f"stress_level={self.thermal_stress_level}, vEgo={CS.vEgo:.1f}m/s, "
                       f"speed_factor={speed_factor:.2f if hasattr(actuators, 'accel') else 'N/A'}, "
-                      f"curvature={actuators.curvature:.3f}"))
+                      f"curvature={actuators.curvature:.3f}")
 
     # Additional conservative measures under critical thermal conditions
     if self.performance_compensation_factor < 0.6:  # Critical thermal stress
@@ -576,8 +576,8 @@ class Controls(ControlsExt, ModelStateBase):
 
       # Check for finite values and reasonable bounds
       if not math.isfinite(attr):
-        cloudlog.error((f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
-                        f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}"))
+        cloudlog.error(f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
+                        f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}")
         # Implement a recovery by setting to a safe value instead of 0.0
         if p in ['steeringAngleDeg', 'curvature']:
           # For steering-related values, use current measurement as fallback
@@ -801,10 +801,10 @@ class Controls(ControlsExt, ModelStateBase):
 
           # Enhanced thermal monitoring and logging with stress level information
           if self.thermal_stress_level > 0:
-            cloudlog.debug((f"Thermal throttling active: stress_level={self.thermal_stress_level}, "
+            cloudlog.debug(f"Thermal throttling active: stress_level={self.thermal_stress_level}, "
                            f"factor={self.performance_compensation_factor:.2f}, rate={current_rate:.1f}Hz, "
                            f"current_thermal={self.thermal_performance_factor:.2f}, "
-                           f"critical_rate={critical_rate:.1f}Hz, standard_rate={standard_rate:.1f}Hz"))
+                           f"critical_rate={critical_rate:.1f}Hz, standard_rate={standard_rate:.1f}Hz")
         else:
           # Still update the message subsystem regularly to maintain message flow
           # This 15Hz update rate is chosen to ensure critical communication (e.g., carState, radarState)
@@ -819,9 +819,9 @@ class Controls(ControlsExt, ModelStateBase):
 
         # Additional thermal monitoring for extreme cases and logging based on thermal state
         if timing_elapsed > 0.02:  # If we're taking too long, log it
-          cloudlog.debug((f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, "
+          cloudlog.debug(f"Control loop timing exceeded threshold: {timing_elapsed*1000:.1f}ms, "
                          f"thermal_factor: {self.thermal_performance_factor:.2f}, "
-                         f"stress_level: {self.thermal_stress_level}"))
+                         f"stress_level: {self.thermal_stress_level}")
 
         # Add thermal-based performance adjustments to the lateral and longitudinal controllers
         if hasattr(self.LaC, 'update_thermal_compensation'):
@@ -959,8 +959,8 @@ class Controls(ControlsExt, ModelStateBase):
 
       # Check for finite values and reasonable bounds
       if not math.isfinite(attr):
-        cloudlog.error((f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
-                        f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}"))
+        cloudlog.error(f"actuators.{p} not finite. Actuators: {actuators.to_dict()}, CarState: {CS.to_dict()}, "
+                        f"LongitudinalPlan: {long_plan.to_dict()}, LateralControlLog: {lac_log.to_dict()}")
         # Implement a recovery by setting to a safe value instead of 0.0
         if p in ['steeringAngleDeg', 'curvature']:
           # For steering-related values, use current measurement as fallback

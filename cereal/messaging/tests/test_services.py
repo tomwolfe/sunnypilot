@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Dict
+
 from parameterized import parameterized
 
 import cereal.services as services

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import sys
-from typing import Any, List, Tuple
+from typing import Any
 
 DEBUG = False
 
@@ -43,7 +43,7 @@ def create_schema_instance(struct: Any, prop: Tuple[str, Any]) -> Any:
     return None
 
 
-def get_schema_fields(schema_struct: Any) -> List[Tuple[str, Any]]:
+def get_schema_fields(schema_struct: Any) -> list[tuple[str, Any]]:
   """
   Retrieve all fields from a given schema structure.
 
@@ -68,7 +68,7 @@ def get_schema_fields(schema_struct: Any) -> List[Tuple[str, Any]]:
     return []
 
 
-def generate_schema_instances(schema_struct: Any) -> List[Any]:
+def generate_schema_instances(schema_struct: Any) -> list[Any]:
   """
   Generate instances for all fields in a given schema.
 
@@ -93,7 +93,7 @@ def generate_schema_instances(schema_struct: Any) -> List[Any]:
   return instances
 
 
-def persist_instances(instances: List[Any], filename: str) -> None:
+def persist_instances(instances: list[Any], filename: str) -> None:
   """
   Write schema instances to a binary file.
 
@@ -113,7 +113,7 @@ def persist_instances(instances: List[Any], filename: str) -> None:
     sys.exit(1)
 
 
-def read_instances(filename: str, schema_type: Any) -> List[Any]:
+def read_instances(filename: str, schema_type: Any) -> list[Any]:
   """
   Read schema instances from a binary file.
 
@@ -138,7 +138,7 @@ def read_instances(filename: str, schema_type: Any) -> List[Any]:
     sys.exit(1)
 
 
-def compare_schemas(original_instances: List[Any], read_instances: List[Any]) -> bool:
+def compare_schemas(original_instances: list[Any], read_instances: list[Any]) -> bool:
   """
   Compare original and read-back instances to detect potential breaking changes.
 

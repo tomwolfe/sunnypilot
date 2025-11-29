@@ -10,7 +10,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 """
 
 import numpy as np
-from typing import Dict, Any, Tuple
+from typing import Any
 import math
 
 from cereal import log
@@ -46,7 +46,7 @@ class RoadModelValidator:
         self.prev_desired_curvature = 0.0
         self.prev_valid = True
 
-    def validate_lane_lines(self, lane_lines: np.ndarray, lane_line_probs: np.ndarray = None) -> Tuple[np.ndarray, bool]:
+    def validate_lane_lines(self, lane_lines: np.ndarray, lane_line_probs: np.ndarray = None) -> tuple[np.ndarray, bool]:
         """
         Validate lane line detections for physical reasonableness.
 
@@ -138,7 +138,7 @@ class RoadModelValidator:
 
         return corrected_lines, is_valid
 
-    def validate_path_planning(self, position: np.ndarray, velocity: np.ndarray = None) -> Tuple[np.ndarray, bool]:
+    def validate_path_planning(self, position: np.ndarray, velocity: np.ndarray = None) -> tuple[np.ndarray, bool]:
         """
         Validate planned path for safety and physical reasonableness.
         
@@ -187,7 +187,7 @@ class RoadModelValidator:
 
         return corrected_pos, is_valid
 
-    def validate_lead_objects(self, leads_v3: list) -> Tuple[list, bool]:
+    def validate_lead_objects(self, leads_v3: list) -> tuple[list, bool]:
         """
         Validate lead vehicle detections.
         
@@ -236,7 +236,7 @@ class RoadModelValidator:
 
         return corrected_leads, is_valid
 
-    def validate_model_output(self, model_output: Dict[str, Any], v_ego: float) -> Tuple[Dict[str, Any], bool]:
+    def validate_model_output(self, model_output: dict[str, Any], v_ego: float) -> tuple[dict[str, Any], bool]:
         """
         Comprehensive validation of model outputs.
         
@@ -301,7 +301,7 @@ class RoadModelValidator:
 
         return model_output, is_valid
 
-    def update_temporal_consistency(self, model_output: Dict[str, Any], v_ego: float):
+    def update_temporal_consistency(self, model_output: dict[str, Any], v_ego: float):
         """Update temporal consistency checks using previous frame data."""
         # Store current values for next frame comparison
         if 'laneLines' in model_output:
