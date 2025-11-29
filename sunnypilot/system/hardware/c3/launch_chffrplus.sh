@@ -86,46 +86,96 @@ function launch {
       return 1
     fi
 
+    # Check if pip is available for python3
+    if ! python3 -m pip --version &> /dev/null; then
+      echo "ERROR: pip is not installed for python3"
+      return 1
+    fi
+
     # Save current directory and change to $DIR for operations
     local original_dir=$(pwd)
     cd $DIR
 
-    # Check if key Python dependencies are available (comprehensive check beyond just scipy)
-    local required_modules=("scipy" "numpy" "requests")
-    local missing_modules=()
+    # Create a Python script to check if all required packages from requirements.txt are available
+    local python_check_script=$(cat << 'PYTHON_CHECK_EOF'
+import sys
+import re
 
-    for module in "${required_modules[@]}"; do
-      # Validate module name to prevent potential injection (only allow alphanumeric and underscore)
-      if [[ ! "$module" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
-        echo "Error: Invalid module name detected: $module"
-        cd "$original_dir"  # Return to original directory
-        return 1
-      fi
+def parse_requirements(file_path):
+    """Parse requirements.txt and return a list of package names."""
+    packages = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and not line.startswith(';'):
+                # Extract package name (before ==, >=, <=, etc.)
+                package = re.split(r'[>=<!=]+', line, 1)[0]
+                package = package.strip()
+                if package:
+                    packages.append(package)
+    return packages
 
-      if ! python3 -c "import $module" 2>/dev/null; then
-        missing_modules+=("$module")
-      fi
-    done
+def check_imports(packages):
+    """Try to import each package and return list of missing packages."""
+    missing_packages = []
+    for package in packages:
+        try:
+            __import__(package)
+        except ImportError:
+            # Some packages have different import names than package names (e.g., 'scipy' vs 'scipy')
+            # Try variations
+            import_name = package.replace('-', '_')  # Common pattern
+            try:
+                __import__(import_name)
+            except ImportError:
+                missing_packages.append(package)
+    return missing_packages
 
-    # If no key modules are missing, continue
-    if [ ${#missing_modules[@]} -eq 0 ]; then
-      echo "All key Python dependencies are available, continuing..."
-      cd "$original_dir"  # Return to original directory
-      return 0
-    else
-      echo "Missing Python dependencies: ${missing_modules[*]}, installing..."
-      # Fallback: install directly from requirements.txt (removed insecure external script call)
-      if [ -f "requirements.txt" ]; then
+if __name__ == "__main__":
+    requirements_file = sys.argv[1] if len(sys.argv) > 1 else "requirements.txt"
+
+    try:
+        packages = parse_requirements(requirements_file)
+        missing = check_imports(packages)
+
+        if missing:
+            print(",".join(missing))
+            sys.exit(1)  # Exit with error code if packages are missing
+        else:
+            print("all_found")
+            sys.exit(0)  # Exit successfully if all packages are found
+    except FileNotFoundError:
+        print(f"ERROR: requirements.txt not found at {requirements_file}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+PYTHON_CHECK_EOF
+)
+
+    # Write the Python script to a temporary file and execute it
+    local temp_script="/tmp/check_requirements_sp.py"
+    echo "$python_check_script" > "$temp_script"
+
+    local missing_packages=$(python3 "$temp_script" "$DIR/requirements.txt" 2>/dev/null)
+
+    if [ "$missing_packages" != "all_found" ] && [ "$missing_packages" != "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
+      if [ -n "$missing_packages" ]; then
+        echo "Missing Python packages detected: $missing_packages"
+        echo "Installing Python dependencies from requirements.txt..."
+
         # Validate requirements.txt is readable and not empty
         if [ ! -r "requirements.txt" ]; then
           echo "Error: requirements.txt is not readable"
           cd "$original_dir"  # Return to original directory
+          rm -f "$temp_script"  # Clean up the temporary script
           return 1
         fi
 
         if [ ! -s "requirements.txt" ]; then
           echo "Error: requirements.txt is empty"
           cd "$original_dir"  # Return to original directory
+          rm -f "$temp_script"  # Clean up the temporary script
           return 1
         fi
 
@@ -137,7 +187,14 @@ function launch {
         # Check network connectivity before attempting online install
         if curl -s --max-time 5 https://pypi.org/simple/ &> /dev/null; then
           echo "Network available, proceeding with online installation..."
-          python3 -m pip install --no-cache-dir -r requirements.txt
+          if python3 -m pip install --no-cache-dir -r requirements.txt; then
+            echo "Python dependencies installed."
+          else
+            echo "ERROR: Failed to install Python dependencies from $DIR/requirements.txt"
+            cd "$original_dir"  # Return to original directory
+            rm -f "$temp_script"  # Clean up the temporary script
+            return 1
+          fi
         else
           echo "Warning: No network connection available for installing dependencies."
 
@@ -145,6 +202,7 @@ function launch {
           if [ ! -w "/data" ]; then
             echo "Error: /data directory is not writable. Cannot create offline package cache."
             cd "$original_dir"  # Return to original directory
+            rm -f "$temp_script"  # Clean up the temporary script
             return 1
           fi
 
@@ -163,35 +221,43 @@ function launch {
             else
               echo "Error: Could not install dependencies - no network and cached packages failed to install"
               cd "$original_dir"  # Return to original directory
+              rm -f "$temp_script"  # Clean up the temporary script
               return 1
             fi
           else
             echo "Error: Could not install dependencies - no network and no cached packages available in /data/python_packages"
             echo "Please ensure offline packages are pre-loaded in /data/python_packages or connect to the internet."
             cd "$original_dir"  # Return to original directory
+            rm -f "$temp_script"  # Clean up the temporary script
             return 1
           fi
         fi
-      else
-        echo "Error: requirements.txt not found, cannot install dependencies"
-        cd "$original_dir"  # Return to original directory
-        return 1
       fi
+    elif [ "$missing_packages" = "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
+      echo "ERROR: requirements.txt file not found at $DIR/requirements.txt"
+      cd "$original_dir"  # Return to original directory
+      rm -f "$temp_script"  # Clean up the temporary script
+      return 1
+    else
+      echo "All Python dependencies are already installed."
     fi
+
+    # Clean up the temporary script
+    rm -f "$temp_script"
 
     # Return to original directory before exiting function
     cd "$original_dir"
     return 0
   }
 
+  # Check and install Python dependencies before starting manager
+  check_and_install_python_deps || exit 1
+
   # start manager
   cd $DIR/system/manager
   if [ ! -f $DIR/prebuilt ]; then
     ./build.py
   fi
-
-  # Check and install Python dependencies before starting manager
-  check_and_install_python_deps || exit 1
 
   ./manager.py
 
