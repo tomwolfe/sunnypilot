@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Set DIR to the directory containing this script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 source "$DIR/launch_env.sh"
@@ -79,6 +80,7 @@ function launch {
 
   # Check and install Python dependencies if needed
   echo "Checking Python dependencies..."
+  echo "INFO: Using directory $DIR for requirements.txt"
   if ! command -v python3 &> /dev/null; then
     echo "ERROR: python3 is not installed or not in PATH"
     exit 1
@@ -98,6 +100,7 @@ function launch {
   fi
 
   # Create a Python script to check if all required packages from requirements.txt are available
+  # Requirements file is expected to be at $DIR/requirements.txt where DIR is the script directory
   python_check_script=$(cat << 'PYTHON_CHECK_EOF'
 import sys
 import subprocess
@@ -175,6 +178,7 @@ PYTHON_CHECK_EOF
     fi
   elif [ "$missing_packages" = "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
     echo "ERROR: requirements.txt file not found at $DIR/requirements.txt"
+    echo "INFO: DIR is set to: $DIR"
     exit 1
   else
     echo "All Python dependencies are already installed."
