@@ -79,11 +79,20 @@ function launch {
 
   # Check and install Python dependencies if needed
   echo "Checking Python dependencies..."
-  if ! python -c "import scipy" 2>/dev/null; then
+  if ! command -v python3 &> /dev/null; then
+    echo "ERROR: python3 is not installed or not in PATH"
+    exit 1
+  fi
+
+  if ! python3 -c "import scipy" 2>/dev/null; then
     echo "scipy not found, installing Python dependencies from requirements.txt..."
-    pip install --upgrade pip
-    pip install -r "$DIR/requirements.txt"
-    echo "Python dependencies installed."
+    # Use python3 -m pip to ensure we're installing for the same interpreter being checked
+    if python3 -m pip install -r "$DIR/requirements.txt"; then
+      echo "Python dependencies installed."
+    else
+      echo "ERROR: Failed to install Python dependencies from $DIR/requirements.txt"
+      exit 1 # Exit immediately on failure
+    fi
   fi
 
   # start manager
