@@ -5,7 +5,7 @@ This ensures that all hardcoded values mentioned in the critical review have bee
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock  # noqa: TID251
 
 
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID

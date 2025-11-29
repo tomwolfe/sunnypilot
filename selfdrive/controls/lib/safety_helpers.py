@@ -49,7 +49,7 @@ class SafetyManager:
     # Safety state variables
     # safety_violation_count: Accumulates violations. It's a soft counter; a single transient
     #   issue won't immediately cause disengagement. It gradually decreases if no new violations occur.
-    self.safety_violation_count = 0
+    self.safety_violation_count: float = 0.0
     # max_safety_violations: The threshold for consecutive safety violations that triggers
     #   a critical disengagement. This prevents single, transient glitches from causing
     #   a major annoyance for users, only disengaging after persistent problems.
@@ -884,5 +884,5 @@ class SafetyManager:
 
   def reset_safety_state(self):
     """Reset safety violation counters and state."""
-    self.safety_violation_count = 0
+    self.safety_violation_count = 0.0
     self._initialized = False

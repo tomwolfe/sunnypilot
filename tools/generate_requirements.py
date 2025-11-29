@@ -5,7 +5,7 @@ This ensures consistency between the two dependency sources.
 """
 import sys
 import os
-import toml
+import toml  # type: ignore
 from pathlib import Path
 
 

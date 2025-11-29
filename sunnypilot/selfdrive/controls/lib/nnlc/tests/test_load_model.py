@@ -1,5 +1,5 @@
 from parameterized import parameterized
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock  # noqa: TID251
 
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.honda.values import CAR as HONDA

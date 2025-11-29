@@ -1,6 +1,6 @@
 import numpy as np
 from parameterized import parameterized
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock  # noqa: TID251
 
 from cereal import car, log, messaging
 from opendbc.car.car_helpers import interfaces
