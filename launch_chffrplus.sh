@@ -77,6 +77,15 @@ function launch {
   # write tmux scrollback to a file
   tmux capture-pane -pq -S-1000 > /tmp/launch_log
 
+  # Check and install Python dependencies if needed
+  echo "Checking Python dependencies..."
+  if ! python -c "import scipy" 2>/dev/null; then
+    echo "scipy not found, installing Python dependencies from requirements.txt..."
+    pip install --upgrade pip
+    pip install -r "$DIR/requirements.txt"
+    echo "Python dependencies installed."
+  fi
+
   # start manager
   cd system/manager
   if [ ! -f $DIR/prebuilt ]; then
