@@ -1,4 +1,5 @@
 import os
+from unittest.mock import Mock  # noqa: TID251
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
 from parameterized import parameterized
@@ -76,7 +77,6 @@ class TestCarInterfaces:
             phases=(Phase.reuse, Phase.generate, Phase.shrink))
   @given(data=st.data())
   def test_car_interfaces(self, car_name, data):
-    from unittest.mock import Mock
     car_interface = get_fuzzy_car_interface(car_name, data.draw)
     car_params = car_interface.CP.as_reader()
     car_params_sp = car_interface.CP_SP
