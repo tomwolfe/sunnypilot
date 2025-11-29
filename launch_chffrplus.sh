@@ -103,7 +103,6 @@ function launch {
   # Requirements file is expected to be at $DIR/requirements.txt where DIR is the script directory
   python_check_script=$(cat << 'PYTHON_CHECK_EOF'
 import sys
-import subprocess
 import re
 
 def parse_requirements(file_path):
