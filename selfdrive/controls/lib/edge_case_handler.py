@@ -480,7 +480,8 @@ class EdgeCaseHandler:
         distances = [l['dRel'] for l in valid_leads]
         # Ensure all values are non-None before calculating differences
         if len(distances) > 1 and all(d is not None for d in distances):
-          distance_changes = [abs(float(distances[i]) - float(distances[i-1])) for i in range(1, len(distances))]
+          typed_distances = [d for d in distances if d is not None]  # Explicitly typed list
+          distance_changes = [abs(float(typed_distances[i]) - float(typed_distances[i-1])) for i in range(1, len(typed_distances))]
         else:
           distance_changes = []
         avg_distance_change = sum(distance_changes) / len(distance_changes) if distance_changes else 0

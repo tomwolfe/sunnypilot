@@ -760,7 +760,7 @@ def main(demo=False):
                        publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                        frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
 
-        desire_state = modelv2_send.modelV2.meta.desireState  # type: ignore[attr-defined]
+        desire_state = modelv2_send.modelV2.meta.desireState
         l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]
         r_lane_change_prob = desire_state[log.Desire.laneChangeRight]
         lane_change_prob = l_lane_change_prob + r_lane_change_prob
@@ -901,16 +901,16 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
   # Validate meta outputs (desire state, etc.)
   if 'meta' in model_output and hasattr(model_output['meta'], 'desireState'):
     # Updated to use the attribute format expected by the system
-    desire_state = model_output['meta'].desireState  # type: ignore[attr-defined]
+    desire_state = model_output['meta'].desireState
     if isinstance(desire_state, np.ndarray):
       original_desire = desire_state.copy()
       # Ensure desire state probabilities sum to approximately 1 (or are in valid range)
       desire_state = np.clip(desire_state, 0.0, 1.0)
       # Normalize if needed to maintain probability distribution
       if np.sum(desire_state) > 0:
-        model_output['meta'].desireState = desire_state / np.sum(desire_state)  # type: ignore[attr-defined]
+        model_output['meta'].desireState = desire_state / np.sum(desire_state)
 
-      modified_mask = np.abs(original_desire - model_output['meta'].desireState) > 0.001  # type: ignore[attr-defined]
+      modified_mask = np.abs(original_desire - model_output['meta'].desireState) > 0.001
       if np.any(modified_mask):
         modification_percentage = np.sum(modified_mask) / original_desire.size * 100
         if modification_percentage > 10.0:  # Higher threshold for desire state
