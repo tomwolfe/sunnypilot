@@ -95,6 +95,13 @@ function launch {
     local missing_modules=()
 
     for module in "${required_modules[@]}"; do
+      # Validate module name to prevent potential injection (only allow alphanumeric and underscore)
+      if [[ ! "$module" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        echo "Error: Invalid module name detected: $module"
+        cd "$original_dir"  # Return to original directory
+        return 1
+      fi
+
       if ! python3 -c "import $module" 2>/dev/null; then
         missing_modules+=("$module")
       fi
@@ -109,17 +116,37 @@ function launch {
       echo "Missing Python dependencies: ${missing_modules[*]}, installing..."
       # Fallback: install directly from requirements.txt (removed insecure external script call)
       if [ -f "requirements.txt" ]; then
+        # Validate requirements.txt is readable and not empty
+        if [ ! -r "requirements.txt" ]; then
+          echo "Error: requirements.txt is not readable"
+          cd "$original_dir"  # Return to original directory
+          return 1
+        fi
+
+        if [ ! -s "requirements.txt" ]; then
+          echo "Error: requirements.txt is empty"
+          cd "$original_dir"  # Return to original directory
+          return 1
+        fi
+
         echo "Installing from requirements.txt..."
 
         # Ensure pip is up-to-date for compatibility
         python3 -m pip install --upgrade pip 2>/dev/null || echo "Warning: Could not upgrade pip, continuing with current version"
 
         # Check network connectivity before attempting online install
-        if ping -c 1 8.8.8.8 &> /dev/null; then
+        if curl -s --max-time 5 https://pypi.org/simple/ &> /dev/null; then
           echo "Network available, proceeding with online installation..."
           python3 -m pip install --no-cache-dir -r requirements.txt
         else
           echo "Warning: No network connection available for installing dependencies."
+
+          # Check if /data is writable before attempting to create cache directory
+          if [ ! -w "/data" ]; then
+            echo "Error: /data directory is not writable. Cannot create offline package cache."
+            cd "$original_dir"  # Return to original directory
+            return 1
+          fi
 
           # Ensure the cache directory exists
           if [ ! -d "/data/python_packages" ]; then
