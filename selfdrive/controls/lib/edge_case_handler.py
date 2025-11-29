@@ -1,14 +1,14 @@
 """
 Edge case and unusual scenario handler for autonomous driving.
 
-This module provides enhanced handling for various edge cases and unusual 
+This module provides enhanced handling for various edge cases and unusual
 scenarios that can occur during autonomous driving to improve system robustness.
 """
 
 from collections import deque
 import numpy as np
 import time
-from cereal import car, log
+from cereal import car
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_CTRL
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -19,15 +19,12 @@ class EdgeCaseHandler:
   """
   Handles various edge cases and unusual scenarios to improve system robustness.
   """
-  
   def __init__(self):
     self.params = Params()
-    
     # Filters for detecting unusual patterns
     self.lateral_accel_filter = FirstOrderFilter(0.0, 1.0, DT_CTRL)
     self.longitudinal_accel_filter = FirstOrderFilter(0.0, 1.0, DT_CTRL)
     self.steering_rate_filter = FirstOrderFilter(0.0, 0.5, DT_CTRL)
-    
     # Tracking variables for edge case detection
     self.steering_angle_history = deque(maxlen=50)  # 0.5 seconds at 100Hz
     self.speed_history = deque(maxlen=50)  # 0.5 seconds at 100Hz
@@ -231,9 +228,9 @@ class EdgeCaseHandler:
     if hasattr(car_state, 'brakePressed') and car_state.brakePressed:
       if not hasattr(self, '_brake_event_history'):
         self._brake_event_history = []
-      self._brake_event_history.append(time.time())
+      self._brake_event_history.append(time.monotonic())
       # Keep only events from last 10 seconds
-      self._brake_event_history = [t for t in self._brake_event_history if time.time() - t < 10]
+      self._brake_event_history = [t for t in self._brake_event_history if time.monotonic() - t < 10]
 
       # If more than 3 brake events in 10 seconds, consider it unusual
       if len(self._brake_event_history) > 3:
@@ -398,12 +395,12 @@ class EdgeCaseHandler:
     # Track lateral and longitudinal acceleration variance as indicators of road roughness
     if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo'):
       self._acceleration_history.append({
-        'time': time.time(),
+        'time': time.monotonic(),
         'long_accel': car_state.aEgo,
         'speed': car_state.vEgo
       })
       # Keep only recent values (last 1 second at 100Hz)
-      cutoff_time = time.time() - 1.0
+      cutoff_time = time.monotonic() - 1.0
       self._acceleration_history = [a for a in self._acceleration_history if a['time'] > cutoff_time]
 
       if len(self._acceleration_history) >= 50:  # At least 0.5 seconds of data
@@ -465,7 +462,7 @@ class EdgeCaseHandler:
       if not hasattr(self, '_previous_leads'):
         self._previous_leads = []
       self._previous_leads.append({
-        'time': time.time(),
+        'time': time.monotonic(),
         'dRel': radar_state.leadOne.dRel if radar_state.leadOne.status else None,
         'vRel': radar_state.leadOne.vRel if radar_state.leadOne.status else None
       })
