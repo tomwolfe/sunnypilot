@@ -181,7 +181,6 @@ class LongControl:
       # Enhanced adaptive PID based on driving context and lead vehicle behavior
       # Calculate context-sensitive adaptive parameters
       adaptive_ki_factor = 1.0
-      adaptive_kp_factor = 1.0
       ki_reduction_enabled = False
 
       if CS.vEgo > self.adaptive_speed_threshold:  # At moderate to high speeds
@@ -321,8 +320,6 @@ class LongControl:
     old_f = self.pid.f
     old_control = self.pid.control
     old_speed = self.pid.speed
-    old_pos_limit = self.pid.pos_limit
-    old_neg_limit = self.pid.neg_limit
 
     # Adjust PID parameters based on thermal stress to maintain consistent longitudinal control
     original_ki_v = self.CP.longitudinalTuning.kiV

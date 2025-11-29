@@ -221,15 +221,12 @@ class ModelState(ModelStateBase):
 
     # Additional critical safety check: never skip if in potentially dangerous situations
     # Check if we have access to CarState information to determine if we're in a critical situation
-    try:
-        # If we have access to car state data and we're in critical situations, always run
-        # This requires integration with the main control loop but we can prepare for it
-        if hasattr(self, '_critical_situation_detected'):
-            # If we've detected a critical situation from previous integration
-            if self._critical_situation_detected:
-                return True
-    except:
-        pass
+    # If we have access to car state data and we're in critical situations, always run
+    # This requires integration with the main control loop but we can prepare for it
+    if hasattr(self, '_critical_situation_detected'):
+        # If we've detected a critical situation from previous integration
+        if self._critical_situation_detected:
+            return True
 
     self.prev_model_run_time = time.monotonic()
     return True
@@ -654,13 +651,17 @@ def main(demo=False):
 
         # Check sync quality and log if frames are significantly out of sync
         if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
-          cloudlog.error(f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), "
-                          f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), "
-                          f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms")
+          cloudlog.error(
+              f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), "
+              f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), "
+              f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms"
+          )
         elif abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 5000000:  # 5ms threshold
           # Log when frames are moderately out of sync
-          cloudlog.debug(f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, "
-                          f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}")
+          cloudlog.debug(
+              f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, "
+              f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}"
+          )
 
       else:
         # Use single camera
@@ -731,10 +732,12 @@ def main(demo=False):
 
       # Log performance metrics when system load is high or execution time is excessive
       if system_load > 0.8 or model_execution_time > 0.05:  # High system load or slow execution (>50ms)
-        cloudlog.debug(f"Performance metrics - System load: {system_load:.2f}, "
-                       f"Model execution time: {model_execution_time*1000:.1f}ms, "
-                       f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, "
-                       f"CPU: {cpu_usage_raw:.1f}%")
+        cloudlog.debug(
+            f"Performance metrics - System load: {system_load:.2f}, "
+            f"Model execution time: {model_execution_time*1000:.1f}ms, "
+            f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, "
+            f"CPU: {cpu_usage_raw:.1f}%"
+        )
 
       if model_output is not None:
         # Store v_ego in the model for validation purposes
@@ -795,7 +798,6 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   Returns:
     Validated model output with safe values
   """
-  import logging
 
   # Track any modifications made during validation
   modifications_made = []
@@ -914,7 +916,14 @@ def _validate_model_output(model_output: dict[str, np.ndarray]) -> dict[str, np.
   # Enhanced action validation for desiredCurvature and desiredAcceleration
   if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
     # Validate and limit desired curvature based on physical limits
-
+    curvature = model_output['action'].desiredCurvature
+    # Limit curvature to reasonable values based on vehicle dynamics
+    max_curvature = 0.1  # Reasonable limit for most vehicles
+    if abs(curvature) > max_curvature:
+      corrected_curvature = max(-max_curvature, min(max_curvature, curvature))
+      if abs(corrected_curvature - curvature) > 0.001:
+        modifications_made.append(f"Curvature limited from {curvature:.4f} to {corrected_curvature:.4f}")
+        model_output['action'].desiredCurvature = corrected_curvature
 
   if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
     # Validate and limit desired acceleration based on physical limits

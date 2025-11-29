@@ -1,5 +1,4 @@
 import os
-import math
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
 from parameterized import parameterized
@@ -12,7 +11,7 @@ from opendbc.car.car_helpers import interfaces
 from opendbc.car.fingerprints import FW_VERSIONS
 from opendbc.car.fw_versions import FW_QUERY_CONFIGS
 from opendbc.car.interfaces import CarInterfaceBase
-from opendbc.car import CanData, structs
+from opendbc.car import structs
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.values import PLATFORMS
 from cereal.car import CarParams

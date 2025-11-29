@@ -181,7 +181,6 @@ class LatControlPID(LatControl):
       # reducing high-frequency noise and improving driving quality.
       if hasattr(self, '_prev_output_torque'):
           # Make rate limiting adaptive based on speed and conditions
-          base_torque_rate = 1.0  # Base rate limit
           if CS.vEgo > 15.0:  # At highway speeds
             max_torque_rate = min(1.5, max(0.3, CS.vEgo * 0.05))  # Lower rate at high speeds
           else:  # At lower speeds

@@ -5,13 +5,9 @@ Integration test to validate all sunnypilot improvements work together.
 
 import pytest
 from unittest.mock import Mock, MagicMock
-import numpy as np
 from types import SimpleNamespace
 
-from cereal import car, log, custom
-import cereal.messaging as messaging
 
-from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
@@ -142,7 +138,6 @@ class TestSunnypilotIntegrationImprovements:
 
     def test_hardware_resource_integration(self):
         """Test that hardware resource improvements work together."""
-        from openpilot.selfdrive.controls.controlsd import Controls
         assert Controls is not None
         has_update_method = hasattr(Controls, 'update')
         assert has_update_method, "Controls should have an update method"

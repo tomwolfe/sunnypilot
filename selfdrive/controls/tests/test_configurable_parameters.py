@@ -6,12 +6,8 @@ This ensures that all hardcoded values mentioned in the critical review have bee
 
 import pytest
 from unittest.mock import Mock
-import numpy as np
 
-from cereal import car, log
-import cereal.messaging as messaging
 
-from openpilot.common.params import Params
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
@@ -163,5 +159,4 @@ class TestConfigurableParameters:
 
 if __name__ == "__main__":
     # Run all tests
-    import unittest
-    unittest.main()
+    pytest.main()

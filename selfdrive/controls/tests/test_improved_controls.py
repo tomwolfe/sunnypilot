@@ -13,12 +13,9 @@ This test suite validates all the improvements made to:
 """
 
 import pytest
-import numpy as np
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, MagicMock
 from types import SimpleNamespace
 
-from cereal import car, log
-import cereal.messaging as messaging
 
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
@@ -26,7 +23,6 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
-from openpilot.common.params import Params
 from openpilot.sunnypilot.selfdrive.controls.lib.nnlc.helpers import MOCK_MODEL_PATH
 
 
@@ -301,7 +297,6 @@ class TestSpeedLimitImprovements:
 
         sm.__getitem__.side_effect = lambda key: {'liveMapDataSP': map_data}[key] if key == 'liveMapDataSP' else gps_data
 
-        v_ego = 25.0
         assert hasattr(resolver, 'speed_limit')
         assert hasattr(resolver, 'speed_limit_final')
 
