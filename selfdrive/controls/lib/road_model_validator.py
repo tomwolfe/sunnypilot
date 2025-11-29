@@ -91,7 +91,9 @@ class RoadModelValidator:
                 # f''(x) = 2*c2 + 6*c3*x + 12*c4*x^2
                 if len(line_coeffs) >= 3:
                     first_deriv = line_coeffs[1] + 2*line_coeffs[2]*distance + (3*line_coeffs[3]*distance**2 if len(line_coeffs) > 3 else 0)
-                    second_deriv = 2*line_coeffs[2] + (6*line_coeffs[3]*distance if len(line_coeffs) > 3 else 0) + (12*line_coeffs[4]*distance**2 if len(line_coeffs) > 4 else 0)
+                    second_order = (6*line_coeffs[3]*distance if len(line_coeffs) > 3 else 0)
+                    third_order = (12*line_coeffs[4]*distance**2 if len(line_coeffs) > 4 else 0)
+                    second_deriv = 2*line_coeffs[2] + second_order + third_order
 
                     curvature = abs(second_deriv) / (1 + first_deriv**2)**1.5 if 1 + first_deriv**2 > 0.1 else abs(second_deriv)
 

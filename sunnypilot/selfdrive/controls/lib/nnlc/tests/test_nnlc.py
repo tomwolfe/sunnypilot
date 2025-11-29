@@ -45,10 +45,10 @@ class TestNeuralNetworkLateralControl:
 
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN, GM.CHEVROLET_BOLT_EUV])
   def test_saturation(self, car_name):
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock as Mock
 
     # Create mock params object similar to the conftest.py fixture
-    mock_params = MagicMock()
+    mock_params = Mock()
     param_defaults = {
       "LongitudinalMaxJerk": "2.2",
       "LongitudinalMaxStoppingJerk": "1.5",

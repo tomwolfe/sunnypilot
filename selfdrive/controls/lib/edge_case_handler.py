@@ -48,6 +48,10 @@ class EdgeCaseHandler:
 
     # Initialize state variables
     self._last_steering_angle = 0.0
+    # Initialize the _previous_speeds list with type annotation
+    self._previous_speeds: list[float | None] = []
+    # Initialize the _previous_leads list with type annotation
+    self._previous_leads: list[dict[str, float | None]] = []
     self._last_speed = 0.0
     self._initialized = False
 
@@ -726,7 +730,8 @@ class EdgeCaseHandler:
     }
 
     # Log detected scenarios for debugging and analysis
-    detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score']]
+    excluded_keys = ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score']
+    detected_scenarios = [k for k, v in scenarios.items() if v is True and k not in excluded_keys]
     if detected_scenarios:
       cloudlog.debug(f"EdgeCaseHandler: Detected scenarios: {', '.join(detected_scenarios)}. Applying adaptive control.")
 
@@ -794,10 +799,10 @@ class EdgeCaseHandler:
 
     if detected_scenarios:
       cloudlog.debug(
-          f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
-          f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, "
-          f"speed_limit_factor={modifications['speed_limit_factor']:.2f}, "
-          f"steering_sensitivity={modifications['steering_sensitivity']:.2f}, "
+          f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, " +
+          f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, " +
+          f"speed_limit_factor={modifications['speed_limit_factor']:.2f}, " +
+          f"steering_sensitivity={modifications['steering_sensitivity']:.2f}, " +
           f"caution_mode={modifications['caution_mode']}"
       )
 

@@ -2,6 +2,7 @@ import os
 import capnp
 import numpy as np
 from scipy.signal import savgol_filter
+from typing import Optional
 from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 from openpilot.sunnypilot.models.helpers import plan_x_idxs_helper
@@ -17,7 +18,7 @@ class PublishState:
     self.prev_brake_5ms2_probs = np.zeros(ModelConstants.FCW_5MS2_PROBS_WIDTH, dtype=np.float32)
     self.prev_brake_3ms2_probs = np.zeros(ModelConstants.FCW_3MS2_PROBS_WIDTH, dtype=np.float32)
 
-def smooth_trajectory(data: np.ndarray) -> np.ndarray:
+def smooth_trajectory(data: Optional[np.ndarray]) -> np.ndarray:
   """
   Applies a Savitzky-Golay filter to smooth a 1D trajectory using parameters from ModelConstants.
   The filter needs window_length to be odd and at least polyorder + 2.
@@ -28,7 +29,7 @@ def smooth_trajectory(data: np.ndarray) -> np.ndarray:
   # Check if data is valid and has sufficient length
   if data is None or len(data) == 0 or len(data) < window_length:
       # Not enough data points to apply filter, return original
-      return data
+      return np.array([]) if data is None else data
 
   try:
       return savgol_filter(data, window_length, polyorder)
