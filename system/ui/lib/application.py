@@ -579,7 +579,11 @@ class GuiApplication(GuiApplicationExt):
       except Exception as e:
         text_str = f"[Log decode error: {e}]"
 
-      if log_level == rl.TraceLogLevel.LOG_ERROR:
+      # Filter out X11/Xlib warnings that are common in CI environments and not actual application issues
+      if "Xlib.xauth: warning" in text_str or "xauth" in text_str.lower():
+        # These are X11 authentication warnings that are harmless in CI environments
+        cloudlog.debug(f"raylib: {text_str}")
+      elif log_level == rl.TraceLogLevel.LOG_ERROR:
         cloudlog.error(f"raylib: {text_str}")
       elif log_level == rl.TraceLogLevel.LOG_WARNING:
         cloudlog.warning(f"raylib: {text_str}")

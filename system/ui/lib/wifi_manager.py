@@ -318,6 +318,10 @@ class WifiManager:
     try:
       device_paths = self._router_main.send_and_get_reply(new_method_call(self._nm, 'GetDevices')).body[0]
       for device_path in device_paths:
+        # Validate that the device_path is a proper DBus object path (starts with '/')
+        if not str(device_path).startswith('/'):
+          cloudlog.warning(f"Invalid device path received: {device_path}")
+          continue
         dev_addr = DBusAddress(device_path, bus_name=NM, interface=NM_DEVICE_IFACE)
         dev_type = self._router_main.send_and_get_reply(Properties(dev_addr).get('DeviceType')).body[0][1]
         if dev_type == adapter_type:
@@ -363,6 +367,10 @@ class WifiManager:
     if self._router_main is None:
       return {}
     try:
+      # Validate that the conn_path is a proper DBus object path (starts with '/')
+      if not str(conn_path).startswith('/'):
+        cloudlog.warning(f"Invalid connection path received: {conn_path}")
+        return {}
       conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE)
       reply = self._router_main.send_and_get_reply(new_method_call(conn_addr, 'GetSettings'))
       if reply.header.message_type == MessageType.error:
@@ -519,13 +527,15 @@ class WifiManager:
         conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
         specific_obj_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('SpecificObject')).body[0][1]
 
-        if specific_obj_path != "/":
+        if specific_obj_path != "/" and str(specific_obj_path).startswith('/'):
           ap_addr = DBusAddress(specific_obj_path, bus_name=NM, interface=NM_ACCESS_POINT_IFACE)
           ap_ssid = bytes(self._router_main.send_and_get_reply(Properties(ap_addr).get('Ssid')).body[0][1]).decode("utf-8", "replace")
 
           if ap_ssid == ssid:
             self._router_main.send_and_get_reply(new_method_call(self._nm, 'DeactivateConnection', 'o', (conn_path,)))
             return
+        elif str(specific_obj_path) != "/" and not str(specific_obj_path).startswith('/'):
+          cloudlog.warning(f"Invalid specific object path received: {specific_obj_path}")
       except Exception:
         cloudlog.exception("Failed to deactivate connection when router_main is None")
 
@@ -635,7 +645,9 @@ class WifiManager:
 
         if conn_type == '802-11-wireless':
           conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
-          if conn_path == "/":
+          if conn_path == "/" or not str(conn_path).startswith('/'):
+            if not str(conn_path).startswith('/'):
+              cloudlog.warning(f"Invalid connection path received: {conn_path}")
             continue
 
           settings = self._get_connection_settings(conn_path)
@@ -666,8 +678,10 @@ class WifiManager:
 
           if conn_type == '802-11-wireless' and not self.is_tethering_active():
             conn_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Connection')).body[0][1]
-            if conn_path == "/":
-              continue
+            if conn_path == "/" or not str(conn_path).startswith('/'):
+              if not str(conn_path).startswith('/'):
+                cloudlog.warning(f"Invalid connection path received: {conn_path}")
+              return
 
             settings = self._get_connection_settings(conn_path)
 
@@ -726,7 +740,16 @@ class WifiManager:
 
         aps: dict[str, list[AccessPoint]] = {}
 
+        # Validate active AP path
+        if str(active_ap_path) != "/" and not str(active_ap_path).startswith('/'):
+          cloudlog.warning(f"Invalid active AP path received: {active_ap_path}")
+          active_ap_path = "/"
+
         for ap_path in ap_paths:
+          # Validate AP path
+          if not str(ap_path).startswith('/'):
+            cloudlog.warning(f"Invalid AP path received: {ap_path}")
+            continue
           ap_addr = DBusAddress(ap_path, NM, interface=NM_ACCESS_POINT_IFACE)
           ap_props = self._router_main.send_and_get_reply(Properties(ap_addr).get_all())
 
@@ -771,12 +794,16 @@ class WifiManager:
     self._ipv4_address = ""
 
     for conn_path in self._get_active_connections():
+      # Validate that conn_path is a proper DBus object path
+      if not str(conn_path).startswith('/'):
+        cloudlog.warning(f"Invalid connection path received: {conn_path}")
+        continue
       conn_addr = DBusAddress(conn_path, bus_name=NM, interface=NM_ACTIVE_CONNECTION_IFACE)
       conn_type = self._router_main.send_and_get_reply(Properties(conn_addr).get('Type')).body[0][1]
       if conn_type == '802-11-wireless':
         ip4config_path = self._router_main.send_and_get_reply(Properties(conn_addr).get('Ip4Config')).body[0][1]
 
-        if ip4config_path != "/":
+        if ip4config_path != "/" and str(ip4config_path).startswith('/'):
           ip4config_addr = DBusAddress(ip4config_path, bus_name=NM, interface=NM_IP4_CONFIG_IFACE)
           address_data = self._router_main.send_and_get_reply(Properties(ip4config_addr).get('AddressData')).body[0][1]
 
@@ -784,6 +811,8 @@ class WifiManager:
             if 'address' in entry:
               self._ipv4_address = entry['address'][1]
               return
+        elif str(ip4config_path) != "/" and not str(ip4config_path).startswith('/'):
+          cloudlog.warning(f"Invalid IP4 config path received: {ip4config_path}")
 
   def __del__(self):
     self.stop()
@@ -860,6 +889,10 @@ class WifiManager:
       known_connections = self._router_main.send_and_get_reply(new_method_call(settings_addr, 'ListConnections')).body[0]
 
       for conn_path in known_connections:
+        # Validate the connection path before using it
+        if not str(conn_path).startswith('/'):
+          cloudlog.warning(f"Invalid connection path received in LTE connection search: {conn_path}")
+          continue
         settings = self._get_connection_settings(conn_path)
         if settings and settings.get('connection', {}).get('id', ('s', ''))[1] == 'lte':
           return str(conn_path)
