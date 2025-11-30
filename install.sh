@@ -11,6 +11,11 @@ echo "Starting sunnypilot installation..."
 if [ -f /TICI ] || [ -f /EON ]; then
   echo "Running on comma device"
   
+  # Install system dependencies for scipy
+  echo "Installing system build dependencies for scipy..."
+  sudo apt update
+  sudo apt install -y python3-dev python3-numpy python3-setuptools python3-wheel python3-pip build-essential gfortran libopenblas-dev liblapack-dev
+  
   # Install Python dependencies
   echo "Installing Python dependencies..."
   if [ -f "$DIR/requirements.txt" ]; then
