@@ -128,7 +128,6 @@ class TripDataCollector:
         # Using geodesic for more accurate distance over Earth's surface
         dist = geodesic(self._last_location, (current_lat, current_lon)).meters
         self._total_distance_meters += dist
-      
       self._route_points.append((current_lat, current_lon))
       self._last_location = (current_lat, current_lon)
 

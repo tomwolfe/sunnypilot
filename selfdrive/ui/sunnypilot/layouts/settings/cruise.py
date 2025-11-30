@@ -9,6 +9,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.widgets.input_dialog import InputDialogSP
 
 
 class CruiseLayout(Widget):
@@ -21,9 +22,6 @@ class CruiseLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item
-    from openpilot.system.ui.widgets.input_dialog import InputDialogSP
-    from openpilot.common.params import Params
-    from openpilot.system.ui.lib.multilang import tr
 
     items = [
       toggle_item_sp(
@@ -54,11 +52,8 @@ class CruiseLayout(Widget):
         if -25 <= offset <= 25:
           self._params.put("CruiseSpeedLimitOffset", str(offset))
         else:
-          from openpilot.system.ui.lib.application import gui_app
-          from openpilot.system.ui.lib.multilang import tr
           gui_app.show_toast(tr("Offset must be between -25 and 25 mph/km/h."), "error")
 
-    from openpilot.system.ui.widgets.input_dialog import InputDialogSP
     dialog = InputDialogSP(
       title="Cruise Speed Limit Offset",
       sub_title="Enter offset in mph (-25 to 25):",

@@ -8,8 +8,8 @@ from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.application import gui_app
-from selfdrive.ui.sunnypilot.layouts.settings.steering_lag_calibration import SteeringLagCalibrationLayout
-from selfdrive.ui.sunnypilot.layouts.settings.vehicle_profile import VehicleProfileLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering_lag_calibration import SteeringLagCalibrationLayout
+from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle_profile import VehicleProfileLayout
 
 
 class VehicleLayout(Widget):
@@ -22,8 +22,7 @@ class VehicleLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item, option_item_sp
-    from openpilot.common.params import Params
-    from openpilot.common.constants import FUEL_TANK_CAPACITY_PARAM_KEY, DEFAULT_FUEL_TANK_CAPACITY
+    from openpilot.common.constants import FUEL_TANK_CAPACITY_PARAM_KEY
     from openpilot.system.ui.lib.multilang import tr
 
     items = [
@@ -44,7 +43,9 @@ class VehicleLayout(Widget):
         param=FUEL_TANK_CAPACITY_PARAM_KEY,
         min_value=10,
         max_value=200,
-        description=lambda: tr("Set your vehicle's fuel tank capacity in liters (default: 50L).\nFuel efficiency is an estimate based on sensor data and may not be accurate for all vehicles due to non-linear fuel gauges."),
+        description=lambda: tr("Set your vehicle's fuel tank capacity in liters (default: 50L).\n"
+                               "Fuel efficiency is an estimate based on sensor data and may not be accurate "
+                               "for all vehicles due to non-linear fuel gauges."),
         value_change_step=5,
         icon="icons/settings.png"
       ),

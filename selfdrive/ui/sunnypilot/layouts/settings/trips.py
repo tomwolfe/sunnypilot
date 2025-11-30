@@ -6,7 +6,6 @@ See the LICENSE.md file in the root directory for more details.
 """
 import json
 import os
-import time
 from datetime import datetime
 import threading
 
@@ -14,7 +13,12 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
-from openpilot.common.constants import get_trip_data_path, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
+from openpilot.common.constants import get_trip_data_path, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT, FUEL_TANK_CAPACITY_PARAM_KEY, DEFAULT_FUEL_TANK_CAPACITY
+from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.multilang import tr
+
 
 from openpilot.selfdrive.ui.sunnypilot.lib.trip_data_collector import trip_data_collector
 
@@ -30,9 +34,6 @@ class TripsLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item, progress_item
-    from openpilot.system.ui.sunnypilot.widgets.progress_bar import ProgressBarAction
-    from openpilot.common.params import Params
-    from openpilot.system.ui.lib.multilang import tr
 
     items = [
       toggle_item_sp(
@@ -71,7 +72,6 @@ class TripsLayout(Widget):
     return items
 
   def _cleanup_trip_data(self):
-    from openpilot.system.ui.lib.application import gui_app
     try:
       retention_count = int(self._params.get(TRIP_DATA_RETENTION_COUNT_PARAM_KEY, encoding='utf-8') or DEFAULT_TRIP_DATA_RETENTION_COUNT)
     except (ValueError, TypeError):
@@ -102,15 +102,12 @@ class TripsLayout(Widget):
 
   def _open_trip_stats(self):
     # Implement navigation to trip statistics screen
-    from openpilot.system.ui.lib.application import gui_app
     # For now, show a toast message since the layout doesn't exist yet
     gui_app.show_toast(tr("Trip statistics feature is under development"), "info")
     from openpilot.system.ui.sunnypilot.layouts.trip_statistics import TripStatisticsLayout
     gui_app.push_layout(TripStatisticsLayout(self))
 
   def _export_trip_data(self):
-    from openpilot.system.ui.lib.application import gui_app
-
     def export_trip_data_process():
       if not self._export_lock.acquire(blocking=False):
         gui_app.show_toast(tr("Another export is already in progress."), "info")

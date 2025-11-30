@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 from openpilot.common.params import Params
-from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
@@ -39,20 +39,21 @@ class TripStatisticsLayout(Widget):
         )
       )
     else:
-      for i, trip in enumerate(self.trip_data):
+      for _i, trip in enumerate(self.trip_data):
         start_time_str = datetime.fromisoformat(trip["start_time"]).strftime("%Y-%m-%d %H:%M")
         end_time_str = datetime.fromisoformat(trip["end_time"]).strftime("%H:%M")
-        title = f"{start_time_str} - {end_time_str}"
+        title_text = f"{start_time_str} - {end_time_str}" # Use a different name for clarity
         # Handle case where fuel consumption wasn't calculated (value -1 indicates unknown)
         if trip['fuel_consumed_percentage'] == -1:
           fuel_info = "Fuel: N/A"
         else:
           fuel_info = f"Fuel: {trip['fuel_consumed_liters']:.1f} L"
-        description = f"Dist: {trip['distance_meters']/1000:.1f} km, Avg Speed: {trip['average_speed_kph']:.1f} km/h, {fuel_info}"
+        description_text = f"Dist: {trip['distance_meters']/1000:.1f} km, Avg Speed: {trip['average_speed_kph']:.1f} km/h, {fuel_info}" # Use a different name
+
         items.append(
           ListItem(
-            title=lambda: tr(title),
-            description=lambda: tr(description),
+            title=lambda t=title_text: tr(t), # Bind value to lambda
+            description=lambda d=description_text: tr(d), # Bind value to lambda
           )
         )
     
@@ -74,7 +75,7 @@ class TripStatisticsLayout(Widget):
         if filename.endswith(".json"):
           filepath = os.path.join(get_trip_data_path(), filename)
           try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f: # Removed 'r' mode
               trip = json.load(f)
               self.trip_data.append(trip)
           except json.JSONDecodeError as e:

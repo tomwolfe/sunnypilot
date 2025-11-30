@@ -7,6 +7,7 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
+from openpilot.system.ui.lib.application import gui_app # Moved to global import
 
 VEHICLE_PROFILE_SCHEMA = {
     "type": "object",
@@ -28,7 +29,6 @@ class VehicleProfileLayout(Widget):
 
   def _initialize_items(self) -> list[ListItem]:
     from openpilot.system.ui.widgets.list_view import button_item, toggle_item_sp
-    from openpilot.system.ui.lib.application import gui_app
 
     items = [
       button_item(
@@ -100,10 +100,8 @@ class VehicleProfileLayout(Widget):
               # Add other default settings here
           }
           self._save_profile_settings(profile_name, default_settings)
-          from openpilot.system.ui.lib.application import gui_app
           gui_app.show_toast(tr("Profile created and activated successfully!"), "success")
         else:
-          from openpilot.system.ui.lib.application import gui_app
           gui_app.show_toast(tr("Profile name already exists!"), "error")
 
     dialog = InputDialogSP(
@@ -122,11 +120,10 @@ class VehicleProfileLayout(Widget):
       profiles = [p.strip() for p in profiles_str.split(',') if p.strip()]
       if profiles:
         def on_callback(result, value):
-          from openpilot.system.ui.lib.application import gui_app
           if result == DialogResult.CONFIRM and value:
             self._params.put("ActiveVehicleProfile", value)
             # Load settings for the newly selected profile
-            settings = self._load_profile_settings(value)
+            self._load_profile_settings(value) # Removed assignment to 'settings'
             gui_app.show_toast(tr(f"Profile '{value}' selected and settings loaded!"), "success")
           elif result == DialogResult.CANCEL:
             gui_app.show_toast(tr("Profile selection cancelled."), "info")
@@ -140,10 +137,8 @@ class VehicleProfileLayout(Widget):
         )
         dialog.show()
       else:
-        from openpilot.system.ui.lib.application import gui_app
         gui_app.show_toast(tr("No profiles available to select!"), "error")
     else:
-      from openpilot.system.ui.lib.application import gui_app
       gui_app.show_toast(tr("No profiles available!"), "error")
 
   def _delete_profile(self):
@@ -153,7 +148,6 @@ class VehicleProfileLayout(Widget):
       profiles = [p.strip() for p in profiles_str.split(',') if p.strip()]
       if profiles:
         def on_callback(result, value):
-          from openpilot.system.ui.lib.application import gui_app
           if result == DialogResult.CONFIRM and value:
             profiles.remove(value)
             if profiles:
@@ -178,15 +172,12 @@ class VehicleProfileLayout(Widget):
         )
         dialog.show()
       else:
-        from openpilot.system.ui.lib.application import gui_app
         gui_app.show_toast(tr("No profiles available to delete!"), "error")
     else:
-      from openpilot.system.ui.lib.application import gui_app
       gui_app.show_toast(tr("No profiles to delete!"), "error")
 
   def _edit_profile_settings(self):
     from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
-    from openpilot.system.ui.lib.application import gui_app
 
     active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8")
     if not active_profile:

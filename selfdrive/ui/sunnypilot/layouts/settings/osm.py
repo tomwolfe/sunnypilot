@@ -10,6 +10,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.multilang import tr
 
 
 class OSMLayout(Widget):
@@ -22,8 +24,6 @@ class OSMLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item
-    from openpilot.common.params import Params
-    from openpilot.system.ui.lib.multilang import tr
 
     items = [
       toggle_item_sp(
@@ -54,9 +54,8 @@ class OSMLayout(Widget):
     return items
 
   def _update_map_data(self):
-    # Implement actual map update functionality
-    from openpilot.system.ui.lib.application import gui_app
-        def update_maps():      try:
+    def update_maps():
+      try:
         # Simulate map update process
         import time
         # In a real implementation, this would download map data

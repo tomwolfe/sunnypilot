@@ -1,8 +1,7 @@
 import pyray as rl
-from collections.abc import Callable
 
 from openpilot.common.params import Params
-from openpilot.system.ui.lib.application import gui_app, FontWeight
+from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller, toggle_item_sp, option_item_sp, button_item
 from openpilot.system.ui.widgets.widget import Widget

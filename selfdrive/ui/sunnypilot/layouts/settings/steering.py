@@ -9,6 +9,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.widgets.input_dialog import InputDialogSP
 
 
 class SteeringLayout(Widget):
@@ -21,9 +22,6 @@ class SteeringLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import button_item, toggle_item_sp
-    from openpilot.system.ui.widgets.input_dialog import InputDialogSP
-    from openpilot.common.params import Params
-    from openpilot.system.ui.widgets.list_view import ListItem
 
     items = [
       toggle_item_sp(
