@@ -205,7 +205,7 @@ def option_item_sp(title: str | Callable[[], str], param: str,
 def button_item(title: str | Callable[[], str], description: str | Callable[[], str] | None = None,
                 value: str | Callable[[], str] | None = None, callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItemSP:
   from openpilot.system.ui.widgets.list_view import TextAction, ITEM_TEXT_VALUE_COLOR
-  action = TextAction(text=value, color=ITEM_TEXT_VALUE_COLOR, enabled=enabled)
+  action = TextAction(text=value or "", color=ITEM_TEXT_VALUE_COLOR, enabled=enabled)
   return ListItemSP(title=title, description=description, action_item=action, callback=callback)
 
 
