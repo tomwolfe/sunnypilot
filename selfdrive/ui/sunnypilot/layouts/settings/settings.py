@@ -23,8 +23,8 @@ from openpilot.system.ui.widgets.network import NetworkUI
 from openpilot.system.ui.lib.wifi_manager import WifiManager
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.models import ModelsLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.sunnylink import SunnylinkLayout
-from openpilot.selfdrive.ui.sunnypilot.layouts.settings.osm import OSMLayout
+
+
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.trips import TripsLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.vehicle import VehicleLayout
 from openpilot.selfdrive.ui.sunnypilot.layouts.settings.steering import SteeringLayout
@@ -112,7 +112,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
     self._panels = {
       OP.PanelType.DEVICE: PanelInfo(tr_noop("Device"), DeviceLayoutSP(), icon="selfdrive/assets/offroad/icon_home.png"),
       OP.PanelType.NETWORK: PanelInfo(tr_noop("Network"), NetworkUI(wifi_manager), icon="selfdrive/assets/icons/network.png"),
-      OP.PanelType.icon="selfdrive/assets/icons/shell.png",
+
       OP.PanelType.TOGGLES: PanelInfo(tr_noop("Toggles"), TogglesLayout(), icon="selfdrive/assets/offroad/icon_toggle.png"),
       OP.PanelType.SOFTWARE: PanelInfo(tr_noop("Software"), SoftwareLayout(), icon="selfdrive/assets/offroad/icon_software.png"),
       OP.PanelType.MODELS: PanelInfo(tr_noop("Models"), ModelsLayout(), icon="selfdrive/assets/offroad/icon_models.png"),
@@ -120,7 +120,7 @@ class SettingsLayoutSP(OP.SettingsLayout):
       OP.PanelType.CRUISE: PanelInfo(tr_noop("Cruise"), CruiseLayout(), icon="selfdrive/assets/icons/speed_limit.png"),
       OP.PanelType.VISUALS: PanelInfo(tr_noop("Visuals"), VisualsLayout(), icon="selfdrive/assets/offroad/icon_visuals.png"),
       OP.PanelType.DISPLAY: PanelInfo(tr_noop("Display"), DisplayLayout(), icon="selfdrive/assets/offroad/icon_display.png"),
-      icon="selfdrive/assets/offroad/icon_map.png"
+
       # OP.PanelType.NAVIGATION: PanelInfo(tr_noop("Navigation"), NavigationLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_map.png"),
       OP.PanelType.TRIPS: PanelInfo(tr_noop("Trips"), TripsLayout(), icon="selfdrive/assets/offroad/icon_trips.png"),
       OP.PanelType.VEHICLE: PanelInfo(tr_noop("Vehicle"), VehicleLayout(), icon="selfdrive/assets/offroad/icon_vehicle.png"),
