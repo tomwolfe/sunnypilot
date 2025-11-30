@@ -7,7 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 from collections.abc import Callable
 
 import pyray as rl
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
+from openpilot.common.swaglog import cloudlog
 from openpilot.system.ui.lib.application import MousePos
 from openpilot.system.ui.widgets.toggle import Toggle
 from openpilot.system.ui.sunnypilot.lib.styles import style
@@ -21,7 +22,13 @@ class ToggleSP(Toggle):
     self.param_key = param
     self.params = Params()
     if self.param_key:
-      initial_state = self.params.get_bool(self.param_key)
+      try:
+        initial_state = self.params.get_bool(self.param_key)
+      except UnknownKeyName:
+        # For UI tests or environments where the param might not be defined,
+        # default to False and log a warning.
+        cloudlog.warning(f"ToggleSP: Unknown parameter key '{self.param_key}'. Defaulting to False.")
+        initial_state = False # Default to false for undefined parameters
     Toggle.__init__(self, initial_state, callback)
 
   def _handle_mouse_release(self, mouse_pos: MousePos):

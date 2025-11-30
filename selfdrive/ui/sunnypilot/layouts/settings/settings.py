@@ -122,10 +122,10 @@ class SettingsLayoutSP(OP.SettingsLayout):
       OP.PanelType.DISPLAY: PanelInfo(tr_noop("Display"), DisplayLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_display.png"),
       OP.PanelType.OSM: PanelInfo(tr_noop("OSM"), OSMLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_map.png"),
       # OP.PanelType.NAVIGATION: PanelInfo(tr_noop("Navigation"), NavigationLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_map.png"),
-      OP.PanelType.TRIPS: PanelInfo(tr_noop("Trips"), TripsLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_trips.png"),
-      OP.PanelType.VEHICLE: PanelInfo(tr_noop("Vehicle"), VehicleLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_vehicle.png"),
-      OP.PanelType.FIREHOSE: PanelInfo(tr_noop("Firehose"), FirehoseLayout(), icon="../../sunnypilot/selfdrive/assets/offroad/icon_firehose.png"),
-      OP.PanelType.DEVELOPER: PanelInfo(tr_noop("Developer"), DeveloperLayout(), icon="openpilot/selfdrive/assets/icons/shell.png"),
+      OP.PanelType.TRIPS: PanelInfo(tr_noop("Trips"), TripsLayout(), icon="selfdrive/assets/offroad/icon_trips.png"),
+      OP.PanelType.VEHICLE: PanelInfo(tr_noop("Vehicle"), VehicleLayout(), icon="selfdrive/assets/offroad/icon_vehicle.png"),
+      OP.PanelType.FIREHOSE: PanelInfo(tr_noop("Firehose"), FirehoseLayout(), icon="selfdrive/assets/offroad/icon_firehose.png"),
+      OP.PanelType.DEVELOPER: PanelInfo(tr_noop("Developer"), DeveloperLayout(), icon="selfdrive/assets/icons/shell.png"),
     }
 
   def _draw_sidebar(self, rect: rl.Rectangle):
