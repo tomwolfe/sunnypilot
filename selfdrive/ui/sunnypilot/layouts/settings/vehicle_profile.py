@@ -148,8 +148,8 @@ class VehicleProfileLayout(Widget):
             if profiles:
               self._params.put("CustomVehicleProfiles", ','.join(profiles))
               active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8")
-              if active_profile == value:
-                self._params.delete("ActiveVehicleProfile")
+              if active_profile == value: # If the deleted profile was active
+                self._params.put("ActiveVehicleProfile", profiles[0]) # Set the first remaining profile as active
             else:
               self._params.delete("CustomVehicleProfiles")
               self._params.delete("ActiveVehicleProfile")

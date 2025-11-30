@@ -10,6 +10,8 @@ import time
 from datetime import datetime
 import threading
 
+from cereal import messaging, car
+
 from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
 from openpilot.common.constants import TRIP_DATA_PATH, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
@@ -22,6 +24,7 @@ class TripsLayout(Widget):
     self._params = Params()
     items = self._initialize_items()
     self._scroller = Scroller(items, line_separator=True, spacing=0)
+    self._export_lock = threading.Lock()
 
   def _initialize_items(self):
     from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item, progress_item
@@ -107,21 +110,37 @@ class TripsLayout(Widget):
     from openpilot.system.ui.lib.application import gui_app
 
     def export_trip_data_process():
+      if not self._export_lock.acquire(blocking=False):
+        gui_app.show_toast(tr("Another export is already in progress."), "info")
+        # Ensure the button is re-enabled if we return early due to existing export
+        self._export_trip_data_btn.action_item.set_enabled(True)
+        self.export_progress_bar.update(0, tr("Idle"), "", False) # Reset progress bar
+        return
+
       try:
         self._export_trip_data_btn.action_item.set_enabled(False) # Disable button during export
         self.export_progress_bar.update(5, tr("Preparing export..."), "5%", True)
         os.makedirs(TRIP_DATA_PATH, exist_ok=True)
-        time.sleep(0.5) # Simulate some work
 
-        self.export_progress_bar.update(20, tr("Generating trip data..."), "20%", True)
         # Simulate trip data generation
         start_time = datetime.now()
-        time.sleep(2) # Simulate a long trip
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         distance_meters = round(duration * 20 / 3.6, 2) # Assume average speed 20 km/h
         average_speed_kph = round(distance_meters / duration * 3.6, 2) if duration > 0 else 0
         fuel_consumed_liters = round(distance_meters / 10000, 2) # Assume 10L/100km
+
+        route_name = self._params.get("CurrentRoute", encoding='utf8')
+
+        vin = "N/A"
+        car_model = "N/A"
+        if car_params_bytes := self._params.get("CarParams"):
+          try:
+            car_params = messaging.log_from_bytes(car_params_bytes, car.CarParams)
+            vin = car_params.carVin
+            car_model = car_params.carFingerprint
+          except Exception as e:
+            print(f"Error parsing CarParams: {e}")
 
         trip_data = {
           "start_time": start_time.isoformat(),
@@ -130,7 +149,9 @@ class TripsLayout(Widget):
           "distance_meters": distance_meters,
           "average_speed_kph": average_speed_kph,
           "fuel_consumed_liters": fuel_consumed_liters,
-          "route_name": f"Trip from {start_time.strftime('%Y-%m-%d %H:%M')}"
+          "route_name": route_name if route_name else "N/A",
+          "vin": vin,
+          "car_model": car_model
         }
 
         self.export_progress_bar.update(70, tr("Saving trip data..."), "70%", True)
@@ -138,7 +159,6 @@ class TripsLayout(Widget):
         filename = os.path.join(TRIP_DATA_PATH, f"trip_{timestamp}.json")
         with open(filename, 'w') as f:
           json.dump(trip_data, f, indent=2)
-        time.sleep(0.5)
 
         self._params.delete("ExportTripDataTrigger")
         self.export_progress_bar.update(100, tr("Export completed!"), "100%", True)
@@ -147,7 +167,6 @@ class TripsLayout(Widget):
         self._cleanup_trip_data() # Call cleanup after successful export
 
 
-        time.sleep(2)
         self.export_progress_bar.update(0, tr("Idle"), "", False)
         self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
 
@@ -155,9 +174,11 @@ class TripsLayout(Widget):
         self.export_progress_bar.update(0, tr(f"Export failed: {str(e)}"), "", False) # Don't keep progress if failed
         gui_app.show_toast(tr(f"Export failed: {str(e)}"), "error")
 
-        time.sleep(2)
         self.export_progress_bar.update(0, tr("Idle"), "", False)
         self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
+      finally:
+        if self._export_lock.locked():
+          self._export_lock.release()
 
     start_background_task(export_trip_data_process, name="export_trip_data_process")
 
