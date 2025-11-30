@@ -44,7 +44,7 @@ class VehicleLayout(Widget):
         param=FUEL_TANK_CAPACITY_PARAM_KEY,
         min_value=10,
         max_value=200,
-        description=lambda: tr("Set your vehicle's fuel tank capacity in liters (default: 50L)."),
+        description=lambda: tr("Set your vehicle's fuel tank capacity in liters (default: 50L).\nFuel efficiency is an estimate based on sensor data and may not be accurate for all vehicles due to non-linear fuel gauges."),
         value_change_step=5,
         icon="icons/settings.png"
       ),

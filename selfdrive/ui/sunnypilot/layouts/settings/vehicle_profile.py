@@ -1,11 +1,22 @@
 import json
 import pyray as rl
+import jsonschema # Added import
 
 from openpilot.common.params import Params
 from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
+
+VEHICLE_PROFILE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "torque_level": {"type": "integer", "minimum": 0},
+        "steering_ratio": {"type": "number", "exclusiveMinimum": 0},
+    },
+    "required": ["torque_level", "steering_ratio"],
+    "additionalProperties": True
+}
 
 
 class VehicleProfileLayout(Widget):
@@ -189,10 +200,13 @@ class VehicleProfileLayout(Widget):
       if result and value.strip():
         try:
           new_settings = json.loads(value)
+          jsonschema.validate(instance=new_settings, schema=VEHICLE_PROFILE_SCHEMA) # Validate here
           self._save_profile_settings(active_profile, new_settings)
           gui_app.show_toast(tr("Profile settings updated successfully!"), "success")
         except json.JSONDecodeError:
           gui_app.show_toast(tr("Invalid JSON format! Please correct and try again."), "error")
+        except jsonschema.ValidationError as e:
+          gui_app.show_toast(tr(f"Profile validation error: {e.message}"), "error") # Show validation error
       elif result == DialogResult.CANCEL:
         gui_app.show_toast(tr("Editing profile settings cancelled."), "info")
 
