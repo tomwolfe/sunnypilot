@@ -19,8 +19,8 @@ from openpilot.common.constants import TRIP_DATA_PATH
 
 
 class TripStatisticsLayout(Widget):
-  def __init__(self, parent: Widget):
-    super().__init__(parent)
+  def __init__(self):
+    super().__init__()
     self._params = Params()
     self.trip_data = [] # Initialize trip_data
     items = self._initialize_items()
@@ -88,7 +88,8 @@ class TripStatisticsLayout(Widget):
     self.trip_data.sort(key=lambda x: datetime.fromisoformat(x['start_time']), reverse=True)
     
     # Update scroller items to display new data
-    self._scroller.set_items(self._initialize_items()) # Assuming Scroller has a set_items method
+    # Re-initialize scroller with new data
+    self._scroller = Scroller(self._initialize_items(), line_separator=True, spacing=0)
     gui_app.show_toast(tr(f"Loaded {len(self.trip_data)} trips."), "success")
 
   def _render(self, rect: rl.Rectangle):

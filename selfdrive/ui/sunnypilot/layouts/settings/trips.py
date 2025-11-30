@@ -203,10 +203,6 @@ class TripsLayout(Widget):
 
     start_background_task(export_trip_data_process, name="export_trip_data_process")
 
-  def update(self):
-    # Update the progress bar as needed
-    # In this case, the thread handles the updates, so we just ensure consistency
-    pass
 
 
   def _render(self, rect):
