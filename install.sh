@@ -61,32 +61,69 @@ if [ -f /TICI ] || [ -f /EON ]; then
     echo "  - If this step seems to hang, it's likely compiling from source"
     echo "  - This is normal behavior for ARM devices and may take 10-30 minutes"
 
-    # First try installing numpy and scipy with binary wheels
+    # Function to check if system dependencies for scipy are available
+    check_system_deps() {
+      echo "Checking for required system dependencies..."
+
+      # Check for gfortran
+      if ! command -v gfortran &> /dev/null; then
+        echo "WARNING: gfortran not found. scipy compilation may fail."
+        echo "Please run install.sh first to install system dependencies."
+        return 1
+      fi
+
+      # Check for libopenblas-dev (using dpkg on Debian-based systems like comma devices)
+      if ! dpkg -l | grep -q libopenblas-dev; then
+        echo "WARNING: libopenblas-dev not found. scipy compilation may fail."
+        echo "Please run install.sh first to install system dependencies."
+        return 1
+      fi
+
+      # Check for basic build tools
+      if ! command -v gcc &> /dev/null || ! command -v g++ &> /dev/null; then
+        echo "WARNING: gcc/g++ not found. scipy compilation may fail."
+        echo "Please run install.sh first to install system dependencies."
+        return 1
+      fi
+
+      echo "System dependencies check passed."
+      return 0
+    }
+
+    # Try installing scipy and numpy together (scipy requires numpy)
     if pip install --only-binary=numpy,scipy numpy scipy; then
-      echo "numpy and scipy installed successfully with binary wheels"
+      echo "numpy and scipy installed successfully with binary wheels in virtual environment"
     else
-      echo "Failed to install with binary wheels, attempting source compilation..."
-      echo "  - This will compile numpy and scipy from source without binary packages"
-      echo "  - Expected duration: 20-60 minutes on ARM devices (both packages)"
-      echo "  - This is the most reliable method for ARM architecture"
-
-      # Install numpy first (scipy depends on numpy)
-      if pip install --no-binary numpy --force-reinstall numpy; then
-        echo "numpy source compilation completed successfully"
+      echo "Binary install failed in virtual environment, trying with no cache..."
+      if pip install --no-cache-dir --force-reinstall numpy scipy; then
+        echo "numpy and scipy installed successfully with no cache in virtual environment"
       else
-        echo "ERROR: numpy installation failed."
-        echo "Please run fix_scipy_install.sh to attempt recovery."
-        exit 1
+        echo "Regular install failed, checking system dependencies before trying source compilation..."
+        if check_system_deps; then
+          echo "System dependencies verified. Attempting source compilation (this may take 20-60 minutes for both numpy and scipy)..."
+          echo "  - This is normal behavior for ARM devices"
+          echo "  - Compiling scipy from source (with numpy) requires significant resources"
+          echo "  - Please be patient and do not interrupt the process"
+          # Install with specific flags that are known to work on ARM platforms
+          # Install numpy first, then scipy
+          pip install --no-cache-dir --no-binary numpy --force-reinstall numpy
+          pip install --no-cache-dir --no-binary scipy --force-reinstall scipy
+        else
+          echo "System dependencies check failed. Please install system dependencies first."
+          exit 1
+        fi
       fi
+    fi
 
-      # Then install scipy
-      if pip install --no-binary scipy --force-reinstall scipy; then
-        echo "scipy source compilation completed successfully"
-      else
-        echo "ERROR: scipy installation failed completely."
-        echo "Please run fix_scipy_install.sh to attempt recovery."
-        exit 1
-      fi
+    # Verify critical packages were installed before continuing
+    echo "Verifying critical package installation..."
+    if python -c "import scipy; print('scipy version:', scipy.__version__)" && \
+       python -c "import numpy; print('numpy version:', numpy.__version__)"; then
+      echo "Critical packages (scipy, numpy) verified successfully."
+    else
+      echo "ERROR: Critical packages (scipy, numpy) could not be imported."
+      echo "Installation may be incomplete. Please check the logs above."
+      exit 1
     fi
 
     # Install all other dependencies from requirements.txt
@@ -101,7 +138,7 @@ if [ -f /TICI ] || [ -f /EON ]; then
       echo "WARNING: Some Python dependencies failed to install from requirements.txt."
       echo "  Attempting to continue with critical packages only..."
 
-      # Ensure critical packages are installed
+      # Ensure critical packages are still available after failed installation
       if ! python -c "import scipy; print('scipy version:', scipy.__version__)" 2>/dev/null; then
         echo "ERROR: Critical package scipy is not available after installation."
         exit 1
@@ -111,17 +148,6 @@ if [ -f /TICI ] || [ -f /EON ]; then
         exit 1
       fi
       echo "Critical packages verified successfully."
-    fi
-
-    # Verify critical packages were installed
-    echo "Verifying critical package installation..."
-    if python -c "import scipy; print('scipy version:', scipy.__version__)" && \
-       python -c "import numpy; print('numpy version:', numpy.__version__)"; then
-      echo "Critical packages (scipy, numpy) verified successfully."
-    else
-      echo "ERROR: Critical packages (scipy, numpy) could not be imported."
-      echo "Installation may be incomplete. Please check the logs above."
-      exit 1
     fi
 
   else
