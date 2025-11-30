@@ -96,7 +96,15 @@ function launch {
   if [[ "$VIRTUAL_ENV" ]]; then
     echo "INFO: Running in virtual environment: $VIRTUAL_ENV"
   else
-    echo "INFO: Not running in a virtual environment, dependencies will be installed system-wide"
+    # Check if virtual environment exists and activate it if it does
+    VENV_PATH="$DIR/.venv"
+    if [ -f "$VENV_PATH/bin/activate" ]; then
+      echo "INFO: Virtual environment found at $VENV_PATH, activating..."
+      source "$VENV_PATH/bin/activate"
+      echo "INFO: Virtual environment activated"
+    else
+      echo "INFO: No virtual environment found at $VENV_PATH, dependencies will be installed system-wide"
+    fi
   fi
 
   # Create a Python script to check if all required packages from requirements.txt are available

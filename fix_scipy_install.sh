@@ -63,23 +63,25 @@ check_system_deps() {
   return 0
 }
 
-# Try installing scipy directly first
+# Try installing scipy and numpy together (scipy requires numpy)
 if [ -n "$VIRTUAL_ENV" ]; then
   # If in virtual environment, install without --user flag
-  if pip install --upgrade --force-reinstall scipy; then
-    echo "scipy installed successfully in virtual environment"
+  if pip install --only-binary=numpy,scipy numpy scipy; then
+    echo "numpy and scipy installed successfully with binary wheels in virtual environment"
   else
-    echo "Direct scipy install failed in virtual environment, trying with no cache..."
-    if pip install --no-cache-dir --force-reinstall scipy; then
-      echo "scipy installed successfully with no cache in virtual environment"
+    echo "Binary install failed in virtual environment, trying with no cache..."
+    if pip install --no-cache-dir --force-reinstall numpy scipy; then
+      echo "numpy and scipy installed successfully with no cache in virtual environment"
     else
       echo "Regular install failed, checking system dependencies before trying source compilation..."
       if check_system_deps; then
-        echo "System dependencies verified. Attempting source compilation (this may take 20-45 minutes)..."
+        echo "System dependencies verified. Attempting source compilation (this may take 20-60 minutes for both numpy and scipy)..."
         echo "  - This is normal behavior for ARM devices"
-        echo "  - Compiling scipy from source requires significant resources"
+        echo "  - Compiling scipy from source (with numpy) requires significant resources"
         echo "  - Please be patient and do not interrupt the process"
         # Install with specific flags that are known to work on ARM platforms
+        # Install numpy first, then scipy
+        pip install --no-cache-dir --no-binary numpy --force-reinstall numpy
         pip install --no-cache-dir --no-binary scipy --force-reinstall scipy
       else
         echo "System dependencies check failed. Please install system dependencies first."
@@ -89,20 +91,21 @@ if [ -n "$VIRTUAL_ENV" ]; then
   fi
 else
   # If not in virtual environment, use --user flag
-  if python3 -m pip install --user --upgrade --force-reinstall scipy; then
-    echo "scipy installed successfully with direct install"
+  if python3 -m pip install --user --only-binary=numpy,scipy numpy scipy; then
+    echo "numpy and scipy installed successfully with binary wheels with direct install"
   else
-    echo "Direct scipy install failed, trying with no cache..."
-    if python3 -m pip install --user --no-cache-dir --force-reinstall scipy; then
-      echo "scipy installed successfully with no cache"
+    echo "Binary install failed, trying with no cache..."
+    if python3 -m pip install --user --no-cache-dir --force-reinstall numpy scipy; then
+      echo "numpy and scipy installed successfully with no cache"
     else
       echo "Regular install failed, checking system dependencies before trying source compilation..."
       if check_system_deps; then
-        echo "System dependencies verified. Attempting source compilation (this may take 20-45 minutes)..."
+        echo "System dependencies verified. Attempting source compilation (this may take 20-60 minutes for both numpy and scipy)..."
         echo "  - This is normal behavior for ARM devices"
-        echo "  - Compiling scipy from source requires significant resources"
+        echo "  - Compiling scipy from source (with numpy) requires significant resources"
         echo "  - Please be patient and do not interrupt the process"
         # Install with specific flags that are known to work on ARM platforms
+        python3 -m pip install --user --no-cache-dir --no-binary numpy --force-reinstall numpy
         python3 -m pip install --user --no-cache-dir --no-binary scipy --force-reinstall scipy
       else
         echo "System dependencies check failed. Please install system dependencies first."

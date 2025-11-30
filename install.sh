@@ -56,17 +56,30 @@ if [ -f /TICI ] || [ -f /EON ]; then
       fi
     fi
 
-    # Install scipy first to avoid conflicts
-    echo "Installing scipy first (this may take several minutes for compilation)..."
-    echo "  - If this step seems to hang, it's likely compiling scipy from source"
+    # Install critical dependencies first to avoid conflicts
+    echo "Installing critical dependencies (numpy, scipy) first..."
+    echo "  - If this step seems to hang, it's likely compiling from source"
     echo "  - This is normal behavior for ARM devices and may take 10-30 minutes"
-    if pip install scipy; then
-      echo "scipy installed successfully"
+
+    # First try installing numpy and scipy with binary wheels
+    if pip install --only-binary=numpy,scipy numpy scipy; then
+      echo "numpy and scipy installed successfully with binary wheels"
     else
-      echo "Failed to install scipy individually, attempting source compilation..."
-      echo "  - This will compile scipy from source without binary packages"
-      echo "  - Expected duration: 20-45 minutes on ARM devices"
+      echo "Failed to install with binary wheels, attempting source compilation..."
+      echo "  - This will compile numpy and scipy from source without binary packages"
+      echo "  - Expected duration: 20-60 minutes on ARM devices (both packages)"
       echo "  - This is the most reliable method for ARM architecture"
+
+      # Install numpy first (scipy depends on numpy)
+      if pip install --no-binary numpy --force-reinstall numpy; then
+        echo "numpy source compilation completed successfully"
+      else
+        echo "ERROR: numpy installation failed."
+        echo "Please run fix_scipy_install.sh to attempt recovery."
+        exit 1
+      fi
+
+      # Then install scipy
       if pip install --no-binary scipy --force-reinstall scipy; then
         echo "scipy source compilation completed successfully"
       else
@@ -80,13 +93,24 @@ if [ -f /TICI ] || [ -f /EON ]; then
     echo "Installing all other Python dependencies from requirements.txt..."
     echo "  - This may take several minutes depending on network speed and package complexity"
     echo "  - Some packages may require compilation on ARM devices"
-    if pip install -r "$DIR/requirements.txt"; then
+
+    # Install remaining packages with a more permissive approach for the failing packages
+    if pip install -r "$DIR/requirements.txt" --prefer-binary --timeout 300; then
       echo "Python dependencies installed successfully"
     else
-      echo "ERROR: Failed to install Python dependencies from requirements.txt."
-      echo "This is likely due to a network issue or a package incompatibility."
-      echo "Please check your internet connection and try again."
-      exit 1
+      echo "WARNING: Some Python dependencies failed to install from requirements.txt."
+      echo "  Attempting to continue with critical packages only..."
+
+      # Ensure critical packages are installed
+      if ! python -c "import scipy; print('scipy version:', scipy.__version__)" 2>/dev/null; then
+        echo "ERROR: Critical package scipy is not available after installation."
+        exit 1
+      fi
+      if ! python -c "import numpy; print('numpy version:', numpy.__version__)" 2>/dev/null; then
+        echo "ERROR: Critical package numpy is not available after installation."
+        exit 1
+      fi
+      echo "Critical packages verified successfully."
     fi
 
     # Verify critical packages were installed
