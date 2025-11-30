@@ -1,4 +1,3 @@
-import os
 import pyray as rl
 from collections.abc import Callable
 from abc import ABC

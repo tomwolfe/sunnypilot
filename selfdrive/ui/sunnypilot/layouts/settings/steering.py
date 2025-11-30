@@ -24,8 +24,7 @@ class SteeringLayout(Widget):
     items = [
       toggle_item_sp(
         title=lambda: tr("LKAS Toggle"),
-        description=lambda: tr("Enable to turn on LKAS with a single tap on the gas pedal. Disable to use stock LKAS."),
-        icon="openpilot/selfdrive/assets/icons/sunnypilot.png"
+        icon="selfdrive/assets/icons/sunnypilot.png"
       ),
       toggle_item_sp(
         title=lambda: tr("Auto Lane Change"),
