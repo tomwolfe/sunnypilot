@@ -350,6 +350,12 @@ class GuiApplication(GuiApplicationExt):
           orig_width = image.width
           orig_height = image.height
 
+          # Prevent division by zero if image dimensions are 0
+          if orig_width == 0 or orig_height == 0:
+            print(f"Warning: Image at {image_path} has zero dimensions ({orig_width}x{orig_height}), cannot resize")
+            # Return the original image without resizing
+            return image
+
           scale_width = width / orig_width
           scale_height = height / orig_height
 
