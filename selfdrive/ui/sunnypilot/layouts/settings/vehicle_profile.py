@@ -1,3 +1,4 @@
+import json
 import pyray as rl
 
 from openpilot.common.params import Params
@@ -43,27 +44,56 @@ class VehicleProfileLayout(Widget):
         param="UseCustomVehicleProfile",
         icon="icons/sunnypilot.png"
       ),
+      button_item(
+        title=lambda: tr("Edit Current Profile Settings"),
+        value=lambda: tr("EDIT"),
+        description=lambda: tr("Modify settings for the currently active vehicle profile."),
+        callback=self._edit_profile_settings
+      ),
     ]
     return items
+
+
+  def _save_profile_settings(self, profile_name: str, settings: dict):
+    key = f"VehicleProfile_{profile_name.replace(' ', '_')}_SETTINGS"
+    self._params.put(key, json.dumps(settings))
+
+  def _load_profile_settings(self, profile_name: str) -> dict:
+    key = f"VehicleProfile_{profile_name.replace(' ', '_')}_SETTINGS"
+    settings_str = self._params.get(key, encoding="utf-8")
+    if settings_str:
+      return json.loads(settings_str)
+    return {} # Return empty dict if no settings found
 
   def _create_profile(self):
     # This would open a dialog to create a new profile
     from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     def on_callback(result, value):
       if result and value.strip():
+        profile_name = value.strip()
         # Save the new profile name
         current_profiles = self._params.get("CustomVehicleProfiles", encoding="utf-8")
-        if not current_profiles:
-          current_profiles = value
+        profiles_list = []
+        if current_profiles:
+          profiles_list = [p.strip() for p in current_profiles.split(',') if p.strip()]
+
+        if profile_name not in profiles_list:
+          profiles_list.append(profile_name)
+          self._params.put("CustomVehicleProfiles", ','.join(profiles_list))
+          self._params.put("ActiveVehicleProfile", profile_name)
+
+          # Initialize settings for the new profile
+          default_settings = {
+              "torque_level": 100, # Example default setting
+              "steering_ratio": 15.0, # Example default setting
+              # Add other default settings here
+          }
+          self._save_profile_settings(profile_name, default_settings)
+          from openpilot.system.ui.lib.application import gui_app
+          gui_app.show_toast(tr("Profile created and activated successfully!"), "success")
         else:
-          profiles_list = current_profiles.split(',')
-          if value not in profiles_list:
-            profiles_list.append(value)
-            current_profiles = ','.join(profiles_list)
-        self._params.put("CustomVehicleProfiles", current_profiles)
-        self._params.put("ActiveVehicleProfile", value)
-        from openpilot.system.ui.lib.application import gui_app
-        gui_app.show_toast(tr("Profile created successfully!"), "success")
+          from openpilot.system.ui.lib.application import gui_app
+          gui_app.show_toast(tr("Profile name already exists!"), "error")
 
     dialog = InputDialogSP(
       title=tr("Create New Vehicle Profile"),
@@ -84,7 +114,9 @@ class VehicleProfileLayout(Widget):
           from openpilot.system.ui.lib.application import gui_app
           if result == DialogResult.CONFIRM and value:
             self._params.put("ActiveVehicleProfile", value)
-            gui_app.show_toast(tr(f"Profile '{value}' selected!"), "success")
+            # Load settings for the newly selected profile
+            settings = self._load_profile_settings(value)
+            gui_app.show_toast(tr(f"Profile '{value}' selected and settings loaded!"), "success")
           elif result == DialogResult.CANCEL:
             gui_app.show_toast(tr("Profile selection cancelled."), "info")
 
@@ -122,6 +154,9 @@ class VehicleProfileLayout(Widget):
               self._params.delete("CustomVehicleProfiles")
               self._params.delete("ActiveVehicleProfile")
             gui_app.show_toast(tr(f"Profile '{value}' deleted!"), "success")
+            # Delete associated settings
+            settings_key = f"VehicleProfile_{value.replace(' ', '_')}_SETTINGS"
+            self._params.delete(settings_key)
           elif result == DialogResult.CANCEL:
             gui_app.show_toast(tr("Profile deletion cancelled."), "info")
 
@@ -137,6 +172,38 @@ class VehicleProfileLayout(Widget):
     else:
       from openpilot.system.ui.lib.application import gui_app
       gui_app.show_toast(tr("No profiles to delete!"), "error")
+
+  def _edit_profile_settings(self):
+    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
+    from openpilot.system.ui.lib.application import gui_app
+
+    active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8")
+    if not active_profile:
+      gui_app.show_toast(tr("No active profile to edit settings for!"), "error")
+      return
+
+    current_settings = self._load_profile_settings(active_profile)
+    current_settings_json = json.dumps(current_settings, indent=2)
+
+    def on_callback(result, value):
+      if result and value.strip():
+        try:
+          new_settings = json.loads(value)
+          self._save_profile_settings(active_profile, new_settings)
+          gui_app.show_toast(tr("Profile settings updated successfully!"), "success")
+        except json.JSONDecodeError:
+          gui_app.show_toast(tr("Invalid JSON format! Please correct and try again."), "error")
+      elif result == DialogResult.CANCEL:
+        gui_app.show_toast(tr("Editing profile settings cancelled."), "info")
+
+    dialog = InputDialogSP(
+      title=tr(f"Edit Settings for '{active_profile}'"),
+      sub_title=tr("Edit JSON settings:"),
+      current_text=current_settings_json,
+      callback=lambda result, value: on_callback(result, value),
+      min_text_size=1
+    )
+    dialog.show()
 
   def _render(self, rect: rl.Rectangle):
     self._scroller.render(rect)

@@ -1,3 +1,6 @@
+import threading
+from openpilot.common.threading_util import start_background_task
+
 """
 Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 
@@ -53,11 +56,7 @@ class OSMLayout(Widget):
   def _update_map_data(self):
     # Implement actual map update functionality
     from openpilot.system.ui.lib.application import gui_app
-    import threading
-from openpilot.common.threading_util import start_background_task
-
-    def update_maps():
-      try:
+        def update_maps():      try:
         # Simulate map update process
         import time
         # In a real implementation, this would download map data
