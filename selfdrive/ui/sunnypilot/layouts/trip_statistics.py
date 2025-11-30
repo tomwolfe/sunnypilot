@@ -15,7 +15,7 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
 
-from selfdrive.ui.sunnypilot.layouts.settings.trips import TRIP_DATA_PATH # Import the path from where the data is stored
+from openpilot.common.constants import TRIP_DATA_PATH
 
 
 class TripStatisticsLayout(Widget):

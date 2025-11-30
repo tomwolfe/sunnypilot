@@ -10,21 +10,9 @@ import time
 from datetime import datetime
 import threading
 
+from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
-from openpilot.system.ui.widgets.scroller_tici import Scroller
-from openpilot.system.ui.widgets import Widget
-
-DEFAULT_TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
-TRIP_DATA_PATH_PARAM_KEY = "CustomTripDataPath"
-
-def get_trip_data_path():
-  params = Params()
-  custom_path = params.get(TRIP_DATA_PATH_PARAM_KEY, encoding='utf-8')
-  if custom_path and os.path.isdir(custom_path): # Only use custom path if it exists and is a directory
-    return custom_path
-  return DEFAULT_TRIP_DATA_PATH
-
-TRIP_DATA_PATH = get_trip_data_path()
+from openpilot.common.constants import TRIP_DATA_PATH
 
 
 class TripsLayout(Widget):
@@ -138,9 +126,7 @@ class TripsLayout(Widget):
         self.export_progress_bar.update(0, tr("Idle"), "", False)
         self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
 
-    export_thread = threading.Thread(target=export_trip_data_process)
-    export_thread.daemon = True
-    export_thread.start()
+    start_background_task(export_trip_data_process, name="export_trip_data_process")
 
   def update(self):
     # Update the progress bar as needed

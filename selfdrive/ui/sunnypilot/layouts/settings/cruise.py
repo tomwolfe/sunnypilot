@@ -7,6 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.multilang import tr
 
 
 class CruiseLayout(Widget):
@@ -48,7 +50,13 @@ class CruiseLayout(Widget):
   def _set_cruise_speed_offset(self):
     def on_callback(result, value):
       if result and value.lstrip('-').isdigit():
-        self._params.put("CruiseSpeedLimitOffset", str(int(value)))
+        offset = int(value)
+        if -25 <= offset <= 25:
+          self._params.put("CruiseSpeedLimitOffset", str(offset))
+        else:
+          from openpilot.system.ui.lib.application import gui_app
+          from openpilot.system.ui.lib.multilang import tr
+          gui_app.show_toast(tr("Offset must be between -25 and 25 mph/km/h."), "error")
 
     from openpilot.system.ui.widgets.input_dialog import InputDialogSP
     dialog = InputDialogSP(

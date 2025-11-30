@@ -29,7 +29,7 @@ class OptionControlSP(ItemAction):
                value_change_step: int = 1, enabled: bool | Callable[[], bool] = True,
                on_value_changed: Callable[[int], None] | None = None,
                value_map: dict[int, int] | None = None,
-               label_width: int = 350, # Changed default from LABEL_WIDTH to 350
+               label_width: int = LABEL_WIDTH,
                use_float_scaling: bool = False,
                # Callback to format the displayed value. Takes the numeric value as input and returns a string.
                label_callback: Callable[[int], str] | None = None):

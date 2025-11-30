@@ -7,6 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.lib.application import gui_app
+from openpilot.system.ui.lib.multilang import tr
 
 
 class SteeringLayout(Widget):
@@ -21,8 +23,6 @@ class SteeringLayout(Widget):
     from openpilot.system.ui.widgets.list_view import button_item, toggle_item_sp
     from openpilot.system.ui.widgets.input_dialog import InputDialogSP
     from openpilot.common.params import Params
-    from openpilot.system.ui.lib.application import gui_app
-    from openpilot.system.ui.lib.multilang import tr
     from openpilot.system.ui.widgets.list_view import ListItem
 
     items = [
@@ -50,7 +50,11 @@ class SteeringLayout(Widget):
   def _set_lkas_start_delay(self):
     def on_callback(result, value):
       if result and value.isdigit():
-        self._params.put("LKASStartDelay", str(int(value)))
+        delay = int(value)
+        if 0 <= delay <= 10:
+          self._params.put("LKASStartDelay", str(delay))
+        else:
+          gui_app.show_toast(tr("Delay must be between 0 and 10 seconds."), "error")
 
     dialog = InputDialogSP(
       title="LKAS Start Delay",

@@ -54,6 +54,7 @@ class OSMLayout(Widget):
     # Implement actual map update functionality
     from openpilot.system.ui.lib.application import gui_app
     import threading
+from openpilot.common.threading_util import start_background_task
 
     def update_maps():
       try:
@@ -67,9 +68,7 @@ class OSMLayout(Widget):
         gui_app.show_toast(tr(f"Map update failed: {str(e)}"), "error")
 
     # Run the update in a separate thread to not block UI
-    update_thread = threading.Thread(target=update_maps)
-    update_thread.daemon = True
-    update_thread.start()
+    start_background_task(update_maps, name="update_maps")
 
   def _render(self, rect):
     self._scroller.render(rect)
