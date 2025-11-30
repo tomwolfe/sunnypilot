@@ -27,6 +27,8 @@ ACCELERATION_DUE_TO_GRAVITY = 9.81  # m/s^2
 # sunnypilot trip data
 DEFAULT_TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
 TRIP_DATA_PATH_PARAM_KEY = "CustomTripDataPath"
+TRIP_DATA_RETENTION_COUNT_PARAM_KEY = "TripDataRetentionCount"
+DEFAULT_TRIP_DATA_RETENTION_COUNT = 50 # Keep last 50 trip files
 
 def get_trip_data_path():
   params = Params()

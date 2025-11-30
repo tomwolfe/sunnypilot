@@ -12,7 +12,7 @@ import threading
 
 from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
-from openpilot.common.constants import TRIP_DATA_PATH
+from openpilot.common.constants import TRIP_DATA_PATH, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
 
 
 class TripsLayout(Widget):
@@ -65,6 +65,36 @@ class TripsLayout(Widget):
     self.export_progress_bar = items[-1].action_item
     return items
 
+  def _cleanup_trip_data(self):
+    from openpilot.system.ui.lib.application import gui_app
+    try:
+      retention_count = int(self._params.get(TRIP_DATA_RETENTION_COUNT_PARAM_KEY, encoding='utf-8') or DEFAULT_TRIP_DATA_RETENTION_COUNT)
+    except (ValueError, TypeError):
+      retention_count = DEFAULT_TRIP_DATA_RETENTION_COUNT # Fallback to default if param is invalid
+
+    if not os.path.exists(TRIP_DATA_PATH):
+      return
+
+    all_trip_files = []
+    for filename in os.listdir(TRIP_DATA_PATH):
+      if filename.startswith("trip_") and filename.endswith(".json"):
+        filepath = os.path.join(TRIP_DATA_PATH, filename)
+        if os.path.isfile(filepath):
+          all_trip_files.append((filepath, os.path.getmtime(filepath)))
+
+    # Sort files by modification time, oldest first
+    all_trip_files.sort(key=lambda x: x[1])
+
+    files_to_delete = all_trip_files[:-retention_count] # Keep the newest 'retention_count' files
+
+    for filepath, _ in files_to_delete:
+      try:
+        os.remove(filepath)
+        print(f"Cleaned up old trip data file: {filepath}")
+      except OSError as e:
+        print(f"Error deleting file {filepath}: {e}")
+        gui_app.show_toast(tr(f"Error cleaning up old trip data: {os.path.basename(filepath)}"), "error")
+
   def _open_trip_stats(self):
     # Implement navigation to trip statistics screen
     from openpilot.system.ui.lib.application import gui_app
@@ -113,6 +143,9 @@ class TripsLayout(Widget):
         self._params.delete("ExportTripDataTrigger")
         self.export_progress_bar.update(100, tr("Export completed!"), "100%", True)
         gui_app.show_toast(tr(f"Trip data exported to {filename}"), "success")
+
+        self._cleanup_trip_data() # Call cleanup after successful export
+
 
         time.sleep(2)
         self.export_progress_bar.update(0, tr("Idle"), "", False)
