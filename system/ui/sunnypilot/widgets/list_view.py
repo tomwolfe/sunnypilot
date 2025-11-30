@@ -194,6 +194,16 @@ def option_item_sp(title: str | Callable[[], str], param: str,
                    enabled: bool | Callable[[], bool] = True,
                    icon: str = "", label_width: int = 350, value_map: dict[int, int] | None = None,
                    use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None) -> ListItemSP:
+  """
+  Create an option item with a control that allows numeric value adjustment.
+
+  Args:
+      param: The parameter key to store/retrieve the value
+      min_value: Minimum allowed value
+      max_value: Maximum allowed value
+      use_float_scaling: If True, value is divided by 100 when stored (e.g., 70 becomes 0.7)
+                        This is useful for parameters like UI scale percentages
+  """
   from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlSP
   action = OptionControlSP(
     param, min_value, max_value, value_change_step,

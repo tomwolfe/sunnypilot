@@ -17,6 +17,14 @@ CONTAINER_PADDING = 20
 
 
 class OptionControlSP(ItemAction):
+  """
+  A numeric option control widget with + and - buttons for incrementing/decrementing values.
+
+  The use_float_scaling parameter works as follows:
+  - When use_float_scaling=False (default): value stored directly as integer
+  - When use_float_scaling=True: value is divided by 100 before storage (e.g., 70 becomes 0.7)
+    This is useful for parameters that represent percentages or decimal values like UI scale
+  """
   def __init__(self, param: str, min_value: int, max_value: int,
                value_change_step: int = 1, enabled: bool | Callable[[], bool] = True,
                on_value_changed: Callable[[int], None] | None = None,

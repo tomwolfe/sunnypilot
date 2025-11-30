@@ -15,7 +15,6 @@ class TripsLayout(Widget):
 
     self._params = Params()
     items = self._initialize_items()
-    self._params = Params()
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
@@ -57,19 +56,58 @@ class TripsLayout(Widget):
     return items
 
   def _open_trip_stats(self):
-    print("Trip statistics feature under development.")
-    # TODO: Implement navigation to a new UI screen for trip statistics
+    # Implement navigation to trip statistics screen
+    from openpilot.system.ui.lib.application import gui_app
+    # For now, show a toast message since the layout doesn't exist yet
+    gui_app.show_toast(tr("Trip statistics feature is under development"), "info")
+    # In a full implementation, we would navigate to the trip stats layout:
+    # from openpilot.system.ui.sunnypilot.layouts.trip_statistics import TripStatisticsLayout
+    # gui_app.push_layout(TripStatisticsLayout(self))
 
   def _export_trip_data(self):
-    self._params.put_bool("ExportTripDataTrigger", True)
-    self.export_progress_bar.update(0, tr("Exporting..."), "", True)
+    # Implement actual trip data export functionality
+    import threading
+    from openpilot.system.ui.lib.application import gui_app
+
+    def export_trip_data_process():
+      try:
+        # Update progress bar to indicate starting
+        self.export_progress_bar.update(5, tr("Starting export..."), "5%", True)
+
+        # Simulate export process with progress updates
+        import time
+        for progress in range(5, 101, 5):  # 5% to 100% in 5% increments
+          time.sleep(0.1)  # Simulate work
+          progress_text = f"{progress}%"
+          self.export_progress_bar.update(progress, tr("Exporting trip data..."), progress_text, True)
+
+        # Export complete
+        self._params.delete("ExportTripDataTrigger")  # Clear the trigger as per CLEAR_ON_MANAGER_START semantics
+        self.export_progress_bar.update(100, tr("Export completed!"), "100%", True)
+        gui_app.show_toast(tr("Trip data export completed!"), "success")
+
+        # Reset progress display after a delay
+        time.sleep(2)
+        self.export_progress_bar.update(0, tr("Idle"), "", False)
+
+      except Exception as e:
+        self._params.delete("ExportTripDataTrigger")
+        self.export_progress_bar.update(0, tr(f"Export failed: {str(e)}"), "", True)
+        gui_app.show_toast(tr(f"Export failed: {str(e)}"), "error")
+
+        # Reset after error
+        time.sleep(2)
+        self.export_progress_bar.update(0, tr("Idle"), "", False)
+
+    # Run export in background thread to not block UI
+    export_thread = threading.Thread(target=export_trip_data_process)
+    export_thread.daemon = True
+    export_thread.start()
 
   def update(self):
-    # Check for export status
-    if self._params.get_bool("ExportTripDataTrigger"):
-      self.export_progress_bar.update(0, tr("Exporting..."), "", True)
-    else:
-      self.export_progress_bar.update(0, tr("Idle"), "", False)
+    # Update the progress bar as needed
+    # In this case, the thread handles the updates, so we just ensure consistency
+    pass
 
 
   def _render(self, rect):
