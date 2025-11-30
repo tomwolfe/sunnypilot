@@ -18,8 +18,7 @@ class VisualsLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-    from openpilot.system.ui.widgets.list_view import toggle_item_sp, option_item_sp
-    from openpilot.common.params import Params
+    from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, option_item_sp
     from openpilot.system.ui.lib.multilang import tr
 
     items = [
