@@ -171,10 +171,17 @@ jobs:
     - name: Run unit tests
       timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 999 }}
       run: |
-        ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && source selfdrive/test/setup_xvfb.sh && 
+        ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda &&
+                        # Ensure D-Bus service is available for system communication
+                        sudo mkdir -p /var/run/dbus &&
+                        sudo service dbus start &&
+                        # Ensure assets are available for UI - copy from source to expected location
+                        mkdir -p /tmp/openpilot/openpilot/selfdrive/assets &&
+                        cp -r /home/batman/openpilot/selfdrive/assets/* /tmp/openpilot/openpilot/selfdrive/assets/ 2>/dev/null || true &&
+                        source selfdrive/test/setup_xvfb.sh &&
                         # Pre-compile Python bytecode so each pytest worker doesn't need to
-                        $PYTEST --collect-only -m 'not slow' -qq && 
-                        MAX_EXAMPLES=1 $PYTEST -m 'not slow' && 
+                        $PYTEST --collect-only -m 'not slow' -qq &&
+                        MAX_EXAMPLES=1 $PYTEST -m 'not slow' &&
                         chmod -R 777 /tmp/comma_download_cache"
 
   process_replay:
@@ -199,7 +206,15 @@ jobs:
     - name: Run replay
       timeout-minutes: ${{ contains(runner.name, 'nsc') && (steps.dependency-cache.outputs.cache-hit == 'true') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 20 }}
       run: |
-                ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && selfdrive/test/process_replay/test_processes.py -j$(nproc) && 
+                ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda &&
+                                # Ensure D-Bus service is available for system communication
+                                sudo mkdir -p /var/run/dbus &&
+                                sudo service dbus start &&
+                                # Ensure assets are available for UI - copy from source to expected location
+                                mkdir -p /tmp/openpilot/openpilot/selfdrive/assets &&
+                                cp -r /home/batman/openpilot/selfdrive/assets/* /tmp/openpilot/openpilot/selfdrive/assets/ 2>/dev/null || true &&
+                                source selfdrive/test/setup_xvfb.sh &&
+                                selfdrive/test/process_replay/test_processes.py -j$(nproc) &&
                                       chmod -R 777 /tmp/comma_download_cache"
     - name: Print diff
       id: print-diff
@@ -254,6 +269,11 @@ jobs:
       - name: Create raylib UI Report
         run: >
           ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && PYTHONWARNINGS=ignore &&
+                          # Start D-Bus service for system communication
+                          sudo mkdir -p /var/run/dbus &&
+                          sudo service dbus start &&
+                          mkdir -p /tmp/openpilot/openpilot/selfdrive/assets &&
+                          cp -r /home/batman/openpilot/selfdrive/assets/* /tmp/openpilot/openpilot/selfdrive/assets/ 2>/dev/null || true &&
                           source selfdrive/test/setup_xvfb.sh &&
                           python3 selfdrive/ui/tests/test_ui/raylib_screenshots.py"
       - name: Upload Raylib UI Report
