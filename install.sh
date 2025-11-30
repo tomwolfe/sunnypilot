@@ -39,19 +39,47 @@ if [ -f /TICI ] || [ -f /EON ]; then
     # Ensure pip is available in the virtual environment
     if ! command -v pip &> /dev/null; then
       echo "pip not found in virtual environment, attempting to bootstrap..."
-      python3 -m ensurepip --upgrade
+      if python3 -m ensurepip --upgrade; then
+        echo "ensurepip completed successfully"
+      else
+        echo "ensurepip failed, attempting manual pip installation..."
+        # Fallback: download get-pip.py and install
+        if curl -s https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; then
+          python3 /tmp/get-pip.py
+          rm /tmp/get-pip.py
+          echo "pip installed via get-pip.py"
+        else
+          echo "ERROR: Could not install pip in the virtual environment"
+          echo "Manual intervention required. Try running: python3 -m ensurepip --upgrade"
+          exit 1
+        fi
+      fi
     fi
 
     # Install scipy first to avoid conflicts
-    echo "Installing scipy first..."
+    echo "Installing scipy first (this may take several minutes for compilation)..."
+    echo "  - If this step seems to hang, it's likely compiling scipy from source"
+    echo "  - This is normal behavior for ARM devices and may take 10-30 minutes"
     if pip install scipy; then
       echo "scipy installed successfully"
     else
-      echo "Failed to install scipy individually. This is unusual but will be handled by the full requirements install."
+      echo "Failed to install scipy individually, attempting source compilation..."
+      echo "  - This will compile scipy from source without binary packages"
+      echo "  - Expected duration: 20-45 minutes on ARM devices"
+      echo "  - This is the most reliable method for ARM architecture"
+      if pip install --no-binary scipy --force-reinstall scipy; then
+        echo "scipy source compilation completed successfully"
+      else
+        echo "ERROR: scipy installation failed completely."
+        echo "Please run fix_scipy_install.sh to attempt recovery."
+        exit 1
+      fi
     fi
 
     # Install all other dependencies from requirements.txt
     echo "Installing all other Python dependencies from requirements.txt..."
+    echo "  - This may take several minutes depending on network speed and package complexity"
+    echo "  - Some packages may require compilation on ARM devices"
     if pip install -r "$DIR/requirements.txt"; then
       echo "Python dependencies installed successfully"
     else
@@ -79,8 +107,8 @@ if [ -f /TICI ] || [ -f /EON ]; then
   # Install with uv as fallback (if available)
   if command -v uv &> /dev/null; then
     echo "Installing with uv..."
-    # Use the active virtual environment
-    uv sync --frozen --all-extras || echo "uv installation failed, continuing..."
+    # Use the active virtual environment with locked dependencies for reproducibility
+    uv sync --frozen --all-extras --locked || echo "uv installation failed, continuing..."
   fi
 
   # Run scons to build necessary components

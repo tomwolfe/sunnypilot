@@ -34,6 +34,35 @@ fi
 # Install or reinstall scipy with specific flags for ARM architecture
 echo "Attempting to install scipy..."
 
+# Function to check if system dependencies for scipy are available
+check_system_deps() {
+  echo "Checking for required system dependencies..."
+
+  # Check for gfortran
+  if ! command -v gfortran &> /dev/null; then
+    echo "WARNING: gfortran not found. scipy compilation may fail."
+    echo "Please run install.sh first to install system dependencies."
+    return 1
+  fi
+
+  # Check for libopenblas-dev (using dpkg on Debian-based systems like comma devices)
+  if ! dpkg -l | grep -q libopenblas-dev; then
+    echo "WARNING: libopenblas-dev not found. scipy compilation may fail."
+    echo "Please run install.sh first to install system dependencies."
+    return 1
+  fi
+
+  # Check for basic build tools
+  if ! command -v gcc &> /dev/null || ! command -v g++ &> /dev/null; then
+    echo "WARNING: gcc/g++ not found. scipy compilation may fail."
+    echo "Please run install.sh first to install system dependencies."
+    return 1
+  fi
+
+  echo "System dependencies check passed."
+  return 0
+}
+
 # Try installing scipy directly first
 if [ -n "$VIRTUAL_ENV" ]; then
   # If in virtual environment, install without --user flag
@@ -44,9 +73,18 @@ if [ -n "$VIRTUAL_ENV" ]; then
     if pip install --no-cache-dir --force-reinstall scipy; then
       echo "scipy installed successfully with no cache in virtual environment"
     else
-      echo "Regular install failed, trying with specific optimizations for ARM..."
-      # Install with specific flags that are known to work on ARM platforms
-      pip install --no-cache-dir --no-binary scipy --force-reinstall scipy
+      echo "Regular install failed, checking system dependencies before trying source compilation..."
+      if check_system_deps; then
+        echo "System dependencies verified. Attempting source compilation (this may take 20-45 minutes)..."
+        echo "  - This is normal behavior for ARM devices"
+        echo "  - Compiling scipy from source requires significant resources"
+        echo "  - Please be patient and do not interrupt the process"
+        # Install with specific flags that are known to work on ARM platforms
+        pip install --no-cache-dir --no-binary scipy --force-reinstall scipy
+      else
+        echo "System dependencies check failed. Please install system dependencies first."
+        exit 1
+      fi
     fi
   fi
 else
@@ -58,9 +96,18 @@ else
     if python3 -m pip install --user --no-cache-dir --force-reinstall scipy; then
       echo "scipy installed successfully with no cache"
     else
-      echo "Regular install failed, trying with specific optimizations for ARM..."
-      # Install with specific flags that are known to work on ARM platforms
-      python3 -m pip install --user --no-cache-dir --no-binary scipy --force-reinstall scipy
+      echo "Regular install failed, checking system dependencies before trying source compilation..."
+      if check_system_deps; then
+        echo "System dependencies verified. Attempting source compilation (this may take 20-45 minutes)..."
+        echo "  - This is normal behavior for ARM devices"
+        echo "  - Compiling scipy from source requires significant resources"
+        echo "  - Please be patient and do not interrupt the process"
+        # Install with specific flags that are known to work on ARM platforms
+        python3 -m pip install --user --no-cache-dir --no-binary scipy --force-reinstall scipy
+      else
+        echo "System dependencies check failed. Please install system dependencies first."
+        exit 1
+      fi
     fi
   fi
 fi
