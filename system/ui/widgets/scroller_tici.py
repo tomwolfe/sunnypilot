@@ -39,6 +39,11 @@ class Scroller(Widget):
     self._items.append(item)
     item.set_touch_valid_callback(self.scroll_panel.is_touch_valid)
 
+  def set_items(self, items: list[Widget]) -> None:
+    self._items.clear()
+    for item in items:
+      self.add_widget(item)
+
   def _render(self, _):
     # TODO: don't draw items that are not in the viewport
     visible_items = [item for item in self._items if item.is_visible]

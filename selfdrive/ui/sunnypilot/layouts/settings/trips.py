@@ -8,6 +8,7 @@ import json
 import os
 import time
 from datetime import datetime
+import threading
 
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
@@ -59,7 +60,6 @@ class TripsLayout(Widget):
         description=lambda: tr("Review detailed statistics about your recent trips."),
         callback=self._open_trip_stats
       ),
-      ),
     ]
     _export_btn = button_item(
       title=lambda: tr("Export Trip Data"),
@@ -74,7 +74,6 @@ class TripsLayout(Widget):
       )
     )
     self._export_trip_data_btn = _export_btn
-    ]
     self.export_progress_bar = items[-1].action_item
     return items
 

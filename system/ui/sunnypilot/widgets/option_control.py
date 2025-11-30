@@ -30,7 +30,9 @@ class OptionControlSP(ItemAction):
                on_value_changed: Callable[[int], None] | None = None,
                value_map: dict[int, int] | None = None,
                label_width: int = 350, # Changed default from LABEL_WIDTH to 350
-               use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None):
+               use_float_scaling: bool = False,
+               # Callback to format the displayed value. Takes the numeric value as input and returns a string.
+               label_callback: Callable[[int], str] | None = None):
 
     super().__init__(enabled=enabled)
     self.params = Params()
