@@ -166,13 +166,39 @@ PYTHON_CHECK_EOF
   if [ "$missing_packages" != "all_found" ] && [ "$missing_packages" != "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then
     if [ -n "$missing_packages" ]; then
       echo "Missing Python packages detected: $missing_packages"
-      echo "Installing Python dependencies from requirements.txt..."
-      # Use python3 -m pip to ensure we're installing for the same interpreter being checked
-      if python3 -m pip install -r "$DIR/requirements.txt"; then
-        echo "Python dependencies installed."
-      else
-        echo "ERROR: Failed to install Python dependencies from $DIR/requirements.txt"
-        exit 1 # Exit immediately on failure
+
+      # First install scipy separately if it's missing since it's commonly problematic
+      if [[ "$missing_packages" == *"scipy"* ]]; then
+        echo "Installing scipy separately (this may take a few minutes)..."
+        if python3 -m pip install --no-cache-dir --timeout=300 scipy; then
+          echo "scipy installed successfully."
+        else
+          echo "WARNING: Failed to install scipy, but continuing with other packages..."
+        fi
+      fi
+
+      # Install remaining packages
+      remaining_packages=$(echo "$missing_packages" | tr ',' '\n' | grep -v "^scipy$" | tr '\n' ',' | sed 's/,$//')
+      if [ -n "$remaining_packages" ] && [ "$remaining_packages" != "scipy" ]; then
+        echo "Installing remaining Python dependencies from requirements.txt..."
+        # Use python3 -m pip to ensure we're installing for the same interpreter being checked
+        if python3 -m pip install -r "$DIR/requirements.txt" --force-reinstall --no-deps $(echo "$remaining_packages" | tr ',' ' '); then
+          echo "Remaining dependencies installed."
+        else
+          echo "ERROR: Failed to install remaining Python dependencies from $DIR/requirements.txt"
+          exit 1 # Exit immediately on failure
+        fi
+      fi
+
+      # Verify that scipy is now available if it was installed separately
+      if [[ "$missing_packages" == *"scipy"* ]]; then
+        echo "Verifying scipy installation..."
+        if python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" 2>/dev/null; then
+          echo "scipy verification successful."
+        else
+          echo "ERROR: scipy was installed but is not importable"
+          exit 1
+        fi
       fi
     fi
   elif [ "$missing_packages" = "ERROR: requirements.txt not found at $DIR/requirements.txt" ]; then

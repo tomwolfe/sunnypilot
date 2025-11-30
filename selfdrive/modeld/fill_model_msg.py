@@ -1,11 +1,18 @@
 import os
 import capnp
 import numpy as np
-from scipy.signal import savgol_filter
 from typing import Optional
 from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 from openpilot.sunnypilot.models.helpers import plan_x_idxs_helper
+
+# Import scipy with fallback
+try:
+    from scipy.signal import savgol_filter
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    savgol_filter = None
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
@@ -22,20 +29,31 @@ def smooth_trajectory(data: Optional[np.ndarray]) -> np.ndarray:
   """
   Applies a Savitzky-Golay filter to smooth a 1D trajectory using parameters from ModelConstants.
   The filter needs window_length to be odd and at least polyorder + 2.
+  Falls back to returning the original data if scipy is not available.
   """
   window_length = ModelConstants.SMOOTH_WINDOW_LENGTH
   polyorder = ModelConstants.SMOOTH_POLYORDER
 
   # Check if data is valid and has sufficient length
-  if data is None or len(data) == 0 or len(data) < window_length:
+  if data is None or len(data) == 0:
       # Not enough data points to apply filter, return original
       return np.array([], dtype=np.float32) if data is None else np.asarray(data)
 
-  try:
-      result = savgol_filter(data, window_length, polyorder)
-      return np.asarray(result)
-  except Exception:
-      # If smoothing fails, return original data to maintain functionality
+  # Use scipy filter if available
+  if SCIPY_AVAILABLE:
+      if len(data) >= window_length:
+          try:
+              result = savgol_filter(data, window_length, polyorder)
+              return np.asarray(result)
+          except Exception:
+              # If smoothing fails, return original data to maintain functionality
+              return np.asarray(data)
+      else:
+          # Not enough data points for the window length
+          return np.asarray(data)
+  else:
+      # Return original data when scipy is not available
+      # This maintains functionality, albeit without smoothing
       return np.asarray(data if data is not None else [])
 
 
