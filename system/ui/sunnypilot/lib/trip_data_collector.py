@@ -2,6 +2,7 @@ import threading
 import time
 from datetime import datetime
 
+import cereal
 from cereal import messaging
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
@@ -70,12 +71,11 @@ class TripDataCollector:
     # A trip starts when not standstill and was previously standstill (or not active)
     # A trip ends when standstill and was previously not standstill (and active)
 
-    vin = self._params.get("CarParams", encoding='utf8') # CarParams is a bytes object, not a string
-    car_model = self._params.get("CarParams", encoding='utf8')
-    if vin:
+    vin_bytes = self._params.get("CarParams") # CarParams is a bytes object
+    if vin_bytes:
                     try:
-                        car_params = messaging.log_from_bytes(vin, messaging.log.Car.CarParams) # Assuming CarParams is defined in log.capnp
-                        self._vin = car_params.carVin
+                        car_params = cereal.CarParams.from_bytes(vin_bytes)
+                        self._vin = car_params.carVin.decode('utf8')
                         self._car_model = car_params.carFingerprint
                     except Exception as e: # Catch the exception
                         cloudlog.warning(f"Failed to parse CarParams for VIN/model: {e}") # Log warning

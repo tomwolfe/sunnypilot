@@ -15,7 +15,7 @@ from openpilot.system.ui.lib.multilang import tr
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
 
-from openpilot.common.constants import TRIP_DATA_PATH
+from openpilot.common.constants import get_trip_data_path
 
 
 class TripStatisticsLayout(Widget):
@@ -69,10 +69,10 @@ class TripStatisticsLayout(Widget):
   def _refresh_stats(self):
     gui_app.show_toast(tr("Refreshing trip statistics..."), "info")
     self.trip_data = []
-    if os.path.exists(TRIP_DATA_PATH):
-      for filename in os.listdir(TRIP_DATA_PATH):
+    if os.path.exists(get_trip_data_path()):
+      for filename in os.listdir(get_trip_data_path()):
         if filename.endswith(".json"):
-          filepath = os.path.join(TRIP_DATA_PATH, filename)
+          filepath = os.path.join(get_trip_data_path(), filename)
           try:
             with open(filepath, 'r') as f:
               trip = json.load(f)

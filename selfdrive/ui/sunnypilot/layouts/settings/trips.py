@@ -10,9 +10,11 @@ import time
 from datetime import datetime
 import threading
 
+from openpilot.common.swaglog import cloudlog
+
 from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
-from openpilot.common.constants import TRIP_DATA_PATH, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
+from openpilot.common.constants import get_trip_data_path, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
 
 from openpilot.selfdrive.ui.sunnypilot.lib.trip_data_collector import trip_data_collector
 
@@ -75,13 +77,13 @@ class TripsLayout(Widget):
     except (ValueError, TypeError):
       retention_count = DEFAULT_TRIP_DATA_RETENTION_COUNT # Fallback to default if param is invalid
 
-    if not os.path.exists(TRIP_DATA_PATH):
+    if not os.path.exists(get_trip_data_path()):
       return
 
     all_trip_files = []
-    for filename in os.listdir(TRIP_DATA_PATH):
+    for filename in os.listdir(get_trip_data_path()):
       if filename.startswith("trip_") and filename.endswith(".json"):
-        filepath = os.path.join(TRIP_DATA_PATH, filename)
+        filepath = os.path.join(get_trip_data_path(), filename)
         if os.path.isfile(filepath):
           all_trip_files.append((filepath, os.path.getmtime(filepath)))
 
@@ -95,7 +97,7 @@ class TripsLayout(Widget):
         os.remove(filepath)
         print(f"Cleaned up old trip data file: {filepath}")
       except OSError as e:
-        print(f"Error deleting file {filepath}: {e}")
+        cloudlog.error(f"Error deleting file {filepath}: {e}")
         gui_app.show_toast(tr(f"Error cleaning up old trip data: {os.path.basename(filepath)}"), "error")
 
   def _open_trip_stats(self):
@@ -120,7 +122,7 @@ class TripsLayout(Widget):
       try:
         self._export_trip_data_btn.action_item.set_enabled(False) # Disable button during export
         self.export_progress_bar.update(5, tr("Preparing export..."), "5%", True)
-        os.makedirs(TRIP_DATA_PATH, exist_ok=True)
+        os.makedirs(get_trip_data_path(), exist_ok=True)
 
         trip_data_from_collector = trip_data_collector.get_trip_data()
 
@@ -177,7 +179,7 @@ class TripsLayout(Widget):
 
         self.export_progress_bar.update(70, tr("Saving trip data..."), "70%", True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(TRIP_DATA_PATH, f"trip_{timestamp}.json")
+        filename = os.path.join(get_trip_data_path(), f"trip_{timestamp}.json")
         with open(filename, 'w') as f:
           json.dump(trip_data, f, indent=2)
 

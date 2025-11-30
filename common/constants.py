@@ -39,5 +39,5 @@ def get_trip_data_path():
     return custom_path
   return DEFAULT_TRIP_DATA_PATH
 
-TRIP_DATA_PATH = get_trip_data_path()
+
 
