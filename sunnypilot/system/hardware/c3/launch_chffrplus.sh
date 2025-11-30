@@ -92,6 +92,19 @@ function launch {
       return 1
     fi
 
+    # Check if running in a virtual environment
+    if [[ ! "$VIRTUAL_ENV" ]]; then
+      # Check if virtual environment exists and activate it if it does
+      VENV_PATH="$DIR/.venv"
+      if [ -f "$VENV_PATH/bin/activate" ]; then
+        echo "INFO: Virtual environment found at $VENV_PATH, activating..."
+        source "$VENV_PATH/bin/activate"
+        echo "INFO: Virtual environment activated"
+      else
+        echo "INFO: No virtual environment found at $VENV_PATH"
+      fi
+    fi
+
     # Save current directory and change to $DIR for operations
     local original_dir=$(pwd)
     cd $DIR
