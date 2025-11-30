@@ -25,14 +25,13 @@ class SteeringLayout(Widget):
       toggle_item_sp(
         title=lambda: tr("LKAS Toggle"),
         description=lambda: tr("Enable to turn on LKAS with a single tap on the gas pedal. Disable to use stock LKAS."),
-        param="LKASEnabled",
-        icon="icons/sunnypilot.png"
+        icon="openpilot/selfdrive/assets/icons/sunnypilot.png"
       ),
       toggle_item_sp(
         title=lambda: tr("Auto Lane Change"),
         description=lambda: tr("Enable to use sunnypilot's improved lane change assistant. No more need to hold blinker!"),
         param="AutoLaneChangeEnabled",
-        icon="icons/sunnypilot.png"
+        icon="openpilot/selfdrive/assets/icons/sunnypilot.png"
       ),
       button_item(
         title=lambda: tr("LKAS Start Delay"),

@@ -385,7 +385,7 @@ class ListItem(Widget):
 
   def set_icon(self, icon: str | None):
     self.icon = icon
-    self._icon_texture = gui_app.texture(os.path.join("icons", self.icon), ICON_SIZE, ICON_SIZE) if self.icon else None
+    self._icon_texture = gui_app.texture(self.icon, ICON_SIZE, ICON_SIZE) if self.icon else None
 
   def set_description(self, description: str | Callable[[], str] | None):
     self._description = description
