@@ -21,7 +21,7 @@ class OptionControlSP(ItemAction):
                value_change_step: int = 1, enabled: bool | Callable[[], bool] = True,
                on_value_changed: Callable[[int], None] | None = None,
                value_map: dict[int, int] | None = None,
-               label_width: int = LABEL_WIDTH,
+               label_width: int = 350, # Changed default from LABEL_WIDTH to 350
                use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None):
 
     super().__init__(enabled=enabled)

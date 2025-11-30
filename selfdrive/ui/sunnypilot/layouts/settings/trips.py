@@ -62,14 +62,14 @@ class TripsLayout(Widget):
 
   def _export_trip_data(self):
     self._params.put_bool("ExportTripDataTrigger", True)
-    self.export_progress_bar.update(0, tr("Exporting..."), True)
+    self.export_progress_bar.update(0, tr("Exporting..."), "", True)
 
   def update(self):
     # Check for export status
     if self._params.get_bool("ExportTripDataTrigger"):
-      self.export_progress_bar.update(0, tr("Exporting..."), True)
+      self.export_progress_bar.update(0, tr("Exporting..."), "", True)
     else:
-      self.export_progress_bar.update(0, tr("Idle"), False)
+      self.export_progress_bar.update(0, tr("Idle"), "", False)
 
 
   def _render(self, rect):

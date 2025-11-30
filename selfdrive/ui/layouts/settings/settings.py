@@ -143,6 +143,8 @@ class SettingsLayout(Widget):
     # rl.draw_rectangle_rounded(content_rect, 0.03, 30, PANEL_COLOR)
     panel = self._panels[self._current_panel]
     if panel.instance:
+      if hasattr(panel.instance, 'update'):
+        panel.instance.update()
       panel.instance.render(content_rect)
 
   def _handle_mouse_release(self, mouse_pos: MousePos) -> bool:
