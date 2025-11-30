@@ -10,35 +10,64 @@ if [ ! -f /TICI ] && [ ! -f /EON ]; then
   exit 1
 fi
 
-echo "Installing system dependencies for scipy..."
+# NOTE: This script expects system dependencies to already be installed
+# by the main install.sh script. Running this script separately may require
+# manually installing system dependencies first.
 
-# Update package list and install build dependencies
-sudo apt update
-sudo apt install -y python3-dev python3-numpy python3-setuptools python3-wheel python3-pip build-essential gfortran libopenblas-dev liblapack-dev libatlas-base-dev g++ pkg-config
+# Determine the correct pip to use based on whether a virtual environment is active
+if [ -n "$VIRTUAL_ENV" ]; then
+  echo "Virtual environment detected: $VIRTUAL_ENV"
+  PYTHON_CMD="python"
+  echo "Installing scipy in the active virtual environment..."
 
-# Upgrade pip to latest version
-python3 -m pip install --upgrade pip
+  # Upgrade pip in the virtual environment
+  pip install --upgrade pip
+else
+  echo "No virtual environment detected, installing for system user..."
+  PYTHON_CMD="python3"
+  echo "Using --user flag for system-wide user installation..."
+
+  # Upgrade pip for user
+  python3 -m pip install --upgrade pip
+fi
 
 # Install or reinstall scipy with specific flags for ARM architecture
 echo "Attempting to install scipy..."
 
 # Try installing scipy directly first
-if python3 -m pip install --user --upgrade --force-reinstall scipy; then
-  echo "scipy installed successfully with direct install"
-else
-  echo "Direct scipy install failed, trying with no cache..."
-  if python3 -m pip install --user --no-cache-dir --force-reinstall scipy; then
-    echo "scipy installed successfully with no cache"
+if [ -n "$VIRTUAL_ENV" ]; then
+  # If in virtual environment, install without --user flag
+  if pip install --upgrade --force-reinstall scipy; then
+    echo "scipy installed successfully in virtual environment"
   else
-    echo "Regular install failed, trying with specific optimizations for ARM..."
-    # Install with specific flags that are known to work on ARM platforms
-    python3 -m pip install --user --no-cache-dir --no-binary scipy --force-reinstall scipy
+    echo "Direct scipy install failed in virtual environment, trying with no cache..."
+    if pip install --no-cache-dir --force-reinstall scipy; then
+      echo "scipy installed successfully with no cache in virtual environment"
+    else
+      echo "Regular install failed, trying with specific optimizations for ARM..."
+      # Install with specific flags that are known to work on ARM platforms
+      pip install --no-cache-dir --no-binary scipy --force-reinstall scipy
+    fi
+  fi
+else
+  # If not in virtual environment, use --user flag
+  if python3 -m pip install --user --upgrade --force-reinstall scipy; then
+    echo "scipy installed successfully with direct install"
+  else
+    echo "Direct scipy install failed, trying with no cache..."
+    if python3 -m pip install --user --no-cache-dir --force-reinstall scipy; then
+      echo "scipy installed successfully with no cache"
+    else
+      echo "Regular install failed, trying with specific optimizations for ARM..."
+      # Install with specific flags that are known to work on ARM platforms
+      python3 -m pip install --user --no-cache-dir --no-binary scipy --force-reinstall scipy
+    fi
   fi
 fi
 
 # Verify installation
 echo "Verifying scipy installation..."
-if python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')"; then
+if $PYTHON_CMD -c "import scipy; print(f'scipy version: {scipy.__version__}')"; then
   echo "scipy installation verified successfully!"
 else
   echo "scipy installation failed or not accessible"
