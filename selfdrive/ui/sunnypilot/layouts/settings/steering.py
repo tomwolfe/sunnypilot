@@ -19,7 +19,6 @@ class SteeringLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.sunnypilot.widgets.list_view import button_item, toggle_item_sp
-    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     from openpilot.system.ui.lib.multilang import tr
 
     items = [
@@ -45,6 +44,7 @@ class SteeringLayout(Widget):
     return items
 
   def _set_lkas_start_delay(self):
+    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     def on_callback(result, value):
       if result and value.isdigit():
         self._params.put("LKASStartDelay", str(int(value)))

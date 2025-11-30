@@ -19,7 +19,6 @@ class CruiseLayout(Widget):
 
   def _initialize_items(self):
     from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp, button_item
-    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     from openpilot.system.ui.lib.multilang import tr
 
     items = [
@@ -45,11 +44,11 @@ class CruiseLayout(Widget):
     return items
 
   def _set_cruise_speed_offset(self):
+    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     def on_callback(result, value):
       if result and value.lstrip('-').isdigit():
         self._params.put("CruiseSpeedLimitOffset", str(int(value)))
 
-    from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
     dialog = InputDialogSP(
       title="Cruise Speed Limit Offset",
       sub_title="Enter offset in mph (-25 to 25):",
