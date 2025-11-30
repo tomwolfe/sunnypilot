@@ -203,6 +203,8 @@ def option_item_sp(title: str | Callable[[], str], param: str,
       max_value: Maximum allowed value
       use_float_scaling: If True, value is divided by 100 when stored (e.g., 70 becomes 0.7)
                         This is useful for parameters like UI scale percentages
+      label_callback: A callback function that takes the current integer value and returns a
+                      string to be displayed as the label for the option control.
   """
   from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlSP
   action = OptionControlSP(

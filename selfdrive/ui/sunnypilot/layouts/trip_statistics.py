@@ -82,8 +82,8 @@ class TripStatisticsLayout(Widget):
     # Sort trips by start time, newest first
     self.trip_data.sort(key=lambda x: datetime.fromisoformat(x['start_time']), reverse=True)
     
-    # Re-initialize scroller to display new items
-    self._scroller = Scroller(self._initialize_items(), line_separator=True, spacing=0)
+    # Update scroller items to display new data
+    self._scroller.set_items(self._initialize_items()) # Assuming Scroller has a set_items method
     gui_app.show_toast(tr(f"Loaded {len(self.trip_data)} trips."), "success")
 
   def _render(self, rect: rl.Rectangle):

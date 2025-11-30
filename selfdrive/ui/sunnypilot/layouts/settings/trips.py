@@ -13,7 +13,17 @@ from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 
-TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
+DEFAULT_TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
+TRIP_DATA_PATH_PARAM_KEY = "CustomTripDataPath"
+
+def get_trip_data_path():
+  params = Params()
+  custom_path = params.get(TRIP_DATA_PATH_PARAM_KEY, encoding='utf-8')
+  if custom_path and os.path.isdir(custom_path): # Only use custom path if it exists and is a directory
+    return custom_path
+  return DEFAULT_TRIP_DATA_PATH
+
+TRIP_DATA_PATH = get_trip_data_path()
 
 
 class TripsLayout(Widget):
@@ -49,15 +59,21 @@ class TripsLayout(Widget):
         description=lambda: tr("Review detailed statistics about your recent trips."),
         callback=self._open_trip_stats
       ),
-      self._export_trip_data_btn = button_item(
-        title=lambda: tr("Export Trip Data"),
-        value=lambda: tr("EXPORT"),
-        description=lambda: tr("Export trip data for analysis or sharing."),
-        callback=self._export_trip_data
       ),
+    ]
+    _export_btn = button_item(
+      title=lambda: tr("Export Trip Data"),
+      value=lambda: tr("EXPORT"),
+      description=lambda: tr("Export trip data for analysis or sharing."),
+      callback=self._export_trip_data
+    )
+    items.append(_export_btn)
+    items.append(
       progress_item(
         title=lambda: tr("Trip Data Export Status")
-      ),
+      )
+    )
+    self._export_trip_data_btn = _export_btn
     ]
     self.export_progress_bar = items[-1].action_item
     return items
@@ -116,7 +132,6 @@ class TripsLayout(Widget):
         self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
 
       except Exception as e:
-        self._params.delete("ExportTripDataTrigger")
         self.export_progress_bar.update(0, tr(f"Export failed: {str(e)}"), "", False) # Don't keep progress if failed
         gui_app.show_toast(tr(f"Export failed: {str(e)}"), "error")
 
