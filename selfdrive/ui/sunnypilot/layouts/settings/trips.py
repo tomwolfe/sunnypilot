@@ -10,11 +10,11 @@ import time
 from datetime import datetime
 import threading
 
-from cereal import messaging, car
-
 from openpilot.common.threading_util import start_background_task
 from openpilot.common.params import Params
 from openpilot.common.constants import TRIP_DATA_PATH, TRIP_DATA_RETENTION_COUNT_PARAM_KEY, DEFAULT_TRIP_DATA_RETENTION_COUNT
+
+from openpilot.selfdrive.ui.sunnypilot.lib.trip_data_collector import trip_data_collector
 
 
 class TripsLayout(Widget):
@@ -122,33 +122,44 @@ class TripsLayout(Widget):
         self.export_progress_bar.update(5, tr("Preparing export..."), "5%", True)
         os.makedirs(TRIP_DATA_PATH, exist_ok=True)
 
-        # Simulate trip data generation
-        start_time = datetime.now()
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        distance_meters = round(duration * 20 / 3.6, 2) # Assume average speed 20 km/h
-        average_speed_kph = round(distance_meters / duration * 3.6, 2) if duration > 0 else 0
-        fuel_consumed_liters = round(distance_meters / 10000, 2) # Assume 10L/100km
+        trip_data_from_collector = trip_data_collector.get_trip_data()
 
-        route_name = self._params.get("CurrentRoute", encoding='utf8')
+        if trip_data_from_collector is None or trip_data_from_collector.get("is_active"):
+          gui_app.show_toast(tr("No completed trip data available to export."), "warning")
+          self._export_trip_data_btn.action_item.set_enabled(True)
+          self.export_progress_bar.update(0, tr("Idle"), "", False)
+          if self._export_lock.locked():
+            self._export_lock.release()
+          return
 
-        vin = "N/A"
-        car_model = "N/A"
-        if car_params_bytes := self._params.get("CarParams"):
-          try:
-            car_params = messaging.log_from_bytes(car_params_bytes, car.CarParams)
-            vin = car_params.carVin
-            car_model = car_params.carFingerprint
-          except Exception as e:
-            print(f"Error parsing CarParams: {e}")
+        start_time = trip_data_from_collector["start_time"]
+        end_time = trip_data_from_collector["end_time"]
+        duration = trip_data_from_collector["duration_seconds"]
+        distance_meters = trip_data_from_collector["distance_meters"]
+        average_speed_kph = trip_data_from_collector["average_speed_kph"]
+        fuel_consumed_percentage = trip_data_from_collector["fuel_consumed_percentage"]
+        route_geojson = trip_data_from_collector["route_geojson"]
+        vin = trip_data_from_collector["vin"]
+        car_model = trip_data_from_collector["car_model"]
+
+        # Assume 50L tank capacity for converting percentage to liters if a more accurate value isn't available
+        # This is an assumption, a more robust solution would be to get this from car params or user input.
+        tank_capacity_liters = 50.0 
+        fuel_consumed_liters = round(tank_capacity_liters * (fuel_consumed_percentage / 100.0), 2)
+
+        route_name = self._params.get("CurrentRoute", encoding='utf8') # This might still be useful
+
+
 
         trip_data = {
-          "start_time": start_time.isoformat(),
-          "end_time": end_time.isoformat(),
+          "start_time": start_time,
+          "end_time": end_time,
           "duration_seconds": round(duration, 2),
           "distance_meters": distance_meters,
           "average_speed_kph": average_speed_kph,
           "fuel_consumed_liters": fuel_consumed_liters,
+          "fuel_consumed_percentage": fuel_consumed_percentage,
+          "route_geojson": route_geojson,
           "route_name": route_name if route_name else "N/A",
           "vin": vin,
           "car_model": car_model
@@ -160,7 +171,7 @@ class TripsLayout(Widget):
         with open(filename, 'w') as f:
           json.dump(trip_data, f, indent=2)
 
-        self._params.delete("ExportTripDataTrigger")
+
         self.export_progress_bar.update(100, tr("Export completed!"), "100%", True)
         gui_app.show_toast(tr(f"Trip data exported to {filename}"), "success")
 
