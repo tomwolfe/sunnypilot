@@ -15,10 +15,12 @@ class TripsLayout(Widget):
 
     self._params = Params()
     items = self._initialize_items()
+    self._params = Params()
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-    from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item
+    from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item, progress_item
+    from openpilot.system.ui.sunnypilot.widgets.progress_bar import ProgressBarAction
     from openpilot.common.params import Params
     from openpilot.system.ui.lib.multilang import tr
 
@@ -41,22 +43,34 @@ class TripsLayout(Widget):
         description=lambda: tr("Review detailed statistics about your recent trips."),
         callback=self._open_trip_stats
       ),
-      button_item(
+      self._export_trip_data_btn = button_item(
         title=lambda: tr("Export Trip Data"),
         value=lambda: tr("EXPORT"),
         description=lambda: tr("Export trip data for analysis or sharing."),
         callback=self._export_trip_data
       ),
+      progress_item(
+        title=lambda: tr("Trip Data Export Status")
+      ),
     ]
+    self.export_progress_bar = items[-1].action_item
     return items
 
   def _open_trip_stats(self):
-    # This would open trip statistics
-    pass
+    print("Trip statistics feature under development.")
+    # TODO: Implement navigation to a new UI screen for trip statistics
 
   def _export_trip_data(self):
-    # This would export trip data
-    pass
+    self._params.put_bool("ExportTripDataTrigger", True)
+    self.export_progress_bar.update(0, tr("Exporting..."), True)
+
+  def update(self):
+    # Check for export status
+    if self._params.get_bool("ExportTripDataTrigger"):
+      self.export_progress_bar.update(0, tr("Exporting..."), True)
+    else:
+      self.export_progress_bar.update(0, tr("Idle"), False)
+
 
   def _render(self, rect):
     self._scroller.render(rect)

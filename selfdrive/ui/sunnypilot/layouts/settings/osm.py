@@ -52,7 +52,7 @@ class OSMLayout(Widget):
 
   def _update_map_data(self):
     # This would be connected to a map update routine
-    self._params.put("LastMapUpdateRequest", "1")
+    self._params.put_bool("OsmDbUpdatesCheck", True)
 
   def _render(self, rect):
     self._scroller.render(rect)

@@ -7,6 +7,8 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+from selfdrive.ui.sunnypilot.layouts.settings.steering_lag_calibration import SteeringLagCalibrationLayout
+from selfdrive.ui.sunnypilot.layouts.settings.vehicle_profile import VehicleProfileLayout
 
 
 class VehicleLayout(Widget):
@@ -51,12 +53,10 @@ class VehicleLayout(Widget):
     return items
 
   def _calibrate_vehicle(self):
-    # This would start vehicle calibration
-    pass
+    gui_app.push_layout(SteeringLagCalibrationLayout(self))
 
   def _manage_vehicle_profile(self):
-    # This would open vehicle profile management
-    pass
+    gui_app.push_layout(VehicleProfileLayout(self))
 
   def _render(self, rect):
     self._scroller.render(rect)
