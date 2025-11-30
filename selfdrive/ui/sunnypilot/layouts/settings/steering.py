@@ -34,7 +34,7 @@ class SteeringLayout(Widget):
       ),
       button_item(
         title=lambda: tr("LKAS Start Delay"),
-        value=lambda: str(int(self._params.get("LKASStartDelay", encoding="utf-8"))),
+        value=lambda: str(int(self._params.get("LKASStartDelay"))),
         description=lambda: tr("Set the delay in seconds before LKAS engages after a tap on the gas pedal."),
         callback=self._set_lkas_start_delay
       ),
@@ -50,7 +50,7 @@ class SteeringLayout(Widget):
     dialog = InputDialogSP(
       title="LKAS Start Delay",
       sub_title="Enter delay in seconds (0-10):",
-      current_text=self._params.get("LKASStartDelay", encoding="utf-8") or "2",
+      current_text=self._params.get("LKASStartDelay") or "2",
       callback=on_callback,
       min_text_size=0
     )
