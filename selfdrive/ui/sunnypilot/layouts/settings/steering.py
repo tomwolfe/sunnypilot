@@ -34,7 +34,7 @@ class SteeringLayout(Widget):
       ),
       button_item(
         title=lambda: tr("LKAS Start Delay"),
-        value=lambda: str(int(self._params.get("LKASStartDelay"))),
+        value=lambda: str(int(self._params.get("LKASStartDelay") or "2")),
         description=lambda: tr("Set the delay in seconds before LKAS engages after a tap on the gas pedal."),
         callback=self._set_lkas_start_delay
       ),
