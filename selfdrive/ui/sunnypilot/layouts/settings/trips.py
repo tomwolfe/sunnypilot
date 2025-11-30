@@ -142,10 +142,20 @@ class TripsLayout(Widget):
         vin = trip_data_from_collector["vin"]
         car_model = trip_data_from_collector["car_model"]
 
-        # Assume 50L tank capacity for converting percentage to liters if a more accurate value isn't available
-        # This is an assumption, a more robust solution would be to get this from car params or user input.
-        tank_capacity_liters = 50.0 
-        fuel_consumed_liters = round(tank_capacity_liters * (fuel_consumed_percentage / 100.0), 2)
+        # Get fuel tank capacity from parameter, with fallback to default if not set
+        try:
+          tank_capacity_param = self._params.get(FUEL_TANK_CAPACITY_PARAM_KEY, encoding='utf-8')
+          if tank_capacity_param:
+            tank_capacity_liters = float(tank_capacity_param)
+          else:
+            tank_capacity_liters = DEFAULT_FUEL_TANK_CAPACITY
+        except (ValueError, TypeError):
+          tank_capacity_liters = DEFAULT_FUEL_TANK_CAPACITY # Fallback to default if param value is invalid
+        # If fuel consumption percentage is -1, it means it couldn't be calculated
+        if fuel_consumed_percentage == -1:
+          fuel_consumed_liters = -1  # Use -1 to indicate unknown fuel consumption
+        else:
+          fuel_consumed_liters = round(tank_capacity_liters * (fuel_consumed_percentage / 100.0), 2)
 
         route_name = self._params.get("CurrentRoute", encoding='utf8') # This might still be useful
 

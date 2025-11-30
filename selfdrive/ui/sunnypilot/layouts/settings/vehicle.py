@@ -7,6 +7,7 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.lib.application import gui_app
 from selfdrive.ui.sunnypilot.layouts.settings.steering_lag_calibration import SteeringLagCalibrationLayout
 from selfdrive.ui.sunnypilot.layouts.settings.vehicle_profile import VehicleProfileLayout
 
@@ -20,8 +21,9 @@ class VehicleLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-    from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item
+    from openpilot.system.ui.widgets.list_view import toggle_item_sp, button_item, option_item_sp
     from openpilot.common.params import Params
+    from openpilot.common.constants import FUEL_TANK_CAPACITY_PARAM_KEY, DEFAULT_FUEL_TANK_CAPACITY
     from openpilot.system.ui.lib.multilang import tr
 
     items = [
@@ -36,6 +38,15 @@ class VehicleLayout(Widget):
         description=lambda: tr("Enable advanced torque vectoring for better cornering and stability."),
         param="TorqueVectoring",
         icon="icons/sunnypilot.png"
+      ),
+      option_item_sp(
+        title=lambda: tr("Fuel Tank Capacity"),
+        param=FUEL_TANK_CAPACITY_PARAM_KEY,
+        min_value=10,
+        max_value=200,
+        description=lambda: tr("Set your vehicle's fuel tank capacity in liters (default: 50L)."),
+        value_change_step=5,
+        icon="icons/settings.png"
       ),
       button_item(
         title=lambda: tr("Calibrate Vehicle"),

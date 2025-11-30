@@ -43,7 +43,12 @@ class TripStatisticsLayout(Widget):
         start_time_str = datetime.fromisoformat(trip["start_time"]).strftime("%Y-%m-%d %H:%M")
         end_time_str = datetime.fromisoformat(trip["end_time"]).strftime("%H:%M")
         title = f"{start_time_str} - {end_time_str}"
-        description = f"Dist: {trip['distance_meters']/1000:.1f} km, Avg Speed: {trip['average_speed_kph']:.1f} km/h, Fuel: {trip['fuel_consumed_liters']:.1f} L"
+        # Handle case where fuel consumption wasn't calculated (value -1 indicates unknown)
+        if trip['fuel_consumed_percentage'] == -1:
+          fuel_info = "Fuel: N/A"
+        else:
+          fuel_info = f"Fuel: {trip['fuel_consumed_liters']:.1f} L"
+        description = f"Dist: {trip['distance_meters']/1000:.1f} km, Avg Speed: {trip['average_speed_kph']:.1f} km/h, {fuel_info}"
         items.append(
           ListItem(
             title=lambda: tr(title),

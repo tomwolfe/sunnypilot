@@ -85,7 +85,12 @@ class TripDataCollector:
       with self._lock:
         self._is_trip_active = True
         self._trip_start_time = current_time
-        self._start_fuel_level = cs.fuelGauge
+        # Validate fuelGauge is in valid range (0.0-1.0)
+        if 0.0 <= cs.fuelGauge <= 1.0:
+          self._start_fuel_level = cs.fuelGauge
+        else:
+          print(f"Invalid fuelGauge value: {cs.fuelGauge}, using None")
+          self._start_fuel_level = None
         print(f"Trip started at {self._trip_start_time}")
 
     elif cs.standstill and self._is_trip_active:
@@ -93,7 +98,12 @@ class TripDataCollector:
       with self._lock:
         self._is_trip_active = False
         self._trip_end_time = current_time
-        self._end_fuel_level = cs.fuelGauge
+        # Validate fuelGauge is in valid range (0.0-1.0)
+        if 0.0 <= cs.fuelGauge <= 1.0:
+          self._end_fuel_level = cs.fuelGauge
+        else:
+          print(f"Invalid fuelGauge value: {cs.fuelGauge}, using None")
+          self._end_fuel_level = None
         print(f"Trip ended at {self._trip_end_time}")
 
     if self._is_trip_active:
@@ -138,6 +148,9 @@ class TripDataCollector:
       fuel_consumed_percent = 0
       if self._start_fuel_level is not None and self._end_fuel_level is not None:
         fuel_consumed_percent = max(0, self._start_fuel_level - self._end_fuel_level) * 100 # In percentage points
+      # If fuel levels are not available, set to -1 to indicate unknown fuel consumption
+      elif self._start_fuel_level is None or self._end_fuel_level is None:
+        fuel_consumed_percent = -1  # Indicates fuel consumption could not be calculated
 
       route_geojson = None
       if len(self._route_points) > 1:

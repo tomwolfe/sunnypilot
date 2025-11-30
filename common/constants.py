@@ -29,6 +29,8 @@ DEFAULT_TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
 TRIP_DATA_PATH_PARAM_KEY = "CustomTripDataPath"
 TRIP_DATA_RETENTION_COUNT_PARAM_KEY = "TripDataRetentionCount"
 DEFAULT_TRIP_DATA_RETENTION_COUNT = 50 # Keep last 50 trip files
+FUEL_TANK_CAPACITY_PARAM_KEY = "FuelTankCapacity"
+DEFAULT_FUEL_TANK_CAPACITY = 50.0  # Default to 50L for backwards compatibility
 
 def get_trip_data_path():
   params = Params()
