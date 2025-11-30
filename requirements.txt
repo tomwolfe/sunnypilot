@@ -9,7 +9,7 @@ codespell
 crcmod
 Cython
 dbus-next
-dearpygui>=2.1.0
+#dearpygui>=2.1.0
 dictdiffer
 future-fstrings
 hypothesis ==6.47.*
