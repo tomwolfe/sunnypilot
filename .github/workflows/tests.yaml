@@ -201,7 +201,8 @@ jobs:
       timeout-minutes: ${{ contains(runner.name, 'nsc') && (steps.dependency-cache.outputs.cache-hit == 'true') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 20 }}
       run: |
                 ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && selfdrive/test/process_replay/test_processes.py -j$(nproc) && 
-                                      chmod -R 777 /tmp/comma_download_cache"    - name: Print diff
+                                      chmod -R 777 /tmp/comma_download_cache"
+    - name: Print diff
       id: print-diff
       if: always()
       run: cat selfdrive/test/process_replay/diff.txt
