@@ -14,7 +14,7 @@ if [ -f /TICI ] || [ -f /EON ]; then
   # Install system dependencies for scipy
   echo "Installing system build dependencies for scipy..."
   sudo apt update
-  sudo apt install -y python3-dev python3-numpy python3-setuptools python3-wheel python3-pip build-essential gfortran libopenblas-dev liblapack-dev
+  sudo apt install -y python3-dev python3-numpy python3-setuptools python3-wheel python3-pip build-essential gfortran libopenblas-dev liblapack-dev libatlas-base-dev g++
   
   # Install Python dependencies
   echo "Installing Python dependencies..."
@@ -25,12 +25,24 @@ if [ -f /TICI ] || [ -f /EON ]; then
     else
       PYTHON_CMD=python
     fi
-    
-    # Install dependencies from requirements.txt
-    if $PYTHON_CMD -m pip install -r "$DIR/requirements.txt" --user; then
-      echo "Python dependencies installed successfully"
+
+    # Install dependencies from requirements.txt with specific scipy handling
+    echo "Installing scipy first..."
+    if $PYTHON_CMD -m pip install scipy --user; then
+      echo "scipy installed successfully"
     else
-      echo "Warning: Failed to install some Python dependencies, continuing anyway..."
+      echo "Failed to install scipy individually, trying requirements.txt..."
+      if $PYTHON_CMD -m pip install -r "$DIR/requirements.txt" --user; then
+        echo "Python dependencies installed successfully"
+      else
+        echo "Warning: Failed to install Python dependencies, continuing anyway..."
+      fi
+    fi
+
+    # Install remaining requirements if scipy was installed individually
+    if ! $PYTHON_CMD -c "import scipy" 2>/dev/null; then
+      echo "scipy still not available, installing all requirements again..."
+      $PYTHON_CMD -m pip install -r "$DIR/requirements.txt" --user
     fi
   else
     echo "No requirements.txt found, skipping dependency installation"
