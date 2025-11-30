@@ -18,10 +18,48 @@ class SteeringLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-    items = [
+    from openpilot.system.ui.widgets.list_view import button_item, toggle_item_sp
+    from openpilot.system.ui.widgets.input_dialog import InputDialogSP
+    from openpilot.common.params import Params
+    from openpilot.system.ui.lib.application import gui_app
+    from openpilot.system.ui.lib.multilang import tr
+    from openpilot.system.ui.widgets.list_view import ListItem
 
+    items = [
+      toggle_item_sp(
+        title=lambda: tr("LKAS Toggle"),
+        description=lambda: tr("Enable to turn on LKAS with a single tap on the gas pedal. Disable to use stock LKAS."),
+        param="LKASEnabled",
+        icon="icons/sunnypilot.png"
+      ),
+      toggle_item_sp(
+        title=lambda: tr("Auto Lane Change"),
+        description=lambda: tr("Enable to use sunnypilot's improved lane change assistant. No more need to hold blinker!"),
+        param="AutoLaneChangeEnabled",
+        icon="icons/sunnypilot.png"
+      ),
+      button_item(
+        title=lambda: tr("LKAS Start Delay"),
+        value=lambda: str(int(self._params.get("LKASStartDelay", encoding="utf-8"))),
+        description=lambda: tr("Set the delay in seconds before LKAS engages after a tap on the gas pedal."),
+        callback=self._set_lkas_start_delay
+      ),
     ]
     return items
+
+  def _set_lkas_start_delay(self):
+    def on_callback(result, value):
+      if result and value.isdigit():
+        self._params.put("LKASStartDelay", str(int(value)))
+
+    dialog = InputDialogSP(
+      title="LKAS Start Delay",
+      sub_title="Enter delay in seconds (0-10):",
+      current_text=self._params.get("LKASStartDelay", encoding="utf-8") or "2",
+      callback=on_callback,
+      min_text_size=0
+    )
+    dialog.show()
 
   def _render(self, rect):
     self._scroller.render(rect)
