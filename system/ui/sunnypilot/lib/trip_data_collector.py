@@ -149,6 +149,9 @@ class TripDataCollector:
 
       fuel_consumed_percent = 0
       if self._start_fuel_level is not None and self._end_fuel_level is not None:
+        # NOTE: This calculation assumes a linear fuel gauge, which may not be accurate in real-world scenarios.
+        # Real-world fuel gauges are often non-linear, especially at lower levels.
+        # This metric should be considered an estimate.
         fuel_consumed_percent = max(0, self._start_fuel_level - self._end_fuel_level) * 100 # In percentage points
       # If fuel levels are not available, set to -1 to indicate unknown fuel consumption
       elif self._start_fuel_level is None or self._end_fuel_level is None:
