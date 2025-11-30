@@ -9,7 +9,7 @@ from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
 
 
-class TripsLayout(Widget):
+class VehicleLayout(Widget):
   def __init__(self):
     super().__init__()
 
@@ -24,38 +24,38 @@ class TripsLayout(Widget):
 
     items = [
       toggle_item_sp(
-        title=lambda: tr("Trip Logging"),
-        description=lambda: tr("Enable to record trip data including route, speed, and driving metrics."),
-        param="TripLogging",
+        title=lambda: tr("Custom Vehicle Model"),
+        description=lambda: tr("Enable to use custom vehicle model parameters for improved control."),
+        param="CustomVehicleModel",
         icon="icons/sunnypilot.png"
       ),
       toggle_item_sp(
-        title=lambda: tr("Fuel Efficiency Tracking"),
-        description=lambda: tr("Track fuel efficiency and environmental impact metrics for your trips."),
-        param="FuelEfficiencyTracking",
+        title=lambda: tr("Torque Vectoring"),
+        description=lambda: tr("Enable advanced torque vectoring for better cornering and stability."),
+        param="TorqueVectoring",
         icon="icons/sunnypilot.png"
       ),
       button_item(
-        title=lambda: tr("View Trip Statistics"),
-        value=lambda: tr("OPEN"),
-        description=lambda: tr("Review detailed statistics about your recent trips."),
-        callback=self._open_trip_stats
+        title=lambda: tr("Calibrate Vehicle"),
+        value=lambda: tr("CALIBRATE"),
+        description=lambda: tr("Run custom vehicle calibration procedure."),
+        callback=self._calibrate_vehicle
       ),
       button_item(
-        title=lambda: tr("Export Trip Data"),
-        value=lambda: tr("EXPORT"),
-        description=lambda: tr("Export trip data for analysis or sharing."),
-        callback=self._export_trip_data
+        title=lambda: tr("Vehicle Profile"),
+        value=lambda: tr("MANAGE"),
+        description=lambda: tr("Manage custom vehicle profile settings."),
+        callback=self._manage_vehicle_profile
       ),
     ]
     return items
 
-  def _open_trip_stats(self):
-    # This would open trip statistics
+  def _calibrate_vehicle(self):
+    # This would start vehicle calibration
     pass
 
-  def _export_trip_data(self):
-    # This would export trip data
+  def _manage_vehicle_profile(self):
+    # This would open vehicle profile management
     pass
 
   def _render(self, rect):

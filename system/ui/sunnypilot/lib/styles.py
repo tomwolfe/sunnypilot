@@ -78,5 +78,4 @@ class DefaultStyleSP(Base):
   BLUE = rl.Color(0, 134, 233, 255)
   YELLOW = rl.Color(255, 213, 0, 255)
 
-
 style = DefaultStyleSP

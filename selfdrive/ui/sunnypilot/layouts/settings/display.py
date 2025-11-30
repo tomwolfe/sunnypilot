@@ -18,8 +18,41 @@ class DisplayLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-    items = [
+    from openpilot.system.ui.widgets.list_view import toggle_item_sp, option_item_sp
+    from openpilot.common.params import Params
+    from openpilot.system.ui.lib.multilang import tr
 
+    items = [
+      toggle_item_sp(
+        title=lambda: tr("Display Always On"),
+        description=lambda: tr("Keep the display on at all times while the car is running."),
+        param="DisplayAlwaysOn",
+        icon="icons/sunnypilot.png"
+      ),
+      toggle_item_sp(
+        title=lambda: tr("Auto-Brightness"),
+        description=lambda: tr("Automatically adjust screen brightness based on ambient light conditions."),
+        param="AutoBrightness",
+        icon="icons/sunnypilot.png"
+      ),
+      option_item_sp(
+        title=lambda: tr("Display Timeout"),
+        param="DisplayTimeout",
+        min_value=5,
+        max_value=60,
+        description=lambda: tr("Set the timeout in seconds before the display turns off with Auto-Brightness disabled."),
+        value_change_step=10,
+        icon="icons/settings.png"
+      ),
+      option_item_sp(
+        title=lambda: tr("UI Scale"),
+        param="UIScale",
+        min_value=70,
+        max_value=130,
+        description=lambda: tr("Adjust the UI scale percentage (70-130%)."),
+        value_change_step=5,
+        icon="icons/settings.png"
+      ),
     ]
     return items
 
