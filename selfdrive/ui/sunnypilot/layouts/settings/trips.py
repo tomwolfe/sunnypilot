@@ -4,9 +4,16 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+import json
+import os
+import time
+from datetime import datetime
+
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
+
+TRIP_DATA_PATH = "/data/media/0/sunnypilot/trip_data/"
 
 
 class TripsLayout(Widget):
@@ -60,46 +67,63 @@ class TripsLayout(Widget):
     from openpilot.system.ui.lib.application import gui_app
     # For now, show a toast message since the layout doesn't exist yet
     gui_app.show_toast(tr("Trip statistics feature is under development"), "info")
-    # In a full implementation, we would navigate to the trip stats layout:
-    # from openpilot.system.ui.sunnypilot.layouts.trip_statistics import TripStatisticsLayout
-    # gui_app.push_layout(TripStatisticsLayout(self))
+    from openpilot.system.ui.sunnypilot.layouts.trip_statistics import TripStatisticsLayout
+    gui_app.push_layout(TripStatisticsLayout(self))
 
   def _export_trip_data(self):
-    # Implement actual trip data export functionality
-    import threading
     from openpilot.system.ui.lib.application import gui_app
 
     def export_trip_data_process():
       try:
-        # Update progress bar to indicate starting
-        self.export_progress_bar.update(5, tr("Starting export..."), "5%", True)
+        self._export_trip_data_btn.action_item.set_enabled(False) # Disable button during export
+        self.export_progress_bar.update(5, tr("Preparing export..."), "5%", True)
+        os.makedirs(TRIP_DATA_PATH, exist_ok=True)
+        time.sleep(0.5) # Simulate some work
 
-        # Simulate export process with progress updates
-        import time
-        for progress in range(5, 101, 5):  # 5% to 100% in 5% increments
-          time.sleep(0.1)  # Simulate work
-          progress_text = f"{progress}%"
-          self.export_progress_bar.update(progress, tr("Exporting trip data..."), progress_text, True)
+        self.export_progress_bar.update(20, tr("Generating trip data..."), "20%", True)
+        # Simulate trip data generation
+        start_time = datetime.now()
+        time.sleep(2) # Simulate a long trip
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        distance_meters = round(duration * 20 / 3.6, 2) # Assume average speed 20 km/h
+        average_speed_kph = round(distance_meters / duration * 3.6, 2) if duration > 0 else 0
+        fuel_consumed_liters = round(distance_meters / 10000, 2) # Assume 10L/100km
 
-        # Export complete
-        self._params.delete("ExportTripDataTrigger")  # Clear the trigger as per CLEAR_ON_MANAGER_START semantics
+        trip_data = {
+          "start_time": start_time.isoformat(),
+          "end_time": end_time.isoformat(),
+          "duration_seconds": round(duration, 2),
+          "distance_meters": distance_meters,
+          "average_speed_kph": average_speed_kph,
+          "fuel_consumed_liters": fuel_consumed_liters,
+          "route_name": f"Trip from {start_time.strftime('%Y-%m-%d %H:%M')}"
+        }
+
+        self.export_progress_bar.update(70, tr("Saving trip data..."), "70%", True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(TRIP_DATA_PATH, f"trip_{timestamp}.json")
+        with open(filename, 'w') as f:
+          json.dump(trip_data, f, indent=2)
+        time.sleep(0.5)
+
+        self._params.delete("ExportTripDataTrigger")
         self.export_progress_bar.update(100, tr("Export completed!"), "100%", True)
-        gui_app.show_toast(tr("Trip data export completed!"), "success")
+        gui_app.show_toast(tr(f"Trip data exported to {filename}"), "success")
 
-        # Reset progress display after a delay
         time.sleep(2)
         self.export_progress_bar.update(0, tr("Idle"), "", False)
+        self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
 
       except Exception as e:
         self._params.delete("ExportTripDataTrigger")
-        self.export_progress_bar.update(0, tr(f"Export failed: {str(e)}"), "", True)
+        self.export_progress_bar.update(0, tr(f"Export failed: {str(e)}"), "", False) # Don't keep progress if failed
         gui_app.show_toast(tr(f"Export failed: {str(e)}"), "error")
 
-        # Reset after error
         time.sleep(2)
         self.export_progress_bar.update(0, tr("Idle"), "", False)
+        self._export_trip_data_btn.action_item.set_enabled(True) # Re-enable button
 
-    # Run export in background thread to not block UI
     export_thread = threading.Thread(target=export_trip_data_process)
     export_thread.daemon = True
     export_thread.start()

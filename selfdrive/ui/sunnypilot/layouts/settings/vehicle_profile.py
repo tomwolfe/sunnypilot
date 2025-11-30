@@ -2,6 +2,7 @@ import pyray as rl
 
 from openpilot.common.params import Params
 from openpilot.system.ui.lib.multilang import tr
+from openpilot.system.ui.widgets import DialogResult
 from openpilot.system.ui.widgets.list_view import ListItem, Scroller
 from openpilot.system.ui.widgets.widget import Widget
 
@@ -74,76 +75,65 @@ class VehicleProfileLayout(Widget):
     dialog.show()
 
   def _select_profile(self):
-    # This would open a selection dialog to choose a profile
+    from openpilot.system.ui.sunnypilot.widgets.selection_dialog import SelectionDialogSP
     profiles_str = self._params.get("CustomVehicleProfiles", encoding="utf-8")
     if profiles_str:
-      profiles = profiles_str.split(',')
+      profiles = [p.strip() for p in profiles_str.split(',') if p.strip()]
       if profiles:
-        # For now, show a simple dialog with the first profile found
-        # In a real implementation, we'd have a selection interface
-        from openpilot.system.ui.lib.application import gui_app
-        if len(profiles) == 1:
-          self._params.put("ActiveVehicleProfile", profiles[0])
-          gui_app.show_toast(tr(f"Profile '{profiles[0]}' selected!"), "success")
-        else:
-          # Show selection dialog - simplified for now
-          from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
-          def on_callback(result, value):
-            if result and value in profiles:
-              self._params.put("ActiveVehicleProfile", value)
-              gui_app.show_toast(tr(f"Profile '{value}' selected!"), "success")
-            elif result:
-              gui_app.show_toast(tr("Invalid profile name!"), "error")
+        def on_callback(result, value):
+          from openpilot.system.ui.lib.application import gui_app
+          if result == DialogResult.CONFIRM and value:
+            self._params.put("ActiveVehicleProfile", value)
+            gui_app.show_toast(tr(f"Profile '{value}' selected!"), "success")
+          elif result == DialogResult.CANCEL:
+            gui_app.show_toast(tr("Profile selection cancelled."), "info")
 
-          # Show a dialog with list of available profiles as guidance
-          available_profiles = ", ".join(profiles)
-          dialog = InputDialogSP(
-            title=tr("Select Vehicle Profile"),
-            sub_title=tr(f"Available profiles: {available_profiles}"),
-            current_text=self._params.get("ActiveVehicleProfile", encoding="utf-8") or "",
-            callback=lambda result, value: on_callback(result, value),
-            min_text_size=1
-          )
-          dialog.show()
+        active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8") or ""
+        dialog = SelectionDialogSP(
+          title=tr("Select Vehicle Profile"),
+          items=profiles,
+          current_value=active_profile,
+          callback=lambda result, value: on_callback(result, value)
+        )
+        dialog.show()
+      else:
+        from openpilot.system.ui.lib.application import gui_app
+        gui_app.show_toast(tr("No profiles available to select!"), "error")
     else:
       from openpilot.system.ui.lib.application import gui_app
       gui_app.show_toast(tr("No profiles available!"), "error")
 
   def _delete_profile(self):
-    # This would open a confirmation dialog to delete a profile
+    from openpilot.system.ui.sunnypilot.widgets.selection_dialog import SelectionDialogSP
     profiles_str = self._params.get("CustomVehicleProfiles", encoding="utf-8")
     if profiles_str:
-      profiles = profiles_str.split(',')
-      from openpilot.system.ui.sunnypilot.widgets.input_dialog import InputDialogSP
-      def on_callback(result, value):
-        if result and value in profiles:
-          profiles.remove(value)
-          if profiles:
-            self._params.put("CustomVehicleProfiles", ','.join(profiles))
-            # If deleted profile was active, reset active profile
-            active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8")
-            if active_profile == value:
+      profiles = [p.strip() for p in profiles_str.split(',') if p.strip()]
+      if profiles:
+        def on_callback(result, value):
+          from openpilot.system.ui.lib.application import gui_app
+          if result == DialogResult.CONFIRM and value:
+            profiles.remove(value)
+            if profiles:
+              self._params.put("CustomVehicleProfiles", ','.join(profiles))
+              active_profile = self._params.get("ActiveVehicleProfile", encoding="utf-8")
+              if active_profile == value:
+                self._params.delete("ActiveVehicleProfile")
+            else:
+              self._params.delete("CustomVehicleProfiles")
               self._params.delete("ActiveVehicleProfile")
-          else:
-            self._params.delete("CustomVehicleProfiles")
-            self._params.delete("ActiveVehicleProfile")
+            gui_app.show_toast(tr(f"Profile '{value}' deleted!"), "success")
+          elif result == DialogResult.CANCEL:
+            gui_app.show_toast(tr("Profile deletion cancelled."), "info")
 
-          from openpilot.system.ui.lib.application import gui_app
-          gui_app.show_toast(tr(f"Profile '{value}' deleted!"), "success")
-        elif result:
-          from openpilot.system.ui.lib.application import gui_app
-          gui_app.show_toast(tr("Profile not found!"), "error")
-
-      # Show a dialog with list of available profiles as guidance
-      available_profiles = ", ".join(profiles) if profiles else ""
-      dialog = InputDialogSP(
-        title=tr("Delete Vehicle Profile"),
-        sub_title=tr(f"Available profiles: {available_profiles}"),
-        current_text=self._params.get("ActiveVehicleProfile", encoding="utf-8") or "",
-        callback=lambda result, value: on_callback(result, value),
-        min_text_size=1
-      )
-      dialog.show()
+        dialog = SelectionDialogSP(
+          title=tr("Delete Vehicle Profile"),
+          items=profiles,
+          callback=lambda result, value: on_callback(result, value)
+        )
+        dialog.show()
+      else:
+        from openpilot.system.ui.lib.application import gui_app
+        gui_app.show_toast(tr("No profiles available to delete!"), "error")
     else:
       from openpilot.system.ui.lib.application import gui_app
       gui_app.show_toast(tr("No profiles to delete!"), "error")
