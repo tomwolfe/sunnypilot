@@ -36,7 +36,7 @@ class CruiseLayout(Widget):
       ),
       button_item(
         title=lambda: tr("Cruise Speed Limit Offset"),
-        value=lambda: str(int(self._params.get("CruiseSpeedLimitOffset", encoding="utf-8"))),
+        value=lambda: str(int(self._params.get("CruiseSpeedLimitOffset") or "0")),
         description=lambda: tr("Set the offset in mph/km/h from the speed limit that you are comfortable with."),
         callback=self._set_cruise_speed_offset
       ),
@@ -52,7 +52,7 @@ class CruiseLayout(Widget):
     dialog = InputDialogSP(
       title="Cruise Speed Limit Offset",
       sub_title="Enter offset in mph (-25 to 25):",
-      current_text=self._params.get("CruiseSpeedLimitOffset", encoding="utf-8") or "0",
+      current_text=self._params.get("CruiseSpeedLimitOffset") or "0",
       callback=lambda result, value: on_callback(result, value),
       min_text_size=0
     )
