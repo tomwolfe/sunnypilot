@@ -4,6 +4,7 @@ from datetime import datetime
 
 from cereal import messaging
 from openpilot.common.params import Params
+from openpilot.common.swaglog import cloudlog
 
 # For calculating distance from lat/lon
 from geopy.distance import geodesic
@@ -72,13 +73,14 @@ class TripDataCollector:
     vin = self._params.get("CarParams", encoding='utf8') # CarParams is a bytes object, not a string
     car_model = self._params.get("CarParams", encoding='utf8')
     if vin:
-        try:
-            car_params = messaging.log_from_bytes(vin, messaging.log.Car.CarParams) # Assuming CarParams is defined in log.capnp
-            self._vin = car_params.carVin
-            self._car_model = car_params.carFingerprint
-        except Exception:
-            pass # Handle parsing error
-
+                    try:
+                        car_params = messaging.log_from_bytes(vin, messaging.log.Car.CarParams) # Assuming CarParams is defined in log.capnp
+                        self._vin = car_params.carVin
+                        self._car_model = car_params.carFingerprint
+                    except Exception as e: # Catch the exception
+                        cloudlog.warning(f"Failed to parse CarParams for VIN/model: {e}") # Log warning
+                        self._vin = "Unknown" # Set to Unknown
+                        self._car_model = "Unknown" # Set to Unknown
     if not cs.standstill and not self._is_trip_active:
       # Trip starts
       self._reset_trip_data()
