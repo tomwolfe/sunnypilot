@@ -147,8 +147,8 @@ class EnhancedSelfLearningMonitor:
             )
         # Check if this is a critical threshold violation
         if computation_time > self.critical_time_threshold:
-            cloudlog.error(f"CRITICAL PERFORMANCE VIOLATION: "
-                           f"Computation time {computation_time*1000:.2f}ms exceeded critical threshold "
+            cloudlog.error("CRITICAL PERFORMANCE VIOLATION: " +
+                           f"Computation time {computation_time*1000:.2f}ms exceeded critical threshold " +
                            f"{self.critical_time_threshold*1000:.2f}ms")
             # Add to safety violations for tracking
             self.safety_violations.append({
@@ -180,10 +180,10 @@ class EnhancedSelfLearningMonitor:
                 })
             # Log performance statistics periodically but more selectively
             if len(self.computation_times) % 100 == 0:
-                cloudlog.info(f"Performance Stats - Avg: {avg_time*1000:.2f}ms, "
-                               f"Max: {max_time*1000:.2f}ms, "
-                               f"95th percentile: {percentile_95*1000:.2f}ms, "
-                               f"99th percentile: {percentile_99*1000:.2f}ms, "
+                cloudlog.info(f"Performance Stats - Avg: {avg_time*1000:.2f}ms, " +
+                               f"Max: {max_time*1000:.2f}ms, " +
+                               f"95th percentile: {percentile_95*1000:.2f}ms, " +
+                               f"99th percentile: {percentile_99*1000:.2f}ms, " +
                                f"Target: {self.max_computation_time*1000:.2f}ms")
                 # Additional checks for compliance
                 if avg_time > self.max_computation_time * 1.1:  # 10% over target
@@ -205,9 +205,9 @@ class EnhancedSelfLearningMonitor:
         # Log analysis periodically
         total_triggers = sum(self.learning_trigger_analysis.values())
         if total_triggers > 0 and total_triggers % 100 == 0:
-            cloudlog.info(f"Learning Trigger Analysis - "
-                           f"Intervention: {self.learning_trigger_analysis['intervention']}, "
-                           f"Model Accuracy: {self.learning_trigger_analysis['model_accuracy']}, "
+            cloudlog.info("Learning Trigger Analysis - " +
+                           f"Intervention: {self.learning_trigger_analysis['intervention']}, " +
+                           f"Model Accuracy: {self.learning_trigger_analysis['model_accuracy']}, " +
                            f"Normal Adaptation: {self.learning_trigger_analysis['normal_adaptation']}")
     def update_vehicle_calibration(self, v_ego: float, curvature: float, lateral_accel: float):
         """
@@ -271,9 +271,9 @@ class EnhancedSelfLearningMonitor:
             self.vehicle_calibration['last_calibration_value'] = self.vehicle_calibration['lateral_acceleration_limit']
             # Log updates with more detail
             if self.vehicle_calibration['calibration_samples'] % 25 == 0:  # More frequent logging for calibration
-                        cloudlog.info(f"Vehicle calibration update - "
-                           f"Lateral limit: {self.vehicle_calibration['lateral_acceleration_limit']:.2f} m/s², "
-                           f"Samples: {self.vehicle_calibration['calibration_samples']}, "
+                        cloudlog.info("Vehicle calibration update - " +
+                           f"Lateral limit: {self.vehicle_calibration['lateral_acceleration_limit']:.2f} m/s², " +
+                           f"Samples: {self.vehicle_calibration['calibration_samples']}, " +
                            f"Last change: {change_magnitude:.4f} m/s²")
     def get_updated_lateral_acceleration_limit(self) -> float:
         """
@@ -468,10 +468,10 @@ class EnhancedSafetyValidator:
             cloudlog.error(f"Critical Safety Violations: {', '.join(critical_violations_list)}")
         # Log safety statistics periodically
         if self.validation_counter % 50 == 0:
-            cloudlog.info(f"Safety Validator Stats - "
-                       f"Validations: {self.validation_counter}, "
-                       f"Failed: {self.failed_validation_counter}, "
-                       f"Failure Rate: {failure_rate:.3f}, "
+            cloudlog.info("Safety Validator Stats - " +
+                       f"Validations: {self.validation_counter}, " +
+                       f"Failed: {self.failed_validation_counter}, " +
+                       f"Failure Rate: {failure_rate:.3f}, " +
                        f"Confidence Score: {results['confidence_score']:.3f}")
         # Add performance metrics to results
         results['validation_stats'] = {

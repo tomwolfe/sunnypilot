@@ -373,7 +373,6 @@ class SafeSelfLearningManager:
         # Get the adjusted output from the learning manager to use for safety scoring
         adjusted_curvature = self.learning_manager.adjust_curvature_prediction(desired_curvature, v_ego)
         # Monitor for potential interactions between learned parameters and adaptive mods
-        lateral_factor = self.learning_manager.adaptive_params.get('lateral_control_factor', 1.0)
         # Log interaction information periodically to monitor for unexpected behavior
         if hasattr(self, '_interaction_monitor_counter'):
             self._interaction_monitor_counter += 1
@@ -382,11 +381,10 @@ class SafeSelfLearningManager:
         # Log interaction analysis every 200 updates
         if self._interaction_monitor_counter % 200 == 0:
             # This provides insight into the interaction between learned parameters and adaptive modifications
-                          cloudlog.info((
-                              f"Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, "
-                              f"Learning Enabled: {self.learning_manager.learning_enabled}, "
-                              f"Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}"
-                          ))        adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
+                          cloudlog.info("Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, " +
+                                         f"Learning Enabled: {self.learning_manager.learning_enabled}, " +
+                                         f"Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}")
+        adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
         safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
         freeze_learning = self.safety.should_freeze_learning(CS, safety_score)
         if freeze_learning:
