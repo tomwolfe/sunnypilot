@@ -3,6 +3,15 @@ Traffic Light Temporal Filter
 
 Implements temporal consistency filtering for traffic light states to reduce
 flickering between states and improve reliability of traffic light detection.
+
+NOTE ON CONFIDENCE CALCULATION:
+The confidence calculation varies by state to handle different semantic meanings of the raw score:
+- For GREEN state: confidence increases as raw_score gets lower relative to green_threshold
+- For YELLOW state: confidence is based on proximity to the center of the green-yellow range
+- For RED state: confidence increases as raw_score gets higher above yellow_threshold
+
+This approach is necessary because different traffic light colors produce different
+raw score patterns in the model output, so a unified approach would not be appropriate.
 """
 import numpy as np
 from collections import deque
@@ -83,22 +92,37 @@ class TrafficLightTemporalFilter:
       self.max_possible_score = max(self.max_possible_score, estimated_max * 1.1)  # Allow 10% buffer above observed max
 
     # Determine initial state based on thresholds
+    # NOTE: The confidence calculation varies by state to handle different semantic meanings of the raw score
+    # For GREEN: low raw_score means high confidence in GREEN state
+    # For YELLOW: raw_score between green and yellow thresholds means YELLOW state
+    # For RED: high raw_score above yellow threshold means high confidence in RED state
     if raw_score < green_threshold:
       current_state = TrafficLightState.GREEN
-      initial_confidence = 1.0 - (raw_score / green_threshold)  # Higher confidence when score is much lower than threshold
+      # For GREEN state: confidence increases as score gets lower relative to green_threshold
+      # Higher confidence when score is much lower than threshold
+      initial_confidence = 1.0 - (raw_score / green_threshold) if green_threshold > 0 else 1.0
     elif raw_score < yellow_threshold:
       current_state = TrafficLightState.YELLOW
-      # Confidence based on how close score is to green vs yellow thresholds
-      conf_to_green = (raw_score - green_threshold) / (yellow_threshold - green_threshold)
-      initial_confidence = 1.0 - conf_to_green
+      # For YELLOW state: confidence is highest when the score is between green and yellow thresholds
+      # Calculate confidence based on position within the yellow range
+      # 1.0 at center, decreasing toward edges
+      yellow_range_center = (green_threshold + yellow_threshold) / 2.0
+      distance_from_center = abs(raw_score - yellow_range_center)
+      max_distance_from_center = (yellow_threshold - green_threshold) / 2.0
+      if max_distance_from_center > 0:
+        # Normalize distance from center (0 at center, 1 at edges)
+        normalized_distance = distance_from_center / max_distance_from_center
+        # Confidence is 1.0 at center, 0.0 at edges
+        initial_confidence = max(0.0, 1.0 - normalized_distance)
+      else:
+        initial_confidence = 1.0
     else:
       current_state = TrafficLightState.RED
-      # Improved confidence calculation for RED state:
+      # For RED state: confidence increases as score gets higher above yellow_threshold
       # Use the range from yellow_threshold to a reasonable maximum possible score
-      # This makes the calculation more principled rather than using an arbitrary 0.5 multiplier
       confidence_range = self.max_possible_score - yellow_threshold
       if confidence_range > 0:
-        initial_confidence = min(1.0, (raw_score - yellow_threshold) / confidence_range)
+        initial_confidence = min(1.0, max(0.0, (raw_score - yellow_threshold) / confidence_range))
       else:
         initial_confidence = 0.0  # Safety fallback
     
@@ -178,7 +202,8 @@ class TrafficLightTemporalFilter:
         else:
           # Don't change state, keep previous
           final_state = self.prev_state
-          # Use gradual decay instead of fixed 0.8 multiplier
+          # Maintain previous confidence to avoid state flickering when confidence is insufficient to transition
+          # Apply a gradual decay to prevent permanent memory of high confidence states
           confidence_decay_factor = 0.9  # Gradual decay to maintain confidence when "stuck"
           smoothed_confidence = max(smoothed_confidence, self.prev_confidence * confidence_decay_factor)
     else:
@@ -190,13 +215,14 @@ class TrafficLightTemporalFilter:
       self.prev_confidence = smoothed_confidence
 
     # Add to state buffer for temporal consistency
-    # The state buffer is separate from the confidence buffer and is used for majority voting
-    # to add additional stability to state decisions while confidence continues to be smoothed independently
+    # The state buffer and confidence buffer work together: the confidence buffer provides
+    # smoothed confidence values used in hysteresis decisions, while the state buffer provides
+    # historical state information used for majority voting to add additional stability
     self.state_buffer.append(final_state)
 
     # Apply majority voting for additional stability (optional)
     MAJORITY_VOTE_THRESHOLD = 3  # Minimum number of states before applying majority voting
-    CONFIDENCE_THRESHOLD_FOR_MAJORITY = 0.6  # Confidence threshold for majority voting
+    MAJORITY_CONFIDENCE_THRESHOLD = 0.6  # Confidence threshold for majority voting consideration
 
     if len(self.state_buffer) >= MAJORITY_VOTE_THRESHOLD:
       # Count states in the buffer more efficiently
@@ -208,8 +234,13 @@ class TrafficLightTemporalFilter:
       most_common_state = max(state_counts, key=state_counts.get)
       majority_state = TrafficLightState(most_common_state)
 
+      # Calculate the proportion of majority votes
+      majority_proportion = state_counts[most_common_state] / len(self.state_buffer)
+
       # Only use majority vote if it matches current state or confidence is low
-      if (majority_state == final_state or smoothed_confidence < CONFIDENCE_THRESHOLD_FOR_MAJORITY):
+      # Also consider the proportion of majority votes to prevent flipping due to small majorities
+      if ((majority_state == final_state or smoothed_confidence < MAJORITY_CONFIDENCE_THRESHOLD)
+          and majority_proportion > 0.5):  # Ensure true majority (more than half)
         final_state = majority_state
     
     return final_state, smoothed_confidence
