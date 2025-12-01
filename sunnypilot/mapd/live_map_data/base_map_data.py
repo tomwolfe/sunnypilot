@@ -144,8 +144,12 @@ class BaseMapData(ABC):
               'distance_to_next_sign': min_distance,
               'sign_type': sign_type
             })
-      except Exception:
-        # If there's an error parsing the data, return default values
+      except Exception as e:
+        # If there's an error parsing the data, return default values and log the error
+        import logging
+        logging.warning(f"Error parsing MapTrafficSigns data: {e}")
+        # Optionally, could set a parameter to indicate map data issues
+        # Params().put_bool("MapDataError", True)
         pass
 
     return traffic_sign_info

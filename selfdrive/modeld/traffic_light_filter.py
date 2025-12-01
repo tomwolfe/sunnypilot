@@ -57,6 +57,9 @@ class TrafficLightTemporalFilter:
     # Counter to track consecutive UNKNOWN state detections for more stable transitions
     self.unknown_counter = 0
     self.min_unknown_samples = MIN_UNKNOWN_SAMPLES  # Minimum number of samples before allowing state transition from UNKNOWN
+
+    # Dynamic max score estimation
+    self.score_history = deque(maxlen=50)  # Keep track of recent scores to estimate max dynamically
     
   def update(self, raw_score: float, green_threshold: float, yellow_threshold: float) -> tuple[TrafficLightState, float]:
     """
@@ -70,6 +73,15 @@ class TrafficLightTemporalFilter:
     Returns:
       tuple of (filtered_state, confidence)
     """
+    # Add current score to history for dynamic max estimation
+    self.score_history.append(raw_score)
+
+    # Update max_possible_score based on recent history if we see higher scores
+    if len(self.score_history) > 10:  # Only adjust if we have sufficient history
+      estimated_max = max(self.score_history)
+      # Gradually update max_possible_score to avoid sudden changes
+      self.max_possible_score = max(self.max_possible_score, estimated_max * 1.1)  # Allow 10% buffer above observed max
+
     # Determine initial state based on thresholds
     if raw_score < green_threshold:
       current_state = TrafficLightState.GREEN
@@ -119,7 +131,9 @@ class TrafficLightTemporalFilter:
       # Make it harder to change from the current state than to maintain it
       if current_state != self.prev_state:
         # When transitioning from a known state to a different state, increase the required confidence
-        adjusted_confidence_threshold = min(1.0, self.min_confidence_for_change + (self.hysteresis_factor * 0.5))
+        # Use hysteresis_factor to scale the difference between current and previous confidence
+        required_difference = self.hysteresis_factor * (1.0 - self.prev_confidence)
+        adjusted_confidence_threshold = max(self.min_confidence_for_change, self.prev_confidence + required_difference)
 
     # Only change state if we have sufficient confidence AND different from previous state
     if current_state != self.prev_state:
@@ -139,11 +153,15 @@ class TrafficLightTemporalFilter:
             else:
               # Don't change state if confidence is too low
               final_state = self.prev_state
-              smoothed_confidence = max(smoothed_confidence, self.prev_confidence * 0.8)  # Reduced confidence
+              # Use gradual decay instead of fixed 0.8 multiplier
+              confidence_decay_factor = 0.9  # Gradual decay to maintain confidence when "stuck"
+              smoothed_confidence = max(smoothed_confidence, self.prev_confidence * confidence_decay_factor)
           else:
             # Stay in UNKNOWN until we have enough consistent detections
             final_state = self.prev_state
-            smoothed_confidence = max(smoothed_confidence, self.prev_confidence * 0.8)  # Reduced confidence
+            # Use gradual decay instead of fixed 0.8 multiplier
+            confidence_decay_factor = 0.9  # Gradual decay to maintain confidence when "stuck"
+            smoothed_confidence = max(smoothed_confidence, self.prev_confidence * confidence_decay_factor)
         else:
           # Staying in UNKNOWN state, reset counter
           final_state = current_state
@@ -160,7 +178,9 @@ class TrafficLightTemporalFilter:
         else:
           # Don't change state, keep previous
           final_state = self.prev_state
-          smoothed_confidence = max(smoothed_confidence, self.prev_confidence * 0.8)  # Reduced confidence
+          # Use gradual decay instead of fixed 0.8 multiplier
+          confidence_decay_factor = 0.9  # Gradual decay to maintain confidence when "stuck"
+          smoothed_confidence = max(smoothed_confidence, self.prev_confidence * confidence_decay_factor)
     else:
       # Same state as previous, reset unknown counter if we were in UNKNOWN
       if self.prev_state == TrafficLightState.UNKNOWN and current_state != TrafficLightState.UNKNOWN:
