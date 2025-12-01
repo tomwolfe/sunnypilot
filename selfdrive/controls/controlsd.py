@@ -819,7 +819,8 @@ class Controls(ControlsExt):
     learning_safety_recommendation = self.self_learning_manager.get_safety_recommendation(CS, model_output)
     # We could potentially combine both safety recommendations or prioritize the learning system's recommendation
     # For now, we'll use the original safety manager's recommendation but log the learning system's recommendation
-    if learning_safety_recommendation != log.ControlsState.SafetyRecommendation.normal:
+    RECOMMENDATION_NORMAL = 0  # This should match the value used in self_learning_safety.py
+    if learning_safety_recommendation != RECOMMENDATION_NORMAL:
       cloudlog.info(f"Self-learning system safety recommendation: {learning_safety_recommendation}")
 
     lat_tuning = self.CP.lateralTuning.which()

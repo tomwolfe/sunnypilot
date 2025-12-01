@@ -14,12 +14,18 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from cereal import log, car
 
 
-# Import SelfLearningManager if needed for type hints
+# Import SelfLearningManager for use in SafeSelfLearningManager
 try:
-    from self_learning_manager import SelfLearningManager
+    from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
 except ImportError:
-    # For when this module is imported as part of the full system
-    pass
+    # For when this module is imported as part of the full system with different structure
+    try:
+        from self_learning_manager import SelfLearningManager
+    except ImportError:
+        # Define a placeholder if not available (for testing purposes)
+        class SelfLearningManager:
+            def __init__(self, *args, **kwargs):
+                pass
 
 
 class SelfLearningSafety:
@@ -395,36 +401,41 @@ class SelfLearningSafety:
         import time
         return time.time()
     
-    def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> log.ControlsState.SafetyRecommendation:
+    def get_safety_recommendation(self, CS: car.CarState, model_output: dict):
         """
         Provide safety recommendations based on current conditions and learning state.
-        
+
         Args:
             CS: Current car state
             model_output: Current model output
-            
+
         Returns:
-            Safety recommendation enum
+            Safety recommendation (int/enum-like value)
         """
+        # Define safety recommendation constants since the actual enum doesn't exist
+        RECOMMENDATION_NORMAL = 0
+        RECOMMENDATION_REDUCED_ENGAGEMENT = 1
+        RECOMMENDATION_PREPARE_FOR_DISENGAGE = 2
+
         # Default to normal operation
-        safety_recommendation = log.ControlsState.SafetyRecommendation.normal
-        
+        safety_recommendation = RECOMMENDATION_NORMAL
+
         # Check various safety conditions
         if self.learning_safety_score < 0.5:
-            safety_recommendation = log.ControlsState.SafetyRecommendation.reduced_engagement
+            safety_recommendation = RECOMMENDATION_REDUCED_ENGAGEMENT
         elif self.learning_safety_score < 0.2:
-            safety_recommendation = log.ControlsState.SafetyRecommendation.prepare_for_disengage
+            safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
         elif self.safety_violations > 5:
-            safety_recommendation = log.ControlsState.SafetyRecommendation.prepare_for_disengage
-        
+            safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
+
         # Check for physical limit violations
         if hasattr(CS, 'steeringTorque'):
             if abs(CS.steeringTorque) > 1800:  # Assuming typical torque limits
-                safety_recommendation = log.ControlsState.SafetyRecommendation.prepare_for_disengage
-        
+                safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
+
         if abs(CS.steeringAngleDeg) > 80:
-            safety_recommendation = log.ControlsState.SafetyRecommendation.prepare_for_disengage
-        
+            safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
+
         return safety_recommendation
 
 
@@ -586,7 +597,7 @@ class SafeSelfLearningManager:
 
         return safe_accel
 
-    def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> log.ControlsState.SafetyRecommendation:
+    def get_safety_recommendation(self, CS: car.CarState, model_output: dict):
         """
         Provide safety recommendations based on current conditions and learning state.
 
@@ -595,7 +606,7 @@ class SafeSelfLearningManager:
             model_output: Current model output
 
         Returns:
-            Safety recommendation enum
+            Safety recommendation (int/enum-like value)
         """
         # Get the safety recommendation from internal safety module
         return self.safety.get_safety_recommendation(CS, model_output)
