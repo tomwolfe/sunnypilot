@@ -89,8 +89,7 @@ class BaseMapData(ABC):
       'has_traffic_light': False,
       'has_yield_sign': False,
       'distance_to_next_sign': float('inf'),
-      'sign_type': None,
-      'sign_coordinates': None
+      'sign_type': None
     }
 
     # Get traffic sign data from params if available
@@ -143,8 +142,7 @@ class BaseMapData(ABC):
               'has_traffic_light': sign_type in TRAFFIC_LIGHT_TYPES,
               'has_yield_sign': sign_type in YIELD_SIGN_TYPES,
               'distance_to_next_sign': min_distance,
-              'sign_type': sign_type,
-              'sign_coordinates': sign_coords
+              'sign_type': sign_type
             })
       except Exception:
         # If there's an error parsing the data, return default values
