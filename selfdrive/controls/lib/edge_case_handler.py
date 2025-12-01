@@ -716,8 +716,6 @@ class EdgeCaseHandler:
             congestion_indicators += 1
 
       # Store current data for future trend analysis
-      if not hasattr(self, '_previous_speeds'):
-        self._previous_speeds = []
       self._previous_speeds.append(car_state.vEgo)
       self._previous_speeds = self._previous_speeds[-30:]  # Keep last 30 values
 

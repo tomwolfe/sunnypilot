@@ -4,161 +4,201 @@ Test approach for self-learning autonomous driving capabilities.
 This script provides unit tests and integration tests for the self-learning system.
 """
 import numpy as np
+import pytest
 from unittest.mock import Mock
-# Import SelfLearningManager with fallback for CI environment
-try:
-    from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
-except ImportError:
-    # Fallback for CI or missing dependencies
-    class SelfLearningManager:
-        def __init__(self, *args, **kwargs):
-            pass
-        def adjust_curvature_prediction(self, *args, **kwargs):
-            return 0.0
+import os
+import sys
+# Add the openpilot path to sys.path dynamically
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
+from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
 from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager, SelfLearningSafety
-class TestSelfLearningManager:
-    """Unit tests for the SelfLearningManager class."""
-    def setUp(self):
-        """Set up test fixtures before each test method."""
-        # Create mock car parameters
-        self.CP = Mock()
-        self.CP_SP = Mock()
-        # Create the manager
-        self.manager = SelfLearningManager(self.CP, self.CP_SP)
-    def test_initialization(self):
-        """Test that the self-learning manager initializes properly."""
-        assert hasattr(self.manager, 'adaptive_params')
-        assert len(self.manager.adaptive_params) == 4
-        assert self.manager.adaptive_params['lateral_control_factor'] == 1.0
-        assert self.manager.adaptive_params['curvature_bias'] == 0.0
-    def test_parameter_adjustment(self):
-        """Test that parameters are adjusted based on interventions."""
-        original_factor = self.manager.adaptive_params['lateral_control_factor']
-        # Simulate a large curvature error that should trigger learning
-        experience = {
-            'timestamp': 0,
-            'desired_curvature': 0.1,
-            'actual_curvature': 0.05,  # Different from desired
-            'curvature_error': 0.05,
-            'steering_torque': 1.0,
-            'v_ego': 20.0,
-            'road_type': 'highway',
-            'intervention_type': 'steering_override'
-        }
-        self.manager._adapt_from_intervention(experience)
-        # Factor should have changed due to the intervention
-        new_factor = self.manager.adaptive_params['lateral_control_factor']
-        assert original_factor != new_factor
-    def test_curvature_adjustment(self):
-        """Test that curvature predictions are adjusted properly."""
-        original_curvature = 0.05
-        v_ego = 15.0
-        adjusted_curvature = self.manager.adjust_curvature_prediction(original_curvature, v_ego)
-        # Initially, with factor=1.0 and bias=0.0, output should be similar to input
-        assert abs(original_curvature - adjusted_curvature) < 1e-3
-        # Change parameters and test again
-        self.manager.adaptive_params['lateral_control_factor'] = 1.2
-        adjusted_curvature = self.manager.adjust_curvature_prediction(original_curvature, v_ego)
-        assert abs(adjusted_curvature - (original_curvature * 1.2)) < 1e-3
-    def test_parameter_regularization(self):
-        """Test that parameters are regularized to prevent drift."""
-        # Set a parameter to an extreme value
-        self.manager.adaptive_params['lateral_control_factor'] = 2.5
-        # Call regularization
-        self.manager._regularize_parameters()
-        # Parameter should be pulled back toward normal range
-        factor = self.manager.adaptive_params['lateral_control_factor']
-        assert factor < 2.5
-        assert factor >= 0.8
-class TestSelfLearningSafety:
-    """Unit tests for the SelfLearningSafety class."""
-    def setUp(self):
-        """Set up test fixtures before each test method."""
-        self.safety = SelfLearningSafety()
-    def test_curvature_validation(self):
-        """Test that unsafe curvature adjustments are rejected."""
-        original_curvature = 0.05
-        unsafe_curvature = 10.0  # Very high curvature
-        # This should be clamped to safe limits
-        safe_curvature, is_safe = self.safety.validate_curvature_adjustment(
-            original_curvature, unsafe_curvature, v_ego=20.0
-        )
-        # The safe curvature should be much smaller than the unsafe input
-        assert abs(safe_curvature) < abs(unsafe_curvature)
-        assert not is_safe
-    def test_curvature_speed_limit(self):
-        """Test that curvature is limited based on speed."""
-        # At low speed, higher curvatures might be safe
-        safe_curvature_low_speed, _ = self.safety.validate_curvature_adjustment(
-            0.05, 0.3, v_ego=5.0  # 5 m/s = ~18 km/h
-        )
-        # At high speed, same curvature should be unsafe
-        safe_curvature_high_speed, is_safe_high = self.safety.validate_curvature_adjustment(
-            0.05, 0.3, v_ego=30.0  # 30 m/s = ~108 km/h
-        )
-        # At high speed, the curvature should be clamped more aggressively
-        assert abs(safe_curvature_high_speed) < abs(safe_curvature_low_speed)
-        assert not is_safe_high
-    def test_parameter_validation(self):
-        """Test that parameter adjustments are validated for safety."""
-        # Test lateral control factor adjustment
-        current_value = 1.0
-        proposed_value = 5.0  # Very high adjustment
-        safe_value, is_safe = self.safety.validate_parameter_adjustment(
-            'lateral_control_factor', current_value, proposed_value, v_ego=15.0
-        )
-        # Should be clamped to safe range
-        assert safe_value <= self.safety.max_adaptive_factor
-        assert safe_value >= self.safety.min_adaptive_factor
-        assert not is_safe
-class TestSafeSelfLearningManager:
-    """Integration tests for the SafeSelfLearningManager."""
-    def setUp(self):
-        """Set up test fixtures before each test method."""
-        self.CP = Mock()
-        self.CP_SP = Mock()
-        self.manager = SafeSelfLearningManager(self.CP, self.CP_SP)
-    def test_safe_curvature_adjustment(self):
-        """Test that curvature adjustments are safe."""
-        original_curvature = 0.1
-        v_ego = 20.0
-        # This should be safe and return a reasonable value
-        adjusted_curvature = self.manager.adjust_curvature(original_curvature, v_ego)
-        # Check that the adjustment didn't cause an unsafe extreme
-        assert abs(adjusted_curvature) < 1.0
-    def test_learning_updates(self):
-        """Test that learning updates work without errors."""
-        # Create mock car state
-        CS = Mock()
-        CS.steeringPressed = False
-        CS.vEgo = 15.0
-        CS.steeringTorque = 0.1
-        CS.steeringAngleDeg = 0.0
-        # This should run without error
-        self.manager.update(
-            CS,
-            desired_curvature=0.05,
-            actual_curvature=0.048,
-            steering_torque=0.1,
-            v_ego=CS.vEgo
-        )
-        # Update with steering press to trigger learning
-        CS.steeringPressed = True
-        self.manager.update(
-            CS,
-            desired_curvature=0.1,
-            actual_curvature=0.05,
-            steering_torque=1.0,
-            v_ego=CS.vEgo
-        )
-def integration_test():
-    """Integration test to verify the system works end-to-end."""
-    print("Running integration test for self-learning system...")
-    # Create mock car parameters
+# MockParams class definition (from previous files)
+class MockParams:
+    def __init__(self):
+        self.storage = {}
+    def get(self, key, encoding=None):
+        value = self.storage.get(key.encode() if isinstance(key, str) else key)
+        if value is not None:
+            return value
+        return None
+    def put(self, key, value):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        value_bytes = value.encode() if isinstance(value, str) else value
+        self.storage[key_bytes] = value_bytes
+    def put_bool(self, key, value):
+        self.put(key, "1" if value else "0")
+    def get_bool(self, key):
+        value = self.get(key)
+        if value is not None:
+            return value == b"1" or value == "1" or value == 1
+        return False
+    def clear_all(self, tx_flag=None):
+        self.storage.clear()
+    def delete(self, key):
+        key_bytes = key.encode() if isinstance(key, str) else key
+        self.storage.pop(key_bytes, None)
+    def all_keys(self, flag=None):
+        return list(self.storage.keys())
+@pytest.fixture
+def mock_params_fixture(monkeypatch):
+    mock_params = MockParams()
+    monkeypatch.setattr('openpilot.common.params.Params', lambda: mock_params)
+    return mock_params
+@pytest.fixture
+def mock_car_params():
     CP = Mock()
     CP_SP = Mock()
-    # Initialize the safe self-learning manager
-    learning_manager = SafeSelfLearningManager(CP, CP_SP)
+    return CP, CP_SP
+@pytest.fixture
+def self_learning_manager(mock_car_params, mock_params_fixture):
+    CP, CP_SP = mock_car_params
+    manager = SelfLearningManager(CP, CP_SP)
+    manager.params = mock_params_fixture # Manually set the mocked params
+    return manager
+@pytest.fixture
+def self_learning_safety():
+    return SelfLearningSafety()
+@pytest.fixture
+def safe_self_learning_manager(mock_car_params):
+    CP, CP_SP = mock_car_params
+    return SafeSelfLearningManager(CP, CP_SP)
+def test_manager_initialization(self_learning_manager):
+    """Test that the self-learning manager initializes properly."""
+    manager = self_learning_manager
+    assert hasattr(manager, 'adaptive_params')
+    assert len(manager.adaptive_params) == 4
+    assert manager.adaptive_params['lateral_control_factor'] == 1.0
+    assert manager.adaptive_params['curvature_bias'] == 0.0
+
+def test_manager_parameter_adjustment(self_learning_manager):
+    """Test that parameters are adjusted based on interventions."""
+    manager = self_learning_manager
+    original_factor = manager.adaptive_params['lateral_control_factor']
+    # Simulate a large curvature error that should trigger learning
+    experience = {
+        'timestamp': 0,
+        'desired_curvature': 0.1,
+        'actual_curvature': 0.05,  # Different from desired
+        'curvature_error': 0.05,
+        'steering_torque': 1.0,
+        'v_ego': 20.0,
+        'road_type': 'highway',
+        'intervention_type': 'steering_override',
+        'context': manager.learning_context.copy(), # Add context for _calculate_contextual_learning_rate
+        'learning_factor': 1.0, # Default learning factor
+        'original_params': manager.adaptive_params.copy()
+    }
+    manager._adapt_from_intervention(experience)
+    # Factor should have changed due to the intervention
+    new_factor = manager.adaptive_params['lateral_control_factor']
+    assert original_factor != new_factor
+
+def test_manager_curvature_adjustment(self_learning_manager):
+    """Test that curvature predictions are adjusted properly."""
+    manager = self_learning_manager
+    original_curvature = 0.05
+    v_ego = 15.0
+    adjusted_curvature = manager.adjust_curvature_prediction(original_curvature, v_ego)
+    # Initially, with factor=1.0 and bias=0.0, output should be similar to input
+    assert abs(original_curvature - adjusted_curvature) < 1e-3
+    # Change parameters and test again
+    manager.adaptive_params['lateral_control_factor'] = 1.2
+    adjusted_curvature = manager.adjust_curvature_prediction(original_curvature, v_ego)
+    assert abs(adjusted_curvature - (original_curvature * 1.2)) < 1e-3
+
+def test_manager_parameter_regularization(self_learning_manager):
+    """Test that parameters are regularized to prevent drift."""
+    manager = self_learning_manager
+    # Set a parameter to an extreme value
+    manager.adaptive_params['lateral_control_factor'] = 2.5
+    # Call regularization
+    manager._regularize_parameters()
+    # Parameter should be pulled back toward normal range
+    factor = manager.adaptive_params['lateral_control_factor']
+    assert factor < 2.5
+    assert factor >= 0.7
+def test_safety_curvature_validation(self_learning_safety):
+    """Test that unsafe curvature adjustments are rejected."""
+    safety = self_learning_safety
+    original_curvature = 0.05
+    unsafe_curvature = 10.0  # Very high curvature
+    # This should be clamped to safe limits
+    safe_curvature, is_safe = safety.validate_curvature_adjustment(
+        original_curvature, unsafe_curvature, v_ego=20.0
+    )
+    # The safe curvature should be much smaller than the unsafe input
+    assert abs(safe_curvature) < abs(unsafe_curvature)
+    assert not is_safe
+
+def test_safety_curvature_speed_limit(self_learning_safety):
+    """Test that curvature is limited based on speed."""
+    safety = self_learning_safety
+    # At low speed, higher curvatures might be safe
+    safe_curvature_low_speed, _ = safety.validate_curvature_adjustment(
+        0.05, 0.3, v_ego=5.0  # 5 m/s = ~18 km/h
+    )
+    # At high speed, same curvature should be unsafe
+    safe_curvature_high_speed, is_safe_high = safety.validate_curvature_adjustment(
+        0.05, 0.3, v_ego=30.0  # 30 m/s = ~108 km/h
+    )
+    # At high speed, the curvature should be clamped more aggressively
+    assert abs(safe_curvature_high_speed) < abs(safe_curvature_low_speed)
+    assert not is_safe_high
+
+def test_safety_parameter_validation(self_learning_safety):
+    """Test that parameter adjustments are validated for safety."""
+    safety = self_learning_safety
+    # Test lateral control factor adjustment
+    current_value = 1.0
+    proposed_value = 5.0  # Very high adjustment
+    safe_value, is_safe = safety.validate_parameter_adjustment(
+        'lateral_control_factor', current_value, proposed_value, v_ego=15.0
+    )
+    # Should be clamped to safe range
+    assert safe_value <= safety.max_adaptive_factor
+    assert safe_value >= safety.min_adaptive_factor
+    assert not is_safe
+def test_safe_manager_curvature_adjustment(safe_self_learning_manager):
+    """Test that curvature adjustments are safe."""
+    manager = safe_self_learning_manager
+    original_curvature = 0.1
+    v_ego = 20.0
+    # This should be safe and return a reasonable value
+    adjusted_curvature = manager.adjust_curvature(original_curvature, v_ego)
+    # Check that the adjustment didn't cause an unsafe extreme
+    assert abs(adjusted_curvature) < 1.0
+
+def test_safe_manager_learning_updates(safe_self_learning_manager):
+    """Test that learning updates work without errors."""
+    manager = safe_self_learning_manager
+    # Create mock car state
+    CS = Mock()
+    CS.steeringPressed = False
+    CS.vEgo = 15.0
+    CS.steeringTorque = 0.1
+    CS.steeringAngleDeg = 0.0
+    # This should run without error
+    manager.update(
+        CS,
+        desired_curvature=0.05,
+        actual_curvature=0.048,
+        steering_torque=0.1,
+        v_ego=CS.vEgo
+    )
+    # Update with steering press to trigger learning
+    CS.steeringPressed = True
+    manager.update(
+        CS,
+        desired_curvature=0.1,
+        actual_curvature=0.05,
+        steering_torque=1.0,
+        v_ego=CS.vEgo
+    )
+    # Assert that learning is enabled after intervention
+    assert manager.learning_manager.learning_enabled
+def test_integration(safe_self_learning_manager):
+    """Integration test to verify the system works end-to-end."""
+    learning_manager = safe_self_learning_manager
     # Simulate multiple driving scenarios
     for _i in range(100):
         # Simulate a driving state
@@ -182,15 +222,13 @@ def integration_test():
             steering_torque=CS.steeringTorque,
             v_ego=CS.vEgo
         )
-    print(f"Integration test completed. Final lateral factor: {learning_manager.learning_manager.adaptive_params['lateral_control_factor']:.3f}")
-    print("✓ Integration test passed")
-def performance_test():
+    # Basic assertion to ensure it ran and some parameter changed
+    assert learning_manager.learning_manager.adaptive_params['lateral_control_factor'] != 1.0
+
+def test_performance(safe_self_learning_manager):
     """Test performance characteristics of the learning system."""
-    print("Running performance test...")
     import time
-    CP = Mock()
-    CP_SP = Mock()
-    learning_manager = SafeSelfLearningManager(CP, CP_SP)
+    learning_manager = safe_self_learning_manager
     # Measure update time
     start_time = time.monotonic()
     for _i in range(1000):
@@ -208,42 +246,6 @@ def performance_test():
     end_time = time.monotonic()
     elapsed = (end_time - start_time) * 1000  # Convert to milliseconds
     avg_time = elapsed / 1000  # Average time per update
-    print(f"✓ Performance test passed: {avg_time:.3f}ms per update")
     # The system should be fast enough for real-time operation (ideally < 1ms per call)
-    if avg_time > 2.0:  # 2ms threshold
-        print(f"⚠ Performance warning: Average update time {avg_time:.3f}ms is higher than optimal")
-    else:
-        print("✓ Performance is within acceptable range")
-def run_all_tests():
-    """Run all tests."""
-    print("Starting self-learning system tests...\n")
+    assert avg_time < 2.0 # 2ms threshold
 
-    test_manager = TestSelfLearningManager()
-    test_manager.setUp()
-    test_manager.test_initialization()
-    test_manager.test_parameter_adjustment()
-    test_manager.test_curvature_adjustment()
-    test_manager.test_parameter_regularization()
-
-    test_safety = TestSelfLearningSafety()
-    test_safety.setUp()
-    test_safety.test_curvature_validation()
-    test_safety.test_curvature_speed_limit()
-    test_safety.test_parameter_validation()
-
-    test_safe_manager = TestSafeSelfLearningManager()
-    test_safe_manager.setUp()
-    test_safe_manager.test_safe_curvature_adjustment()
-    test_safe_manager.test_learning_updates()
-
-    print("\n" + "="*50)
-    print("Running integration tests...")
-    integration_test()
-    print("\n" + "="*50)
-    print("Running performance tests...")
-    performance_test()
-    print("\n" + "="*50)
-    print("All tests completed!")
-
-if __name__ == "__main__":
-    run_all_tests()

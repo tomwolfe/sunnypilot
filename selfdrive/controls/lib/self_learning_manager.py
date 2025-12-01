@@ -37,16 +37,16 @@ class SelfLearningManager:
         self.intervention_buffer: deque[dict] = deque(maxlen=100)  # Store interventions
         self.model_accuracy_history: deque[dict] = deque(maxlen=500)  # Track model prediction accuracy
         # Enhanced adaptive parameters with more sophisticated learning
-        self.adaptive_params = {
+        self.adaptive_params: dict[str, float] = {
             'lateral_control_factor': 1.0,  # Scaling factor for lateral control
             'curvature_bias': 0.0,  # Bias adjustment to desired curvature
             'acceleration_factor': 1.0,  # Scaling factor for longitudinal acceleration
             'reaction_time_compensation': 0.2,  # Time compensation in seconds
         }
         # Learning context tracking
-        self.learning_context = {
+        self.learning_context: dict[str, str] = {
             'road_type': 'unknown',
-            'weather_condition': 'clear',  # Could be 'clear', 'rainy', 'snowy', 'foggy'
+            'weather_condition': 'clear',
             'traffic_density': 'low',      # Could be 'low', 'medium', 'high'
             'time_of_day': 'day',          # Could be 'day', 'dusk', 'night'
             'road_surface': 'dry',         # Could be 'dry', 'wet', 'icy'
@@ -168,8 +168,8 @@ class SelfLearningManager:
                         'change': change
                     }
                 cloudlog.info(
-                    (f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, "
-                     f"Context: {current_road_type}, Parameter Changes: {param_changes}")
+                    f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, "
+                    f"Context: {current_road_type}, Parameter Changes: {param_changes}"
                 )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
@@ -247,8 +247,8 @@ class SelfLearningManager:
         Returns:
             Contextually adjusted learning rate
         """
-        context = experience.get('context', {})
-        learning_factor = experience.get('learning_factor', 1.0)
+        context: dict[str, Any] = experience.get('context', {})
+        learning_factor: float = float(experience.get('learning_factor', 1.0))
         # Start with base learning rate
         learning_rate = self.base_learning_rate * learning_factor
         # Adjust based on weather conditions
@@ -322,8 +322,8 @@ class SelfLearningManager:
                 avg_error = np.mean(recent_errors)
                 std_error = np.std(recent_errors)
                 cloudlog.info(
-                    (f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
-                     f"Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}")
+                    f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
+                    f"Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}"
                 )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
@@ -342,8 +342,8 @@ class SelfLearningManager:
         if self.total_updates % 1000 == 0:  # Log every 1000 updates
             avg_update_time = np.mean(self.update_time_samples) if self.update_time_samples else 0
             cloudlog.info(
-                (f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, "
-                 f"Max time: {self.max_update_time*1000:.2f}ms")
+                f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, "
+                f"Max time: {self.max_update_time*1000:.2f}ms"
             )
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
@@ -372,7 +372,7 @@ class SelfLearningManager:
             return 0.5  # Higher curvature allowed at low speeds
         # Use the enhanced monitor for vehicle-specific limits if available
         max_lat_accel = 2.5  # Default value
-        if self.enhanced_monitor:
+        if self.enhanced_monitor is not None:
             max_lat_accel = self.enhanced_monitor.get_updated_lateral_acceleration_limit()
         # Based on max lateral acceleration = v^2 * curvature
         # So curvature = max_lat_accel / v^2
@@ -556,9 +556,9 @@ class SelfLearningManager:
         # Log learning statistics periodically with enhanced detail
         if self.learning_samples % 50 == 0:
             cloudlog.info(
-                (f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, "
-                 f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
-                 f"Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}")
+                f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, "
+                f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
+                f"Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}"
             )
         # Comprehensive monitoring and logging for self-learning system
         self._comprehensive_monitoring()
@@ -636,11 +636,11 @@ class SelfLearningManager:
         # Log detailed monitoring data periodically (less frequently than basic stats)
         if self.learning_samples % 200 == 0:  # Log detailed metrics every 200 learning samples
             cloudlog.info(
-                (f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
-                 f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
-                 f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
-                 f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
-                 f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+                f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
+                f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
+                f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
+                f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
+                f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}"
             )
         # Log warnings if parameters drift too far from baseline
         drift_threshold = 0.5  # 50% drift from baseline
@@ -793,21 +793,25 @@ class SelfLearningManager:
         Returns:
             dictionary with validation results including safety flags and suggested corrections
         """
-        validation_results = {
+        safety_issues_list: list[str] = []
+        critical_violations_list: list[str] = []
+        validation_details_dict: dict[str, Any] = {}
+
+        validation_results: dict[str, Any] = {
             'is_safe': True,
-            'safety_issues': [],
+            'safety_issues': safety_issues_list,
             'corrected_curvature': desired_curvature,
             'corrected_acceleration': desired_acceleration,
-            'confidence_in_safety': 1.0,  # 0.0 to 1.0 scale
-            'validation_details': {},
-            'critical_violations': [],  # Track critical safety violations
-            'validation_passed': True,  # Whether validation passed
-            'overrides_applied': False  # Whether any overrides were applied
+            'confidence_in_safety': 1.0,
+            'validation_details': validation_details_dict,
+            'critical_violations': critical_violations_list,
+            'validation_passed': True,
+            'overrides_applied': False
         }
         # Safety validation for input parameters
         if v_ego < 0:
             validation_results['is_safe'] = False
-            validation_results['critical_violations'].append(f"CRITICAL: Invalid vehicle speed: {v_ego} m/s")
+            critical_violations_list.append(f"CRITICAL: Invalid vehicle speed: {v_ego} m/s")
             cloudlog.error(f"CRITICAL: Invalid v_ego in safety validation: {v_ego}")
             return validation_results  # Early return for critical input validation failure
         # Use enhanced safety validator if available
@@ -819,21 +823,21 @@ class SelfLearningManager:
             # Check if enhanced validation detected critical violations
             if enhanced_validation and enhanced_validation.get('critical_violations'):
                 validation_results['is_safe'] = False
-                validation_results['critical_violations'].extend(enhanced_validation['critical_violations'])
-                validation_results['safety_issues'].extend(enhanced_validation['safety_issues'])
+                critical_violations_list.extend(enhanced_validation['critical_violations'])
+                safety_issues_list.extend(enhanced_validation['safety_issues'])
         # Validate lateral control parameters (curvature) with more stringent checks
         max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
         if abs(desired_curvature) > max_safe_curvature:
             validation_results['is_safe'] = False
-            validation_results['critical_violations'].append(f"CRITICAL: Excessive curvature: {desired_curvature:.4f} > {max_safe_curvature:.4f}")
-            validation_results['safety_issues'].append(f"Excessive curvature: {desired_curvature:.4f} > {max_safe_curvature:.4f}")
+            critical_violations_list.append(f"CRITICAL: Excessive curvature: {desired_curvature:.4f} > {max_safe_curvature:.4f}")
+            safety_issues_list.append(f"Excessive curvature: {desired_curvature:.4f} > {max_safe_curvature:.4f}")
             validation_results['corrected_curvature'] = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))
             validation_results['overrides_applied'] = True
         # Validate very small curvature values that might indicate invalid calculations
         if abs(desired_curvature) < 0.0001 and abs(CS.aEgo) > 1.0:
             # If vehicle is accelerating/decelerating significantly but curvature is nearly zero,
             # this might indicate a calculation issue
-            validation_results['safety_issues'].append(f"Potentially invalid near-zero curvature with significant longitudinal acceleration: {CS.aEgo}")
+            safety_issues_list.append(f"Potentially invalid near-zero curvature with significant longitudinal acceleration: {CS.aEgo}")
         # Check for excessive lateral acceleration
         lateral_accel = v_ego * v_ego * desired_curvature if v_ego > 0.1 else 0.0
         max_lateral_accel = 2.5  # m/s^2 or use vehicle-specific limit
@@ -842,21 +846,21 @@ class SelfLearningManager:
         # Check for excessive lateral acceleration
         if abs(lateral_accel) > max_lateral_accel:
             validation_results['is_safe'] = False
-            validation_results['critical_violations'].append(f"CRITICAL: Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
-            validation_results['safety_issues'].append(f"Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
+            critical_violations_list.append(f"CRITICAL: Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
+            safety_issues_list.append(f"Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
         # Validate longitudinal control parameters (acceleration) with critical thresholds
         max_accel = 3.0 if v_ego < 15 else 2.0  # Reduce max acceleration at high speed
         max_brake = -4.0 if v_ego < 15 else -3.0  # Reduce max braking at high speed
         if desired_acceleration > max_accel:
             validation_results['is_safe'] = False
-            validation_results['critical_violations'].append(f"CRITICAL: Excessive acceleration: {desired_acceleration:.2f} > {max_accel:.2f}")
-            validation_results['safety_issues'].append(f"Excessive acceleration: {desired_acceleration:.2f} > {max_accel:.2f}")
+            critical_violations_list.append(f"CRITICAL: Excessive acceleration: {desired_acceleration:.2f} > {max_accel:.2f}")
+            safety_issues_list.append(f"Excessive acceleration: {desired_acceleration:.2f} > {max_accel:.2f}")
             validation_results['corrected_acceleration'] = max_accel
             validation_results['overrides_applied'] = True
         elif desired_acceleration < max_brake:
             validation_results['is_safe'] = False
-            validation_results['critical_violations'].append(f"CRITICAL: Excessive braking: {desired_acceleration:.2f} < {max_brake:.2f}")
-            validation_results['safety_issues'].append(f"Excessive braking: {desired_acceleration:.2f} < {max_brake:.2f}")
+            critical_violations_list.append(f"CRITICAL: Excessive braking: {desired_acceleration:.2f} < {max_brake:.2f}")
+            safety_issues_list.append(f"Excessive braking: {desired_acceleration:.2f} < {max_brake:.2f}")
             validation_results['corrected_acceleration'] = max_brake
             validation_results['overrides_applied'] = True
         # Check for parameter drift beyond safe bounds with more critical thresholds
@@ -892,9 +896,9 @@ class SelfLearningManager:
                 elif current_value < 0.3 or current_value > 1.5:  # Warning bounds
                     param_drift_issues.append(f"{param_name}: {current_value:.3f}")
         if critical_drift_issues:
-            validation_results['critical_violations'].append(f"Critical parameter drift detected: {', '.join(critical_drift_issues)}")
+            critical_violations_list.append(f"Critical parameter drift detected: {', '.join(critical_drift_issues)}")
         if param_drift_issues:
-            validation_results['safety_issues'].append(f"Parameter drift detected: {', '.join(param_drift_issues)}")
+            safety_issues_list.append(f"Parameter drift detected: {', '. join(param_drift_issues)}")
         # Check if there are frequent rapid adjustments (could indicate instability)
         if hasattr(self, '_prev_validation_curvatures'):
             if len(self._prev_validation_curvatures) >= 5:
@@ -902,10 +906,10 @@ class SelfLearningManager:
                                   for i in range(1, len(self._prev_validation_curvatures))]
                 avg_change = np.mean(recent_changes)
                 if avg_change > 0.05:  # Large changes in consecutive validations
-                    validation_results['safety_issues'].append(f"Rapid curvature changes detected: {avg_change:.4f}")
+                    safety_issues_list.append(f"Rapid curvature changes detected: {avg_change:.4f}")
                 # Critical check for very rapid changes
                 if avg_change > 0.1:  # Very large changes in consecutive validations
-                    validation_results['critical_violations'].append(f"CRITICAL: Very rapid curvature changes detected: {avg_change:.4f}")
+                    critical_violations_list.append(f"CRITICAL: Very rapid curvature changes detected: {avg_change:.4f}")
                     validation_results['is_safe'] = False
         else:
             self._prev_validation_curvatures = []
@@ -937,15 +941,19 @@ class SelfLearningManager:
         if enhanced_validation:
             if not enhanced_validation['is_safe']:
                 validation_results['is_safe'] = False
-                validation_results['safety_issues'].extend(enhanced_validation['safety_issues'])
+                safety_issues_list.extend(enhanced_validation['safety_issues'])
                 validation_results['confidence_in_safety'] *= 0.7  # Reduce confidence more significantly
                 if enhanced_validation.get('critical_violations'):
-                    validation_results['critical_violations'].extend(enhanced_validation['critical_violations'])
+                    critical_violations_list.extend(enhanced_validation['critical_violations'])
+
+        # Set final is_safe flag
+        validation_results['is_safe'] = not critical_violations_list and not safety_issues_list
+
         # Log safety validation results with critical emphasis
-        if validation_results['critical_violations']:
+        if critical_violations_list:
             cloudlog.error(
                 f"CRITICAL SELF-LEARNING SAFETY VIOLATIONS - Safe: {validation_results['is_safe']}, "
-                 f"Issues: {validation_results['critical_violations']}, "
+                 f"Issues: {critical_violations_list}, "
                  f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
                  f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}"
             )
@@ -953,7 +961,7 @@ class SelfLearningManager:
             cloudlog.warning(
                 f"Self-Learning Safety Validation - Safe: {validation_results['is_safe']}, "
                  f"Confidence: {validation_results['confidence_in_safety']:.2f}, "
-                 f"Issues: {validation_results['safety_issues']}, "
+                 f"Issues: {safety_issues_list}, "
                  f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
                  f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}"
             )
@@ -965,7 +973,7 @@ class SelfLearningManager:
             if recent_changes:
                 avg_recent_change = np.mean(recent_changes)
         # Set validation passed flag
-        validation_results['validation_passed'] = len(validation_results['critical_violations']) == 0
+        validation_results['validation_passed'] = len(critical_violations_list) == 0
         validation_results['validation_details'] = {
             'v_ego': v_ego,
             'lateral_accel': lateral_accel,
