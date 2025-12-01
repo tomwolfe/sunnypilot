@@ -170,18 +170,16 @@ def test_safe_manager_curvature_adjustment(safe_self_learning_manager):
 
 def test_safe_manager_learning_updates(safe_self_learning_manager):
     """Test that learning updates work without errors."""
-    manager = safe_self_learning_manager
-    # Create mock car state
-    CS = Mock()
+    CS = Mock(brakePressed=False, steeringAngleDeg=0.0, leadOne=Mock(dRel=100.0), rainRadar=0.0)
     CS.steeringPressed = False
     CS.vEgo = 15.0
     CS.steeringTorque = 0.1
-    CS.steeringAngleDeg = 0.0
+
     # This should run without error
     manager.update(
         CS,
-        desired_curvature=0.05,
-        actual_curvature=0.048,
+        desired_curvature=0.005, # Reduced to be within safe limits for vEgo=15.0
+        actual_curvature=0.0048,
         steering_torque=0.1,
         v_ego=CS.vEgo
     )
@@ -189,20 +187,23 @@ def test_safe_manager_learning_updates(safe_self_learning_manager):
     CS.steeringPressed = True
     manager.update(
         CS,
-        desired_curvature=0.1,
-        actual_curvature=0.05,
+        desired_curvature=0.008, # Reduced to be within safe limits
+        actual_curvature=0.005,
         steering_torque=1.0,
         v_ego=CS.vEgo
     )
     # Assert that learning is enabled after intervention
     assert manager.learning_manager.learning_enabled
+
+
+
 def test_integration(safe_self_learning_manager):
     """Integration test to verify the system works end-to-end."""
     learning_manager = safe_self_learning_manager
     # Simulate multiple driving scenarios
     for _i in range(100):
         # Simulate a driving state
-        CS = Mock()
+        CS = Mock(brakePressed=False, steeringAngleDeg=0.0, leadOne=Mock(dRel=100.0))
         CS.steeringPressed = False  # Most of the time, no intervention
         CS.vEgo = 10.0 + (_i % 20)  # Vary speed
         CS.steeringTorque = 0.05 if _i % 10 != 0 else 2.0  # Occasional large torque
@@ -210,7 +211,7 @@ def test_integration(safe_self_learning_manager):
         if _i % 10 == 0:
             CS.steeringPressed = True
         # Simulate model inputs
-        base_curvature = 0.02 * np.sin(_i * 0.1)  # Varying desired curvature
+        base_curvature = 0.01 * np.sin(_i * 0.1)  # Varying desired curvature, reduced max curvature
         actual_curvature = base_curvature * 0.98 + 0.001 * np.random.randn()  # With some noise
         # Process with learning system
         learning_manager.adjust_curvature(base_curvature, CS.vEgo)

@@ -237,6 +237,7 @@ class SelfLearningSafety:
         self.prev_safety_score = self.learning_safety_score
         return self.learning_safety_score
     def should_freeze_learning(self, CS: car.CarState, safety_score: float) -> bool:
+
         """
         Determine if learning should be frozen based on safety conditions.
         Args:
@@ -248,22 +249,28 @@ class SelfLearningSafety:
         # Freeze learning if safety score is too low
         if safety_score < 0.3:
             cloudlog.warning(f"Safety score too low ({safety_score:.2f}), freezing learning")
+
             return True
         # Freeze learning during emergency situations
         if CS.brakePressed and CS.vEgo > 5.0:
             # Emergency braking
             cloudlog.info("Emergency braking detected, temporarily freezing learning")
+
             return True
         # Freeze learning if steering angle is at limits
         if abs(CS.steeringAngleDeg) > 70:  # Near limits
             cloudlog.info("Steering near limits, freezing learning")
+
             return True
         # Check for unsafe lateral acceleration
         if CS.vEgo > 5:  # Only check when moving
             lateral_accel = CS.vEgo * CS.vEgo * self.prev_curvature
+
             if abs(lateral_accel) > self.max_lateral_acceleration * 0.9:  # 90% of limit
                 cloudlog.warning(f"High lateral acceleration ({lateral_accel:.2f} m/s²), freezing learning")
+
                 return True
+
         return False
     def _calculate_max_safe_curvature(self, v_ego: float) -> float:
         """
@@ -384,7 +391,12 @@ class SafeSelfLearningManager:
                           cloudlog.info("Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, " +
                                          f"Learning Enabled: {self.learning_manager.learning_enabled}, " +
                                          f"Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}")
-        adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
+        adjusted_outputs = {'desired_curvature': adjusted_curvature}
+
+        # Update self.safety.prev_curvature by calling validate_curvature_adjustment
+        # This ensures the lateral_accel calculation in should_freeze_learning is accurate
+        _, _ = self.safety.validate_curvature_adjustment(desired_curvature, adjusted_curvature, v_ego)
+
         safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
         freeze_learning = self.safety.should_freeze_learning(CS, safety_score)
         if freeze_learning:

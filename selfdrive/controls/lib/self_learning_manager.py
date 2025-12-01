@@ -778,12 +778,13 @@ class SelfLearningManager:
         """
         Reset the learning state to initial values.
         """
-        self.adaptive_params = {
+        self.adaptive_params.clear()
+        self.adaptive_params.update({
             'lateral_control_factor': 1.0,
             'curvature_bias': 0.0,
             'acceleration_factor': 1.0,
             'reaction_time_compensation': 0.2,
-        }
+        })
         self.learning_samples = 0
         self.experience_buffer.clear()
         self.intervention_buffer.clear()
