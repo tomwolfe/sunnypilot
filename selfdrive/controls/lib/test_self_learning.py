@@ -8,7 +8,8 @@ This script provides unit tests and integration tests for the self-learning syst
 import unittest
 import numpy as np
 from unittest.mock import Mock, MagicMock
-from self_learning_manager import SelfLearningManager, SafeSelfLearningManager
+from self_learning_manager import SelfLearningManager
+from self_learning_safety import SafeSelfLearningManager
 from self_learning_safety import SelfLearningSafety
 from cereal import car, log
 
