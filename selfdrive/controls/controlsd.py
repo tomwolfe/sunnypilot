@@ -26,6 +26,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
+from openpilot.selfdrive.controls.lib.self_learning_manager import SafeSelfLearningManager
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -103,6 +104,9 @@ class Controls(ControlsExt):
 
     # Initialize edge case handler for unusual scenario detection and handling
     self.edge_case_handler = EdgeCaseHandler()
+
+    # Initialize self-learning manager for adaptive driving behavior
+    self.self_learning_manager = SafeSelfLearningManager(self.CP, self.CP_SP)
 
   def _init_vehicle_thermal_parameters(self):
     """
@@ -540,11 +544,15 @@ class Controls(ControlsExt):
     # accel PID loop
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits))
 
-    # Apply lateral control modifications if needed
-    modified_desired_curvature = model_v2.action.desiredCurvature
+    # Apply self-learning adjustments to model outputs
+    base_desired_curvature = model_v2.action.desiredCurvature
+    learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
+
+    # Apply lateral control modifications if needed (after learning adjustment)
+    modified_desired_curvature = learned_adjusted_curvature
     if adaptive_mods['lateral_factor'] < 1.0 and CC.latActive:
       # Make lateral control more conservative by reducing desired curvature
-      modified_desired_curvature = model_v2.action.desiredCurvature * adaptive_mods['lateral_factor']
+      modified_desired_curvature = learned_adjusted_curvature * adaptive_mods['lateral_factor']
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -622,6 +630,17 @@ class Controls(ControlsExt):
     # Enhanced saturation handling in controls state
     if saturation_detected:
       CC.hudControl.visualAlert = log.ControlsState.AlertStatus.normal  # Indicate saturation to user
+
+    # Update self-learning manager with current driving experience
+    model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
+    self.self_learning_manager.update(
+        CS,
+        base_desired_curvature,  # Original model output
+        self.curvature,  # Actual vehicle curvature
+        actuators.torque,
+        CS.vEgo,
+        model_confidence=model_confidence
+    )
 
     return CC, lac_log
 
@@ -923,11 +942,15 @@ class Controls(ControlsExt):
     # Enhanced saturation handling with adaptive limits based on thermal state
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits))
 
-    # Apply lateral control modifications if needed
-    modified_desired_curvature = model_v2.action.desiredCurvature
+    # Apply self-learning adjustments to model outputs
+    base_desired_curvature = model_v2.action.desiredCurvature
+    learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
+
+    # Apply lateral control modifications if needed (after learning adjustment)
+    modified_desired_curvature = learned_adjusted_curvature
     if adaptive_mods['lateral_factor'] < 1.0 and CC.latActive:
       # Make lateral control more conservative by reducing desired curvature
-      modified_desired_curvature = model_v2.action.desiredCurvature * adaptive_mods['lateral_factor']
+      modified_desired_curvature = learned_adjusted_curvature * adaptive_mods['lateral_factor']
 
     # Apply thermal-aware curvature limits
     if self.performance_compensation_factor < 0.7:
@@ -1007,6 +1030,17 @@ class Controls(ControlsExt):
     # Enhanced saturation handling in controls state
     if saturation_detected:
       CC.hudControl.visualAlert = log.ControlsState.AlertStatus.normal  # Indicate saturation to user
+
+    # Update self-learning manager with current driving experience
+    model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
+    self.self_learning_manager.update(
+        CS,
+        base_desired_curvature,  # Original model output
+        self.curvature,  # Actual vehicle curvature
+        actuators.torque,
+        CS.vEgo,
+        model_confidence=model_confidence
+    )
 
     return CC, lac_log
 
