@@ -3,13 +3,12 @@
 Test script to verify the enhanced self-learning system functionality.
 This tests the improvements addressing critical review concerns.
 """
-from unittest.mock import Mock, MagicMock
 import sys
 import time
 # Add the openpilot path to sys.path
 sys.path.insert(0, '/Users/tom/Documents/apps/sunnypilot2')
 # Test the enhanced monitoring module directly
-from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator, TunnelDetector
+from openpilot.selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator, TunnelDetector
 
 def test_enhanced_monitoring():
     """Test the enhanced monitoring functionality."""
@@ -31,13 +30,13 @@ def test_enhanced_monitoring():
     # Initially, no over-adaptation should be detected
     result = monitor.monitor_over_adaptation(mock_params, mock_context)
     print(f"  Initial over-adaptation detection: {result['over_adaptation_detected']}")
-    assert result['over_adaptation_detected'] == False
+    assert not result['over_adaptation_detected']
     # Simulate parameter changes that would indicate over-adaptation
     mock_params['lateral_control_factor'] = 1.5  # Large change
     result = monitor.monitor_over_adaptation(mock_params, mock_context)
     print(f"  After large parameter change: {result['over_adaptation_detected']}")
     # Test computational performance tracking
-    start_time = time.time()
+    start_time = time.monotonic()
     time.sleep(0.0001)  # Simulate computation time
     comp_time = monitor.track_computational_performance(start_time)
     print(f"  Tracked computation time: {comp_time*1000:.2f}ms")
@@ -78,7 +77,7 @@ def test_tunnel_detection():
     tunnel_detected = detector.detect_tunnel(normal_gps_data, None)
     print(f"  Tunnel detected with normal GPS: {tunnel_detected}")
     # Call multiple times with poor data to increase probability
-    for i in range(10):
+    for _ in range(10):
         tunnel_detected = detector.detect_tunnel(gps_data, None)
     print(f"  After multiple poor GPS readings: {tunnel_detected}")
     print("  ✅ Tunnel detection works correctly")
@@ -108,9 +107,9 @@ def test_enhanced_safety_validation():
         print(f"    Safety issues detected: {result['safety_issues']}")
     # Check performance metrics
     metrics = validator.get_performance_metrics()
-    print(f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
-          f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
-          f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
+    print((f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
+           f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
+           f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms"))
     print("  ✅ Enhanced safety validation works correctly")
 def run_all_tests():
     """Run all enhanced functionality tests."""

@@ -26,16 +26,16 @@ def test_reset_functionality():
     manager.adaptive_params['curvature_bias'] = 0.005
     manager.learning_samples = 150
     print(
-        (f"  Before reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-         f"Samples: {manager.learning_samples}")
+        f"  Before reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
+         f"Samples: {manager.learning_samples}"
     )
     # Test that params.get returns "1" to trigger reset
     mock_params.get.return_value = "1"
     # Call the reset method directly first to verify it works
     manager.reset_learning_state()
     print(
-        (f"  After reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-         f"Samples: {manager.learning_samples}")
+        f"  After reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
+         f"Samples: {manager.learning_samples}"
     )
     # Verify parameters were reset to default values
     assert manager.adaptive_params['lateral_control_factor'] == 1.0, "Lateral control factor not reset"
@@ -59,15 +59,15 @@ def test_parameter_based_reset():
     manager.adaptive_params['curvature_bias'] = -0.003
     manager.learning_samples = 200
     print(
-        (f"  Before reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-         f"Samples: {manager.learning_samples}")
+        f"  Before reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
+         f"Samples: {manager.learning_samples}"
     )
     # Test 1: No reset request (parameter not set or not "1")
     mock_params.get.return_value = None
     manager.check_for_reset_request()  # Should do nothing
     print(
-        (f"  After no-reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-         f"Samples: {manager.learning_samples}")
+        f"  After no-reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
+         f"Samples: {manager.learning_samples}"
     )
     # Parameters should remain unchanged
     assert manager.adaptive_params['lateral_control_factor'] == 1.30
@@ -77,8 +77,8 @@ def test_parameter_based_reset():
     mock_params.get.return_value = "1"
     manager.check_for_reset_request()  # Should perform reset
     print(
-        (f"  After reset request - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-         f"Samples: {manager.learning_samples}")
+        f"  After reset request - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
+         f"Samples: {manager.learning_samples}"
     )
     # Parameters should now be reset
     assert manager.adaptive_params['lateral_control_factor'] == 1.0, "Lateral control factor not reset"

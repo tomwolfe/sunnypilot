@@ -4,7 +4,7 @@ Test approach for self-learning autonomous driving capabilities.
 This script provides unit tests and integration tests for the self-learning system.
 """
 import numpy as np
-from mock import Mock, MagicMock
+from unittest.mock import Mock
 # Import SelfLearningManager with fallback for CI environment
 try:
     from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
