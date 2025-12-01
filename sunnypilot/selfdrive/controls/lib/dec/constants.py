@@ -8,7 +8,8 @@ class WMACConstants:
   SLOW_DOWN_PROB = 0.25  # Lower threshold for earlier detection of slow-downs
 
   # Threshold multipliers for different scenarios
-  SLOW_DOWN_THRESHOLD_MULTIPLIER = 0.7  # Multiplier for slow down detection threshold with map data integration
+  SLOW_DOWN_THRESHOLD_MULTIPLIER = 0.7  # Multiplier that effectively lowers the slow down detection threshold when map data is available,
+                                         # making the system more sensitive to upcoming traffic lights/stops (0.7 * base threshold)
 
   # Optimized slow down distance curve - enhanced for traffic light/stop sign scenarios
   # Adjusted to better anticipate stops at traffic lights and stop signs

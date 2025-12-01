@@ -16,7 +16,7 @@ MAX_SPEED_LIMIT = V_CRUISE_UNSET * CV.KPH_TO_MS
 
 # Traffic sign detection constants
 TRAFFIC_SIGN_MIN_DISTANCE = 10.0  # Minimum distance for considering a sign (in meters)
-TRAFFIC_SIGN_BEARING_THRESHOLD = 90.0  # Bearing threshold for considering a sign as "ahead" (in degrees)
+TRAFFIC_SIGN_BEARING_THRESHOLD = 110.0  # Bearing threshold for considering a sign as "ahead" (in degrees), allowing for sharper curves
 
 
 class BaseMapData(ABC):
