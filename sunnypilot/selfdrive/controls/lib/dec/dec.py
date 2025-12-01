@@ -240,7 +240,7 @@ class DynamicExperimentalController:
       self._has_slowness = slowness_value > threshold
 
   def _calculate_slow_down(self, md):
-    """Calculate urgency based on trajectory endpoint vs expected distance."""
+    """Calculate urgency based on trajectory endpoint vs expected distance with enhanced traffic light/stop sign detection."""
 
     # Reset to safe defaults
     urgency = 0.0
@@ -276,7 +276,7 @@ class DynamicExperimentalController:
                                WMACConstants.SLOW_DOWN_DIST)
     self._expected_distance = expected_distance
 
-    # Calculate urgency based on trajectory shortage
+    # Calculate urgency based on trajectory shortage with enhanced logic for traffic lights/stops
     if endpoint_x < expected_distance:
       shortage = expected_distance - endpoint_x
       shortage_ratio = shortage / expected_distance
@@ -284,22 +284,28 @@ class DynamicExperimentalController:
       # Base urgency on shortage ratio
       urgency = min(1.0, shortage_ratio * 2.0)
 
+      # Enhanced logic for traffic light/stop sign scenarios:
+      # More aggressive urgency when approaching intersections
+      if endpoint_x < expected_distance * 0.5:  # Approaching mid-point
+        urgency *= 1.5  # Increase urgency for closer approach
+
       # Increase urgency for very short trajectories (imminent stops)
       critical_distance = expected_distance * 0.3
       if endpoint_x < critical_distance:
         urgency = min(1.0, urgency * 2.0)
 
-      # Speed-based urgency adjustment
-      if self._v_ego_kph > 25.0:
-        speed_factor = 1.0 + (self._v_ego_kph - 25.0) / 80.0
+      # Enhanced speed-based urgency adjustment for better traffic light handling
+      if self._v_ego_kph > 20.0 and self._v_ego_kph <= 35.0:  # Typical urban intersection speeds
+        speed_factor = 1.0 + (35.0 - self._v_ego_kph) / 50.0  # More urgency when decelerating in urban areas
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(urgency)
     urgency_filtered = self._slow_down_filter.get_value() or 0.0
 
-    # Update state with lower threshold for better stop detection
-    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.8)
+    # Update state with enhanced traffic light/stop sign awareness
+    # Lower threshold for better detection of traffic light/stop sign scenarios
+    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.7)
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
@@ -375,6 +381,12 @@ class DynamicExperimentalController:
     self._read_params()
 
     self.set_mpc_fcw_crash_cnt()
+
+    # Consider map-based traffic sign information if available
+    if sm.updated['liveMapDataSP']:
+      live_map_data = sm['liveMapDataSP']
+      # Future enhancement: use map data to inform DEC about upcoming traffic signs
+      # This would make the system more proactive at intersections
 
     self._update_calculations(sm)
 

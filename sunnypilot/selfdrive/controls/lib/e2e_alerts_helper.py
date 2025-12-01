@@ -5,7 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from cereal import messaging, custom
+from cereal import messaging, custom, log
 
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
@@ -73,10 +73,31 @@ class E2EAlertsHelper:
 
     self.allowed = not moving and not CS.gasPressed and not CC.enabled and not recent_moving
 
-    # Green Light Alert
+    # Enhanced Green Light Alert with multiple criteria
     green_light_trigger = False
     if self.green_light_state == E2EStates.ARMED:
+      # Use multiple criteria for more robust green light detection
+      green_light_criteria_met = 0
+      total_criteria = 0
+
+      # Criterion 1: Model trajectory extends far enough (original)
       if model_x[max_idx] > GREEN_LIGHT_X_THRESHOLD:
+        green_light_criteria_met += 1
+      total_criteria += 1
+
+      # Criterion 2: Model confidence indicates safe to proceed
+      model_confidence = sm['modelV2'].meta.confidence
+      if model_confidence == log.ModelDataV2.ConfidenceClass.green:
+        green_light_criteria_met += 1
+      total_criteria += 1
+
+      # Criterion 3: No lead car blocking progress (unless it's moving)
+      if not self.has_lead or lead_dRel > 15.0 or sm['radarState'].leadOne.vRel > 2.0:
+        green_light_criteria_met += 1
+      total_criteria += 1
+
+      # Use majority voting - at least 2 out of 3 criteria should be met
+      if green_light_criteria_met >= 2:
         self.green_light_trigger_timer += 1
       else:
         self.green_light_trigger_timer = 0

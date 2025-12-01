@@ -119,6 +119,20 @@ class SmartCruiseControlVision:
       v_ego = max(self.v_ego, 0.1)  # ensure a value greater than 0 for calculations
       max_curve = self.max_pred_lat_acc / (v_ego**2)
 
+      # Enhanced logic for traffic light/stop sign situations
+      # Check if the model suggests a stop is needed (trajectory is cut short)
+      model_position_x = sm['modelV2'].position.x
+      if len(model_position_x) > 0:
+        max_model_distance = model_position_x[-1]  # Last predicted position
+        # If model trajectory is very short, adjust target velocity appropriately
+        # This can indicate approaching traffic lights or stop signs
+        if max_model_distance < 40:  # Less than 40m ahead suggests potential stop
+          # Adjust target velocity based on remaining distance and current speed
+          distance_factor = min(1.0, max_model_distance / 40.0)  # 0-1 scale based on distance
+          self.v_target *= distance_factor  # Reduce target velocity proportionally
+          # Ensure we don't go below minimum speed for safe operation
+          self.v_target = max(self.v_target, MIN_V)
+
       # Get the target velocity for the maximum curve
       # Handle case where max_curve is zero to avoid division by zero
       if max_curve > 1e-6:  # small threshold to avoid division by zero

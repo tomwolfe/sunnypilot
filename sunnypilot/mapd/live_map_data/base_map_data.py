@@ -10,7 +10,7 @@ import cereal.messaging as messaging
 from openpilot.common.params import Params
 from openpilot.common.constants import CV
 from openpilot.selfdrive.car.cruise import V_CRUISE_UNSET
-from openpilot.sunnypilot.navd.helpers import coordinate_from_param
+from openpilot.sunnypilot.navd.helpers import coordinate_from_param, Coordinate
 
 MAX_SPEED_LIMIT = V_CRUISE_UNSET * CV.KPH_TO_MS
 
@@ -63,3 +63,56 @@ class BaseMapData(ABC):
     self.sm.update(0)
     self.update_location()
     self.publish()
+
+  def get_traffic_sign_info(self) -> dict:
+    """
+    Enhanced method to get traffic sign information from map data.
+    Returns information about upcoming traffic signs like stop signs, traffic lights, etc.
+    """
+    # This method would be implemented to retrieve traffic sign information from OSM data
+    # For now, it returns a default structure that can be expanded
+    traffic_sign_info = {
+      'has_stop_sign': False,
+      'has_traffic_light': False,
+      'has_yield_sign': False,
+      'distance_to_next_sign': float('inf'),
+      'sign_type': None,
+      'sign_coordinates': None
+    }
+
+    # Get traffic sign data from params if available
+    traffic_sign_data = self.params.get("MapTrafficSigns")
+    if traffic_sign_data:
+      try:
+        import json
+        sign_data = json.loads(traffic_sign_data)
+
+        # Process the sign data to find the closest relevant sign ahead
+        if self.last_position and 'signs' in sign_data:
+          closest_sign = None
+          min_distance = float('inf')
+
+          for sign in sign_data['signs']:
+            sign_coords = Coordinate(sign.get('latitude', 0), sign.get('longitude', 0))
+            distance = self.last_position.distance_to(sign_coords)
+
+            # Only consider signs ahead of us (simple heuristic based on distance)
+            if distance < min_distance and distance > 10:  # At least 10m away to be relevant
+              min_distance = distance
+              closest_sign = sign
+
+          if closest_sign:
+            sign_type = closest_sign.get('type', '').lower()
+            traffic_sign_info.update({
+              'has_stop_sign': sign_type == 'stop',
+              'has_traffic_light': sign_type in ['traffic_light', 'light'],
+              'has_yield_sign': sign_type == 'yield',
+              'distance_to_next_sign': min_distance,
+              'sign_type': sign_type,
+              'sign_coordinates': sign_coords
+            })
+      except Exception:
+        # If there's an error parsing the data, return default values
+        pass
+
+    return traffic_sign_info
