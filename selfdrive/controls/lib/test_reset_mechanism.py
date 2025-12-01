@@ -5,9 +5,8 @@ Test script to verify the reset mechanism functionality added to address review 
 
 
 import sys
-import time
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock # noqa: TID251
 import os
 # Add the openpilot path to sys.path dynamically
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
@@ -49,7 +48,7 @@ def mock_CP_fixture():
     CP = Mock()
     CP_SP = Mock()
     return CP, CP_SP
-def test_reset_functionality(mock_params_fixture, mock_CP_fixture):
+def test_reset_functionality(mock_params_fixture, mock_CP_fixture, monkeypatch):
     """Test the parameter-based reset functionality."""
     CP, CP_SP = mock_CP_fixture
     # Create a SelfLearningManager instance
@@ -61,7 +60,7 @@ def test_reset_functionality(mock_params_fixture, mock_CP_fixture):
     manager.adaptive_params['curvature_bias'] = 0.005
     manager.learning_samples = 150
     # Test that params.get returns "1" to trigger reset
-    mock_params_fixture.get.return_value = "1"
+    monkeypatch.setattr(manager.params, 'get', lambda key, encoding=None: "1" if key == b"ResetSelfLearning" else None)
     # Call the reset method directly first to verify it works
     manager.reset_learning_state()
     # Verify parameters were reset to default values
@@ -80,14 +79,14 @@ def test_parameter_based_reset(mock_params_fixture, mock_CP_fixture, monkeypatch
     manager.adaptive_params['curvature_bias'] = -0.003
     manager.learning_samples = 200
     # Test 1: No reset request (parameter not set or not "1")
-    mock_params_fixture.get.return_value = None
+    monkeypatch.setattr(manager.params, 'get', lambda key, encoding=None: None)
     manager.check_for_reset_request()  # Should do nothing
     # Parameters should remain unchanged
     assert manager.adaptive_params['lateral_control_factor'] == 1.30
     assert manager.adaptive_params['curvature_bias'] == -0.003
     assert manager.learning_samples == 200
     # Test 2: Reset request (parameter set to "1")
-    mock_params_fixture.get.return_value = "1"
+    monkeypatch.setattr(manager.params, 'get', lambda key, encoding=None: "1" if key == b"ResetSelfLearning" else None)
     # Mock the delete method to check if it's called
     mock_params_fixture.delete = Mock()
     manager.check_for_reset_request()  # Should perform reset

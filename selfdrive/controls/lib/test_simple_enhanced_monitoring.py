@@ -107,9 +107,9 @@ def test_enhanced_safety_validation():
         print(f"    Safety issues detected: {result['safety_issues']}")
     # Check performance metrics
     metrics = validator.get_performance_metrics()
-    print((f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
-           f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
-           f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms"))
+    print(f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
+          f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
+          f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
     print("  ✅ Enhanced safety validation works correctly")
 def run_all_tests():
     """Run all enhanced functionality tests."""
