@@ -226,20 +226,20 @@ class DynamicExperimentalController:
     self._mpc_fcw_filter.add_data(float(self._mpc_fcw_crash_cnt > 0))
     self._has_mpc_fcw = fcw_filtered_value > 0.5
 
-    # Slow down detection
-    self._calculate_slow_down(md)
+    # Slow down detection - enhanced with map data if available
+    self._calculate_slow_down(md, sm)
 
-    # Slowness detection
+    # Slowness detection - enhanced with map data if available
     if not (self._standstill_count > 5) and not self._has_slow_down:
       current_slowness = float(self._v_ego_kph <= (self._v_cruise_kph * WMACConstants.SLOWNESS_CRUISE_OFFSET))
       self._slowness_filter.add_data(current_slowness)
       slowness_value = self._slowness_filter.get_value() or 0.0
 
-      # Hysteresis for slowness
+      # Hysteresis for slowness - consider traffic sign info if available
       threshold = WMACConstants.SLOWNESS_PROB * (0.8 if self._has_slowness else 1.1)
       self._has_slowness = slowness_value > threshold
 
-  def _calculate_slow_down(self, md):
+  def _calculate_slow_down(self, md, sm=None):
     """Calculate urgency based on trajectory endpoint vs expected distance with enhanced traffic light/stop sign detection."""
 
     # Reset to safe defaults
@@ -298,6 +298,35 @@ class DynamicExperimentalController:
       if self._v_ego_kph > 20.0 and self._v_ego_kph <= 35.0:  # Typical urban intersection speeds
         speed_factor = 1.0 + (35.0 - self._v_ego_kph) / 50.0  # More urgency when decelerating in urban areas
         urgency = min(1.0, urgency * speed_factor)
+
+    # Apply map data enhancement if available
+    if sm and sm.updated['liveMapDataSP']:
+      from sunnypilot.mapd.live_map_data.base_map_data import BaseMapData
+      # Note: We can't directly call get_traffic_sign_info() here since it's an instance method
+      # Instead, we'll access the traffic sign data from liveMapDataSP directly
+      # This requires the BaseMapData service to populate the relevant fields in liveMapDataSP
+      live_map_data = sm['liveMapDataSP']
+
+      # Check if there's a traffic sign ahead based on map data
+      # These fields need to be added to liveMapDataSP by the BaseMapData service
+      has_stop_sign = getattr(live_map_data, 'hasStopSign', False)
+      has_traffic_light = getattr(live_map_data, 'hasTrafficLight', False)
+      distance_to_sign = getattr(live_map_data, 'distanceToNextSign', float('inf'))
+
+      # Increase urgency if we know there's a traffic sign ahead from map data
+      if (has_stop_sign or has_traffic_light) and distance_to_sign < expected_distance:
+        # More aggressive urgency when approaching known traffic signs from map data
+        map_based_urgency = 1.0 - (distance_to_sign / expected_distance)  # Higher urgency as we get closer
+        urgency = max(urgency, map_based_urgency)
+
+        # Also adjust urgency calculation based on known sign type
+        if has_stop_sign:
+          # Stop signs require more aggressive slowing down
+          urgency = min(1.0, urgency * 1.3)
+        elif has_traffic_light:
+          # Traffic lights may require different urgency based on distance
+          if distance_to_sign < expected_distance * 0.3:  # Very close to light
+            urgency = min(1.0, urgency * 1.2)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(urgency)
@@ -385,8 +414,7 @@ class DynamicExperimentalController:
     # Consider map-based traffic sign information if available
     if sm.updated['liveMapDataSP']:
       live_map_data = sm['liveMapDataSP']
-      # Future enhancement: use map data to inform DEC about upcoming traffic signs
-      # This would make the system more proactive at intersections
+      # The map data integration is now handled in _calculate_slow_down method
 
     self._update_calculations(sm)
 

@@ -83,10 +83,10 @@ class LongitudinalPlannerSP:
     # Update DEC with map-based traffic sign information for enhanced decision making
     if sm.updated['liveMapDataSP']:
       live_map_data = sm['liveMapDataSP']
-      if live_map_data.speedLimitAheadValid and live_map_data.speedLimitAheadDistance < 100:
-        # If we have upcoming speed limit changes, pass this info to DEC
-        # This could help DEC make better decisions in traffic light/intersection scenarios
-        pass  # Future enhancement: pass map data to DEC for better contextual awareness
+      # Pass map data to DEC for better contextual awareness
+      # This is now handled in the DEC's _calculate_slow_down method
+      # where it can access traffic sign info directly
+      pass
 
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)

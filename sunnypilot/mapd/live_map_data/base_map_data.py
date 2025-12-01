@@ -46,6 +46,9 @@ class BaseMapData(ABC):
     speed_limit = self.get_current_speed_limit()
     next_speed_limit, next_speed_limit_distance = self.get_next_speed_limit_and_distance()
 
+    # Get traffic sign information
+    traffic_sign_info = self.get_traffic_sign_info()
+
     mapd_sp_send = messaging.new_message('liveMapDataSP')
     mapd_sp_send.valid = self.sm['liveLocationKalman'].gpsOK
     live_map_data = mapd_sp_send.liveMapDataSP
@@ -56,6 +59,12 @@ class BaseMapData(ABC):
     live_map_data.speedLimitAhead = next_speed_limit
     live_map_data.speedLimitAheadDistance = next_speed_limit_distance
     live_map_data.roadName = self.get_current_road_name()
+
+    # Add traffic sign information to the message
+    live_map_data.hasStopSign = traffic_sign_info['has_stop_sign']
+    live_map_data.hasTrafficLight = traffic_sign_info['has_traffic_light']
+    live_map_data.hasYieldSign = traffic_sign_info['has_yield_sign']
+    live_map_data.distanceToNextSign = traffic_sign_info['distance_to_next_sign']
 
     self.pm.send('liveMapDataSP', mapd_sp_send)
 
@@ -92,12 +101,28 @@ class BaseMapData(ABC):
           closest_sign = None
           min_distance = float('inf')
 
+          # Update location to get current bearing if available
+          self.update_location()
+
           for sign in sign_data['signs']:
             sign_coords = Coordinate(sign.get('latitude', 0), sign.get('longitude', 0))
             distance = self.last_position.distance_to(sign_coords)
 
-            # Only consider signs ahead of us (simple heuristic based on distance)
-            if distance < min_distance and distance > 10:  # At least 10m away to be relevant
+            # Only consider signs that are in front of us based on heading
+            # Calculate heading angle between vehicle and sign
+            is_ahead = True
+            if self.last_bearing is not None:
+              # Calculate the bearing from vehicle to sign
+              bearing_to_sign = self.last_position.bearing_to(sign_coords)
+              # Calculate the difference in bearing (considering 180-degree wraparound)
+              bearing_diff = abs(bearing_to_sign - self.last_bearing)
+              if bearing_diff > 180:
+                bearing_diff = 360 - bearing_diff
+              # Consider it "ahead" if within 90 degrees (front 180-degree arc)
+              is_ahead = bearing_diff < 90
+
+            # Only consider signs ahead of us and at a relevant distance
+            if distance < min_distance and distance > 10 and is_ahead:  # At least 10m away and in front of us
               min_distance = distance
               closest_sign = sign
 
