@@ -19,27 +19,33 @@ from cereal import log
 class SelfLearningManager:
     """
     Manages self-learning capabilities for autonomous driving.
-    
+
     The system learns from driver interventions, model-actual discrepancies,
     and environmental conditions to adapt driving parameters and model outputs.
     """
-    
+
     def __init__(self, CP, CP_SP):
         self.CP = CP
         self.CP_SP = CP_SP
         self.params = Params()
-        
+
         # Initialize learning state
         self.learning_enabled = True
         self.learning_rate = 0.01
         self.confidence_threshold = 0.7
         self.intervention_threshold = 0.5  # Amount of steering correction to trigger learning
-        
+
+        # Track performance metrics
+        self.performance_start_time = time.time()
+        self.total_updates = 0
+        self.max_update_time = 0.0
+        self.update_time_samples = deque(maxlen=100)  # Track recent update times
+
         # Memory for storing recent experiences
         self.experience_buffer = deque(maxlen=1000)  # Store recent driving experiences
         self.intervention_buffer = deque(maxlen=100)  # Store interventions
         self.model_accuracy_history = deque(maxlen=500)  # Track model prediction accuracy
-        
+
         # Adaptive parameters that will be learned
         self.adaptive_params = {
             'lateral_control_factor': 1.0,  # Scaling factor for lateral control
@@ -49,16 +55,16 @@ class SelfLearningManager:
             'speed_compensation_base': 1.0,  # Base value for speed compensation
             'speed_compensation_rate': 0.0  # Rate of change with speed (learnable instead of hardcoded)
         }
-        
+
         # Learning state tracking
         self.last_update_time = time.time()
         self.update_interval = 5.0  # Update parameters every 5 seconds
         self.learning_samples = 0
         self.total_samples = 0
-        
+
         # Initialize from saved parameters if available
         self.load_adaptive_params()
-        
+
         cloudlog.info("Self-Learning Manager initialized")
     
     def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float,
@@ -78,10 +84,21 @@ class SelfLearningManager:
         if not self.learning_enabled:
             return
 
+        # Performance tracking
+        start_time = time.time()
+
         # Detect if driver is overriding the system
         steering_pressed = CS.steeringPressed
         if not steering_pressed:
+            # Track the update for performance monitoring
+            update_time = time.time() - start_time
+            self._update_performance_metrics(update_time)
             return
+
+        # Validate model confidence to ensure it's within expected range
+        if model_confidence < 0.0 or model_confidence > 1.0:
+            cloudlog.warning(f"Invalid model confidence value: {model_confidence}, clamping to valid range")
+            model_confidence = np.clip(model_confidence, 0.0, 1.0)
 
         # Calculate the difference between desired and actual
         curvature_error = desired_curvature - actual_curvature
@@ -114,6 +131,7 @@ class SelfLearningManager:
                 'steering_torque': steering_torque,
                 'v_ego': v_ego,
                 'model_prediction_error': model_prediction_error,
+                'model_confidence': model_confidence,
                 'road_type': self._classify_road_type(v_ego, abs(desired_curvature)),
                 'intervention_type': 'corrective_steering'
             }
@@ -123,12 +141,16 @@ class SelfLearningManager:
 
             # Adjust parameters based on intervention
             self._adapt_from_intervention(experience)
+
+        # Track the update for performance monitoring
+        update_time = time.time() - start_time
+        self._update_performance_metrics(update_time)
     
-    def update_from_model_accuracy(self, desired_curvature: float, actual_curvature: float, 
+    def update_from_model_accuracy(self, desired_curvature: float, actual_curvature: float,
                                  v_ego: float, model_confidence: float = 1.0):
         """
         Update learning system based on model prediction accuracy.
-        
+
         Args:
             desired_curvature: Model's desired curvature
             actual_curvature: Actual measured curvature from vehicle
@@ -137,10 +159,18 @@ class SelfLearningManager:
         """
         if not self.learning_enabled:
             return
-            
+
+        # Performance tracking
+        start_time = time.time()
+
+        # Validate model confidence to ensure it's within expected range
+        if model_confidence < 0.0 or model_confidence > 1.0:
+            cloudlog.warning(f"Invalid model confidence value in update_from_model_accuracy: {model_confidence}, clamping to valid range")
+            model_confidence = np.clip(model_confidence, 0.0, 1.0)
+
         # Calculate prediction error
         prediction_error = abs(desired_curvature - actual_curvature)
-        
+
         # Track model accuracy over time
         accuracy_record = {
             'timestamp': time.time(),
@@ -149,9 +179,9 @@ class SelfLearningManager:
             'v_ego': v_ego,
             'adjustment_needed': prediction_error > 0.01  # Significant error threshold
         }
-        
+
         self.model_accuracy_history.append(accuracy_record)
-        
+
         # Store experience if there's a meaningful discrepancy
         if accuracy_record['adjustment_needed'] and model_confidence > self.confidence_threshold:
             experience = {
@@ -164,6 +194,30 @@ class SelfLearningManager:
                 'v_ego': v_ego
             }
             self.experience_buffer.append(experience)
+
+        # Track the update for performance monitoring
+        update_time = time.time() - start_time
+        self._update_performance_metrics(update_time)
+
+    def _update_performance_metrics(self, update_time: float):
+        """
+        Update performance metrics for monitoring and optimization.
+
+        Args:
+            update_time: Time taken for the last update operation in seconds
+        """
+        if update_time > self.max_update_time:
+            self.max_update_time = update_time
+
+        self.update_time_samples.append(update_time)
+        self.total_updates += 1
+
+        # Log performance statistics periodically
+        if self.total_updates % 1000 == 0:  # Log every 1000 updates
+            avg_update_time = np.mean(self.update_time_samples) if self.update_time_samples else 0
+            cloudlog.info(f"Self-Learning Performance - Updates: {self.total_updates}, "
+                         f"Avg time: {avg_update_time*1000:.2f}ms, "
+                         f"Max time: {self.max_update_time*1000:.2f}ms")
     
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
@@ -346,14 +400,16 @@ class SelfLearningManager:
         """
         current_time = time.time()
         if current_time - self.last_update_time < self.update_interval:
+            # Even if we don't do the full update, check for reset requests
+            self.check_for_reset_request()
             return
-            
+
         # Update learning based on recent experiences
         if len(self.model_accuracy_history) > 10:
             # Calculate average prediction error
             recent_errors = [rec['error'] for rec in list(self.model_accuracy_history)[-20:]]
             avg_error = np.mean(recent_errors) if recent_errors else 0
-            
+
             # Adjust parameters based on overall accuracy
             if avg_error > 0.02:  # High error threshold
                 # Increase learning rate temporarily for faster adaptation
@@ -361,12 +417,15 @@ class SelfLearningManager:
             else:
                 # Decrease learning rate to stabilize
                 self.learning_rate = max(0.005, self.learning_rate * 0.95)
-        
+
         # Regularize parameters to prevent excessive drift
         self._regularize_parameters()
-        
+
+        # Check for reset request
+        self.check_for_reset_request()
+
         self.last_update_time = current_time
-        
+
         # Log learning statistics periodically
         if self.learning_samples % 50 == 0:
             cloudlog.info(f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, "
@@ -376,35 +435,40 @@ class SelfLearningManager:
     def _regularize_parameters(self):
         """
         Apply regularization to prevent parameters from drifting too far from baseline.
-        Enhanced regularization with more aggressive and speed-dependent approach.
+        Improved regularization with more nuanced approach to balance safety with beneficial learning.
         """
-        # Regularize lateral control factor towards 1.0 with more aggressive approach
+        # Regularize lateral control factor towards 1.0 with balanced approach
         factor = self.adaptive_params['lateral_control_factor']
-        if abs(factor - 1.0) > 0.05:  # If deviation is more than 5%
-            # Use more aggressive regularization when deviation is large
-            if abs(factor - 1.0) > 0.2:  # More than 20% deviation
+        if abs(factor - 1.0) > 0.02:  # Lower threshold for regularization (2% instead of 5%)
+            regularization_factor = 0.995  # Slower regularization for beneficial learning
+            if abs(factor - 1.0) > 0.25:  # More than 25% deviation - still aggressive for safety
                 # Strong regularization to prevent dangerous drift
-                self.adaptive_params['lateral_control_factor'] = 0.95 * factor + 0.05 * 1.0
-            else:
-                # Moderate regularization
-                self.adaptive_params['lateral_control_factor'] = 0.98 * factor + 0.02 * 1.0
+                regularization_factor = 0.97  # Faster regularization for large deviations
+            self.adaptive_params['lateral_control_factor'] = (
+                regularization_factor * factor + (1 - regularization_factor) * 1.0
+            )
 
-        # Regularize curvature bias towards 0.0 with more aggressive approach
+        # Regularize curvature bias towards 0.0 with more nuanced approach
         bias = self.adaptive_params['curvature_bias']
-        if abs(bias) > 0.005:  # Lower threshold for regularization
-            # More aggressive regularization that increases with magnitude
-            regularization_factor = max(0.99, 1.0 - abs(bias) * 50)  # More regularization for larger bias
+        if abs(bias) > 0.001:  # Lower threshold for regularization
+            # Adaptive regularization that's gentler for smaller biases
+            if abs(bias) > 0.01:  # For larger biases, more aggressive regularization
+                regularization_factor = 0.99  # Faster regularization
+            else:
+                regularization_factor = 0.995  # Slower regularization for small beneficial adjustments
             self.adaptive_params['curvature_bias'] *= regularization_factor
 
-        # Regularize speed compensation parameters
+        # Regularize speed compensation parameters with balanced approach
         speed_base = self.adaptive_params['speed_compensation_base']
-        if abs(speed_base - 1.0) > 0.05:  # Regularize base speed compensation toward 1.0
-            self.adaptive_params['speed_compensation_base'] = 0.98 * speed_base + 0.02 * 1.0
+        if abs(speed_base - 1.0) > 0.02:  # Regularize base speed compensation toward 1.0
+            self.adaptive_params['speed_compensation_base'] = (
+                0.995 * speed_base + 0.005 * 1.0  # Balanced regularization
+            )
 
         speed_rate = self.adaptive_params['speed_compensation_rate']
-        if abs(speed_rate) > 0.001:  # Regularize speed rate toward 0 (meaning no speed dependency)
-            # Apply regularization to reduce speed dependency over time unless needed
-            self.adaptive_params['speed_compensation_rate'] *= 0.99  # Gentle regularization
+        if abs(speed_rate) > 0.0005:  # Regularize speed rate toward 0 (meaning no speed dependency)
+            # Apply balanced regularization to reduce speed dependency over time unless needed
+            self.adaptive_params['speed_compensation_rate'] *= 0.995  # Balanced regularization
     
     def save_learning_state(self):
         """
@@ -473,3 +537,19 @@ class SelfLearningManager:
         self.model_accuracy_history.clear()
         self.save_learning_state()
         cloudlog.info("Learning state reset to initial values")
+
+    def check_for_reset_request(self):
+        """
+        Check for reset request from parameters and perform reset if requested.
+        This provides a user-facing mechanism to reset learned parameters.
+        """
+        try:
+            # Check if reset parameter has been set
+            reset_request = self.params.get("ResetSelfLearning", encoding='utf-8')
+            if reset_request and reset_request.lower() == "1":
+                cloudlog.info("Reset request detected, resetting self-learning state")
+                self.reset_learning_state()
+                # Clear the reset parameter so it doesn't trigger again
+                self.params.delete("ResetSelfLearning")
+        except Exception as e:
+            cloudlog.warning(f"Error checking for reset request: {e}")
