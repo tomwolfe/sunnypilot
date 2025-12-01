@@ -62,7 +62,7 @@ class SelfLearningManager:
         cloudlog.info("Self-Learning Manager initialized")
     
     def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float,
-                                      steering_torque: float, v_ego: float, model_prediction_error: float = None):
+                                      steering_torque: float, v_ego: float, model_prediction_error: float = None, model_confidence: float = 1.0):
         """
         Update learning system based on driver intervention.
 
@@ -73,6 +73,7 @@ class SelfLearningManager:
             steering_torque: Current steering torque
             v_ego: Vehicle speed
             model_prediction_error: Difference between model output and actual vehicle behavior
+            model_confidence: Confidence score from the model (0.0-1.0)
         """
         if not self.learning_enabled:
             return
@@ -94,11 +95,11 @@ class SelfLearningManager:
 
         # Additional checks for context-aware learning
         high_model_error = model_error_significant and abs(model_prediction_error) > 0.05
-        low_model_confidence = False  # This would need to be passed from the model, assuming False for now
+        low_model_confidence = model_confidence < self.confidence_threshold  # Use actual model confidence instead of hardcoded False
         driver_correction = torque_magnitude > self.intervention_threshold
 
-        # Only learn if it's likely a corrective action (high model error or correction in the right direction)
-        should_learn = (high_model_error or (model_error_significant and correction_direction_matches)) and driver_correction
+        # Only learn if it's likely a corrective action (high model error or correction in the right direction) and model confidence is sufficient
+        should_learn = (high_model_error or (model_error_significant and correction_direction_matches)) and driver_correction and not low_model_confidence
 
         # Additional safety check - don't learn if the model is performing well
         if model_error_significant and abs(curvature_error) < 0.01 and torque_magnitude < 0.5:
