@@ -291,6 +291,28 @@ class Controls(ControlsExt, ModelStateBase):
         accel_brake_intensity = min(1.0, abs(CS.aEgo) / 2.0)
         control_activity = min(1.0, control_activity + accel_brake_intensity * 0.15)
 
+      # Add model computation load estimation based on model output complexity
+      if 'modelV2' in self.sm and hasattr(self.sm['modelV2'], 'plan'):
+        # Estimate computational load based on complexity of model outputs
+        # More complex plans (with more changes in acceleration, curvature) require more processing
+        model_plan = self.sm['modelV2'].plan
+        if len(model_plan) > 1:
+          # Estimate plan complexity as rate of change in desired outputs
+          try:
+            # Calculate the differences between consecutive plan elements
+            if len(model_plan) >= 2:
+              accel_changes = 0.0
+              curvature_changes = 0.0
+              # Calculate differences for first few elements in plan
+              for i in range(min(5, len(model_plan)-1)):
+                accel_changes += abs(model_plan[i+1].acceleration - model_plan[i].acceleration)
+                curvature_changes += abs(model_plan[i+1].curvature - model_plan[i].curvature)
+              model_complexity = min(1.0, (accel_changes + curvature_changes * 100) / 5.0)  # Normalize
+              control_activity = min(1.0, control_activity + model_complexity * 0.15)
+          except (AttributeError, TypeError):
+            # If accessing plan elements fails, skip model complexity calculation
+            pass
+
     # Add this control activity to history
     self._control_activity_history.append(control_activity)
 
@@ -333,6 +355,21 @@ class Controls(ControlsExt, ModelStateBase):
           self.thermal_performance_factor = adjusted_thermal_factor
 
         self.prev_adjusted_factor = self.thermal_performance_factor
+
+
+    # Enhance thermal prediction with self-learning adjustments from the self-learning manager
+    # Use learned parameters to better estimate thermal behavior based on individual driving style
+    if hasattr(self, 'self_learning_manager'):
+      # Get learned thermal adjustment factors
+      thermal_compensation_factor = self.self_learning_manager.adaptive_params.get('weather_adaptation_factor', 1.0)
+
+      # Apply learned thermal compensation if in extreme conditions
+      if hasattr(self, 'learning_context') and (
+          self.learning_context.get('weather_condition') in ['rainy', 'snowy'] or
+          self.learning_context.get('road_surface') in ['wet', 'icy']):
+        # Adjust for weather conditions that might affect thermal behavior
+        self.thermal_performance_factor = min(self.thermal_performance_factor,
+                                           self.thermal_performance_factor * thermal_compensation_factor)
 
   def _calculate_predicted_thermal_rise(self, recent_activity, thermal_history, horizon):
     """
@@ -415,7 +452,7 @@ class Controls(ControlsExt, ModelStateBase):
         Modified actuators adjusted for thermal conditions
     """
     # Apply thermal-based adjustments to control outputs with enhanced logic
-    if self.performance_compensation_factor < 0.9:  # Under thermal stress (lowered threshold for more proactive management)
+    if self.performance_compensation_factor < 0.95:  # Under thermal stress (lowered threshold for more proactive management)
       # Calculate thermal aggression factor based on multiple factors
       thermal_aggression_factor = self.performance_compensation_factor / 0.9  # Adjusted threshold
 
@@ -423,22 +460,31 @@ class Controls(ControlsExt, ModelStateBase):
       if hasattr(actuators, 'accel'):
         # Apply smoother transitions in acceleration
         # At high speeds, be more conservative to reduce computational load
-        speed_factor = min(1.0, max(0.7, (30.0 - CS.vEgo) / 30.0))  # More conservative at higher speeds
-        actuators.accel = actuators.accel * thermal_aggression_factor * speed_factor
+        speed_factor = min(1.0, max(0.6, (30.0 - CS.vEgo) / 30.0))  # More conservative at higher speeds
+
+        # Apply additional model complexity factor based on learned parameters
+        model_complexity_factor = 1.0
+        if hasattr(self, '_control_activity_history') and len(self._control_activity_history) > 0:
+          recent_activity = sum(list(self._control_activity_history)[-5:]) / min(5, len(self._control_activity_history))
+          # If recent control activity has been high, be more conservative
+          if recent_activity > 0.7:
+            model_complexity_factor = max(0.7, 1.0 - (recent_activity - 0.7) * 2.0)
+
+        actuators.accel = actuators.accel * thermal_aggression_factor * speed_factor * model_complexity_factor
 
       # Reduce lateral control aggressiveness with speed and curvature-dependent scaling
       if hasattr(actuators, 'curvature'):
         # At high speeds or high curvature, be more conservative as lateral computation is more intensive
-        lateral_speed_factor = min(1.0, max(0.6, (40.0 - CS.vEgo) / 40.0))
+        lateral_speed_factor = min(1.0, max(0.5, (40.0 - CS.vEgo) / 40.0))
         # For high curvature situations, be even more conservative
-        curvature_factor = max(0.7, 1.0 - min(0.3, abs(actuators.curvature) * 50.0))  # More conservative with high curvature
+        curvature_factor = max(0.6, 1.0 - min(0.4, abs(actuators.curvature) * 50.0))  # More conservative with high curvature
         thermal_lateral_factor = thermal_aggression_factor * lateral_speed_factor * curvature_factor
         actuators.curvature = actuators.curvature * thermal_lateral_factor
 
       if hasattr(actuators, 'steeringAngleDeg'):
         # Gentle steering adjustments under thermal stress, with adaptive scaling
         # At high speeds, be more conservative with steering changes
-        steering_speed_factor = min(1.0, max(0.7, (25.0 - CS.vEgo) / 25.0))
+        steering_speed_factor = min(1.0, max(0.6, (25.0 - CS.vEgo) / 25.0))
         thermal_steering_factor = thermal_aggression_factor * steering_speed_factor
         actuators.steeringAngleDeg = actuators.steeringAngleDeg * thermal_steering_factor
 
@@ -446,18 +492,44 @@ class Controls(ControlsExt, ModelStateBase):
       cloudlog.debug(
           f"Thermal adjustment applied: factor={thermal_aggression_factor:.2f}, " +
           f"stress_level={self.thermal_stress_level}, vEgo={CS.vEgo:.1f}m/s, " +
-          f"speed_factor={speed_factor:.2f if hasattr(actuators, 'accel') else 'N/A'}, " +
-          f"curvature={actuators.curvature:.3f}"
+          f"speed_factor={min(1.0, max(0.6, (30.0 - CS.vEgo) / 30.0)):.2f if hasattr(actuators, 'accel') else 'N/A'}, " +
+          f"curvature={actuators.curvature:.3f}, performance_factor={self.performance_compensation_factor:.2f}"
       )
 
     # Additional conservative measures under critical thermal conditions
-    if self.performance_compensation_factor < 0.6:  # Critical thermal stress
+    if self.performance_compensation_factor < 0.5:  # Critical thermal stress
       # Apply additional safety margins
       if hasattr(actuators, 'accel'):
         # Further limit acceleration changes to prevent thermal runaway
-        actuators.accel = max(min(actuators.accel, 1.5), -2.0)  # Limit to reasonable values under thermal stress
+        actuators.accel = max(min(actuators.accel, 1.0), -1.5)  # More conservative limits under critical stress
       if hasattr(actuators, 'curvature'):
-        actuators.curvature = max(min(actuators.curvature, 0.2), -0.2)  # Limit to gentle curves under critical stress
+        actuators.curvature = max(min(actuators.curvature, 0.03), -0.03)  # More conservative curvature limits
+      if hasattr(actuators, 'steeringAngleDeg'):
+        actuators.steeringAngleDeg = max(min(actuators.steeringAngleDeg, 2.0), -2.0)  # Very conservative steering
+
+    # Apply self-learning based thermal adjustments
+    if hasattr(self, 'self_learning_manager'):
+      # Use learned parameters to determine more adaptive thermal responses
+      traffic_factor = self.self_learning_manager.adaptive_params.get('traffic_density_factor', 1.0)
+      weather_factor = self.self_learning_manager.adaptive_params.get('weather_adaptation_factor', 1.0)
+      model_confidence_factor = self.self_learning_manager.adaptive_params.get('model_confidence_factor', 1.0)
+
+      # In heavy traffic, be more conservative with acceleration adjustments
+      if traffic_factor < 0.9 and hasattr(actuators, 'accel'):
+        actuators.accel = actuators.accel * min(0.9, traffic_factor)
+
+      # In adverse weather conditions, be more conservative
+      if weather_factor < 0.9 and self.learning_context.get('weather_condition') in ['rainy', 'snowy']:
+        if hasattr(actuators, 'accel'):
+          actuators.accel = actuators.accel * min(0.8, weather_factor)
+        if hasattr(actuators, 'curvature'):
+          actuators.curvature = actuators.curvature * min(0.85, weather_factor)
+        if hasattr(actuators, 'steeringAngleDeg'):
+          actuators.steeringAngleDeg = actuators.steeringAngleDeg * min(0.9, weather_factor)
+
+      # Adjust based on model confidence (lower confidence may indicate model working harder)
+      if model_confidence_factor < 0.9 and hasattr(actuators, 'accel'):
+        actuators.accel = actuators.accel * min(0.95, model_confidence_factor)
 
     return actuators
 
@@ -549,7 +621,13 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Apply self-learning adjustments to model outputs
     base_desired_curvature = model_v2.action.desiredCurvature
-    learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
+    # Use enhanced safety validation if available, otherwise fall back to basic adjustment
+    if hasattr(self.self_learning_manager, 'adjust_curvature_with_safety_validation'):
+      learned_adjusted_curvature = self.self_learning_manager.adjust_curvature_with_safety_validation(
+        base_desired_curvature, CS.vEgo, CS
+      )
+    else:
+      learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
 
     # Apply lateral control modifications if needed (after learning adjustment)
     modified_desired_curvature = learned_adjusted_curvature
@@ -969,7 +1047,13 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Apply self-learning adjustments to model outputs
     base_desired_curvature = model_v2.action.desiredCurvature
-    learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
+    # Use enhanced safety validation if available, otherwise fall back to basic adjustment
+    if hasattr(self.self_learning_manager, 'adjust_curvature_with_safety_validation'):
+      learned_adjusted_curvature = self.self_learning_manager.adjust_curvature_with_safety_validation(
+        base_desired_curvature, CS.vEgo, CS
+      )
+    else:
+      learned_adjusted_curvature = self.self_learning_manager.adjust_curvature(base_desired_curvature, CS.vEgo)
 
     # Apply lateral control modifications if needed (after learning adjustment)
     modified_desired_curvature = learned_adjusted_curvature

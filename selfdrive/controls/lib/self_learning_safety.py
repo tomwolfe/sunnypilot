@@ -577,3 +577,71 @@ class SafeSelfLearningManager:
         """
         # Get the safety recommendation from internal safety module
         return self.safety.get_safety_recommendation(CS, model_output)
+
+    def validate_learned_parameters_safety(self, CS, desired_curvature: float, desired_acceleration: float, v_ego: float) -> dict:
+        """
+        Validate learned parameters for safety using the integrated safety system.
+
+        Args:
+            CS: Current car state
+            desired_curvature: Desired curvature after learning adjustments
+            desired_acceleration: Desired acceleration after learning adjustments
+            v_ego: Vehicle speed
+
+        Returns:
+            Dictionary with validation results including safety flags and suggested corrections
+        """
+        # Use the learning manager's safety validation method
+        return self.learning_manager.validate_learned_parameters_safety(CS, desired_curvature, desired_acceleration, v_ego)
+
+    def adjust_curvature_with_safety_validation(self, original_curvature: float, v_ego: float, CS) -> float:
+        """
+        Adjust curvature with comprehensive safety validation.
+
+        Args:
+            original_curvature: Original curvature from model
+            v_ego: Vehicle speed
+            CS: Current car state
+
+        Returns:
+            Safely adjusted curvature with full safety validation
+        """
+        # Apply learning adjustment first
+        adjusted_curvature = self.learning_manager.adjust_curvature_prediction(original_curvature, v_ego)
+
+        # Perform comprehensive safety validation
+        validation_results = self.validate_learned_parameters_safety(
+            CS, adjusted_curvature, 0.0, v_ego  # acceleration will be validated separately
+        )
+
+        # Log safety validation results if issues found
+        if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
+            cloudlog.warning(f"Curvature safety validation needed: {validation_results['safety_issues']}")
+
+        return validation_results['corrected_curvature']
+
+    def adjust_acceleration_with_safety_validation(self, original_accel: float, v_ego: float, CS) -> float:
+        """
+        Adjust acceleration with comprehensive safety validation.
+
+        Args:
+            original_accel: Original acceleration from model
+            v_ego: Vehicle speed
+            CS: Current car state
+
+        Returns:
+            Safely adjusted acceleration with full safety validation
+        """
+        # Apply learning adjustment first
+        adjusted_accel = self.learning_manager.adjust_acceleration_prediction(original_accel, v_ego)
+
+        # Perform comprehensive safety validation
+        validation_results = self.validate_learned_parameters_safety(
+            CS, 0.0, adjusted_accel, v_ego  # curvature will be validated separately
+        )
+
+        # Log safety validation results if issues found
+        if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
+            cloudlog.warning(f"Acceleration safety validation needed: {validation_results['safety_issues']}")
+
+        return validation_results['corrected_acceleration']

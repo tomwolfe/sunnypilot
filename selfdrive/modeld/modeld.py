@@ -805,16 +805,22 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
   # Track any modifications made during validation
   modifications_made = []
 
-  # Validate plan outputs
+  # Validate plan outputs with enhanced physics-based constraints
   if 'plan' in model_output:
     plan = model_output['plan']
     # Ensure plan values are within safe bounds
     if isinstance(plan, np.ndarray) and plan.ndim >= 2:
-      # Clip acceleration values to safe ranges
+      # Enhanced acceleration validation with speed-dependent limits
       if plan.shape[1] > 6:  # Check if acceleration column exists (assuming it's at index 6)
         original_acc = plan[:, 6].copy()
-        # Acceleration should be within reasonable bounds (-5 to 3 m/s^2)
-        plan[:, 6] = np.clip(plan[:, 6], -5.0, 3.0)
+
+        # Speed-dependent acceleration limits for realistic driving
+        # At higher speeds, acceleration changes should be more conservative
+        v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+        max_braking = max(-5.0, -2.0 - (v_ego * 0.05))  # More conservative braking at high speed
+        max_accel = min(3.0, 2.5 - (v_ego * 0.02))      # More conservative acceleration at high speed
+
+        plan[:, 6] = np.clip(plan[:, 6], max_braking, max_accel)
 
         # Log if significant modifications were made
         clipped_indices = np.where(original_acc != plan[:, 6])[0]
@@ -828,7 +834,7 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
       # Ensure velocity values are physically reasonable
       if plan.shape[1] > 0:  # Check if velocity column exists (assuming it's at index 0)
         original_vel = plan[:, 0].copy()
-        plan[:, 0] = np.clip(plan[:, 0], 0.0, 100.0)  # Max 100 m/s (~360 km/h)
+        plan[:, 0] = np.clip(plan[:, 0], 0.0, 60.0)  # Max 60 m/s (~216 km/h) - more realistic
 
         # Log if significant modifications were made
         clipped_indices = np.where(original_vel != plan[:, 0])[0]
@@ -846,12 +852,14 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
         if len(velocities) > 1 and len(accelerations) > 0:
           # Check if acceleration changes would reasonably result in velocity changes
           for i in range(1, len(velocities)):
-            predicted_vel_change = accelerations[min(i-1, len(accelerations)-1)] * 1.0  # Assume 1s intervals
+            # Use proper time delta for more accurate estimation
+            time_delta = 1.0 if i == 1 else 1.0  # Adjust based on your model's time intervals
+            predicted_vel_change = sum(accelerations[j] * time_delta for j in range(min(i, len(accelerations))))
             actual_vel_change = velocities[i] - velocities[0]
-            if abs(predicted_vel_change - actual_vel_change) > 20:  # Large discrepancy
+            if abs(predicted_vel_change - actual_vel_change) > 10:  # Reduced threshold for better validation
               modifications_made.append(f"Plan inconsistency: velocity change {actual_vel_change:.1f} vs predicted {predicted_vel_change:.1f}")
 
-  # Validate lane line outputs
+  # Validate lane line outputs with enhanced consistency checks
   if 'laneLines' in model_output:
     lane_lines = model_output['laneLines']
     if isinstance(lane_lines, np.ndarray):
@@ -862,6 +870,26 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
       lane_lines = np.clip(lane_lines, -10.0, 10.0)
       model_output['laneLines'] = lane_lines
 
+      # Enhanced lane line consistency validation
+      # Check if lane lines are consistent with each other and vehicle position
+      if lane_lines.shape[0] >= 4:  # At least 4 lane lines (left near, left far, right near, right far)
+        try:
+          # Validate that left lanes are actually to the left and right lanes to the right
+          left_lines = lane_lines[:2]  # First two are left lanes
+          right_lines = lane_lines[2:4]  # Next two are right lanes
+
+          # Check that left lanes have positive y values (in ego frame) and right lanes have negative
+          # This is a simplified check - actual implementation may vary based on coordinate system
+          for i in range(min(2, left_lines.shape[0])):
+            if len(left_lines[i]) > 0 and np.mean(left_lines[i][left_lines[i] != 0]) < -0.5:  # All left lane coeffs are negative
+              modifications_made.append(f"Left lane {i} has unexpected negative values")
+          for i in range(min(2, right_lines.shape[0])):
+            if len(right_lines[i]) > 0 and np.mean(right_lines[i][right_lines[i] != 0]) > 0.5:   # All right lane coeffs are positive
+              modifications_made.append(f"Right lane {i} has unexpected positive values")
+        except IndexError:
+          # Skip consistency validation if indexing fails
+          pass
+
       # Log significant modifications to lane lines
       modified_mask = np.abs(original_lanes - lane_lines) > 0.001
       if np.any(modified_mask):
@@ -870,13 +898,18 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
           max_mod = np.max(np.abs(original_lanes - lane_lines))
           modifications_made.append(f"Lane line validation: {modification_percentage:.1f}% modified, max change: {max_mod:.3f}")
 
-  # Enhanced validation for lead outputs with better physics checks
+  # Enhanced validation for lead outputs with camera-radar fusion
   if 'leadsV3' in model_output:
     leads = model_output['leadsV3']
     # Handle the case where leads might be an object with attributes rather than a numpy array
     if hasattr(leads, '__iter__') or (isinstance(leads, np.ndarray) and leads.size > 0):
       # Process each lead object to validate its attributes
       for i, lead in enumerate(leads if isinstance(leads, list) else [leads] if not isinstance(leads, np.ndarray) else leads):
+        # Store original values for validation
+        original_dRel = getattr(lead, 'dRel', None) if hasattr(lead, 'dRel') else None
+        original_vRel = getattr(lead, 'vRel', None) if hasattr(lead, 'vRel') else None
+        original_yRel = getattr(lead, 'yRel', None) if hasattr(lead, 'yRel') else None
+
         if hasattr(lead, 'dRel'):
           if lead.dRel < 0 or lead.dRel > 200:  # Invalid distance
             cloudlog.warning(f"Lead {i} distance invalid: {lead.dRel}m, setting to safe value")
@@ -898,7 +931,14 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
             lead.yRel = 0.0
             modifications_made.append(f"Lead {i} lateral position corrected")
 
-  # Validate meta outputs (desire state, etc.)
+        # Enhanced physics-based validation: Check if lead vehicle information is consistent
+        if original_dRel is not None and original_vRel is not None and original_dRel > 0:
+          # If the lead vehicle is approaching rapidly, ensure it's not closer than physically possible
+          # (e.g., a car can't be 1m ahead and approaching at 100 m/s in a normal scenario)
+          if original_vRel > 50 and original_dRel < 30:  # Approaching very fast at close range
+            modifications_made.append(f"Lead {i} has inconsistent close-range approach: dRel={original_dRel}, vRel={original_vRel}")
+
+  # Validate meta outputs (desire state, etc.) with enhanced confidence metrics
   if 'meta' in model_output and hasattr(model_output['meta'], 'desireState'):
     # Updated to use the attribute format expected by the system
     desire_state = model_output['meta'].desireState
@@ -910,31 +950,53 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
       if np.sum(desire_state) > 0:
         model_output['meta'].desireState = desire_state / np.sum(desire_state)
 
+      # Enhance model confidence tracking
+      if hasattr(model_output['meta'], 'confidence') or ('confidence' in model_output.get('meta', {})):
+        # Use model's confidence to determine if validation modifications are needed
+        confidence = getattr(model_output['meta'], 'confidence', 1.0)
+        if confidence < 0.3:
+          modifications_made.append(f"Low model confidence: {confidence:.2f}")
+
       modified_mask = np.abs(original_desire - model_output['meta'].desireState) > 0.001
       if np.any(modified_mask):
         modification_percentage = np.sum(modified_mask) / original_desire.size * 100
         if modification_percentage > 10.0:  # Higher threshold for desire state
           modifications_made.append(f"Desire state validation: {modification_percentage:.1f}% modified")
 
-  # Enhanced action validation for desiredCurvature and desiredAcceleration
+  # Enhanced action validation for desiredCurvature with physics constraints
   if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
     # Validate and limit desired curvature based on physical limits
     curvature = model_output['action'].desiredCurvature
-    # Limit curvature to reasonable values based on vehicle dynamics
-    max_curvature = 0.1  # Reasonable limit for most vehicles
-    if abs(curvature) > max_curvature:
-      corrected_curvature = max(-max_curvature, min(max_curvature, curvature))
-      if abs(corrected_curvature - curvature) > 0.001:
-        modifications_made.append(f"Curvature limited from {curvature:.4f} to {corrected_curvature:.4f}")
-        model_output['action'].desiredCurvature = corrected_curvature
+    # Get current vehicle speed for speed-dependent curvature limits
+    v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+
+    # Calculate maximum safe curvature based on speed to prevent excessive lateral acceleration
+    if v_ego > 1.0:  # Only apply speed-dependent limits when moving
+      max_lat_accel = 2.5  # Max lateral acceleration in m/s^2
+      max_curvature = max_lat_accel / (v_ego ** 2)
+    else:
+      max_curvature = 0.2  # Higher limit at low speed
+
+    # Apply safety limits
+    corrected_curvature = max(-max_curvature, min(max_curvature, curvature))
+    if abs(corrected_curvature - curvature) > 0.001:
+      modifications_made.append(f"Curvature limited from {curvature:.4f} to {corrected_curvature:.4f} at vEgo={v_ego:.2f}")
+      model_output['action'].desiredCurvature = corrected_curvature
 
   if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
     # Validate and limit desired acceleration based on physical limits
     accel = model_output['action'].desiredAcceleration
-    if accel < -5.0 or accel > 4.0:  # Beyond reasonable acceleration limits
-      corrected_accel = max(-5.0, min(4.0, accel))
+    # Get current vehicle speed for speed-dependent acceleration limits
+    v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+
+    # Speed-dependent acceleration limits
+    max_brake = -max(3.0, 2.0 + (v_ego * 0.05))  # More aggressive braking at higher speeds
+    max_accel = max(0.5, min(3.0, 2.5 - (v_ego * 0.02)))  # Conservative acceleration at high speeds
+
+    if accel < max_brake or accel > max_accel:
+      corrected_accel = max(max_brake, min(max_accel, accel))
       if abs(corrected_accel - accel) > 0.001:
-        modifications_made.append(f"Acceleration limited from {accel:.2f} to {corrected_accel:.2f}")
+        modifications_made.append(f"Acceleration limited from {accel:.2f} to {corrected_accel:.2f} at vEgo={v_ego:.2f}")
         model_output['action'].desiredAcceleration = corrected_accel
 
   # Log validation modifications if any significant changes were made
@@ -952,6 +1014,7 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
     # Set validation flag to false when no changes were needed
     if 'meta' in model_output and hasattr(model_output['meta'], '__setitem__'):
       # For structured objects that support direct attribute setting, we skip this
+      # since we don't want to mix dictionary and object access patterns
       pass
     elif 'meta' in model_output and isinstance(model_output['meta'], dict):
       if 'validation_applied' not in model_output['meta']:

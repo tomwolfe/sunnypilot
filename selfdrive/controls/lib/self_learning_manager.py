@@ -31,9 +31,10 @@ class SelfLearningManager:
 
         # Initialize learning state
         self.learning_enabled = True
-        self.learning_rate = 0.01
+        self.base_learning_rate = 0.01
         self.confidence_threshold = 0.7
         self.intervention_threshold = 0.5  # Amount of steering correction to trigger learning
+        self.min_adjustment_threshold = 0.001  # Minimum adjustment to apply
 
         # Track performance metrics
         self.performance_start_time = time.time()
@@ -46,14 +47,27 @@ class SelfLearningManager:
         self.intervention_buffer = deque(maxlen=100)  # Store interventions
         self.model_accuracy_history = deque(maxlen=500)  # Track model prediction accuracy
 
-        # Adaptive parameters that will be learned
+        # Enhanced adaptive parameters with more sophisticated learning
         self.adaptive_params = {
             'lateral_control_factor': 1.0,  # Scaling factor for lateral control
             'curvature_bias': 0.0,  # Bias adjustment to desired curvature
             'acceleration_factor': 1.0,  # Scaling factor for longitudinal acceleration
             'reaction_time_compensation': 0.2,  # Time compensation in seconds
             'speed_compensation_base': 1.0,  # Base value for speed compensation
-            'speed_compensation_rate': 0.0  # Rate of change with speed (learnable instead of hardcoded)
+            'speed_compensation_rate': 0.0,  # Rate of change with speed (learnable instead of hardcoded)
+            'model_confidence_factor': 1.0,  # Factor to adjust model confidence
+            'driver_adaptation_rate': 1.0,  # How quickly to adapt to driver behavior
+            'weather_adaptation_factor': 1.0,  # Adaptation factor for weather conditions
+            'traffic_density_factor': 1.0,  # Adaptation for traffic density
+        }
+
+        # Learning context tracking
+        self.learning_context = {
+            'road_type': 'unknown',
+            'weather_condition': 'clear',  # Could be 'clear', 'rainy', 'snowy', 'foggy'
+            'traffic_density': 'low',      # Could be 'low', 'medium', 'high'
+            'time_of_day': 'day',          # Could be 'day', 'dusk', 'night'
+            'road_surface': 'dry',         # Could be 'dry', 'wet', 'icy'
         }
 
         # Learning state tracking
@@ -61,6 +75,13 @@ class SelfLearningManager:
         self.update_interval = 5.0  # Update parameters every 5 seconds
         self.learning_samples = 0
         self.total_samples = 0
+
+        # Enhanced experience weighting system
+        self.experience_weights = {  # Weight for different experience types
+            'intervention': 1.0,
+            'model_accuracy': 0.5,
+            'normal_driving': 0.1
+        }
 
         # Initialize from saved parameters if available
         self.load_adaptive_params()
@@ -104,6 +125,9 @@ class SelfLearningManager:
         curvature_error = desired_curvature - actual_curvature
         torque_magnitude = abs(steering_torque)
 
+        # Update learning context from current driving conditions
+        self._update_learning_context(CS, v_ego, desired_curvature)
+
         # Context-aware learning: only learn when it's likely a corrective action
         # Check if there's a significant model prediction error and driver is correcting it
         model_error_significant = model_prediction_error is not None and abs(model_prediction_error) > 0.02
@@ -115,12 +139,28 @@ class SelfLearningManager:
         low_model_confidence = model_confidence < self.confidence_threshold  # Use actual model confidence instead of hardcoded False
         driver_correction = torque_magnitude > self.intervention_threshold
 
+        # Enhanced context: consider road type and conditions
+        current_road_type = self._classify_road_type(v_ego, abs(desired_curvature))
+        is_highway = current_road_type == 'highway'
+        is_urban = current_road_type in ['low_speed_urban', 'city_roads']
+
+        # Adjust learning conditions based on road type and safety considerations
+        # Highway driving typically requires more conservative learning
+        highway_learning_factor = 0.5 if is_highway else 1.0
+        urban_learning_factor = 1.2 if is_urban else 1.0
+
         # Only learn if it's likely a corrective action (high model error or correction in the right direction) and model confidence is sufficient
         should_learn = (high_model_error or (model_error_significant and correction_direction_matches)) and driver_correction and not low_model_confidence
+        should_learn = should_learn and (highway_learning_factor > 0.6 or urban_learning_factor > 1.0)  # More conservative on highways
 
         # Additional safety check - don't learn if the model is performing well
         if model_error_significant and abs(curvature_error) < 0.01 and torque_magnitude < 0.5:
             should_learn = False
+
+        # Safety check - don't learn during dangerous maneuvers
+        if v_ego > 30.0 and abs(desired_curvature) > 0.05:  # High speed with high curvature
+            should_learn = False
+            cloudlog.warning(f"Skipping learning at vEgo={v_ego:.2f}, curvature={desired_curvature:.4f} due to safety concerns")
 
         if should_learn:
             experience = {
@@ -132,19 +172,116 @@ class SelfLearningManager:
                 'v_ego': v_ego,
                 'model_prediction_error': model_prediction_error,
                 'model_confidence': model_confidence,
-                'road_type': self._classify_road_type(v_ego, abs(desired_curvature)),
-                'intervention_type': 'corrective_steering'
+                'road_type': current_road_type,
+                'intervention_type': 'corrective_steering',
+                'context': self.learning_context.copy(),  # Include current context
+                'learning_factor': max(highway_learning_factor, urban_learning_factor),  # Include learning factor
+                'original_params': self.adaptive_params.copy()  # Store original params for comparison
             }
 
             self.intervention_buffer.append(experience)
             self.experience_buffer.append(experience)
 
-            # Adjust parameters based on intervention
+            # Adjust parameters based on intervention with context-aware learning rates
             self._adapt_from_intervention(experience)
+
+            # Log detailed information about the learning adjustment
+            if self.learning_samples % 25 == 0:  # Log every 25 learning events
+                param_changes = {}
+                for key in self.adaptive_params:
+                    original_value = experience['original_params'][key]
+                    new_value = self.adaptive_params[key]
+                    change = abs(new_value - original_value)
+                    param_changes[key] = {
+                        'from': original_value,
+                        'to': new_value,
+                        'change': change
+                    }
+
+                cloudlog.info(f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, "
+                             f"Learning Rate: {self.base_learning_rate:.4f}, "
+                             f"Context: {current_road_type}, "
+                             f"Parameter Changes: {param_changes}")
 
         # Track the update for performance monitoring
         update_time = time.time() - start_time
         self._update_performance_metrics(update_time)
+
+    def _update_learning_context(self, CS, v_ego: float, desired_curvature: float):
+        """
+        Update the learning context based on current driving conditions.
+
+        Args:
+            CS: CarState message
+            v_ego: Vehicle speed
+            desired_curvature: Current desired curvature
+        """
+        # Update road type context
+        self.learning_context['road_type'] = self._classify_road_type(v_ego, abs(desired_curvature))
+
+        # Update traffic density based on radar/lidar data if available
+        # This is a simplified version - actual implementation would use radar data
+        if hasattr(CS, 'leadOne') and CS.leadOne:
+            if CS.leadOne.dRel < 50:  # Lead car within 50m
+                self.learning_context['traffic_density'] = 'high' if CS.leadOne.dRel < 20 else 'medium'
+            else:
+                self.learning_context['traffic_density'] = 'low'
+
+        # Update time of day (simplified - would use actual time and GPS location in real implementation)
+        # For now, we'll use a simple heuristic
+        if v_ego > 10 and CS.gpsPlausible:  # If GPS is available and moving
+            # This is a simplified approach - real implementation would use actual time and location
+            pass  # Placeholder for real time of day detection
+
+        # Update road surface condition based on driving behavior and environment
+        if hasattr(CS, 'wheelSpeeds') and hasattr(CS.wheelSpeeds, 'fl') and abs(v_ego) > 1.0:
+            # Detect potential slippery conditions based on wheel speed vs vehicle speed
+            # This is a simplified approach - real implementation would use more sophisticated physics
+            if CS.brakePressed and v_ego > 5.0 and abs(CS.aEgo) > 3.0:  # Hard braking with high deceleration
+                self.learning_context['road_surface'] = 'wet'  # Could indicate slippery conditions
+
+    def _calculate_contextual_learning_rate(self, experience: Dict) -> float:
+        """
+        Calculate learning rate based on contextual factors.
+
+        Args:
+            experience: Experience record containing contextual information
+
+        Returns:
+            Contextually adjusted learning rate
+        """
+        context = experience.get('context', {})
+        learning_factor = experience.get('learning_factor', 1.0)
+
+        # Start with base learning rate
+        learning_rate = self.base_learning_rate * learning_factor
+
+        # Adjust based on weather conditions
+        if context.get('weather_condition') == 'rainy':
+            learning_rate *= 0.7  # More conservative in rain
+        elif context.get('weather_condition') == 'snowy':
+            learning_rate *= 0.5  # Very conservative in snow
+
+        # Adjust based on traffic density
+        if context.get('traffic_density') == 'high':
+            learning_rate *= 0.8  # More conservative in heavy traffic
+        elif context.get('traffic_density') == 'medium':
+            learning_rate *= 0.9
+
+        # Adjust based on time of day
+        if context.get('time_of_day') == 'night':
+            learning_rate *= 0.8  # More conservative at night
+        elif context.get('time_of_day') == 'dusk':
+            learning_rate *= 0.9
+
+        # Adjust based on road surface
+        if context.get('road_surface') == 'wet':
+            learning_rate *= 0.7
+        elif context.get('road_surface') == 'icy':
+            learning_rate *= 0.4
+
+        # Ensure learning rate stays within reasonable bounds
+        return min(0.02, max(0.001, learning_rate))  # Clamp to reasonable range
     
     def update_from_model_accuracy(self, desired_curvature: float, actual_curvature: float,
                                  v_ego: float, model_confidence: float = 1.0):
@@ -191,9 +328,21 @@ class SelfLearningManager:
                 'actual_curvature': actual_curvature,
                 'prediction_error': prediction_error,
                 'model_confidence': model_confidence,
-                'v_ego': v_ego
+                'v_ego': v_ego,
+                'original_params': self.adaptive_params.copy()  # Store original params for comparison
             }
             self.experience_buffer.append(experience)
+
+        # Log accuracy metrics periodically for monitoring
+        if len(self.model_accuracy_history) % 100 == 0:
+            recent_errors = [rec['error'] for rec in list(self.model_accuracy_history)[-50:]]
+            if recent_errors:
+                avg_error = np.mean(recent_errors)
+                std_error = np.std(recent_errors)
+                cloudlog.info(f"Model Accuracy Monitoring - Last 50 samples: "
+                             f"Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
+                             f"Current Error: {prediction_error:.5f}, "
+                             f"Confidence: {model_confidence:.3f}")
 
         # Track the update for performance monitoring
         update_time = time.time() - start_time
@@ -233,7 +382,7 @@ class SelfLearningManager:
         if not self.learning_enabled:
             return original_curvature
 
-        # Apply learned adjustments
+        # Apply learned adjustments with enhanced context awareness
         adjusted_curvature = original_curvature * self.adaptive_params['lateral_control_factor']
         adjusted_curvature += self.adaptive_params['curvature_bias']
 
@@ -244,25 +393,102 @@ class SelfLearningManager:
         speed_compensation = max(0.8, min(1.2, speed_compensation))
         adjusted_curvature *= speed_compensation
 
+        # Apply weather-based adjustments for challenging conditions
+        weather_factor = self.adaptive_params['weather_adaptation_factor']
+        if self.learning_context.get('road_surface') in ['wet', 'icy']:
+            adjusted_curvature *= min(1.0, weather_factor)  # Be more conservative in bad weather
+
+        # Apply traffic density adjustments
+        traffic_factor = self.adaptive_params['traffic_density_factor']
+        adjusted_curvature *= traffic_factor  # Adjust for traffic conditions
+
+        # Apply model confidence adjustment
+        confidence_factor = self.adaptive_params['model_confidence_factor']
+        adjusted_curvature *= confidence_factor
+
+        # Apply driver adaptation adjustments
+        driver_factor = self.adaptive_params['driver_adaptation_rate']
+        # Gradually adapt to driver preferences while maintaining safety
+        if driver_factor > 1.1:  # Driver prefers more responsive steering
+            adjusted_curvature = original_curvature + (adjusted_curvature - original_curvature) * 1.1
+        elif driver_factor < 0.9:  # Driver prefers more conservative steering
+            adjusted_curvature = original_curvature + (adjusted_curvature - original_curvature) * 0.9
+
+        # Ensure final curvature is within safe bounds based on speed
+        max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
+        adjusted_curvature = np.clip(adjusted_curvature, -max_safe_curvature, max_safe_curvature)
+
         return adjusted_curvature
+
+    def _calculate_max_safe_curvature(self, v_ego: float) -> float:
+        """
+        Calculate maximum safe curvature based on vehicle speed.
+
+        Args:
+            v_ego: Vehicle speed in m/s
+
+        Returns:
+            Maximum safe curvature in 1/m
+        """
+        if v_ego < 0.1:  # Very low speed
+            return 0.5  # Higher curvature allowed at low speeds
+
+        # Based on max lateral acceleration = v^2 * curvature
+        # Using 2.5 m/s^2 as max lateral acceleration for safety
+        max_lat_accel = 2.5
+        max_curvature = max_lat_accel / (v_ego * v_ego)
+        return min(max_curvature, 0.5)  # Cap at 0.5 for additional safety
     
     def adjust_acceleration_prediction(self, original_accel: float, v_ego: float) -> float:
         """
         Apply learned adjustments to the desired acceleration prediction.
-        
+
         Args:
             original_accel: Original model output acceleration
             v_ego: Vehicle speed
-            
+
         Returns:
             Adjusted acceleration value based on learned parameters
         """
         if not self.learning_enabled:
             return original_accel
-            
+
         # Apply learned acceleration factor
         adjusted_accel = original_accel * self.adaptive_params['acceleration_factor']
-        
+
+        # Apply weather-based adjustments for challenging conditions
+        weather_factor = self.adaptive_params['weather_adaptation_factor']
+        if self.learning_context.get('road_surface') in ['wet', 'icy']:
+            # Be more conservative with acceleration in bad weather
+            adjusted_accel = adjusted_accel * 0.8 if adjusted_accel >= 0 else adjusted_accel * 0.9  # Less aggressive braking too
+
+        # Apply traffic density adjustments
+        traffic_factor = self.adaptive_params['traffic_density_factor']
+        adjusted_accel *= traffic_factor  # Adjust for traffic conditions
+
+        # Apply model confidence adjustment
+        confidence_factor = self.adaptive_params['model_confidence_factor']
+        adjusted_accel *= confidence_factor
+
+        # Apply speed-dependent adjustment for safer acceleration at high speeds
+        if v_ego > 20.0:  # Above ~72 km/h
+            speed_adjustment = max(0.7, min(1.0, 1.0 - (v_ego - 20.0) * 0.01))  # More conservative at high speed
+            adjusted_accel *= speed_adjustment
+
+        # Apply maximum acceleration limits based on context
+        max_accel = 3.0  # Base max acceleration
+        if self.learning_context.get('road_surface') in ['wet', 'icy']:
+            max_accel *= 0.6  # More conservative in bad weather
+        elif self.learning_context.get('traffic_density') in ['high', 'medium']:
+            max_accel *= 0.8  # More conservative in traffic
+
+        # Also limit deceleration (braking)
+        max_braking = -4.0  # Base max deceleration
+        if self.learning_context.get('road_surface') in ['wet', 'icy']:
+            max_braking *= 0.5  # Gentler braking in bad weather
+
+        adjusted_accel = np.clip(adjusted_accel, max_braking, max_accel)
+
         return adjusted_accel
     
     def _adapt_from_intervention(self, experience: Dict):
@@ -277,8 +503,8 @@ class SelfLearningManager:
         road_type = experience['road_type']
         model_error = experience.get('model_prediction_error', curvature_error)
 
-        # Calculate adaptive learning rate based on experience and context
-        adaptive_lr = self._calculate_adaptive_learning_rate(v_ego, road_type, model_error)
+        # Calculate contextual learning rate based on experience and context
+        adaptive_lr = self._calculate_contextual_learning_rate(experience)
 
         # Adjust lateral control factor based on systematic errors
         # If desired is consistently different from actual, adjust the scaling
@@ -319,6 +545,39 @@ class SelfLearningManager:
             rate_adjustment = -curvature_error * adaptive_lr * 0.1 * speed_error_factor
             new_rate = current_rate + rate_adjustment
             self.adaptive_params['speed_compensation_rate'] = max(-0.01, min(0.01, new_rate))
+
+        # Adjust model confidence factor based on consistency of interventions
+        if abs(curvature_error) > 0.02 and experience.get('model_confidence', 1.0) < 0.7:
+            current_conf_factor = self.adaptive_params['model_confidence_factor']
+            # Decrease model confidence when interventions are frequent with low confidence
+            conf_adjustment = -0.01 * adaptive_lr
+            new_conf_factor = max(0.5, min(1.0, current_conf_factor + conf_adjustment))
+            self.adaptive_params['model_confidence_factor'] = new_conf_factor
+
+        # Adjust driver adaptation rate based on consistency of driver corrections
+        if abs(curvature_error) > 0.03 and abs(experience.get('steering_torque', 0.0)) > 0.5:
+            current_driver_rate = self.adaptive_params['driver_adaptation_rate']
+            # Increase adaptation to driver behavior when corrections are consistent
+            driver_adjustment = min(0.02, abs(curvature_error) * adaptive_lr * 0.1)
+            new_driver_rate = max(0.5, min(1.5, current_driver_rate + driver_adjustment))
+            self.adaptive_params['driver_adaptation_rate'] = new_driver_rate
+
+        # Adjust weather adaptation factor based on context clues
+        context = experience.get('context', {})
+        if context.get('road_surface') in ['wet', 'icy']:
+            current_weather_factor = self.adaptive_params['weather_adaptation_factor']
+            # Increase weather adaptation when road conditions are challenging
+            weather_adjustment = 0.01 * adaptive_lr
+            new_weather_factor = max(0.5, min(1.2, current_weather_factor + weather_adjustment))
+            self.adaptive_params['weather_adaptation_factor'] = new_weather_factor
+
+        # Adjust traffic density factor based on traffic conditions
+        if context.get('traffic_density') == 'high':
+            current_traffic_factor = self.adaptive_params['traffic_density_factor']
+            # Adjust for heavy traffic conditions
+            traffic_adjustment = -abs(curvature_error) * adaptive_lr * 0.05
+            new_traffic_factor = max(0.7, min(1.3, current_traffic_factor + traffic_adjustment))
+            self.adaptive_params['traffic_density_factor'] = new_traffic_factor
 
         self.learning_samples += 1
         self._save_adaptive_params_if_needed()
@@ -410,27 +669,136 @@ class SelfLearningManager:
             recent_errors = [rec['error'] for rec in list(self.model_accuracy_history)[-20:]]
             avg_error = np.mean(recent_errors) if recent_errors else 0
 
-            # Adjust parameters based on overall accuracy
-            if avg_error > 0.02:  # High error threshold
-                # Increase learning rate temporarily for faster adaptation
-                self.learning_rate = min(0.02, self.learning_rate * 1.1)
+            # Calculate error trend (improving vs getting worse)
+            if len(recent_errors) >= 5:
+                recent_error = np.mean(recent_errors[-5:])  # Last 5 errors
+                older_error = np.mean(recent_errors[:-5] if len(recent_errors) > 5 else recent_errors)  # Prior errors
+                error_trend = recent_error - older_error  # Negative = improving, Positive = getting worse
             else:
-                # Decrease learning rate to stabilize
-                self.learning_rate = max(0.005, self.learning_rate * 0.95)
+                error_trend = 0.0
+
+            # Adjust parameters based on overall accuracy and trend
+            if avg_error > 0.025:  # High error threshold
+                # Increase learning rate temporarily for faster adaptation
+                self.base_learning_rate = min(0.02, self.base_learning_rate * 1.2)
+            elif avg_error < 0.015 and error_trend <= 0:  # Low error and improving
+                # Decrease learning rate to stabilize as we're doing well
+                self.base_learning_rate = max(0.005, self.base_learning_rate * 0.85)
+            elif error_trend > 0.005:  # Error is getting significantly worse
+                # Increase learning rate to adapt quickly to changing conditions
+                self.base_learning_rate = min(0.025, self.base_learning_rate * 1.3)
 
         # Regularize parameters to prevent excessive drift
         self._regularize_parameters()
+
+        # Adaptive update interval based on learning activity
+        if self.learning_samples > 0 and self.total_updates > 0:
+            # If we're learning actively, consider adjusting update frequency
+            recent_learning_rate = self.learning_samples / self.total_updates
+            if recent_learning_rate > 0.1:  # More than 10% of cycles involve learning
+                # Increase update frequency when learning is active
+                self.update_interval = max(2.0, 5.0 - (recent_learning_rate * 10.0))
+            else:
+                # Reduce update frequency when learning is sparse
+                self.update_interval = min(10.0, 5.0 + (0.1 - recent_learning_rate) * 5.0)
 
         # Check for reset request
         self.check_for_reset_request()
 
         self.last_update_time = current_time
 
-        # Log learning statistics periodically
+        # Log learning statistics periodically with enhanced detail
         if self.learning_samples % 50 == 0:
             cloudlog.info(f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, "
                          f"Bias: {self.adaptive_params['curvature_bias']:.5f}, "
-                         f"Samples: {self.learning_samples}")
+                         f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, "
+                         f"Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
+                         f"Samples: {self.learning_samples}, "
+                         f"Base_LR: {self.base_learning_rate:.4f}, "
+                         f"Context: {self.learning_context}")
+
+        # Comprehensive monitoring and logging for self-learning system
+        self._comprehensive_monitoring()
+
+    def _comprehensive_monitoring(self):
+        """
+        Comprehensive monitoring and logging for the self-learning system to track
+        performance, parameter drift, learning effectiveness, and safety metrics.
+        """
+        # Calculate various metrics for monitoring
+        monitoring_data = {
+            'timestamp': time.time(),
+            'learning_samples': self.learning_samples,
+            'total_updates': self.total_updates,
+            'base_learning_rate': self.base_learning_rate,
+            'update_interval': self.update_interval,
+            'adaptive_params': self.adaptive_params.copy(),
+            'context': self.learning_context.copy(),
+            'performance_metrics': {}
+        }
+
+        # Calculate performance metrics
+        if len(self.model_accuracy_history) > 0:
+            recent_accuracy = list(self.model_accuracy_history)[-min(50, len(self.model_accuracy_history)):]
+            if recent_accuracy:
+                errors = [rec['error'] for rec in recent_accuracy]
+                monitoring_data['performance_metrics']['avg_error'] = np.mean(errors)
+                monitoring_data['performance_metrics']['std_error'] = np.std(errors)
+                monitoring_data['performance_metrics']['min_error'] = np.min(errors)
+                monitoring_data['performance_metrics']['max_error'] = np.max(errors)
+                monitoring_data['performance_metrics']['error_trend'] = (
+                    np.mean(errors[-10:]) - np.mean(errors[:10])
+                    if len(errors) > 20 else 0.0
+                )
+
+        # Calculate parameter stability metrics
+        param_stability = {
+            'lateral_control_factor': abs(self.adaptive_params['lateral_control_factor'] - 1.0),
+            'curvature_bias': abs(self.adaptive_params['curvature_bias']),
+            'acceleration_factor': abs(self.adaptive_params['acceleration_factor'] - 1.0),
+            'weather_adaptation_factor': abs(self.adaptive_params['weather_adaptation_factor'] - 1.0),
+            'traffic_density_factor': abs(self.adaptive_params['traffic_density_factor'] - 1.0)
+        }
+        monitoring_data['param_stability'] = param_stability
+        monitoring_data['max_param_drift'] = max(param_stability.values())
+
+        # Calculate learning effectiveness
+        if self.total_updates > 0:
+            learning_efficiency = self.learning_samples / max(1, self.total_updates)
+            monitoring_data['learning_efficiency'] = learning_efficiency
+
+        # Log detailed monitoring data periodically (less frequently than basic stats)
+        if self.learning_samples % 200 == 0:  # Log detailed metrics every 200 learning samples
+            cloudlog.info(f"Self-Learning Monitoring - "
+                         f"Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
+                         f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
+                         f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
+                         f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
+                         f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+
+        # Log warnings if parameters drift too far from baseline
+        drift_threshold = 0.5  # 50% drift from baseline
+        for param_name, drift in param_stability.items():
+            if drift > drift_threshold:
+                cloudlog.warning(f"Self-Learning Parameter Drift Alert - {param_name}: {drift:.4f} "
+                               f"(current: {self.adaptive_params[param_name]:.4f})")
+
+        # Log if learning efficiency is unexpectedly high or low
+        if 'learning_efficiency' in monitoring_data:
+            eff = monitoring_data['learning_efficiency']
+            if eff > 0.8:  # Very high learning frequency might indicate instability
+                cloudlog.warning(f"Self-Learning High Activity Alert - Learning Efficiency: {eff:.3f}, "
+                               f"Learning may be too frequent, consider adjusting thresholds")
+            elif eff < 0.01 and self.total_updates > 100:  # Very low might indicate no learning happening
+                cloudlog.info(f"Self-Learning Low Activity - Learning Efficiency: {eff:.3f}, "
+                            f"May need to adjust intervention thresholds")
+
+        # Store monitoring data for potential external analysis
+        if not hasattr(self, '_monitoring_history'):
+            self._monitoring_history = []
+        self._monitoring_history.append(monitoring_data)
+        # Keep only recent history to prevent memory bloat
+        self._monitoring_history = self._monitoring_history[-500:]  # Keep last 500 monitoring entries
     
     def _regularize_parameters(self):
         """
@@ -529,7 +897,11 @@ class SelfLearningManager:
             'acceleration_factor': 1.0,
             'reaction_time_compensation': 0.2,
             'speed_compensation_base': 1.0,
-            'speed_compensation_rate': 0.0
+            'speed_compensation_rate': 0.0,
+            'model_confidence_factor': 1.0,
+            'driver_adaptation_rate': 1.0,
+            'weather_adaptation_factor': 1.0,
+            'traffic_density_factor': 1.0,
         }
         self.learning_samples = 0
         self.experience_buffer.clear()
@@ -537,6 +909,131 @@ class SelfLearningManager:
         self.model_accuracy_history.clear()
         self.save_learning_state()
         cloudlog.info("Learning state reset to initial values")
+
+    def validate_learned_parameters_safety(self, CS, desired_curvature: float, desired_acceleration: float, v_ego: float) -> dict:
+        """
+        Validate learned parameters for safety before applying them to vehicle controls.
+
+        This method performs comprehensive safety validation of learned parameters
+        to ensure they don't result in unsafe driving behavior.
+
+        Args:
+            CS: Current car state
+            desired_curvature: Desired curvature after learning adjustments
+            desired_acceleration: Desired acceleration after learning adjustments
+            v_ego: Vehicle speed
+
+        Returns:
+            Dictionary with validation results including safety flags and suggested corrections
+        """
+        validation_results = {
+            'is_safe': True,
+            'safety_issues': [],
+            'corrected_curvature': desired_curvature,
+            'corrected_acceleration': desired_acceleration,
+            'confidence_in_safety': 1.0,  # 0.0 to 1.0 scale
+            'validation_details': {}
+        }
+
+        # Validate lateral control parameters (curvature)
+        max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
+        if abs(desired_curvature) > max_safe_curvature:
+            validation_results['is_safe'] = False
+            validation_results['safety_issues'].append(f"Excessive curvature: {desired_curvature:.4f} > {max_safe_curvature:.4f}")
+            validation_results['corrected_curvature'] = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))
+
+        # Check for excessive lateral acceleration
+        lateral_accel = v_ego * v_ego * desired_curvature if v_ego > 0.1 else 0.0
+        max_lateral_accel = 2.5  # m/s^2
+        if abs(lateral_accel) > max_lateral_accel:
+            validation_results['is_safe'] = False
+            validation_results['safety_issues'].append(f"Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
+
+        # Validate longitudinal control parameters (acceleration)
+        max_accel = 3.0 if v_ego < 15 else 2.0  # Reduce max acceleration at high speed
+        max_brake = -4.0 if v_ego < 15 else -3.0  # Reduce max braking at high speed
+
+        if desired_acceleration > max_accel:
+            validation_results['is_safe'] = False
+            validation_results['safety_issues'].append(f"Excessive acceleration: {desired_acceleration:.2f} > {max_accel:.2f}")
+            validation_results['corrected_acceleration'] = max_accel
+        elif desired_acceleration < max_brake:
+            validation_results['is_safe'] = False
+            validation_results['safety_issues'].append(f"Excessive braking: {desired_acceleration:.2f} < {max_brake:.2f}")
+            validation_results['corrected_acceleration'] = max_brake
+
+        # Check for parameter drift beyond safe bounds
+        param_drift_issues = []
+        for param_name, current_value in self.adaptive_params.items():
+            if param_name == 'curvature_bias':
+                # Curvature bias should be within reasonable limits
+                if abs(current_value) > 0.1:  # 0.1 rad^-1 is quite a lot
+                    param_drift_issues.append(f"{param_name}: {current_value:.4f}")
+            elif param_name in ['lateral_control_factor', 'acceleration_factor']:
+                # Scaling factors should not drift too far from 1.0
+                if abs(current_value - 1.0) > 0.5:  # More than 50% change
+                    param_drift_issues.append(f"{param_name}: {current_value:.3f}")
+            elif param_name in ['weather_adaptation_factor', 'traffic_density_factor']:
+                # Adaptation factors should be within reasonable bounds
+                if current_value < 0.3 or current_value > 1.5:
+                    param_drift_issues.append(f"{param_name}: {current_value:.3f}")
+
+        if param_drift_issues:
+            validation_results['safety_issues'].append(f"Parameter drift detected: {', '.join(param_drift_issues)}")
+
+        # Check if there are frequent rapid adjustments (could indicate instability)
+        if hasattr(self, '_prev_validation_curvatures'):
+            if len(self._prev_validation_curvatures) >= 5:
+                recent_changes = [abs(self._prev_validation_curvatures[i] - self._prev_validation_curvatures[i-1])
+                                  for i in range(1, len(self._prev_validation_curvatures))]
+                avg_change = np.mean(recent_changes)
+                if avg_change > 0.05:  # Large changes in consecutive validations
+                    validation_results['safety_issues'].append(f"Rapid curvature changes detected: {avg_change:.4f}")
+        else:
+            self._prev_validation_curvatures = []
+
+        self._prev_validation_curvatures.append(desired_curvature)
+        self._prev_validation_curvatures = self._prev_validation_curvatures[-10:]  # Keep last 10 values
+
+        # Calculate safety confidence based on various factors
+        confidence_factors = []
+
+        # Parameter stability contributes to confidence (lower drift = higher confidence)
+        total_param_drift = sum(abs(self.adaptive_params[p] - 1.0) if p not in ['curvature_bias']
+                                else abs(self.adaptive_params[p]) for p in ['lateral_control_factor', 'acceleration_factor', 'curvature_bias'])
+        drift_confidence = max(0.1, 1.0 - total_param_drift)  # More drift = less confidence
+        confidence_factors.append(drift_confidence)
+
+        # Model accuracy contributes to confidence (lower error = higher confidence)
+        if len(self.model_accuracy_history) > 0:
+            recent_errors = [rec['error'] for rec in list(self.model_accuracy_history)[-10:]]
+            if recent_errors:
+                avg_error = np.mean(recent_errors)
+                accuracy_confidence = max(0.1, 1.0 - avg_error * 10)  # Scale error appropriately
+                confidence_factors.append(accuracy_confidence)
+
+        # Vehicle state contributes to confidence (more stable state = higher confidence)
+        state_confidence = max(0.5, min(1.0, v_ego / 20.0)) if v_ego < 20 else 1.0  # Higher speeds have more confidence up to a point
+        confidence_factors.append(state_confidence)
+
+        validation_results['confidence_in_safety'] = np.mean(confidence_factors) if confidence_factors else 1.0
+
+        # Log safety validation results
+        if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
+            cloudlog.warning(f"Self-Learning Safety Validation - Safe: {validation_results['is_safe']}, "
+                           f"Confidence: {validation_results['confidence_in_safety']:.2f}, "
+                           f"Issues: {validation_results['safety_issues']}, "
+                           f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
+                           f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
+
+        validation_results['validation_details'] = {
+            'v_ego': v_ego,
+            'lateral_accel': lateral_accel,
+            'param_drift_count': len(param_drift_issues),
+            'avg_recent_change': np.mean(recent_changes) if 'recent_changes' in locals() and recent_changes else 0
+        }
+
+        return validation_results
 
     def check_for_reset_request(self):
         """
