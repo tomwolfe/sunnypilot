@@ -189,42 +189,56 @@ class SelfLearningSafety:
         
         return clamped_value, is_safe
     
-    def update_safety_score(self, CS: car.CarState, model_outputs: dict, 
+    def update_safety_score(self, CS: car.CarState, model_outputs: dict,
                            adjusted_outputs: dict) -> float:
         """
         Update the learning safety score based on current driving conditions.
-        
+
         Args:
             CS: Current car state
             model_outputs: Original model outputs
             adjusted_outputs: Outputs after learning adjustments
-            
+
         Returns:
             Updated safety score (0.0 to 1.0)
         """
         scores = []
-        
-        # Evaluate curvature adjustments
+
+        # Evaluate curvature adjustments based on absolute values against physical limits
         if 'desired_curvature' in model_outputs and 'desired_curvature' in adjusted_outputs:
             orig_curv = model_outputs['desired_curvature']
             adj_curv = adjusted_outputs['desired_curvature']
-            
-            # Check if adjustment is reasonable
-            if abs(orig_curv) > 0.01:  # Only evaluate when there's meaningful curvature
-                change_ratio = abs(adj_curv - orig_curv) / abs(orig_curv)
-                curvature_score = max(0.0, 1.0 - change_ratio)  # Lower score for larger changes
-                scores.append(curvature_score)
-        
-        # Evaluate acceleration adjustments
+
+            # Check if adjusted curvature is within safe physical limits
+            max_safe_curvature = self._calculate_max_safe_curvature(CS.vEgo)
+            adj_curv_safe_ratio = min(1.0, abs(adj_curv) / max_safe_curvature) if max_safe_curvature > 0 else 0.0
+            # Higher score for safer adjustments (closer to 1.0)
+            curvature_score = max(0.0, 1.0 - adj_curv_safe_ratio)
+            scores.append(curvature_score)
+
+            # Also check the change magnitude for stability
+            abs_change = abs(adj_curv - orig_curv)
+            if abs_change > 0.1:  # Large change threshold
+                # If change is large, reduce score proportionally
+                change_score = max(0.0, 1.0 - (abs_change / 0.2))  # 0.2 as max expected change
+                scores.append(change_score)
+
+        # Evaluate acceleration adjustments based on absolute values
         if 'desired_acceleration' in model_outputs and 'desired_acceleration' in adjusted_outputs:
             orig_accel = model_outputs['desired_acceleration']
             adj_accel = adjusted_outputs['desired_acceleration']
-            
-            if abs(orig_accel) > 0.1:  # Only evaluate when there's meaningful acceleration
-                change_ratio = abs(adj_accel - orig_accel) / abs(orig_accel)
-                accel_score = max(0.0, 1.0 - change_ratio)
-                scores.append(accel_score)
-        
+
+            # Check if adjusted acceleration is within safe limits
+            adj_accel_safe_ratio = min(1.0, abs(adj_accel) / self.max_lateral_acceleration)
+            accel_score = max(0.0, 1.0 - adj_accel_safe_ratio)
+            scores.append(accel_score)
+
+            # Also check the magnitude of change for stability
+            abs_accel_change = abs(adj_accel - orig_accel)
+            if abs_accel_change > 0.5:  # Large acceleration change threshold
+                accel_change_score = max(0.0, 1.0 - (abs_accel_change / 1.0))  # 1.0 as max expected change
+                scores.append(accel_change_score)
+
         # Evaluate based on vehicle state
         if CS.vEgo > 30:  # High speed - be more conservative
             speed_score = max(0.3, 1.0 - (CS.vEgo - 30) * 0.01)  # Decreases as speed increases beyond 30 m/s
@@ -232,13 +246,25 @@ class SelfLearningSafety:
         else:
             speed_score = 1.0
             scores.append(speed_score)
-        
+
+        # Evaluate system stability - check for rapid parameter changes
+        stability_score = 1.0  # Default high stability
+        if hasattr(self, 'prev_adj_curvature') and 'desired_curvature' in adjusted_outputs:
+            current_curv = adjusted_outputs['desired_curvature']
+            change_from_prev = abs(current_curv - self.prev_adj_curvature)
+            if change_from_prev > 0.05:  # Threshold for stable behavior
+                stability_score = max(0.0, 1.0 - (change_from_prev / 0.1))  # 0.1 as max expected stability change
+                scores.append(stability_score)
+
+        if 'desired_curvature' in adjusted_outputs:
+            self.prev_adj_curvature = adjusted_outputs['desired_curvature']
+
         # Calculate overall safety score
         if scores:
             overall_score = min(scores)  # Use minimum score as conservative measure
         else:
             overall_score = 1.0
-        
+
         # Apply time-based smoothing to prevent rapid fluctuations
         if hasattr(self, 'prev_safety_score'):
             # Exponential moving average for smoothing
@@ -246,9 +272,9 @@ class SelfLearningSafety:
             self.learning_safety_score = alpha * overall_score + (1 - alpha) * self.prev_safety_score
         else:
             self.learning_safety_score = overall_score
-            
+
         self.prev_safety_score = self.learning_safety_score
-        
+
         return self.learning_safety_score
     
     def should_freeze_learning(self, CS: car.CarState, safety_score: float) -> bool:
@@ -371,11 +397,11 @@ class SafeSelfLearningManager:
         self.safety = SelfLearningSafety()
         self.enabled = True
     
-    def update(self, CS, desired_curvature, actual_curvature, steering_torque, v_ego, 
-               model_confidence=1.0):
+    def update(self, CS, desired_curvature, actual_curvature, steering_torque, v_ego,
+               model_confidence=1.0, model_prediction_error=None):
         """
         Update the safe self-learning system.
-        
+
         Args:
             CS: Current car state
             desired_curvature: Model's desired curvature
@@ -383,30 +409,33 @@ class SafeSelfLearningManager:
             steering_torque: Current steering torque
             v_ego: Vehicle speed
             model_confidence: Model confidence score
+            model_prediction_error: Difference between model output and actual vehicle behavior
         """
         if not self.enabled:
             return
-        
+
         # Update safety monitoring
         self.learning_manager.update_from_model_accuracy(
             desired_curvature, actual_curvature, v_ego, model_confidence
         )
-        
-        # Update from driver interventions
+
+        # Update from driver interventions - pass model prediction error for context-aware learning
         self.learning_manager.update_from_driver_intervention(
-            CS, desired_curvature, actual_curvature, steering_torque, v_ego
+            CS, desired_curvature, actual_curvature, steering_torque, v_ego, model_prediction_error
         )
-        
+
         # Periodic updates
         self.learning_manager.periodic_update()
-        
+
         # Check if learning should be frozen for safety
         model_outputs = {'desired_curvature': desired_curvature}
-        adjusted_outputs = {'desired_curvature': desired_curvature}  # Placeholder
-        
+        # Get the adjusted output from the learning manager to use for safety scoring
+        adjusted_curvature = self.learning_manager.adjust_curvature_prediction(desired_curvature, v_ego)
+        adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
+
         safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
         freeze_learning = self.safety.should_freeze_learning(CS, safety_score)
-        
+
         if freeze_learning:
             # For now, just log the event - in production, might want to implement actual freezing
             cloudlog.warning("Learning would be frozen based on safety conditions")

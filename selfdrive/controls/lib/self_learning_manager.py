@@ -45,7 +45,9 @@ class SelfLearningManager:
             'lateral_control_factor': 1.0,  # Scaling factor for lateral control
             'curvature_bias': 0.0,  # Bias adjustment to desired curvature
             'acceleration_factor': 1.0,  # Scaling factor for longitudinal acceleration
-            'reaction_time_compensation': 0.2  # Time compensation in seconds
+            'reaction_time_compensation': 0.2,  # Time compensation in seconds
+            'speed_compensation_base': 1.0,  # Base value for speed compensation
+            'speed_compensation_rate': 0.0  # Rate of change with speed (learnable instead of hardcoded)
         }
         
         # Learning state tracking
@@ -59,32 +61,50 @@ class SelfLearningManager:
         
         cloudlog.info("Self-Learning Manager initialized")
     
-    def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float, 
-                                      steering_torque: float, v_ego: float):
+    def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float,
+                                      steering_torque: float, v_ego: float, model_prediction_error: float = None):
         """
         Update learning system based on driver intervention.
-        
+
         Args:
             CS: CarState message
             desired_curvature: Model's desired curvature
             actual_curvature: Actual measured curvature from vehicle
             steering_torque: Current steering torque
             v_ego: Vehicle speed
+            model_prediction_error: Difference between model output and actual vehicle behavior
         """
         if not self.learning_enabled:
             return
-            
+
         # Detect if driver is overriding the system
         steering_pressed = CS.steeringPressed
         if not steering_pressed:
             return
-            
+
         # Calculate the difference between desired and actual
         curvature_error = desired_curvature - actual_curvature
         torque_magnitude = abs(steering_torque)
-        
-        # Only learn if the correction is significant
-        if torque_magnitude > self.intervention_threshold:
+
+        # Context-aware learning: only learn when it's likely a corrective action
+        # Check if there's a significant model prediction error and driver is correcting it
+        model_error_significant = model_prediction_error is not None and abs(model_prediction_error) > 0.02
+        correction_direction_matches = (model_prediction_error is not None and
+                                       np.sign(model_prediction_error) == np.sign(steering_torque))
+
+        # Additional checks for context-aware learning
+        high_model_error = model_error_significant and abs(model_prediction_error) > 0.05
+        low_model_confidence = False  # This would need to be passed from the model, assuming False for now
+        driver_correction = torque_magnitude > self.intervention_threshold
+
+        # Only learn if it's likely a corrective action (high model error or correction in the right direction)
+        should_learn = (high_model_error or (model_error_significant and correction_direction_matches)) and driver_correction
+
+        # Additional safety check - don't learn if the model is performing well
+        if model_error_significant and abs(curvature_error) < 0.01 and torque_magnitude < 0.5:
+            should_learn = False
+
+        if should_learn:
             experience = {
                 'timestamp': time.time(),
                 'desired_curvature': desired_curvature,
@@ -92,13 +112,14 @@ class SelfLearningManager:
                 'curvature_error': curvature_error,
                 'steering_torque': steering_torque,
                 'v_ego': v_ego,
+                'model_prediction_error': model_prediction_error,
                 'road_type': self._classify_road_type(v_ego, abs(desired_curvature)),
-                'intervention_type': 'steering_override'
+                'intervention_type': 'corrective_steering'
             }
-            
+
             self.intervention_buffer.append(experience)
             self.experience_buffer.append(experience)
-            
+
             # Adjust parameters based on intervention
             self._adapt_from_intervention(experience)
     
@@ -146,25 +167,28 @@ class SelfLearningManager:
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
         Apply learned adjustments to the desired curvature prediction.
-        
+
         Args:
             original_curvature: Original model output curvature
             v_ego: Vehicle speed
-            
+
         Returns:
             Adjusted curvature value based on learned parameters
         """
         if not self.learning_enabled:
             return original_curvature
-            
+
         # Apply learned adjustments
         adjusted_curvature = original_curvature * self.adaptive_params['lateral_control_factor']
         adjusted_curvature += self.adaptive_params['curvature_bias']
-        
-        # Apply speed-dependent adjustments
-        speed_factor = max(0.8, min(1.2, 1.0 + (v_ego - 15.0) * 0.005))  # Adjust for speed
-        adjusted_curvature *= speed_factor
-        
+
+        # Apply speed-dependent adjustments based on learned parameters (replaces hardcoded speed factor)
+        speed_compensation = (self.adaptive_params['speed_compensation_base'] +
+                             self.adaptive_params['speed_compensation_rate'] * (v_ego - 15.0))
+        # Apply reasonable limits to prevent extreme adjustments
+        speed_compensation = max(0.8, min(1.2, speed_compensation))
+        adjusted_curvature *= speed_compensation
+
         return adjusted_curvature
     
     def adjust_acceleration_prediction(self, original_accel: float, v_ego: float) -> float:
@@ -275,19 +299,35 @@ class SelfLearningManager:
     def _regularize_parameters(self):
         """
         Apply regularization to prevent parameters from drifting too far from baseline.
+        Enhanced regularization with more aggressive and speed-dependent approach.
         """
-        # Regularize lateral control factor towards 1.0
+        # Regularize lateral control factor towards 1.0 with more aggressive approach
         factor = self.adaptive_params['lateral_control_factor']
-        if factor > 1.2 or factor < 0.8:
-            # Gradually pull back to center
-            target = 1.0
-            self.adaptive_params['lateral_control_factor'] = 0.99 * factor + 0.01 * target
-        
-        # Regularize curvature bias towards 0.0
+        if abs(factor - 1.0) > 0.05:  # If deviation is more than 5%
+            # Use more aggressive regularization when deviation is large
+            if abs(factor - 1.0) > 0.2:  # More than 20% deviation
+                # Strong regularization to prevent dangerous drift
+                self.adaptive_params['lateral_control_factor'] = 0.95 * factor + 0.05 * 1.0
+            else:
+                # Moderate regularization
+                self.adaptive_params['lateral_control_factor'] = 0.98 * factor + 0.02 * 1.0
+
+        # Regularize curvature bias towards 0.0 with more aggressive approach
         bias = self.adaptive_params['curvature_bias']
-        if abs(bias) > 0.01:
-            # Apply regularization with exponentially decaying weight
-            self.adaptive_params['curvature_bias'] *= 0.995
+        if abs(bias) > 0.005:  # Lower threshold for regularization
+            # More aggressive regularization that increases with magnitude
+            regularization_factor = max(0.99, 1.0 - abs(bias) * 50)  # More regularization for larger bias
+            self.adaptive_params['curvature_bias'] *= regularization_factor
+
+        # Regularize speed compensation parameters
+        speed_base = self.adaptive_params['speed_compensation_base']
+        if abs(speed_base - 1.0) > 0.05:  # Regularize base speed compensation toward 1.0
+            self.adaptive_params['speed_compensation_base'] = 0.98 * speed_base + 0.02 * 1.0
+
+        speed_rate = self.adaptive_params['speed_compensation_rate']
+        if abs(speed_rate) > 0.001:  # Regularize speed rate toward 0 (meaning no speed dependency)
+            # Apply regularization to reduce speed dependency over time unless needed
+            self.adaptive_params['speed_compensation_rate'] *= 0.99  # Gentle regularization
     
     def save_learning_state(self):
         """

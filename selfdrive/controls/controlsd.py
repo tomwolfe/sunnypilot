@@ -636,13 +636,24 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Update self-learning manager with current driving experience
     model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
+    # Calculate actual vehicle curvature from vehicle state measurements
+    # Using kinematic bicycle model: curvature = tan(steering_angle) / wheelbase
+    # We need to account for angle offset and convert to radians
+    lp = self.sm['liveParameters']  # Get live parameters for angle offset
+    steer_angle_rad = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)  # Apply angle offset
+    actual_vehicle_curvature = math.tan(steer_angle_rad) / self.CP.wheelbase if abs(CS.vEgo) > 0.1 else 0.0
+
+    # Calculate model prediction error: difference between model output and actual vehicle behavior
+    model_prediction_error = base_desired_curvature - actual_vehicle_curvature
+
     self.self_learning_manager.update(
         CS,
         base_desired_curvature,  # Original model output
-        self.curvature,  # Actual vehicle curvature
+        actual_vehicle_curvature,  # Actual vehicle curvature from vehicle state
         actuators.torque,
         CS.vEgo,
-        model_confidence=model_confidence
+        model_confidence=model_confidence,
+        model_prediction_error=model_prediction_error
     )
 
     return CC, lac_log
@@ -1039,13 +1050,24 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Update self-learning manager with current driving experience
     model_confidence = getattr(model_v2.meta, 'confidence', 1.0) if hasattr(model_v2, 'meta') else 1.0
+    # Calculate actual vehicle curvature from vehicle state measurements
+    # Using kinematic bicycle model: curvature = tan(steering_angle) / wheelbase
+    # We need to account for angle offset and convert to radians
+    lp = self.sm['liveParameters']  # Get live parameters for angle offset
+    steer_angle_rad = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)  # Apply angle offset
+    actual_vehicle_curvature = math.tan(steer_angle_rad) / self.CP.wheelbase if abs(CS.vEgo) > 0.1 else 0.0
+
+    # Calculate model prediction error: difference between model output and actual vehicle behavior
+    model_prediction_error = base_desired_curvature - actual_vehicle_curvature
+
     self.self_learning_manager.update(
         CS,
         base_desired_curvature,  # Original model output
-        self.curvature,  # Actual vehicle curvature
+        actual_vehicle_curvature,  # Actual vehicle curvature from vehicle state
         actuators.torque,
         CS.vEgo,
-        model_confidence=model_confidence
+        model_confidence=model_confidence,
+        model_prediction_error=model_prediction_error
     )
 
     return CC, lac_log
