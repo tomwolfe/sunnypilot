@@ -75,35 +75,46 @@ class E2EAlertsHelper:
 
     self.allowed = not moving and not CS.gasPressed and not CC.enabled and not recent_moving
 
-    # Enhanced Green Light Alert with multiple criteria
+    # Enhanced Green Light Alert with multiple criteria and map data integration
     green_light_trigger = False
     if self.green_light_state == E2EStates.ARMED:
       # Use multiple criteria for more robust green light detection
       green_light_criteria_met = 0
       total_criteria = 0
 
-      # Criterion 1: Model trajectory extends far enough (original)
-      if model_x[max_idx] > GREEN_LIGHT_X_THRESHOLD:
-        green_light_criteria_met += 1
-      total_criteria += 1
+      # Check for traffic light presence from map data first
+      has_traffic_light_from_map = False
+      if sm.updated['liveMapDataSP']:
+        live_map_data = sm['liveMapDataSP']
+        has_traffic_light_from_map = getattr(live_map_data, 'hasTrafficLight', False)
 
-      # Criterion 2: Model confidence is high enough to proceed (replacing incorrect enum check)
-      # Instead of checking for an enum, we check if the meta confidence is above a threshold
-      # indicating the model is confident about the situation being safe to proceed
-      model_confidence = sm['modelV2'].meta.confidence
-      if model_confidence > 0.5:  # Using a reasonable threshold for confidence
-        green_light_criteria_met += 1
-      total_criteria += 1
+      # Only consider green light if map data indicates a traffic light is present
+      if has_traffic_light_from_map:
+        # Criterion 1: Model trajectory extends far enough (original)
+        if model_x[max_idx] > GREEN_LIGHT_X_THRESHOLD:
+          green_light_criteria_met += 1
+        total_criteria += 1
 
-      # Criterion 3: No lead car blocking progress (unless it's moving)
-      if not self.has_lead or lead_dRel > 15.0 or sm['radarState'].leadOne.vRel > 2.0:
-        green_light_criteria_met += 1
-      total_criteria += 1
+        # Criterion 2: Model confidence is high enough to proceed (replacing incorrect enum check)
+        # Instead of checking for an enum, we check if the meta confidence is above a threshold
+        # indicating the model is confident about the situation being safe to proceed
+        model_confidence = sm['modelV2'].meta.confidence
+        if model_confidence > 0.5:  # Using a reasonable threshold for confidence
+          green_light_criteria_met += 1
+        total_criteria += 1
 
-      # Use majority voting - at least required number out of total criteria should be met
-      if green_light_criteria_met >= GREEN_LIGHT_CRITERIA_NEEDED:
-        self.green_light_trigger_timer += 1
+        # Criterion 3: No lead car blocking progress (unless it's moving)
+        if not self.has_lead or lead_dRel > 15.0 or sm['radarState'].leadOne.vRel > 2.0:
+          green_light_criteria_met += 1
+        total_criteria += 1
+
+        # Use majority voting - at least required number out of total criteria should be met
+        if green_light_criteria_met >= GREEN_LIGHT_CRITERIA_NEEDED:
+          self.green_light_trigger_timer += 1
+        else:
+          self.green_light_trigger_timer = 0
       else:
+        # If no traffic light is detected in map data, don't trigger green light alert
         self.green_light_trigger_timer = 0
 
       if self.green_light_trigger_timer * DT_MDL > TRIGGER_TIMER_THRESHOLD:
