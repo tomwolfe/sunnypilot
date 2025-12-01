@@ -1089,6 +1089,130 @@
     "title": "Uptime Offroad",
     "description": ""
   },
+  "AutoBrightness": {
+    "title": "Auto Brightness",
+    "description": ""
+  },
+  "AutoLaneChangeEnabled": {
+    "title": "Auto Lane Change Enabled",
+    "description": ""
+  },
+  "CruiseSpeedLimitOffset": {
+    "title": "Cruise Speed Limit Offset",
+    "description": ""
+  },
+  "CruiseStandStill": {
+    "title": "Cruise Stand Still",
+    "description": ""
+  },
+  "DisplayAlwaysOn": {
+    "title": "Display Always On",
+    "description": ""
+  },
+  "DisplayTimeout": {
+    "title": "Display Timeout",
+    "description": ""
+  },
+  "LateralCurvatureKiScaler": {
+    "title": "Lateral Curvature Ki Scaler",
+    "description": ""
+  },
+  "LateralHighSpeedKiLimit": {
+    "title": "Lateral High Speed Ki Limit",
+    "description": ""
+  },
+  "LateralHighSpeedThreshold": {
+    "title": "Lateral High Speed Threshold",
+    "description": ""
+  },
+  "LateralMaxAngleRate": {
+    "title": "Lateral Max Angle Rate",
+    "description": ""
+  },
+  "LateralMaxJerk": {
+    "title": "Lateral Max Jerk",
+    "description": ""
+  },
+  "LKASEnabled": {
+    "title": "LKAS Enabled",
+    "description": ""
+  },
+  "LKASStartDelay": {
+    "title": "LKAS Start Delay",
+    "description": ""
+  },
+  "LongitudinalAdaptiveErrorThreshold": {
+    "title": "Longitudinal Adaptive Error Threshold",
+    "description": ""
+  },
+  "LongitudinalAdaptiveSpeedThreshold": {
+    "title": "Longitudinal Adaptive Speed Threshold",
+    "description": ""
+  },
+  "LongitudinalMaxJerk": {
+    "title": "Longitudinal Max Jerk",
+    "description": ""
+  },
+  "LongitudinalMaxOutputJerk": {
+    "title": "Longitudinal Max Output Jerk",
+    "description": ""
+  },
+  "LongitudinalMaxStoppingJerk": {
+    "title": "Longitudinal Max Stopping Jerk",
+    "description": ""
+  },
+  "LongitudinalStartingAccelLimit": {
+    "title": "Longitudinal Starting Accel Limit",
+    "description": ""
+  },
+  "LongitudinalStartingAccelMultiplier": {
+    "title": "Longitudinal Starting Accel Multiplier",
+    "description": ""
+  },
+  "LongitudinalStartingSpeedThreshold": {
+    "title": "Longitudinal Starting Speed Threshold",
+    "description": ""
+  },
+  "ModelExecutionThrottleFactor": {
+    "title": "Model Execution Throttle Factor",
+    "description": ""
+  },
+  "SafetyMaxAccelerationChange": {
+    "title": "Safety Max Acceleration Change",
+    "description": ""
+  },
+  "SafetyMaxSteeringRate": {
+    "title": "Safety Max Steering Rate",
+    "description": ""
+  },
+  "SafetyMaxUnexpectedTorque": {
+    "title": "Safety Max Unexpected Torque",
+    "description": ""
+  },
+  "SafetyMinModelConfidence": {
+    "title": "Safety Min Model Confidence",
+    "description": ""
+  },
+  "ShowETA": {
+    "title": "Show ETA",
+    "description": ""
+  },
+  "ShowSpeed": {
+    "title": "Show Speed",
+    "description": ""
+  },
+  "ShowSpeedLimit": {
+    "title": "Show Speed Limit",
+    "description": ""
+  },
+  "SmartCruiseEnabled": {
+    "title": "Smart Cruise Enabled",
+    "description": ""
+  },
+  "UIScale": {
+    "title": "UI Scale",
+    "description": ""
+  },
   "UptimeOnroad": {
     "title": "Uptime Onroad",
     "description": ""
