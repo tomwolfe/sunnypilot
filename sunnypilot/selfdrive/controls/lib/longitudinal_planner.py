@@ -81,7 +81,7 @@ class LongitudinalPlannerSP:
     self.events_sp.clear()
 
     # Update DEC with map-based traffic sign information for enhanced decision making
-    if sm.updated['liveMapDataSP']:
+    if 'liveMapDataSP' in sm.updated:
       live_map_data = sm['liveMapDataSP']
       # Pass map data to DEC for better contextual awareness
       # This is now handled in the DEC's _calculate_slow_down method
