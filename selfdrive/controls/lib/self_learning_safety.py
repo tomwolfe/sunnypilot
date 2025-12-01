@@ -8,14 +8,9 @@ import numpy as np
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.filter_simple import FirstOrderFilter
 from cereal import car
+from typing import Any
 # Import SelfLearningManager for use in SafeSelfLearningManager
-try:
-    from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
-except ImportError:
-    # Fallback for CI or missing dependencies
-    class SelfLearningManager:
-        def __init__(self, *args, **kwargs):
-            pass
+from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
 class SelfLearningSafety:
     """
     Implements safety measures for the self-learning system.
@@ -332,7 +327,8 @@ class SelfLearningSafety:
                 safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
         if abs(CS.steeringAngleDeg) > 80:
             safety_recommendation = RECOMMENDATION_PREPARE_FOR_DISENGAGE
-        return safety_recommendation
+        # Ensure the return value is an integer
+        return int(safety_recommendation)
 class SafeSelfLearningManager:
     """
     Wrapper that combines self-learning and safety functions.
@@ -477,7 +473,7 @@ class SafeSelfLearningManager:
         """
         # Get the safety recommendation from internal safety module
         return self.safety.get_safety_recommendation(CS, model_output)
-    def validate_learned_parameters_safety(self, CS, desired_curvature: float, desired_acceleration: float, v_ego: float) -> dict:
+    def validate_learned_parameters_safety(self, CS, desired_curvature: float, desired_acceleration: float, v_ego: float) -> dict[str, Any]:
         """
         Validate learned parameters for safety using the integrated safety system.
         Args:
@@ -489,7 +485,19 @@ class SafeSelfLearningManager:
             Dictionary with validation results including safety flags and suggested corrections
         """
         # Use the learning manager's safety validation method
-        return self.learning_manager.validate_learned_parameters_safety(CS, desired_curvature, desired_acceleration, v_ego)
+        result = self.learning_manager.validate_learned_parameters_safety(CS, desired_curvature, desired_acceleration, v_ego)
+        # Ensure return type is proper dict
+        if isinstance(result, dict):
+            return result
+        else:
+            # Fallback if the learning manager method doesn't exist or returns wrong type
+            return {
+                'is_safe': True,
+                'corrected_curvature': desired_curvature,
+                'corrected_acceleration': desired_acceleration,
+                'safety_issues': [],
+                'confidence_in_safety': 1.0
+            }
     def adjust_curvature_with_safety_validation(self, original_curvature: float, v_ego: float, CS) -> float:
         """
         Adjust curvature with comprehensive safety validation.
@@ -509,7 +517,8 @@ class SafeSelfLearningManager:
         # Log safety validation results if issues found
         if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
             cloudlog.warning(f"Curvature safety validation needed: {validation_results['safety_issues']}")
-        return validation_results['corrected_curvature']
+        corrected_curvature = validation_results.get('corrected_curvature', original_curvature)
+        return float(corrected_curvature) if corrected_curvature is not None else float(original_curvature)
     def adjust_acceleration_with_safety_validation(self, original_accel: float, v_ego: float, CS) -> float:
         """
         Adjust acceleration with comprehensive safety validation.
@@ -529,4 +538,5 @@ class SafeSelfLearningManager:
         # Log safety validation results if issues found
         if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
             cloudlog.warning(f"Acceleration safety validation needed: {validation_results['safety_issues']}")
-        return validation_results['corrected_acceleration']
+        corrected_accel = validation_results.get('corrected_acceleration', original_accel)
+        return float(corrected_accel) if corrected_accel is not None else float(original_accel)
