@@ -736,6 +736,14 @@ class Controls(ControlsExt):
       self.sm['modelV2'] if 'modelV2' in self.sm else None
     )
 
+    # Get safety recommendation from self-learning system and potentially use it to enhance driver alerts
+    model_output = {'desired_curvature': self.sm['modelV2'].action.desiredCurvature if 'modelV2' in self.sm else 0.0}
+    learning_safety_recommendation = self.self_learning_manager.get_safety_recommendation(CS, model_output)
+    # We could potentially combine both safety recommendations or prioritize the learning system's recommendation
+    # For now, we'll use the original safety manager's recommendation but log the learning system's recommendation
+    if learning_safety_recommendation != log.ControlsState.SafetyRecommendation.normal:
+      cloudlog.info(f"Self-learning system safety recommendation: {learning_safety_recommendation}")
+
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       cs.lateralControlState.angleState = lac_log

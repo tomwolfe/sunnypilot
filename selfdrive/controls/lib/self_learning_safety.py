@@ -300,7 +300,7 @@ class SelfLearningSafety:
             return True
         
         # Freeze learning if steering angle is at limits
-        if abs(CS.steeringAngleDeg) > 70:  #接近极限
+        if abs(CS.steeringAngleDeg) > 70:  # Near limits
             cloudlog.info("Steering near limits, freezing learning")
             return True
         
@@ -419,9 +419,9 @@ class SafeSelfLearningManager:
             desired_curvature, actual_curvature, v_ego, model_confidence
         )
 
-        # Update from driver interventions - pass model prediction error for context-aware learning
+        # Update from driver interventions - pass model prediction error and model confidence for context-aware learning
         self.learning_manager.update_from_driver_intervention(
-            CS, desired_curvature, actual_curvature, steering_torque, v_ego, model_prediction_error
+            CS, desired_curvature, actual_curvature, steering_torque, v_ego, model_prediction_error, model_confidence
         )
 
         # Periodic updates
@@ -493,5 +493,19 @@ class SafeSelfLearningManager:
             # Revert to original if adjustment is unsafe
             cloudlog.warning(f"Acceleration adjustment unsafe, using original: {original_accel:.3f} vs {adjusted_accel:.3f}")
             return original_accel
-        
+
         return safe_accel
+
+    def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> log.ControlsState.SafetyRecommendation:
+        """
+        Provide safety recommendations based on current conditions and learning state.
+
+        Args:
+            CS: Current car state
+            model_output: Current model output
+
+        Returns:
+            Safety recommendation enum
+        """
+        # Get the safety recommendation from internal safety module
+        return self.safety.get_safety_recommendation(CS, model_output)
