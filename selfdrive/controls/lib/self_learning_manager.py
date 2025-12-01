@@ -88,11 +88,13 @@ class SelfLearningManager:
 
         # Enhanced monitoring for over-adaptation and system reliability
         try:
-            from enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
+            from enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
             self.enhanced_monitor = EnhancedSelfLearningMonitor()
+            self.enhanced_safety_validator = EnhancedSafetyValidator()  # Create a shared instance
         except ImportError:
             cloudlog.warning("Enhanced monitoring module not available, using basic monitoring")
             self.enhanced_monitor = None
+            self.enhanced_safety_validator = None
 
         cloudlog.info("Self-Learning Manager initialized")
     
@@ -1030,15 +1032,10 @@ class SelfLearningManager:
 
         # Use enhanced safety validator if available
         enhanced_validation = None
-        if self.enhanced_monitor:
-            try:
-                from enhanced_self_learning_monitoring import EnhancedSafetyValidator
-                enhanced_validator = EnhancedSafetyValidator()
-                enhanced_validation = enhanced_validator.validate_with_computational_efficiency(
-                    self.adaptive_params, v_ego
-                )
-            except ImportError:
-                enhanced_validation = None
+        if self.enhanced_safety_validator:
+            enhanced_validation = self.enhanced_safety_validator.validate_with_computational_efficiency(
+                self.adaptive_params, v_ego
+            )
 
         # Validate lateral control parameters (curvature)
         max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
@@ -1140,11 +1137,19 @@ class SelfLearningManager:
                            f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
                            f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
 
+        # Calculate average recent change if available
+        avg_recent_change = 0
+        if hasattr(self, '_prev_validation_curvatures') and len(self._prev_validation_curvatures) >= 5:
+            recent_changes = [abs(self._prev_validation_curvatures[i] - self._prev_validation_curvatures[i-1])
+                              for i in range(1, len(self._prev_validation_curvatures))]
+            if recent_changes:
+                avg_recent_change = np.mean(recent_changes)
+
         validation_results['validation_details'] = {
             'v_ego': v_ego,
             'lateral_accel': lateral_accel,
             'param_drift_count': len(param_drift_issues),
-            'avg_recent_change': np.mean(recent_changes) if 'recent_changes' in locals() and recent_changes else 0,
+            'avg_recent_change': avg_recent_change,
             'validation_time': enhanced_validation['validation_time'] if enhanced_validation else 0
         }
 

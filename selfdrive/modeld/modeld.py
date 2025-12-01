@@ -743,11 +743,8 @@ def main(demo=False):
         )
 
       if model_output is not None:
-        # Store v_ego in the model for validation purposes
-        model._v_ego_for_validation = v_ego
-
         # Add safety checks to model output to ensure valid values
-        model_output = _validate_model_output(model_output)
+        model_output = _validate_model_output(model_output, v_ego)
 
         modelv2_send = messaging.new_message('modelV2')
         drivingdata_send = messaging.new_message('drivingModelData')
@@ -785,7 +782,7 @@ def main(demo=False):
       time.sleep(0.1)  # Brief pause before continuing
       continue
 
-def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
+def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> dict[str, Any]:
   """
   Validate model outputs to ensure safe values for downstream processing.
 
@@ -797,6 +794,7 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
 
   Args:
     model_output: Raw model output dictionary
+    v_ego: Vehicle speed for speed-dependent validation
 
   Returns:
     Validated model output with safe values
@@ -816,7 +814,6 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
 
         # Speed-dependent acceleration limits for realistic driving
         # At higher speeds, acceleration changes should be more conservative
-        v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
         max_braking = max(-5.0, -2.0 - (v_ego * 0.05))  # More conservative braking at high speed
         max_accel = min(3.0, 2.5 - (v_ego * 0.02))      # More conservative acceleration at high speed
 
@@ -968,7 +965,7 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
     # Validate and limit desired curvature based on physical limits
     curvature = model_output['action'].desiredCurvature
     # Get current vehicle speed for speed-dependent curvature limits
-    v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+    # v_ego is passed as a parameter to this function
 
     # Calculate maximum safe curvature based on speed to prevent excessive lateral acceleration
     if v_ego > 1.0:  # Only apply speed-dependent limits when moving
@@ -987,7 +984,7 @@ def _validate_model_output(model_output: dict[str, Any]) -> dict[str, Any]:
     # Validate and limit desired acceleration based on physical limits
     accel = model_output['action'].desiredAcceleration
     # Get current vehicle speed for speed-dependent acceleration limits
-    v_ego = getattr(model, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
+    # v_ego is passed as a parameter to this function
 
     # Speed-dependent acceleration limits
     max_brake = -max(3.0, 2.0 + (v_ego * 0.05))  # More aggressive braking at higher speeds
