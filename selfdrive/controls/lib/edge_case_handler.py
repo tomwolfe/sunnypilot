@@ -398,9 +398,15 @@ class EdgeCaseHandler:
 
     # Track lateral and longitudinal acceleration variance as indicators of road roughness
     if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo'):
+      # Also check for lateral acceleration if available
+      lat_accel = getattr(car_state, 'aEgo', 0.0)  # Default to 0 if not available
+      if hasattr(car_state, 'lateralAccel') and car_state.lateralAccel is not None:
+        lat_accel = car_state.lateralAccel
+
       self._acceleration_history.append({
         'time': time.monotonic(),
         'long_accel': car_state.aEgo,
+        'lat_accel': lat_accel,  # Include lateral acceleration for road surface detection
         'speed': car_state.vEgo
       })
       # Keep only recent values (last 1 second at 100Hz)
@@ -409,7 +415,10 @@ class EdgeCaseHandler:
 
       if len(self._acceleration_history) >= 50:  # At least 0.5 seconds of data
         long_accels = [a['long_accel'] for a in self._acceleration_history]
-        acceleration_variance = np.var(long_accels)
+        lat_accels = [a['lat_accel'] for a in self._acceleration_history]
+
+        # Calculate combined acceleration variance
+        acceleration_variance = np.var(long_accels) + np.var(lat_accels)
 
         # Threshold would be calibrated based on vehicle characteristics
         # High variance in acceleration can indicate rough road surface
@@ -426,6 +435,120 @@ class EdgeCaseHandler:
       if angle_variance > high_steering_variation_threshold and car_state.vEgo > 5.0:
         return True
 
+    return False
+
+  def detect_roundabout_conditions(self, car_state: car.CarState, model_data) -> bool:
+    """
+    Detect roundabout conditions based on steering patterns and model predictions.
+
+    Args:
+      car_state: Current car state
+      model_data: Model predictions
+
+    Returns:
+      True if roundabout conditions detected, False otherwise
+    """
+    # Check for sustained steering angle that indicates circular motion
+    if hasattr(car_state, 'steeringAngleDeg'):
+      # For roundabouts, we typically see sustained steering angles
+      if abs(car_state.steeringAngleDeg) > 15.0 and abs(car_state.steeringAngleDeg) < 60.0:
+        # Check if this steering angle has been maintained for some time
+        if not hasattr(self, '_roundabout_steering_start_time'):
+          self._roundabout_steering_start_time = None
+
+        if self._roundabout_steering_start_time is None:
+          self._roundabout_steering_start_time = time.monotonic()
+        elif time.monotonic() - self._roundabout_steering_start_time > 2.0:  # Maintained for 2+ seconds
+          # Check model predictions for consistent curvature in the same direction
+          if (model_data is not None and
+              hasattr(model_data, 'action') and
+              hasattr(model_data.action, 'desiredCurvature')):
+            desired_curvature = model_data.action.desiredCurvature
+            # Check if we have consistent curvature for roundabout
+            if abs(desired_curvature) > 0.02 and car_state.vEgo > 3.0:
+              return True
+      else:
+        # Reset timer if steering angle is not appropriate for roundabout
+        self._roundabout_steering_start_time = None
+
+    return False
+
+  def detect_lane_merge_conditions(self, radar_state, car_state: car.CarState) -> bool:
+    """
+    Detect lane merge conditions that require special handling.
+
+    Args:
+      radar_state: Radar sensor data
+      car_state: Current car state
+
+    Returns:
+      True if lane merge conditions detected, False otherwise
+    """
+    if radar_state is None:
+      return False
+
+    indicators = 0
+
+    try:
+      # Check for vehicles in adjacent lanes that might be merging
+      if hasattr(radar_state, 'leadThree') and radar_state.leadThree.status:
+        # LeadThree typically represents a vehicle that might be merging
+        if (radar_state.leadThree.dRel < 60.0 and
+            radar_state.leadThree.vRel > 2.0 and  # Approaching from behind
+            abs(radar_state.leadThree.yRel) < 2.5):  # In adjacent lane
+          indicators += 1
+
+      # Check for multiple vehicles at similar distances that might indicate merging patterns
+      if (radar_state.leadOne.status and
+          radar_state.leadTwo.status and
+          abs(radar_state.leadOne.yRel - radar_state.leadTwo.yRel) < 3.0 and  # In adjacent lanes
+          abs(radar_state.leadOne.dRel - radar_state.leadTwo.dRel) < 20.0):  # At similar distances
+        # If both vehicles are maintaining similar speeds but close together, potential merge
+        if abs(radar_state.leadOne.vRel - radar_state.leadTwo.vRel) < 3.0:
+          indicators += 1
+
+      # Check for closing speeds that might indicate merging behavior
+      if radar_state.leadOne.status and abs(radar_state.leadOne.vRel) > 5.0 and radar_state.leadOne.dRel < 50.0:
+        indicators += 1
+
+    except AttributeError:
+      pass
+
+    return indicators >= 1  # At least 1 indicator for potential lane merge
+
+  def detect_tunnel_conditions(self, model_data) -> bool:
+    """
+    Detect tunnel conditions based on model predictions and sensor data.
+
+    Args:
+      model_data: Model predictions
+
+    Returns:
+      True if tunnel conditions detected, False otherwise
+    """
+    # Tunnel detection based on limited visibility and consistent lane geometry
+    if model_data is not None and hasattr(model_data, 'lateralPlannerOutput'):
+      lane_lines = model_data.lateralPlannerOutput.laneLines
+
+      # In tunnels, lane detection might be more consistent and limited in range
+      if len(lane_lines) >= 2:
+        # Check for consistent lane width and limited detection range
+        # Tunnels often have more consistent lane markings and limited view ahead
+        if hasattr(model_data, 'wideFromDevice') and not model_data.wideFromDevice:
+          # If we're using a narrow-angle camera and have limited forward view,
+          # it might indicate a tunnel (though this is not definitive)
+          pass  # This would require more sophisticated logic
+
+      # Check for consistent road geometry which might indicate a tunnel
+      # When lane lines are consistently maintained with little variation,
+      # it could indicate the controlled environment of a tunnel
+      if hasattr(model_data, 'plan') and hasattr(model_data.plan, 'laneWidth'):
+        # If available, check lane width consistency
+        pass  # Implementation would depend on actual model output structure
+
+    # For now, we'll return False as tunnel detection requires more sensor fusion
+    # and infrastructure-based detection (GPS, map data) would be more appropriate
+    # This is a placeholder for future enhancement
     return False
 
   def detect_unusual_traffic_patterns(self, radar_state, car_state: car.CarState) -> bool:
@@ -648,6 +771,9 @@ class EdgeCaseHandler:
       'weather_impact': self.detect_weather_impact(car_state, radar_state, model_data),
       'rough_road': self.detect_rough_road_conditions(car_state),
       'unusual_traffic': self.detect_unusual_traffic_patterns(radar_state, car_state),
+      'roundabout': self.detect_roundabout_conditions(car_state, model_data),  # New detection
+      'lane_merge': self.detect_lane_merge_conditions(radar_state, car_state),  # New detection
+      'tunnel': self.detect_tunnel_conditions(model_data),  # New detection
       'traffic_incident': False,
       'traffic_congestion': False,
       'recommended_speed': car_state.vCruise * 0.8 if car_state.vCruise > 0 else car_state.vEgo,  # Default: reduce speed by 20%
@@ -695,6 +821,21 @@ class EdgeCaseHandler:
     if scenarios['unusual_traffic']:
       scenarios['caution_required'] = True
       scenarios['adaptive_control_needed'] = True
+
+    if scenarios['roundabout']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      # Roundabouts require specific speed and steering handling
+      scenarios['recommended_speed'] = min(scenarios['recommended_speed'], max(8.0, car_state.vCruise * 0.5))  # Usually ~30 km/h
+
+    if scenarios['lane_merge']:
+      scenarios['caution_required'] = True
+      scenarios['adaptive_control_needed'] = True
+      # Adjust longitudinal control to handle merging vehicles appropriately
+
+    if scenarios['tunnel']:
+      scenarios['caution_required'] = True
+      # Tunnels may require adjustment for lighting/sight distance changes
 
     if scenarios['traffic_incident']:
       scenarios['caution_required'] = True
@@ -795,12 +936,31 @@ class EdgeCaseHandler:
       modifications['steering_sensitivity'] = 0.8  # Reduced sensitivity in dense traffic
       modifications['caution_mode'] = True
 
+    if scenarios.get('roundabout', False):
+      modifications['longitudinal_factor'] = 0.7  # More conservative for roundabouts
+      modifications['lateral_factor'] = 0.8      # Careful lateral control in roundabouts
+      modifications['speed_limit_factor'] = 0.5  # Significant speed reduction for safety
+      modifications['min_gap'] = 3.5             # Maintain good distance in roundabouts
+      modifications['caution_mode'] = True
+
+    if scenarios.get('lane_merge', False):
+      modifications['longitudinal_factor'] = 0.6  # Conservative to accommodate merging
+      modifications['min_gap'] = 4.0             # More distance to allow safe merging
+      modifications['steering_sensitivity'] = 0.8  # Moderate steering sensitivity for lane changes
+      modifications['caution_mode'] = True
+
+    if scenarios.get('tunnel', False):
+      modifications['longitudinal_factor'] = 0.8  # Slightly more conservative for lighting changes
+      modifications['lateral_factor'] = 0.9      # Careful lateral positioning in tunnels
+      modifications['steering_sensitivity'] = 0.8  # Adjust steering for potential visibility changes
+      modifications['caution_mode'] = True
+
     # Apply conservative limits to prevent over-correction
-    modifications['longitudinal_factor'] = max(0.3, modifications['longitudinal_factor'])
-    modifications['lateral_factor'] = max(0.5, modifications['lateral_factor'])
-    modifications['min_gap'] = min(6.0, modifications['min_gap'])  # Don't be too conservative
-    modifications['speed_limit_factor'] = max(0.3, modifications['speed_limit_factor'])  # Adjusted min for incidents
-    modifications['steering_sensitivity'] = max(0.3, modifications['steering_sensitivity'])  # Adjusted min for traffic
+    modifications['longitudinal_factor'] = max(0.2, modifications['longitudinal_factor'])  # Lowered min for critical situations
+    modifications['lateral_factor'] = max(0.4, modifications['lateral_factor'])
+    modifications['min_gap'] = min(8.0, modifications['min_gap'])  # Increased max for safety
+    modifications['speed_limit_factor'] = max(0.2, modifications['speed_limit_factor'])  # Lowered min for critical situations
+    modifications['steering_sensitivity'] = max(0.2, modifications['steering_sensitivity'])
 
     if detected_scenarios:
       cloudlog.debug(
