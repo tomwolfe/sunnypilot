@@ -12,14 +12,10 @@ from cereal import car
 try:
     from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
 except ImportError:
-    # For when this module is imported as part of the full system with different structure
-    try:
-        from self_learning_manager import SelfLearningManager
-    except ImportError:
-        # Define a placeholder if not available (for testing purposes)
-        class SelfLearningManager:
-            def __init__(self, *args, **kwargs):
-                pass
+    # Fallback for CI or missing dependencies
+    class SelfLearningManager:
+        def __init__(self, *args, **kwargs):
+            pass
 class SelfLearningSafety:
     """
     Implements safety measures for the self-learning system.
@@ -28,10 +24,10 @@ class SelfLearningSafety:
     """
     def __init__(self):
         # Safety thresholds
-        self.max_lateral_acceleration = 3.0  # m/s^2
-        self.max_lateral_jerk = 5.0  # m/s^3
-        self.max_curvature = 0.5  # 1/m (approximately 2m turning radius)
-        self.min_curvature = -0.5  # 1/m (approximately 2m turning radius)
+        self.max_lateral_acceleration: float = 3.0  # m/s^2
+        self.max_lateral_jerk: float = 5.0  # m/s^3
+        self.max_curvature: float = 0.5  # 1/m (approximately 2m turning radius)
+        self.min_curvature: float = -0.5  # 1/m (approximately 2m turning radius)
         # Learning safety limits
         self.max_param_adjustment_rate = 0.1  # Maximum rate of parameter change
         self.min_adaptive_factor = 0.5  # Minimum allowed adaptive factor
@@ -45,6 +41,9 @@ class SelfLearningSafety:
         self.safety_violations = 0
         self.learning_safety_score = 1.0  # 1.0 = fully safe, 0.0 = unsafe
         self.learning_frozen = False  # Flag to freeze learning when unsafe
+        # Initialize attributes for type inference
+        self.prev_adj_curvature: float = 0.0
+        self.prev_safety_score: float = 1.0  # Initialized to safe score
         # Critical safety limits that should never be exceeded
         self.critical_curvature_limit = 0.8  # Very high curvature threshold
         self.critical_acceleration_limit = 5.0  # Very high acceleration threshold
@@ -150,7 +149,7 @@ class SelfLearningSafety:
         Returns:
             Updated safety score (0.0 to 1.0)
         """
-        scores = {}
+        scores: dict[str, float] = {}
         # Evaluate curvature adjustments based on absolute values against physical limits
         if 'desired_curvature' in model_outputs and 'desired_curvature' in adjusted_outputs:
             orig_curv = model_outputs['desired_curvature']
@@ -298,7 +297,7 @@ class SelfLearningSafety:
         """
         import time
         return time.monotonic()
-    def get_safety_recommendation(self, CS: car.CarState, model_output: dict):
+    def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> int:
         """
         Provide safety recommendations based on current conditions and learning state.
         Args:
@@ -458,7 +457,7 @@ class SafeSelfLearningManager:
             cloudlog.warning(f"Acceleration adjustment unsafe, using original: {original_accel:.3f} vs {adjusted_accel:.3f}")
             return original_accel
         return safe_accel
-    def get_safety_recommendation(self, CS: car.CarState, model_output: dict):
+    def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> int:
         """
         Provide safety recommendations based on current conditions and learning state.
         Args:

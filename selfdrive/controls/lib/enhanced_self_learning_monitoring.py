@@ -9,6 +9,7 @@ import numpy as np
 import time
 from collections import deque
 from openpilot.common.swaglog import cloudlog
+from typing import Optional
 class EnhancedSelfLearningMonitor:
     """
     Enhanced monitoring system for the self-learning system that addresses
@@ -44,7 +45,7 @@ class EnhancedSelfLearningMonitor:
         self.safety_violations: list[dict] = deque(maxlen=100)
         self.last_safety_check = time.monotonic()
         cloudlog.info("Enhanced Self-Learning Monitor initialized with critical safety measures")
-    def monitor_over_adaptation(self, adaptive_params: dict, learning_context: dict) -> dict:
+    def monitor_over_adaptation(self, adaptive_params: dict[str, float], learning_context: dict) -> dict:
         """
         Monitor for potential over-adaptation to specific conditions or driving styles.
         Args:
@@ -53,12 +54,17 @@ class EnhancedSelfLearningMonitor:
         Returns:
             dictionary with over-adaptation detection results
         """
-        result = {
+        triggering_conditions: list[str] = []
+        param_drift_rates: dict[str, float] = {}
+        suggested_actions: list[str] = []
+        critical_violations: list[str] = []
+
+        result: dict[str, Any] = {
             'over_adaptation_detected': False,
-            'triggering_conditions': [],
-            'param_drift_rates': {},
-            'suggested_actions': [],
-            'critical_violations': []  # New field for critical issues
+            'triggering_conditions': triggering_conditions,
+            'param_drift_rates': param_drift_rates,
+            'suggested_actions': suggested_actions,
+            'critical_violations': critical_violations
         }
         # Store current context for analysis
         context_record = {
@@ -142,8 +148,8 @@ class EnhancedSelfLearningMonitor:
         # Check if this is a critical threshold violation
         if computation_time > self.critical_time_threshold:
             cloudlog.error(
-                (f"CRITICAL PERFORMANCE VIOLATION: Computation time {computation_time*1000:.2f}ms "
-                 f"exceeded critical threshold {self.critical_time_threshold*1000:.2f}ms")
+                f"CRITICAL PERFORMANCE VIOLATION: Computation time {computation_time*1000:.2f}ms "
+                f"exceeded critical threshold {self.critical_time_threshold*1000:.2f}ms"
             )
             # Add to safety violations for tracking
             self.safety_violations.append({
@@ -176,9 +182,9 @@ class EnhancedSelfLearningMonitor:
             # Log performance statistics periodically but more selectively
             if len(self.computation_times) % 100 == 0:
                 cloudlog.info(
-                    (f"Performance Stats - Avg: {avg_time*1000:.2f}ms, Max: {max_time*1000:.2f}ms, "
-                     f"95th percentile: {percentile_95*1000:.2f}ms, 99th percentile: {percentile_99*1000:.2f}ms, "
-                     f"Target: {self.max_computation_time*1000:.2f}ms")
+                    f"Performance Stats - Avg: {avg_time*1000:.2f}ms, Max: {max_time*1000:.2f}ms, "
+                    f"95th percentile: {percentile_95*1000:.2f}ms, 99th percentile: {percentile_99*1000:.2f}ms, "
+                    f"Target: {self.max_computation_time*1000:.2f}ms"
                 )
                 # Additional checks for compliance
                 if avg_time > self.max_computation_time * 1.1:  # 10% over target
@@ -201,9 +207,9 @@ class EnhancedSelfLearningMonitor:
         total_triggers = sum(self.learning_trigger_analysis.values())
         if total_triggers > 0 and total_triggers % 100 == 0:
             cloudlog.info(
-                (f"Learning Trigger Analysis - Intervention: {self.learning_trigger_analysis['intervention']}, "
-                 f"Model Accuracy: {self.learning_trigger_analysis['model_accuracy']}, "
-                 f"Normal Adaptation: {self.learning_trigger_analysis['normal_adaptation']}")
+                f"Learning Trigger Analysis - Intervention: {self.learning_trigger_analysis['intervention']}, "
+                f"Model Accuracy: {self.learning_trigger_analysis['model_accuracy']}, "
+                f"Normal Adaptation: {self.learning_trigger_analysis['normal_adaptation']}"
             )
     def update_vehicle_calibration(self, v_ego: float, curvature: float, lateral_accel: float):
         """
@@ -268,9 +274,9 @@ class EnhancedSelfLearningMonitor:
             # Log updates with more detail
             if self.vehicle_calibration['calibration_samples'] % 25 == 0:  # More frequent logging for calibration
                 cloudlog.info(
-                    (f"Vehicle calibration update - Lateral limit: {self.vehicle_calibration['lateral_acceleration_limit']:.2f} m/s², "
-                     f"Samples: {self.vehicle_calibration['calibration_samples']}, "
-                     f"Last change: {change_magnitude:.4f} m/s²")
+                    f"Vehicle calibration update - Lateral limit: {self.vehicle_calibration['lateral_acceleration_limit']:.2f} m/s², "
+                    f"Samples: {self.vehicle_calibration['calibration_samples']}, "
+                    f"Last change: {change_magnitude:.4f} m/s²"
                 )
     def get_updated_lateral_acceleration_limit(self) -> float:
         """
@@ -351,8 +357,8 @@ class TunnelDetector:
         self.tunnel_detection_active = tunnel_detected
         if tunnel_detected:
             cloudlog.info(
-                (f"Tunnel conditions detected (probability: {self.tunnel_probability:.2f}), "
-                 f"adapting learning behavior for reduced visibility")
+                f"Tunnel conditions detected (probability: {self.tunnel_probability:.2f}), "
+                f"adapting learning behavior for reduced visibility"
             )
         return tunnel_detected
 class EnhancedSafetyValidator:
@@ -378,57 +384,61 @@ class EnhancedSafetyValidator:
         """
         start_time = time.monotonic()
         self.validation_counter += 1
-        results = {
+        safety_issues: list[str] = []
+        critical_violations_list: list[str] = []
+        corrected_params_dict: dict[str, float] = params.copy()
+
+        results: dict[str, Any] = {
             'is_safe': True,
-            'safety_issues': [],
-            'corrected_params': params.copy(),
+            'safety_issues': safety_issues,
+            'corrected_params': corrected_params_dict,
             'validation_time': 0.0,
-            'critical_violations': [],
-            'confidence_score': 1.0  # Add confidence score for validation
+            'critical_violations': critical_violations_list,
+            'confidence_score': 1.0
         }
         # Strict safety checks with critical thresholds
         if 'lateral_control_factor' in params:
             factor = params['lateral_control_factor']
             if factor < 0.1 or factor > 2.0:  # More restrictive bounds
                 results['is_safe'] = False
-                results['critical_violations'].append(f"CRITICAL: Lateral control factor out of safe bounds: {factor}")
-                results['safety_issues'].append(f"Lateral control factor out of bounds: {factor}")
+                critical_violations_list.append(f"CRITICAL: Lateral control factor out of safe bounds: {factor}")
+                safety_issues.append(f"Lateral control factor out of bounds: {factor}")
                 results['corrected_params']['lateral_control_factor'] = np.clip(factor, 0.1, 2.0)
             elif factor < 0.5 or factor > 1.5:  # Warning bounds
-                results['safety_issues'].append(f"Lateral control factor outside normal bounds: {factor}")
+                safety_issues.append(f"Lateral control factor outside normal bounds: {factor}")
         # Critical check for curvature bias - very sensitive parameter
         if 'curvature_bias' in params:
             bias = params['curvature_bias']
             if abs(bias) > 0.05:  # Much more restrictive threshold
                 results['is_safe'] = False
-                results['critical_violations'].append(f"CRITICAL: Curvature bias exceeds safety threshold: {bias}")
-                results['safety_issues'].append(f"Curvature bias too large: {bias}")
+                critical_violations_list.append(f"CRITICAL: Curvature bias exceeds safety threshold: {bias}")
+                safety_issues.append(f"Curvature bias too large: {bias}")
                 results['corrected_params']['curvature_bias'] = np.clip(bias, -0.05, 0.05)
             elif abs(bias) > 0.02:  # Warning threshold
-                results['safety_issues'].append(f"Curvature bias outside safe range: {bias}")
+                safety_issues.append(f"Curvature bias outside safe range: {bias}")
         # Acceleration factor validation
         if 'acceleration_factor' in params:
             factor = params['acceleration_factor']
             if factor < 0.1 or factor > 2.0:  # More restrictive bounds
                 results['is_safe'] = False
-                results['critical_violations'].append(f"CRITICAL: Acceleration factor out of safe bounds: {factor}")
-                results['safety_issues'].append(f"Acceleration factor out of bounds: {factor}")
+                critical_violations_list.append(f"CRITICAL: Acceleration factor out of safe bounds: {factor}")
+                safety_issues.append(f"Acceleration factor out of bounds: {factor}")
                 results['corrected_params']['acceleration_factor'] = np.clip(factor, 0.1, 2.0)
         # Model confidence factor validation
         if 'model_confidence_factor' in params:
             factor = params['model_confidence_factor']
             if factor < 0.1 or factor > 2.0:  # Unreasonable bounds
                 results['is_safe'] = False
-                results['critical_violations'].append(f"CRITICAL: Model confidence factor out of bounds: {factor}")
-                results['safety_issues'].append(f"Model confidence factor out of bounds: {factor}")
+                critical_violations_list.append(f"CRITICAL: Model confidence factor out of bounds: {factor}")
+                safety_issues.append(f"Model confidence factor out of bounds: {factor}")
                 results['corrected_params']['model_confidence_factor'] = np.clip(factor, 0.1, 2.0)
         # Driver adaptation rate validation
         if 'driver_adaptation_rate' in params:
             rate = params['driver_adaptation_rate']
             if rate < 0.1 or rate > 2.0:  # Reasonable bounds for adaptation rate
                 results['is_safe'] = False
-                results['critical_violations'].append(f"CRITICAL: Driver adaptation rate out of bounds: {rate}")
-                results['safety_issues'].append(f"Driver adaptation rate out of bounds: {rate}")
+                critical_violations_list.append(f"CRITICAL: Driver adaptation rate out of bounds: {rate}")
+                safety_issues.append(f"Driver adaptation rate out of bounds: {rate}")
                 results['corrected_params']['driver_adaptation_rate'] = np.clip(rate, 0.1, 2.0)
         # Compute validation time and check performance
         results['validation_time'] = time.monotonic() - start_time
@@ -445,26 +455,29 @@ class EnhancedSafetyValidator:
                 f"CRITICAL: Safety validation exceeded performance target: "
                  f"{results['validation_time']*1000:.2f}ms"
             )
-            results['critical_violations'].append(f"Performance exceeded target: {results['validation_time']*1000:.2f}ms")
+            critical_violations_list.append(f"Performance exceeded target: {results['validation_time']*1000:.2f}ms")
         # Add to history and update metrics
         self.param_validation_history.append({
             'timestamp': time.monotonic(),
             'params': params.copy(),
             'results': results.copy()
         })
+        # Update results['is_safe'] based on collected violations
+        results['is_safe'] = not critical_violations_list and not safety_issues
+
         if not results['is_safe']:
             self.failed_validation_counter += 1
         # Calculate confidence score based on various factors
         failure_rate = self.failed_validation_counter / max(1, self.validation_counter)
         results['confidence_score'] = max(0.0, 1.0 - failure_rate)  # Lower confidence with more failures
         # Log critical violations
-        if results['critical_violations']:
+        if critical_violations_list:
             self.critical_safety_violations.append({
                 'timestamp': time.monotonic(),
-                'violations': results['critical_violations'],
+                'violations': critical_violations_list,
                 'params': params.copy()
             })
-            cloudlog.error(f"Critical Safety Violations: {', '.join(results['critical_violations'])}")
+            cloudlog.error(f"Critical Safety Violations: {', '.join(critical_violations_list)}")
         # Log safety statistics periodically
         if self.validation_counter % 50 == 0:
             cloudlog.info(
@@ -478,7 +491,8 @@ class EnhancedSafetyValidator:
             'total_validations': self.validation_counter,
             'failed_validations': self.failed_validation_counter,
             'failure_rate': failure_rate,
-            'confidence_score': results['confidence_score']
+            'confidence_score': results['confidence_score'],
+            'critical_violations_count': len(critical_violations_list)
         }
         return results
     def get_performance_metrics(self) -> dict:
@@ -493,7 +507,7 @@ class EnhancedSafetyValidator:
             percentile_95 = np.percentile(self.safety_check_times, 95) if len(self.safety_check_times) >= 10 else max_time
             percentile_99 = np.percentile(self.safety_check_times, 99) if len(self.safety_check_times) >= 50 else max_time
         else:
-            avg_time, max_time, percentile_95, percentile_99 = 0, 0, 0, 0
+            avg_time, max_time, percentile_95, percentile_99 = 0.0, 0.0, 0.0, 0.0
         # Calculate failure statistics
         failure_rate = self.failed_validation_counter / max(1, self.validation_counter)
         success_rate = 1.0 - failure_rate
