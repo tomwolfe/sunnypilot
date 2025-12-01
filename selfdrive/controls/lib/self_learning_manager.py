@@ -168,6 +168,8 @@ class SelfLearningManager:
                     original_params = experience['original_params']
                     if isinstance(original_params, dict):
                         original_value = original_params[key]
+                        # Ensure original_value is a float
+                        original_value = float(original_value) if original_value is not None else 0.0
                     else:
                         original_value = 0.0  # Default value if original_params is not a dict
                     new_value = self.adaptive_params[key]
@@ -293,7 +295,7 @@ class SelfLearningManager:
         # Ensure learning rate stays within reasonable bounds
         return min(0.02, max(0.001, learning_rate))  # Clamp to reasonable range
     def update_from_model_accuracy(self, desired_curvature: float, actual_curvature: float,
-                                 v_ego: float, model_confidence: float = 1.0):
+                                 v_ego: float, model_confidence: float = 1.0) -> None:
         """
         Update learning system based on model prediction accuracy.
         Args:
@@ -393,7 +395,9 @@ class SelfLearningManager:
         # Use the enhanced monitor for vehicle-specific limits if available
         max_lat_accel = 2.5  # Default value
         if self.enhanced_monitor is not None:
-            max_lat_accel = self.enhanced_monitor.get_updated_lateral_acceleration_limit()
+            max_lat_accel_raw = self.enhanced_monitor.get_updated_lateral_acceleration_limit()
+            # Ensure max_lat_accel is a float
+            max_lat_accel = float(max_lat_accel_raw) if max_lat_accel_raw is not None else 2.5
         # Based on max lateral acceleration = v^2 * curvature
         # So curvature = max_lat_accel / v^2
         max_curvature = max_lat_accel / (v_ego * v_ego) if v_ego > 0.1 else 0.5

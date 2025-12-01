@@ -428,9 +428,11 @@ class SafeSelfLearningManager:
             Safely adjusted curvature
         """
         # Apply learning adjustment
-        adjusted_curvature = self.learning_manager.adjust_curvature_prediction(
+        adjusted_raw = self.learning_manager.adjust_curvature_prediction(
             original_curvature, v_ego
         )
+        # Ensure the result is a float
+        adjusted_curvature = float(adjusted_raw) if adjusted_raw is not None else original_curvature
         # Validate for safety
         safe_curvature, is_safe = self.safety.validate_curvature_adjustment(
             original_curvature, adjusted_curvature, v_ego
@@ -450,9 +452,11 @@ class SafeSelfLearningManager:
             Safely adjusted acceleration
         """
         # Apply learning adjustment
-        adjusted_accel = self.learning_manager.adjust_acceleration_prediction(
+        adjusted_raw = self.learning_manager.adjust_acceleration_prediction(
             original_accel, v_ego
         )
+        # Ensure the result is a float
+        adjusted_accel = float(adjusted_raw) if adjusted_raw is not None else original_accel
         # Validate for safety
         safe_accel, is_safe = self.safety.validate_acceleration_adjustment(
             original_accel, adjusted_accel
@@ -472,7 +476,9 @@ class SafeSelfLearningManager:
             Safety recommendation (int/enum-like value)
         """
         # Get the safety recommendation from internal safety module
-        return self.safety.get_safety_recommendation(CS, model_output)
+        raw_recommendation = self.safety.get_safety_recommendation(CS, model_output)
+        # Ensure the return value is an integer
+        return int(raw_recommendation) if raw_recommendation is not None else 0
     def validate_learned_parameters_safety(self, CS, desired_curvature: float, desired_acceleration: float, v_ego: float) -> dict[str, Any]:
         """
         Validate learned parameters for safety using the integrated safety system.
@@ -509,7 +515,9 @@ class SafeSelfLearningManager:
             Safely adjusted curvature with full safety validation
         """
         # Apply learning adjustment first
-        adjusted_curvature = self.learning_manager.adjust_curvature_prediction(original_curvature, v_ego)
+        adjusted_raw = self.learning_manager.adjust_curvature_prediction(original_curvature, v_ego)
+        # Ensure the result is a float
+        adjusted_curvature = float(adjusted_raw) if adjusted_raw is not None else original_curvature
         # Perform comprehensive safety validation
         validation_results = self.validate_learned_parameters_safety(
             CS, adjusted_curvature, 0.0, v_ego  # acceleration will be validated separately
@@ -530,7 +538,9 @@ class SafeSelfLearningManager:
             Safely adjusted acceleration with full safety validation
         """
         # Apply learning adjustment first
-        adjusted_accel = self.learning_manager.adjust_acceleration_prediction(original_accel, v_ego)
+        adjusted_raw = self.learning_manager.adjust_acceleration_prediction(original_accel, v_ego)
+        # Ensure the result is a float
+        adjusted_accel = float(adjusted_raw) if adjusted_raw is not None else original_accel
         # Perform comprehensive safety validation
         validation_results = self.validate_learned_parameters_safety(
             CS, 0.0, adjusted_accel, v_ego  # curvature will be validated separately

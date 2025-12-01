@@ -297,7 +297,9 @@ class EnhancedSelfLearningMonitor:
             True if tunnel conditions are detected
         """
         # Validate input data before processing
-        tunnel_detected = self.tunnel_detector.detect_tunnel(gps_data, light_sensor_data)
+        tunnel_raw_result = self.tunnel_detector.detect_tunnel(gps_data, light_sensor_data)
+        # Ensure the result is a boolean
+        tunnel_detected = bool(tunnel_raw_result) if tunnel_raw_result is not None else False
         if tunnel_detected:
             cloudlog.debug("Tunnel conditions detected, applying conservative driving parameters")
             # Add to safety monitoring
@@ -496,8 +498,8 @@ class EnhancedSafetyValidator:
         if self.safety_check_times:
             avg_time = np.mean(self.safety_check_times)
             max_time = max(self.safety_check_times)
-            percentile_95 = np.percentile(self.safety_check_times, 95) if len(self.safety_check_times) >= 10 else max_time
-            percentile_99 = np.percentile(self.safety_check_times, 99) if len(self.safety_check_times) >= 50 else max_time
+            percentile_95 = float(np.percentile(self.safety_check_times, 95)) if len(self.safety_check_times) >= 10 else max_time
+            percentile_99 = float(np.percentile(self.safety_check_times, 99)) if len(self.safety_check_times) >= 50 else max_time
         else:
             avg_time, max_time, percentile_95, percentile_99 = 0.0, 0.0, 0.0, 0.0
         # Calculate failure statistics
