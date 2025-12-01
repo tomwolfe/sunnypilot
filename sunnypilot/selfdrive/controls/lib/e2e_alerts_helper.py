@@ -87,9 +87,11 @@ class E2EAlertsHelper:
         green_light_criteria_met += 1
       total_criteria += 1
 
-      # Criterion 2: Model confidence indicates safe to proceed
+      # Criterion 2: Model confidence is high enough to proceed (replacing incorrect enum check)
+      # Instead of checking for an enum, we check if the meta confidence is above a threshold
+      # indicating the model is confident about the situation being safe to proceed
       model_confidence = sm['modelV2'].meta.confidence
-      if model_confidence == log.ModelDataV2.ConfidenceClass.green:
+      if model_confidence > 0.5:  # Using a reasonable threshold for confidence
         green_light_criteria_met += 1
       total_criteria += 1
 

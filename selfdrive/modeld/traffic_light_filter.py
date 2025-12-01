@@ -23,12 +23,14 @@ HYSTERESIS_FACTOR = 0.2
 MIN_CONFIDENCE_FOR_CHANGE = 0.5
 MIN_UNKNOWN_SAMPLES = 3  # Minimum number of samples before allowing state transition from UNKNOWN
 UNKNOWN_COUNTER_RESET_VALUE = 0
+DEFAULT_MAX_POSSIBLE_SCORE = 1.0  # Default assumption for model score range
 
 
 class TrafficLightTemporalFilter:
   """Temporal filter for traffic light states with hysteresis and confidence tracking"""
 
-  def __init__(self, buffer_size=DEFAULT_BUFFER_SIZE, hysteresis_factor=HYSTERESIS_FACTOR, min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE):
+  def __init__(self, buffer_size=DEFAULT_BUFFER_SIZE, hysteresis_factor=HYSTERESIS_FACTOR,
+               min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE, max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE):
     """
     Initialize the traffic light temporal filter
 
@@ -36,10 +38,12 @@ class TrafficLightTemporalFilter:
       buffer_size: Size of the history buffer for temporal smoothing
       hysteresis_factor: Factor to prevent rapid state changes (0.0-1.0)
       min_confidence_for_change: Minimum confidence required to change from previous state
+      max_possible_score: Maximum possible score from the model (for confidence calculation)
     """
     self.buffer_size = buffer_size
     self.hysteresis_factor = hysteresis_factor
     self.min_confidence_for_change = min_confidence_for_change  # Explicit parameter for clarity
+    self.max_possible_score = max_possible_score  # Parameter for robust confidence calculation
     self.state_buffer = deque(maxlen=buffer_size)
     self.confidence_buffer = deque(maxlen=buffer_size)
 
@@ -78,10 +82,9 @@ class TrafficLightTemporalFilter:
     else:
       current_state = TrafficLightState.RED
       # Improved confidence calculation for RED state:
-      # Use the range from yellow_threshold to a reasonable maximum possible score (e.g., 1.0)
+      # Use the range from yellow_threshold to a reasonable maximum possible score
       # This makes the calculation more principled rather than using an arbitrary 0.5 multiplier
-      max_possible_score = 1.0  # Assumption: model scores are in range [0, 1]
-      confidence_range = max_possible_score - yellow_threshold
+      confidence_range = self.max_possible_score - yellow_threshold
       if confidence_range > 0:
         initial_confidence = min(1.0, (raw_score - yellow_threshold) / confidence_range)
       else:
@@ -106,6 +109,18 @@ class TrafficLightTemporalFilter:
       smoothed_confidence = initial_confidence
 
     # Apply hysteresis to prevent rapid state changes
+    # Use hysteresis_factor to adjust the threshold based on the previous state
+    # Different states may require different confidence levels to transition from
+    adjusted_confidence_threshold = self.min_confidence_for_change
+
+    # Apply hysteresis based on the previous state and the hysteresis factor
+    if self.prev_state != TrafficLightState.UNKNOWN:
+      # For transitions from known states, apply hysteresis factor to prevent rapid changes
+      # Make it harder to change from the current state than to maintain it
+      if current_state != self.prev_state:
+        # When transitioning from a known state to a different state, increase the required confidence
+        adjusted_confidence_threshold = min(1.0, self.min_confidence_for_change + (self.hysteresis_factor * 0.5))
+
     # Only change state if we have sufficient confidence AND different from previous state
     if current_state != self.prev_state:
       # Special handling for transitions from UNKNOWN state
@@ -115,10 +130,16 @@ class TrafficLightTemporalFilter:
           self.unknown_counter += 1
           if self.unknown_counter >= self.min_unknown_samples:
             # Allow transition after sufficient consecutive detections
-            final_state = current_state
-            self.prev_state = current_state
-            self.prev_confidence = smoothed_confidence
-            self.unknown_counter = UNKNOWN_COUNTER_RESET_VALUE  # Reset counter after successful transition
+            # Only if confidence meets the adjusted threshold
+            if smoothed_confidence > adjusted_confidence_threshold:
+              final_state = current_state
+              self.prev_state = current_state
+              self.prev_confidence = smoothed_confidence
+              self.unknown_counter = UNKNOWN_COUNTER_RESET_VALUE  # Reset counter after successful transition
+            else:
+              # Don't change state if confidence is too low
+              final_state = self.prev_state
+              smoothed_confidence = max(smoothed_confidence, self.prev_confidence * 0.8)  # Reduced confidence
           else:
             # Stay in UNKNOWN until we have enough consistent detections
             final_state = self.prev_state
@@ -131,8 +152,8 @@ class TrafficLightTemporalFilter:
       else:
         # Regular hysteresis for non-UNKNOWN transitions
         # Require minimum confidence to change from previous state
-        # Use the explicit min_confidence_for_change parameter for clarity
-        if smoothed_confidence > self.min_confidence_for_change:
+        # Use the dynamically adjusted confidence threshold
+        if smoothed_confidence > adjusted_confidence_threshold:
           final_state = current_state
           self.prev_state = current_state
           self.prev_confidence = smoothed_confidence
@@ -158,9 +179,14 @@ class TrafficLightTemporalFilter:
     CONFIDENCE_THRESHOLD_FOR_MAJORITY = 0.6  # Confidence threshold for majority voting
 
     if len(self.state_buffer) >= MAJORITY_VOTE_THRESHOLD:
-      unique_states, counts = np.unique(list(self.state_buffer), return_counts=True)  # Note: This still requires conversion to list
-      most_common_idx = np.argmax(counts)
-      majority_state = TrafficLightState(unique_states[most_common_idx])
+      # Count states in the buffer more efficiently
+      state_counts = {}
+      for state in self.state_buffer:
+        state_counts[state] = state_counts.get(state, 0) + 1
+
+      # Find the most common state
+      most_common_state = max(state_counts, key=state_counts.get)
+      majority_state = TrafficLightState(most_common_state)
 
       # Only use majority vote if it matches current state or confidence is low
       if (majority_state == final_state or smoothed_confidence < CONFIDENCE_THRESHOLD_FOR_MAJORITY):
@@ -172,7 +198,8 @@ class TrafficLightTemporalFilter:
 # Global instance for use in the model pipeline
 _traffic_light_filter = TrafficLightTemporalFilter(buffer_size=DEFAULT_BUFFER_SIZE,
                                                   hysteresis_factor=HYSTERESIS_FACTOR,
-                                                  min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE)
+                                                  min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE,
+                                                  max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE)
 
 
 def get_traffic_light_filter():
