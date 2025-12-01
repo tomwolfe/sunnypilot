@@ -5,7 +5,7 @@ This script provides unit tests and integration tests for the self-learning syst
 """
 import numpy as np
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock # noqa: TID251
 import os
 import sys
 # Add the openpilot path to sys.path dynamically
