@@ -214,34 +214,110 @@ class SelfLearningManager:
     def _adapt_from_intervention(self, experience: Dict):
         """
         Adapt system parameters based on a driver intervention experience.
-        
+
         Args:
             experience: Experience record containing intervention details
         """
         curvature_error = experience['curvature_error']
         v_ego = experience['v_ego']
-        
+        road_type = experience['road_type']
+        model_error = experience.get('model_prediction_error', curvature_error)
+
+        # Calculate adaptive learning rate based on experience and context
+        adaptive_lr = self._calculate_adaptive_learning_rate(v_ego, road_type, model_error)
+
         # Adjust lateral control factor based on systematic errors
         # If desired is consistently different from actual, adjust the scaling
         if abs(curvature_error) > 0.01:  # Significant error
             # Update lateral control factor slowly
             current_factor = self.adaptive_params['lateral_control_factor']
-            adjustment = -curvature_error * self.learning_rate * (1.0 + v_ego * 0.01)  # More adjustment at higher speeds
+
+            # Use context-aware adjustment that considers road type and error characteristics
+            road_factor = self._get_road_type_factor(road_type)
+            adjustment = -curvature_error * adaptive_lr * road_factor
+
             new_factor = current_factor + adjustment
-            
+
             # Constrain factor to reasonable range
             new_factor = max(0.7, min(1.3, new_factor))
             self.adaptive_params['lateral_control_factor'] = new_factor
-            
+
         # Adjust curvature bias if there's a systematic offset
         if abs(curvature_error) > 0.005:
             current_bias = self.adaptive_params['curvature_bias']
-            bias_adjustment = -curvature_error * self.learning_rate * 0.5  # Slower bias adjustment
+            # Use adaptive learning rate for bias as well
+            bias_adjustment = -curvature_error * adaptive_lr * 0.5  # Slower bias adjustment
             new_bias = current_bias + bias_adjustment
             self.adaptive_params['curvature_bias'] = new_bias
-        
+
+        # Adjust speed compensation parameters based on context
+        if abs(curvature_error) > 0.02 and v_ego > 5.0:  # Only adjust at meaningful speeds
+            current_base = self.adaptive_params['speed_compensation_base']
+            current_rate = self.adaptive_params['speed_compensation_rate']
+
+            # Adjust base compensation
+            base_adjustment = -curvature_error * adaptive_lr * 0.2
+            new_base = current_base + base_adjustment
+            self.adaptive_params['speed_compensation_base'] = max(0.8, min(1.2, new_base))
+
+            # Adjust rate based on speed-dependent error patterns
+            speed_error_factor = (v_ego - 15.0) / 15.0  # Normalized speed deviation from 15 m/s
+            rate_adjustment = -curvature_error * adaptive_lr * 0.1 * speed_error_factor
+            new_rate = current_rate + rate_adjustment
+            self.adaptive_params['speed_compensation_rate'] = max(-0.01, min(0.01, new_rate))
+
         self.learning_samples += 1
         self._save_adaptive_params_if_needed()
+
+    def _calculate_adaptive_learning_rate(self, v_ego: float, road_type: str, model_error: float) -> float:
+        """
+        Calculate adaptive learning rate based on current conditions.
+
+        Args:
+            v_ego: Vehicle speed
+            road_type: Current road type classification
+            model_error: Current model prediction error
+
+        Returns:
+            Adaptive learning rate
+        """
+        base_lr = self.learning_rate
+
+        # Increase learning rate for high model errors to adapt faster
+        error_factor = min(2.0, 1.0 + abs(model_error) * 10.0)  # Up to 2x for high errors
+
+        # Reduce learning rate at high speeds for safety
+        speed_factor = max(0.5, min(1.0, 1.0 - (max(0, v_ego - 30) * 0.01)))  # Reduce above 30 m/s
+
+        # Adjust for road type
+        road_factors = {
+            'low_speed_urban': 1.2,  # More learning in urban areas
+            'city_roads': 1.0,
+            'highway_entry': 0.9,
+            'highway': 0.8   # Less learning on highways for safety
+        }
+        road_factor = road_factors.get(road_type, 1.0)
+
+        adaptive_lr = base_lr * error_factor * speed_factor * road_factor
+        return min(0.02, adaptive_lr)  # Cap at 0.02 to prevent excessive changes
+
+    def _get_road_type_factor(self, road_type: str) -> float:
+        """
+        Get road type factor for parameter adjustment.
+
+        Args:
+            road_type: Current road type classification
+
+        Returns:
+            Factor to scale adjustments by road type
+        """
+        factors = {
+            'low_speed_urban': 1.2,  # More aggressive adjustments in urban
+            'city_roads': 1.0,
+            'highway_entry': 0.9,
+            'highway': 0.8   # More conservative on highways
+        }
+        return factors.get(road_type, 1.0)
     
     def _classify_road_type(self, v_ego: float, curvature: float) -> str:
         """
@@ -378,7 +454,7 @@ class SelfLearningManager:
         """
         if self.learning_samples % 100 == 0:  # Save every 100 learning samples
             self.save_learning_state()
-    
+
     def reset_learning_state(self):
         """
         Reset the learning state to initial values.
@@ -387,7 +463,9 @@ class SelfLearningManager:
             'lateral_control_factor': 1.0,
             'curvature_bias': 0.0,
             'acceleration_factor': 1.0,
-            'reaction_time_compensation': 0.2
+            'reaction_time_compensation': 0.2,
+            'speed_compensation_base': 1.0,
+            'speed_compensation_rate': 0.0
         }
         self.learning_samples = 0
         self.experience_buffer.clear()
@@ -395,38 +473,3 @@ class SelfLearningManager:
         self.model_accuracy_history.clear()
         self.save_learning_state()
         cloudlog.info("Learning state reset to initial values")
-
-
-class ModelEnhancer:
-    """
-    Enhances model outputs with learned adjustments.
-    """
-    
-    def __init__(self, self_learning_manager: SelfLearningManager):
-        self.manager = self_learning_manager
-    
-    def enhance_curvature_prediction(self, base_curvature: float, v_ego: float) -> float:
-        """
-        Enhance curvature prediction using learned parameters.
-        
-        Args:
-            base_curvature: Base curvature from the neural network model
-            v_ego: Vehicle speed
-            
-        Returns:
-            Enhanced curvature prediction
-        """
-        return self.manager.adjust_curvature_prediction(base_curvature, v_ego)
-    
-    def enhance_acceleration_prediction(self, base_accel: float, v_ego: float) -> float:
-        """
-        Enhance acceleration prediction using learned parameters.
-        
-        Args:
-            base_accel: Base acceleration from the neural network model
-            v_ego: Vehicle speed
-            
-        Returns:
-            Enhanced acceleration prediction
-        """
-        return self.manager.adjust_acceleration_prediction(base_accel, v_ego)
