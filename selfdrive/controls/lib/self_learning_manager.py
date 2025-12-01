@@ -32,6 +32,7 @@ class SelfLearningManager:
         # Initialize learning state
         self.learning_enabled = True
         self.base_learning_rate = 0.01
+        self.learning_rate = self.base_learning_rate  # Initialize the learning_rate
         self.confidence_threshold = 0.7
         self.intervention_threshold = 0.5  # Amount of steering correction to trigger learning
         self.min_adjustment_threshold = 0.001  # Minimum adjustment to apply
@@ -53,12 +54,6 @@ class SelfLearningManager:
             'curvature_bias': 0.0,  # Bias adjustment to desired curvature
             'acceleration_factor': 1.0,  # Scaling factor for longitudinal acceleration
             'reaction_time_compensation': 0.2,  # Time compensation in seconds
-            'speed_compensation_base': 1.0,  # Base value for speed compensation
-            'speed_compensation_rate': 0.0,  # Rate of change with speed (learnable instead of hardcoded)
-            'model_confidence_factor': 1.0,  # Factor to adjust model confidence
-            'driver_adaptation_rate': 1.0,  # How quickly to adapt to driver behavior
-            'weather_adaptation_factor': 1.0,  # Adaptation factor for weather conditions
-            'traffic_density_factor': 1.0,  # Adaptation for traffic density
         }
 
         # Learning context tracking
@@ -439,38 +434,6 @@ class SelfLearningManager:
         adjusted_curvature = original_curvature * self.adaptive_params['lateral_control_factor']
         adjusted_curvature += self.adaptive_params['curvature_bias']
 
-        # Apply speed-dependent adjustments based on learned parameters (replaces hardcoded speed factor)
-        speed_compensation = (self.adaptive_params['speed_compensation_base'] +
-                             self.adaptive_params['speed_compensation_rate'] * (v_ego - 15.0))
-        # Apply reasonable limits to prevent extreme adjustments
-        speed_compensation = max(0.8, min(1.2, speed_compensation))
-        adjusted_curvature *= speed_compensation
-
-        # Apply weather-based adjustments for challenging conditions
-        weather_factor = self.adaptive_params['weather_adaptation_factor']
-        if self.learning_context.get('road_surface') in ['wet', 'icy']:
-            adjusted_curvature *= min(1.0, weather_factor)  # Be more conservative in bad weather
-
-        # Apply traffic density adjustments
-        traffic_factor = self.adaptive_params['traffic_density_factor']
-        adjusted_curvature *= traffic_factor  # Adjust for traffic conditions
-
-        # Apply model confidence adjustment
-        confidence_factor = self.adaptive_params['model_confidence_factor']
-        adjusted_curvature *= confidence_factor
-
-        # Apply driver adaptation adjustments
-        driver_factor = self.adaptive_params['driver_adaptation_rate']
-        # Gradually adapt to driver preferences while maintaining safety
-        if driver_factor > 1.1:  # Driver prefers more responsive steering
-            adjusted_curvature = original_curvature + (adjusted_curvature - original_curvature) * 1.1
-        elif driver_factor < 0.9:  # Driver prefers more conservative steering
-            adjusted_curvature = original_curvature + (adjusted_curvature - original_curvature) * 0.9
-
-        # Ensure final curvature is within safe bounds based on speed
-        max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
-        adjusted_curvature = np.clip(adjusted_curvature, -max_safe_curvature, max_safe_curvature)
-
         return adjusted_curvature
 
     def _calculate_max_safe_curvature(self, v_ego: float) -> float:
@@ -512,20 +475,6 @@ class SelfLearningManager:
 
         # Apply learned acceleration factor
         adjusted_accel = original_accel * self.adaptive_params['acceleration_factor']
-
-        # Apply weather-based adjustments for challenging conditions
-        weather_factor = self.adaptive_params['weather_adaptation_factor']
-        if self.learning_context.get('road_surface') in ['wet', 'icy']:
-            # Be more conservative with acceleration in bad weather
-            adjusted_accel = adjusted_accel * 0.8 if adjusted_accel >= 0 else adjusted_accel * 0.9  # Less aggressive braking too
-
-        # Apply traffic density adjustments
-        traffic_factor = self.adaptive_params['traffic_density_factor']
-        adjusted_accel *= traffic_factor  # Adjust for traffic conditions
-
-        # Apply model confidence adjustment
-        confidence_factor = self.adaptive_params['model_confidence_factor']
-        adjusted_accel *= confidence_factor
 
         # Apply speed-dependent adjustment for safer acceleration at high speeds
         if v_ego > 20.0:  # Above ~72 km/h
@@ -587,54 +536,15 @@ class SelfLearningManager:
             new_bias = current_bias + bias_adjustment
             self.adaptive_params['curvature_bias'] = new_bias
 
-        # Adjust speed compensation parameters based on context
-        if abs(curvature_error) > 0.02 and v_ego > 5.0:  # Only adjust at meaningful speeds
-            current_base = self.adaptive_params['speed_compensation_base']
-            current_rate = self.adaptive_params['speed_compensation_rate']
-
-            # Adjust base compensation
-            base_adjustment = -curvature_error * adaptive_lr * 0.2
-            new_base = current_base + base_adjustment
-            self.adaptive_params['speed_compensation_base'] = max(0.8, min(1.2, new_base))
-
-            # Adjust rate based on speed-dependent error patterns
-            speed_error_factor = (v_ego - 15.0) / 15.0  # Normalized speed deviation from 15 m/s
-            rate_adjustment = -curvature_error * adaptive_lr * 0.1 * speed_error_factor
-            new_rate = current_rate + rate_adjustment
-            self.adaptive_params['speed_compensation_rate'] = max(-0.01, min(0.01, new_rate))
-
-        # Adjust model confidence factor based on consistency of interventions
-        if abs(curvature_error) > 0.02 and experience.get('model_confidence', 1.0) < 0.7:
-            current_conf_factor = self.adaptive_params['model_confidence_factor']
-            # Decrease model confidence when interventions are frequent with low confidence
-            conf_adjustment = -0.01 * adaptive_lr
-            new_conf_factor = max(0.5, min(1.0, current_conf_factor + conf_adjustment))
-            self.adaptive_params['model_confidence_factor'] = new_conf_factor
-
-        # Adjust driver adaptation rate based on consistency of driver corrections
-        if abs(curvature_error) > 0.03 and abs(experience.get('steering_torque', 0.0)) > 0.5:
-            current_driver_rate = self.adaptive_params['driver_adaptation_rate']
-            # Increase adaptation to driver behavior when corrections are consistent
-            driver_adjustment = min(0.02, abs(curvature_error) * adaptive_lr * 0.1)
-            new_driver_rate = max(0.5, min(1.5, current_driver_rate + driver_adjustment))
-            self.adaptive_params['driver_adaptation_rate'] = new_driver_rate
-
-        # Adjust weather adaptation factor based on context clues
-        context = experience.get('context', {})
-        if context.get('road_surface') in ['wet', 'icy']:
-            current_weather_factor = self.adaptive_params['weather_adaptation_factor']
-            # Increase weather adaptation when road conditions are challenging
-            weather_adjustment = 0.01 * adaptive_lr
-            new_weather_factor = max(0.5, min(1.2, current_weather_factor + weather_adjustment))
-            self.adaptive_params['weather_adaptation_factor'] = new_weather_factor
-
-        # Adjust traffic density factor based on traffic conditions
-        if context.get('traffic_density') == 'high':
-            current_traffic_factor = self.adaptive_params['traffic_density_factor']
-            # Adjust for heavy traffic conditions
-            traffic_adjustment = -abs(curvature_error) * adaptive_lr * 0.05
-            new_traffic_factor = max(0.7, min(1.3, current_traffic_factor + traffic_adjustment))
-            self.adaptive_params['traffic_density_factor'] = new_traffic_factor
+        # Adjust acceleration factor based on consistency of interventions
+        if abs(curvature_error) > 0.02:
+            current_accel_factor = self.adaptive_params['acceleration_factor']
+            # Adjust acceleration factor based on error patterns
+            accel_adjustment = -curvature_error * adaptive_lr * 0.1
+            new_accel_factor = current_accel_factor + accel_adjustment
+            # Constrain factor to reasonable range
+            new_accel_factor = max(0.7, min(1.3, new_accel_factor))
+            self.adaptive_params['acceleration_factor'] = new_accel_factor
 
         self.learning_samples += 1
         self._save_adaptive_params_if_needed()
@@ -852,8 +762,7 @@ class SelfLearningManager:
             'lateral_control_factor': abs(self.adaptive_params['lateral_control_factor'] - 1.0),
             'curvature_bias': abs(self.adaptive_params['curvature_bias']),
             'acceleration_factor': abs(self.adaptive_params['acceleration_factor'] - 1.0),
-            'weather_adaptation_factor': abs(self.adaptive_params['weather_adaptation_factor'] - 1.0),
-            'traffic_density_factor': abs(self.adaptive_params['traffic_density_factor'] - 1.0)
+            'reaction_time_compensation': abs(self.adaptive_params['reaction_time_compensation'] - 0.2)
         }
         monitoring_data['param_stability'] = param_stability
         monitoring_data['max_param_drift'] = max(param_stability.values())
@@ -940,41 +849,25 @@ class SelfLearningManager:
                 regularization_factor = bias_slow_reg_factor  # Gentle regularization for small adjustments
             self.adaptive_params['curvature_bias'] *= regularization_factor
 
-        # Regularize other parameters as well to prevent over-adaptation
-        # Regularize weather adaptation factor (towards 1.0)
-        weather_factor = self.adaptive_params['weather_adaptation_factor']
-        if abs(weather_factor - 1.0) > 0.15 or over_adaptation:  # If significantly different or over-adaptation
-            self.adaptive_params['weather_adaptation_factor'] = (
-                0.99 if not over_adaptation else 0.97
-            ) * weather_factor + (1 - (0.99 if not over_adaptation else 0.97)) * 1.0
-
-        # Regularize traffic density factor (towards 1.0)
-        traffic_factor = self.adaptive_params['traffic_density_factor']
-        if abs(traffic_factor - 1.0) > 0.15 or over_adaptation:  # If significantly different or over-adaptation
-            self.adaptive_params['traffic_density_factor'] = (
-                0.99 if not over_adaptation else 0.97
-            ) * traffic_factor + (1 - (0.99 if not over_adaptation else 0.97)) * 1.0
-
-        # Regularize driver adaptation rate (towards 1.0)
-        driver_rate = self.adaptive_params['driver_adaptation_rate']
-        if abs(driver_rate - 1.0) > 0.2 or over_adaptation:  # If significantly different or over-adaptation
-            self.adaptive_params['driver_adaptation_rate'] = (
-                0.98 if not over_adaptation else 0.95
-            ) * driver_rate + (1 - (0.98 if not over_adaptation else 0.95)) * 1.0
-
-        # Regularize speed compensation parameters with balanced approach
-        speed_base = self.adaptive_params['speed_compensation_base']
-        if abs(speed_base - 1.0) > 0.02 or over_adaptation:  # Regularize base speed compensation toward 1.0
-            self.adaptive_params['speed_compensation_base'] = (
-                (0.995 if not over_adaptation else 0.97) * speed_base +
-                (1 - (0.995 if not over_adaptation else 0.97)) * 1.0
+        # Regularize acceleration factor towards 1.0 with balanced approach
+        accel_factor = self.adaptive_params['acceleration_factor']
+        if abs(accel_factor - 1.0) > 0.02:  # Lower threshold for regularization (2% instead of 5%)
+            if abs(accel_factor - 1.0) > 0.25:  # More than 25% deviation - aggressive regularization
+                # Strong regularization to prevent dangerous drift
+                regularization_factor = fast_regularization_factor
+            else:
+                regularization_factor = slow_regularization_factor
+            self.adaptive_params['acceleration_factor'] = (
+                regularization_factor * accel_factor + (1 - regularization_factor) * 1.0
             )
 
-        speed_rate = self.adaptive_params['speed_compensation_rate']
-        if abs(speed_rate) > 0.0005 or over_adaptation:  # Regularize speed rate toward 0 (meaning no speed dependency)
-            # Apply balanced regularization to reduce speed dependency over time unless needed
-            reg_factor = 0.995 if not over_adaptation else 0.97
-            self.adaptive_params['speed_compensation_rate'] *= reg_factor
+        # Regularize reaction time compensation towards default 0.2
+        reaction_time = self.adaptive_params['reaction_time_compensation']
+        if abs(reaction_time - 0.2) > 0.05:  # Regularize if significantly different from default
+            reg_factor = 0.99  # Gentle regularization
+            self.adaptive_params['reaction_time_compensation'] = (
+                reg_factor * reaction_time + (1 - reg_factor) * 0.2
+            )
     
     def save_learning_state(self):
         """
@@ -997,23 +890,23 @@ class SelfLearningManager:
         Load adaptive parameters from persistent storage if available.
         """
         try:
-            saved_state_str = self.params.get("SelfLearningState", encoding='utf-8')
+            saved_state_str = self.params.get("SelfLearningState")
             if saved_state_str:
                 import ast
                 saved_state = ast.literal_eval(saved_state_str)
-                
+
                 # Load adaptive parameters if they exist
                 if 'adaptive_params' in saved_state:
                     for key, value in saved_state['adaptive_params'].items():
                         if key in self.adaptive_params:
                             self.adaptive_params[key] = value
-                
+
                 # Load other parameters
                 if 'learning_rate' in saved_state:
                     self.learning_rate = saved_state['learning_rate']
                 if 'learning_samples' in saved_state:
                     self.learning_samples = saved_state['learning_samples']
-                    
+
                 cloudlog.info(f"Learning state loaded - samples: {self.learning_samples}")
         except Exception as e:
             cloudlog.warning(f"Failed to load learning state: {e}")
@@ -1034,12 +927,6 @@ class SelfLearningManager:
             'curvature_bias': 0.0,
             'acceleration_factor': 1.0,
             'reaction_time_compensation': 0.2,
-            'speed_compensation_base': 1.0,
-            'speed_compensation_rate': 0.0,
-            'model_confidence_factor': 1.0,
-            'driver_adaptation_rate': 1.0,
-            'weather_adaptation_factor': 1.0,
-            'traffic_density_factor': 1.0,
         }
         self.learning_samples = 0
         self.experience_buffer.clear()
@@ -1278,7 +1165,7 @@ class SelfLearningManager:
         """
         try:
             # Check if reset parameter has been set
-            reset_request = self.params.get("ResetSelfLearning", encoding='utf-8')
+            reset_request = self.params.get("ResetSelfLearning")
             if reset_request and reset_request.lower() == "1":
                 cloudlog.info("Reset request detected, resetting self-learning state")
                 self.reset_learning_state()
