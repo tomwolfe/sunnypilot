@@ -230,7 +230,7 @@ class SelfLearningSafety:
         else:
             self.learning_safety_score = overall_score
         self.prev_safety_score = self.learning_safety_score
-        return self.learning_safety_score
+        return float(self.learning_safety_score)
     def should_freeze_learning(self, CS: car.CarState, safety_score: float) -> bool:
 
         """
@@ -441,7 +441,7 @@ class SafeSelfLearningManager:
             # Revert to original if adjustment is unsafe
             cloudlog.warning(f"Curvature adjustment unsafe, using original: {original_curvature:.5f} vs {adjusted_curvature:.5f}")
             return original_curvature
-        return safe_curvature
+        return float(safe_curvature) if safe_curvature is not None else float(original_curvature)
     def adjust_acceleration(self, original_accel: float, v_ego: float) -> float:
         """
         Safely adjust acceleration with validation.
@@ -465,7 +465,7 @@ class SafeSelfLearningManager:
             # Revert to original if adjustment is unsafe
             cloudlog.warning(f"Acceleration adjustment unsafe, using original: {original_accel:.3f} vs {adjusted_accel:.3f}")
             return original_accel
-        return safe_accel
+        return float(safe_accel) if safe_accel is not None else float(original_accel)
     def get_safety_recommendation(self, CS: car.CarState, model_output: dict) -> int:
         """
         Provide safety recommendations based on current conditions and learning state.

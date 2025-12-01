@@ -449,16 +449,17 @@ class EdgeCaseHandler:
       True if roundabout conditions detected, False otherwise
     """
     # Check for sustained steering angle that indicates circular motion
-    if hasattr(car_state, 'steeringAngleDeg'):
-      # For roundabouts, we typically see sustained steering angles
-      if abs(car_state.steeringAngleDeg) > 15.0 and abs(car_state.steeringAngleDeg) < 60.0:
-        # Check if this steering angle has been maintained for some time
-        if not hasattr(self, '_roundabout_steering_start_time'):
-          self._roundabout_steering_start_time = None
+    if not hasattr(car_state, 'steeringAngleDeg'):
+        return False  # No steering angle data, can't detect roundabout
 
-        if self._roundabout_steering_start_time is None:
-          self._roundabout_steering_start_time = time.monotonic()
-        elif time.monotonic() - self._roundabout_steering_start_time > 2.0:  # Maintained for 2+ seconds
+    # For roundabouts, we typically see sustained steering angles
+    if abs(car_state.steeringAngleDeg) > 15.0 and abs(car_state.steeringAngleDeg) < 60.0:
+      # Check if this steering angle has been maintained for some time
+      if not hasattr(self, '_roundabout_steering_start_time'):
+        self._roundabout_steering_start_time = time.monotonic()  # Initialize timer on first call
+      else:
+        # Timer already exists, check if maintained for 2+ seconds
+        if time.monotonic() - self._roundabout_steering_start_time > 2.0:
           # Check model predictions for consistent curvature in the same direction
           if (model_data is not None and
               hasattr(model_data, 'action') and
@@ -467,9 +468,10 @@ class EdgeCaseHandler:
             # Check if we have consistent curvature for roundabout
             if abs(desired_curvature) > 0.02 and car_state.vEgo > 3.0:
               return True
-      else:
-        # Reset timer if steering angle is not appropriate for roundabout
-        self._roundabout_steering_start_time = None
+    else:
+      # Reset timer if steering angle is not appropriate for roundabout
+      if hasattr(self, '_roundabout_steering_start_time'):
+        delattr(self, '_roundabout_steering_start_time')  # Remove the attribute entirely
 
     return False
 

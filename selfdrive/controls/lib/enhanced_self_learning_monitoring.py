@@ -357,7 +357,7 @@ class TunnelDetector:
         # Update tunnel probability
         self.tunnel_probability = max(self.tunnel_probability * 0.8, tunnel_probability)  # Decay over time
         # Consider tunnel detected if probability is high
-        tunnel_detected = self.tunnel_probability > 0.6
+        tunnel_detected = bool(self.tunnel_probability > 0.6)
         self.tunnel_detection_active = tunnel_detected
         if tunnel_detected:
             cloudlog.info(f"Tunnel conditions detected (probability: {self.tunnel_probability:.2f}), adapting learning behavior for reduced visibility")
@@ -496,8 +496,8 @@ class EnhancedSafetyValidator:
             dictionary with performance metrics
         """
         if self.safety_check_times:
-            avg_time = np.mean(self.safety_check_times)
-            max_time = max(self.safety_check_times)
+            avg_time = float(np.mean(self.safety_check_times))
+            max_time = float(max(self.safety_check_times))
             percentile_95 = float(np.percentile(self.safety_check_times, 95)) if len(self.safety_check_times) >= 10 else max_time
             percentile_99 = float(np.percentile(self.safety_check_times, 99)) if len(self.safety_check_times) >= 50 else max_time
         else:
