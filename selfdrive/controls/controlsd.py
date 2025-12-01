@@ -28,7 +28,7 @@ from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
-from openpilot.selfdrive.controls.lib.self_learning_manager import SafeSelfLearningManager
+from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
