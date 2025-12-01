@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import sys
-from typing import Any
+from typing import Any, Tuple
 
 DEBUG = False
 

@@ -622,6 +622,33 @@ def ocp_formulation_json_dump(acados_ocp, simulink_opts=None, json_file='acados_
 
 
 
+def _json2dict_recursive(json_data, dims):
+    """
+    Helper function to convert JSON structure back to dict with proper dimensions.
+    """
+    if isinstance(json_data, dict):
+        result = {}
+        for k, v in json_data.items():
+            if isinstance(v, (list, dict)) and k in dims:
+                result[k] = _json2dict_recursive(v, dims[k]) if isinstance(dims[k], dict) else v
+            elif isinstance(v, (list, dict)):
+                result[k] = _json2dict_recursive(v, dims)
+            else:
+                result[k] = v
+        return result
+    elif isinstance(json_data, list):
+        return [_json2dict_recursive(item, dims) for item in json_data]
+    else:
+        return json_data
+
+
+def json2dict(json_data, dims):
+    """
+    Convert JSON structure back to proper acados dictionary with dimensions.
+    """
+    return _json2dict_recursive(json_data, dims)
+
+
 def ocp_formulation_json_load(json_file='acados_ocp_nlp.json'):
     # Load acados_ocp_nlp structure description
     ocp_layout = get_ocp_nlp_layout()
