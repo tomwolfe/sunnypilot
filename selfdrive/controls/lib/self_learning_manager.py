@@ -293,7 +293,7 @@ class SelfLearningManager:
         elif context.get('road_surface') == 'icy':
             learning_rate *= 0.4
         # Ensure learning rate stays within reasonable bounds
-        return min(0.02, max(0.001, learning_rate))  # Clamp to reasonable range
+        return float(min(0.02, max(0.001, learning_rate)))  # Clamp to reasonable range
     def update_from_model_accuracy(self, desired_curvature: float, actual_curvature: float,
                                  v_ego: float, model_confidence: float = 1.0) -> None:
         """
@@ -430,7 +430,7 @@ class SelfLearningManager:
         if self.learning_context.get('road_surface') in ['wet', 'icy']:
             max_braking *= 0.5  # Gentler braking in bad weather
         adjusted_accel = np.clip(adjusted_accel, max_braking, max_accel)
-        return adjusted_accel
+        return float(adjusted_accel)
     def _adapt_from_intervention(self, experience: dict):
         """
         Adapt system parameters based on a driver intervention experience.
@@ -495,7 +495,7 @@ class SelfLearningManager:
         }
         road_factor = road_factors.get(road_type, 1.0)
         adaptive_lr = base_lr * error_factor * speed_factor * road_factor
-        return min(0.02, adaptive_lr)  # Cap at 0.02 to prevent excessive changes
+        return float(min(0.02, adaptive_lr))  # Cap at 0.02 to prevent excessive changes
     def _get_road_type_factor(self, road_type: str) -> float:
         """
         Get road type factor for parameter adjustment.
