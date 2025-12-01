@@ -29,6 +29,8 @@ _FINISH_LAT_ACC_TH = 1.1  # Lat Acc threshold to trigger the end of the turn cyc
 
 _A_LAT_REG_MAX = 2.  # Maximum lateral acceleration
 
+TRAFFIC_LIGHT_DISTANCE_THRESHOLD = 40.0  # Distance threshold for traffic light/stop sign detection in meters
+
 _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on a_target when not overshooting.
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
@@ -126,9 +128,9 @@ class SmartCruiseControlVision:
         max_model_distance = model_position_x[-1]  # Last predicted position
         # If model trajectory is very short, adjust target velocity appropriately
         # This can indicate approaching traffic lights or stop signs
-        if max_model_distance < 40:  # Less than 40m ahead suggests potential stop
+        if max_model_distance < TRAFFIC_LIGHT_DISTANCE_THRESHOLD:  # Less than threshold distance ahead suggests potential stop
           # Adjust target velocity based on remaining distance and current speed
-          distance_factor = min(1.0, max_model_distance / 40.0)  # 0-1 scale based on distance
+          distance_factor = min(1.0, max_model_distance / TRAFFIC_LIGHT_DISTANCE_THRESHOLD)  # 0-1 scale based on distance
           self.v_target *= distance_factor  # Reduce target velocity proportionally
           # Ensure we don't go below minimum speed for safe operation
           self.v_target = max(self.v_target, MIN_V)

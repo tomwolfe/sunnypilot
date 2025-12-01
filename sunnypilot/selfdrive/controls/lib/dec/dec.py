@@ -286,17 +286,17 @@ class DynamicExperimentalController:
 
       # Enhanced logic for traffic light/stop sign scenarios:
       # More aggressive urgency when approaching intersections
-      if endpoint_x < expected_distance * 0.5:  # Approaching mid-point
+      if endpoint_x < expected_distance * WMACConstants.INTERSECTION_APPROACH_MID_POINT_RATIO:  # Approaching mid-point
         urgency *= 1.5  # Increase urgency for closer approach
 
       # Increase urgency for very short trajectories (imminent stops)
-      critical_distance = expected_distance * 0.3
+      critical_distance = expected_distance * WMACConstants.TRAFFIC_LIGHT_CLOSE_DISTANCE_RATIO
       if endpoint_x < critical_distance:
         urgency = min(1.0, urgency * 2.0)
 
       # Enhanced speed-based urgency adjustment for better traffic light handling
-      if self._v_ego_kph > 20.0 and self._v_ego_kph <= 35.0:  # Typical urban intersection speeds
-        speed_factor = 1.0 + (35.0 - self._v_ego_kph) / 50.0  # More urgency when decelerating in urban areas
+      if self._v_ego_kph > WMACConstants.URBAN_INTERSECTION_MIN_SPEED and self._v_ego_kph <= WMACConstants.URBAN_INTERSECTION_MAX_SPEED:  # Typical urban intersection speeds
+        speed_factor = 1.0 + (WMACConstants.URBAN_INTERSECTION_MAX_SPEED - self._v_ego_kph) / WMACConstants.URBAN_INTERSECTION_SPEED_FACTOR_DENOMINATOR  # More urgency when decelerating in urban areas
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply map data enhancement if available
@@ -322,11 +322,11 @@ class DynamicExperimentalController:
         # Also adjust urgency calculation based on known sign type
         if has_stop_sign:
           # Stop signs require more aggressive slowing down
-          urgency = min(1.0, urgency * 1.3)
+          urgency = min(1.0, urgency * WMACConstants.STOP_SIGN_URGENCY_MULTIPLIER)
         elif has_traffic_light:
           # Traffic lights may require different urgency based on distance
-          if distance_to_sign < expected_distance * 0.3:  # Very close to light
-            urgency = min(1.0, urgency * 1.2)
+          if distance_to_sign < expected_distance * WMACConstants.TRAFFIC_LIGHT_CLOSE_DISTANCE_RATIO:  # Very close to light
+            urgency = min(1.0, urgency * WMACConstants.TRAFFIC_LIGHT_URGENCY_MULTIPLIER)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(urgency)
@@ -334,7 +334,7 @@ class DynamicExperimentalController:
 
     # Update state with enhanced traffic light/stop sign awareness
     # Lower threshold for better detection of traffic light/stop sign scenarios
-    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.7)
+    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * WMACConstants.SLOW_DOWN_THRESHOLD_MULTIPLIER)
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
