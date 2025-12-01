@@ -145,5 +145,6 @@ def run_all_tests():
     print("3. ✅ Performance monitoring added")
     print("4. ✅ Parameter regularization improved")
     print("\nThe self-learning system addresses all major concerns from the critical review!")
+
 if __name__ == "__main__":
     run_all_tests()
