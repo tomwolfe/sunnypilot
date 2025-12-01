@@ -438,8 +438,15 @@ class SafeSelfLearningManager:
         self.safety = SelfLearningSafety()
         self.enabled = True
 
+        # Try to initialize enhanced monitoring
+        try:
+            from enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
+            self.enhanced_monitor = EnhancedSelfLearningMonitor()
+        except ImportError:
+            self.enhanced_monitor = None
+
     def update(self, CS, desired_curvature, actual_curvature, steering_torque, v_ego,
-               model_confidence=1.0, model_prediction_error=None):
+               model_confidence=1.0, model_prediction_error=None, gps_data=None, light_sensor_data=None):
         """
         Update the safe self-learning system.
 
@@ -451,9 +458,24 @@ class SafeSelfLearningManager:
             v_ego: Vehicle speed
             model_confidence: Model confidence score
             model_prediction_error: Difference between model output and actual vehicle behavior
+            gps_data: GPS data for tunnel detection (optional)
+            light_sensor_data: Light sensor data for tunnel detection (optional)
         """
         if not self.enabled:
             return
+
+        # Check tunnel conditions using enhanced monitoring
+        if self.enhanced_monitor:
+            tunnel_detected = self.enhanced_monitor.detect_tunnel_conditions(gps_data, light_sensor_data)
+
+            if tunnel_detected and self.learning_manager.learning_enabled:
+                # Be more conservative in tunnel conditions
+                cloudlog.info("Tunnel detected, reducing learning rate for safety")
+                # Store original learning rate to restore later
+                if not hasattr(self, '_pre_tunnel_learning_rate'):
+                    self._pre_tunnel_learning_rate = self.learning_manager.base_learning_rate
+                # Reduce learning rate in tunnels
+                self.learning_manager.base_learning_rate *= 0.7
 
         # Check if learning should be frozen for safety
         model_outputs = {'desired_curvature': desired_curvature}
@@ -506,7 +528,7 @@ class SafeSelfLearningManager:
             )
 
         # Periodic updates (continues even when learning is frozen)
-        self.learning_manager.periodic_update()
+        self.learning_manager.periodic_update(CS)
 
     def adjust_curvature(self, original_curvature: float, v_ego: float) -> float:
         """
