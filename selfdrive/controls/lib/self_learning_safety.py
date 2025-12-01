@@ -78,8 +78,11 @@ class SelfLearningSafety:
         Returns:
             Tuple of (safe_curvature, is_safe)
         """
-        # Calculate maximum safe curvature based on speed
-        max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
+        # Calculate maximum safe curvature based on speed (before clamping)
+        max_safe_curvature_for_speed = self._calculate_max_safe_curvature(v_ego)
+
+        # Check if the intended curvature is unsafe based on speed before clamping
+        intended_curvature_unsafe_at_speed = abs(adjusted_curvature) > max_safe_curvature_for_speed * 0.9  # 90% of limit for safety margin
 
         # Apply curvature limits
         clamped_curvature = np.clip(adjusted_curvature,
@@ -88,8 +91,8 @@ class SelfLearningSafety:
 
         # Also limit based on speed-dependent safety
         clamped_curvature = np.clip(clamped_curvature,
-                                   -max_safe_curvature,
-                                   max_safe_curvature)
+                                   -max_safe_curvature_for_speed,
+                                   max_safe_curvature_for_speed)
 
         # Check for excessive curvature changes (jerk limits)
         current_time = self._get_current_time()
@@ -115,7 +118,12 @@ class SelfLearningSafety:
         # The issue is that the current logic allows high curvature values if they're within limits
         # We need to specifically check if the adjustment is unsafe based on size of change
         curvature_change = abs(adjusted_curvature - original_curvature)
-        is_safe = curvature_change < 0.5  # If change is too large, consider it unsafe
+
+        # Check if the adjustment is unsafe based on change size
+        change_too_large = curvature_change > 0.5
+
+        # The adjustment is safe only if both the change is reasonable AND the speed allows the intended curvature
+        is_safe = not (change_too_large or intended_curvature_unsafe_at_speed)
 
         return clamped_curvature, is_safe
     
