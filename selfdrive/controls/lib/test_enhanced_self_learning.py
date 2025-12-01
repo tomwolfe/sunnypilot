@@ -178,5 +178,6 @@ def run_all_tests():
     print("4. ✅ Enhanced tunnel detection system added")
     print("5. ✅ Performance-optimized safety validation implemented")
     print("\nThe enhanced self-learning system addresses all major concerns from the critical review!")
+
 if __name__ == "__main__":
     run_all_tests()

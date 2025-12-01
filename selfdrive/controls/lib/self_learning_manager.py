@@ -168,8 +168,8 @@ class SelfLearningManager:
                         'change': change
                     }
                 cloudlog.info(
-                    (f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, "
-                     f"Context: {current_road_type}, Parameter Changes: {param_changes}")
+                    f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, "
+                     f"Context: {current_road_type}, Parameter Changes: {param_changes}"
                 )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
@@ -322,8 +322,8 @@ class SelfLearningManager:
                 avg_error = np.mean(recent_errors)
                 std_error = np.std(recent_errors)
                 cloudlog.info(
-                    (f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
-                     f"Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}")
+                    f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
+                     f"Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}"
                 )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
@@ -342,8 +342,8 @@ class SelfLearningManager:
         if self.total_updates % 1000 == 0:  # Log every 1000 updates
             avg_update_time = np.mean(self.update_time_samples) if self.update_time_samples else 0
             cloudlog.info(
-                (f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, "
-                 f"Max time: {self.max_update_time*1000:.2f}ms")
+                f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, "
+                 f"Max time: {self.max_update_time*1000:.2f}ms"
             )
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
@@ -556,9 +556,9 @@ class SelfLearningManager:
         # Log learning statistics periodically with enhanced detail
         if self.learning_samples % 50 == 0:
             cloudlog.info(
-                (f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, "
+                f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, "
                  f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
-                 f"Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}")
+                 f"Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}"
             )
         # Comprehensive monitoring and logging for self-learning system
         self._comprehensive_monitoring()
@@ -636,11 +636,11 @@ class SelfLearningManager:
         # Log detailed monitoring data periodically (less frequently than basic stats)
         if self.learning_samples % 200 == 0:  # Log detailed metrics every 200 learning samples
             cloudlog.info(
-                (f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
+                f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
                  f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
                  f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
                  f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
-                 f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+                 f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}"
             )
         # Log warnings if parameters drift too far from baseline
         drift_threshold = 0.5  # 50% drift from baseline

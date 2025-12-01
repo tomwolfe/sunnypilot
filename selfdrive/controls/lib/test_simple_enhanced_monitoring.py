@@ -3,17 +3,14 @@
 Test script to verify the enhanced self-learning system functionality.
 This tests the improvements addressing critical review concerns.
 """
-import tempfile
-import os
 from unittest.mock import Mock, MagicMock
 import sys
-import numpy as np
 import time
-from collections import deque
 # Add the openpilot path to sys.path
 sys.path.insert(0, '/Users/tom/Documents/apps/sunnypilot2')
 # Test the enhanced monitoring module directly
 from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator, TunnelDetector
+
 def test_enhanced_monitoring():
     """Test the enhanced monitoring functionality."""
     print("Testing enhanced monitoring functionality...")
@@ -134,5 +131,6 @@ def run_all_tests():
     print("4. ✅ Enhanced tunnel detection system added")
     print("5. ✅ Performance-optimized safety validation implemented")
     print("\nThe enhanced self-learning system addresses all major concerns from the critical review!")
+
 if __name__ == "__main__":
     run_all_tests()
