@@ -23,8 +23,6 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
-from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
-from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
@@ -37,7 +35,7 @@ LaneChangeDirection = log.LaneChangeDirection
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
 
 
-class Controls(ControlsExt, ModelStateBase):
+class Controls(ControlsExt):
   def __init__(self) -> None:
     self.params = Params()
     cloudlog.info("controlsd is waiting for CarParams")
@@ -46,7 +44,6 @@ class Controls(ControlsExt, ModelStateBase):
 
     # Initialize sunnypilot controlsd extension and base model state
     ControlsExt.__init__(self, self.CP, self.params)
-    ModelStateBase.__init__(self)
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP, self.CP_SP)
 
@@ -842,16 +839,8 @@ class Controls(ControlsExt, ModelStateBase):
     cc_send.carControl = CC
     self.pm.send('carControl', cc_send)
 
-  def params_thread(self, evt):
-    while not evt.is_set():
-      self.get_params_sp()
-
-      if self.CP.lateralTuning.which() == 'torque':
-        self.lat_delay = get_lat_delay(self.params, self.sm["liveDelay"].lateralDelay)
-
-      time.sleep(0.1)
-
   def run(self):
+<<<<<<< HEAD
     """
     Main control loop that runs at an adaptive rate based on thermal conditions.
 
@@ -955,6 +944,10 @@ class Controls(ControlsExt, ModelStateBase):
           self.LaC.update_thermal_compensation(self.thermal_stress_level, self.performance_compensation_factor)
         if hasattr(self.LoC, 'update_thermal_compensation'):
           self.LoC.update_thermal_compensation(self.thermal_stress_level, self.performance_compensation_factor)
+
+      # Update parameters and run extensions
+      self.get_params_sp(self.sm)
+      self.run_ext(self.sm, self.pm)
 
     finally:
       e.set()
