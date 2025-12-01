@@ -438,19 +438,6 @@ class SafeSelfLearningManager:
         if not self.enabled:
             return
 
-        # Update safety monitoring
-        self.learning_manager.update_from_model_accuracy(
-            desired_curvature, actual_curvature, v_ego, model_confidence
-        )
-
-        # Update from driver interventions - pass model prediction error and model confidence for context-aware learning
-        self.learning_manager.update_from_driver_intervention(
-            CS, desired_curvature, actual_curvature, steering_torque, v_ego, model_prediction_error, model_confidence
-        )
-
-        # Periodic updates
-        self.learning_manager.periodic_update()
-
         # Check if learning should be frozen for safety
         model_outputs = {'desired_curvature': desired_curvature}
         # Get the adjusted output from the learning manager to use for safety scoring
@@ -461,8 +448,31 @@ class SafeSelfLearningManager:
         freeze_learning = self.safety.should_freeze_learning(CS, safety_score)
 
         if freeze_learning:
-            # For now, just log the event - in production, might want to implement actual freezing
-            cloudlog.warning("Learning would be frozen based on safety conditions")
+            # Implement the learning freeze - disable learning manager
+            if self.learning_manager.learning_enabled:
+                cloudlog.warning(f"Learning frozen due to safety conditions. Safety score: {safety_score:.2f}")
+                self.learning_manager.learning_enabled = False
+                self.safety.learning_frozen = True
+        else:
+            # If conditions are safe, and learning is frozen, resume learning
+            if not self.learning_manager.learning_enabled and self.safety.learning_frozen:
+                cloudlog.info(f"Learning resumed. Safety conditions improved. Safety score: {safety_score:.2f}")
+                self.learning_manager.learning_enabled = True
+                self.safety.learning_frozen = False
+
+        # Update safety monitoring (continues even when learning is frozen)
+        self.learning_manager.update_from_model_accuracy(
+            desired_curvature, actual_curvature, v_ego, model_confidence
+        )
+
+        # Update from driver interventions only if learning is enabled
+        if self.learning_manager.learning_enabled:
+            self.learning_manager.update_from_driver_intervention(
+                CS, desired_curvature, actual_curvature, steering_torque, v_ego, model_prediction_error, model_confidence
+            )
+
+        # Periodic updates (continues even when learning is frozen)
+        self.learning_manager.periodic_update()
 
     def adjust_curvature(self, original_curvature: float, v_ego: float) -> float:
         """
