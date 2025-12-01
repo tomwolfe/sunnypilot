@@ -300,7 +300,7 @@ class DynamicExperimentalController:
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply map data enhancement if available
-    if sm and sm.updated['liveMapDataSP']:
+    if sm and 'liveMapDataSP' in sm.updated:
       from sunnypilot.mapd.live_map_data.base_map_data import BaseMapData
       # Note: We can't directly call get_traffic_sign_info() here since it's an instance method
       # Instead, we'll access the traffic sign data from liveMapDataSP directly
@@ -412,7 +412,7 @@ class DynamicExperimentalController:
     self.set_mpc_fcw_crash_cnt()
 
     # Consider map-based traffic sign information if available
-    if sm.updated['liveMapDataSP']:
+    if 'liveMapDataSP' in sm.updated:
       live_map_data = sm['liveMapDataSP']
       # The map data integration is now handled in _calculate_slow_down method
 

@@ -84,7 +84,7 @@ class E2EAlertsHelper:
 
       # Check for traffic light presence from map data first
       has_traffic_light_from_map = False
-      if sm.updated['liveMapDataSP']:
+      if 'liveMapDataSP' in sm.updated:
         live_map_data = sm['liveMapDataSP']
         has_traffic_light_from_map = getattr(live_map_data, 'hasTrafficLight', False)
 

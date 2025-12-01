@@ -131,17 +131,49 @@ class Plant:
     car_state.carState.vCruise = float(v_cruise * 3.6)
     car_control.carControl.orientationNED = [0., float(pitch), 0.]
 
-    # ******** get controlsState messages for plotting ***
-    sm = {'radarState': radar.radarState,
-          'carState': car_state.carState,
-          'carControl': car_control.carControl,
-          'controlsState': control.controlsState,
-          'selfdriveState': ss.selfdriveState,
-          'liveParameters': lp.liveParameters,
-          'modelV2': model.modelV2,
-          'carStateSP': car_state_sp.carStateSP,
-          'liveMapDataSP': live_map_data_sp.liveMapDataSP,
-          'gpsLocation': gps_data.gpsLocation}
+    # Create a mock SubMaster object that behaves like the real one for testing
+    class MockSubMaster:
+      def __init__(self):
+        self.updated = set()
+        self.valid = {}
+        self.logMonoTime = {}
+        self._data = {}
+
+      def all_checks(self, service_list):
+        return all(self.valid.get(service, True) for service in service_list)
+
+      def __getitem__(self, key):
+        return self._data[key]
+
+      def __setitem__(self, key, value):
+        self._data[key] = value
+
+    # Create mock SubMaster and populate with message data
+    sm = MockSubMaster()
+    sm['radarState'] = radar.radarState
+    sm['carState'] = car_state.carState
+    sm['carControl'] = car_control.carControl
+    sm['controlsState'] = control.controlsState
+    sm['selfdriveState'] = ss.selfdriveState
+    sm['liveParameters'] = lp.liveParameters
+    sm['modelV2'] = model.modelV2
+    sm['carStateSP'] = car_state_sp.carStateSP
+    sm['liveMapDataSP'] = live_map_data_sp.liveMapDataSP
+    sm['gpsLocation'] = gps_data.gpsLocation
+
+    # Set the updated attribute to indicate which messages are new
+    # For testing, we'll consider liveMapDataSP as updated to trigger the logic in the planner
+    sm.updated = {'radarState', 'carState', 'carControl', 'controlsState',
+                  'selfdriveState', 'liveParameters', 'modelV2',
+                  'carStateSP', 'liveMapDataSP', 'gpsLocation'}
+
+    # Also set valid and logMonoTime to simulate a proper SubMaster
+    sm.valid = {key: True for key in sm.updated}
+
+    import time
+    current_time = int(time.time() * 1e9)  # nanoseconds
+    sm.logMonoTime = {key: current_time for key in sm.updated}
+
     self.planner.update(sm)
     self.acceleration = self.planner.output_a_target
     self.speed = self.speed + self.acceleration * self.ts

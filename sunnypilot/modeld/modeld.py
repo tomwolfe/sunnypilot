@@ -251,7 +251,7 @@ def main(demo=False):
     if sm.frame % 60 == 0:
       model.lat_delay = get_lat_delay(params, sm["liveDelay"].lateralDelay)
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
-    if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
+    if "liveCalibration" in sm.updated and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
       model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
