@@ -66,15 +66,14 @@ class SelfLearningManager:
         # Initialize from saved parameters if available
         self.load_adaptive_params()
         # Enhanced monitoring for over-adaptation and system reliability
-        try {
+        try:
             from enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
             self.enhanced_monitor = EnhancedSelfLearningMonitor()
             self.enhanced_safety_validator = EnhancedSafetyValidator()  # Create a shared instance
-        } except ImportError {
+        except ImportError:
             cloudlog.warning("Enhanced monitoring module not available, using basic monitoring")
             self.enhanced_monitor = None
             self.enhanced_safety_validator = None
-        }
         self._prev_validation_curvatures: list[float] = []
         cloudlog.info("Self-Learning Manager initialized")
     def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float,
@@ -169,10 +168,7 @@ class SelfLearningManager:
                         'to': new_value,
                         'change': change
                     }
-                cloudlog.info(f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, "
-                             f"Learning Rate: {self.base_learning_rate:.4f}, "
-                             f"Context: {current_road_type}, "
-                             f"Parameter Changes: {param_changes}")
+                cloudlog.info(f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, Context: {current_road_type}, Parameter Changes: {param_changes}")
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
         self._update_performance_metrics(update_time)
@@ -193,8 +189,7 @@ class SelfLearningManager:
         self.learning_context['road_type'] = self._classify_road_type(v_ego, abs(desired_curvature))
         # Log if road type changed unexpectedly
         if old_road_type != self.learning_context['road_type']:
-            cloudlog.debug(f"Road type changed from {old_road_type} to {self.learning_context['road_type']} "
-                          f"at v_ego={v_ego}, curvature={desired_curvature}")
+            cloudlog.debug(f"Road type changed from {old_road_type} to {self.learning_context['road_type']} at v_ego={v_ego}, curvature={desired_curvature}")
         # Update traffic density based on radar/lidar data if available
         old_traffic_density = self.learning_context.get('traffic_density', 'low')
         # This is a simplified version - actual implementation would use radar data
@@ -223,26 +218,22 @@ class SelfLearningManager:
         # Update road surface condition based on driving behavior and environment with more validation
         old_road_surface = self.learning_context.get('road_surface', 'dry')
         if hasattr(CS, 'wheelSpeeds') and CS.wheelSpeeds is not None and abs(v_ego) > 1.0:
-            try {
+            try:
                 # Detect potential slippery conditions based on wheel speed vs vehicle speed
                 # This is a simplified approach - real implementation would use more sophisticated physics
                 if (hasattr(CS, 'brakePressed') and CS.brakePressed and
                     v_ego > 5.0 and abs(CS.aEgo) > 3.0 and abs(CS.vEgo) > 5.0):  # Hard braking with high deceleration at meaningful speed
                     # Check for wheel slip by comparing vehicle speed to wheel speeds
                     if (hasattr(CS.wheelSpeeds, 'fl') and hasattr(CS.wheelSpeeds, 'fr') and
-                        CS.wheelSpeeds.fl is not None and CS.wheelSpeeds.fr is not None) {
+                        CS.wheelSpeeds.fl is not None and CS.wheelSpeeds.fr is not None):
                         avg_wheel_speed = (CS.wheelSpeeds.fl + CS.wheelSpeeds.fr) / 2.0
                         speed_diff = abs(v_ego - avg_wheel_speed)
-                        if speed_diff > 2.0 and abs(CS.aEgo) > 3.0 {  // Significant difference during hard braking
-                            self.learning_context['road_surface'] = 'icy'  // High probability of slippery surface
-                        } else if speed_diff > 1.0 and abs(CS.aEgo) > 3.0 {
-                            self.learning_context['road_surface'] = 'wet'  // Moderate probability
-                        }
-                    }
-                }
-            } catch (AttributeError, TypeError) {
+                        if speed_diff > 2.0 and abs(CS.aEgo) > 3.0:  # Significant difference during hard braking
+                            self.learning_context['road_surface'] = 'icy'  # High probability of slippery surface
+                        elif speed_diff > 1.0 and abs(CS.aEgo) > 3.0:
+                            self.learning_context['road_surface'] = 'wet'  # Moderate probability
+            except (AttributeError, TypeError) as e:
                 cloudlog.warning(f"Error checking wheel speeds for road surface detection: {e}")
-            }
         # Log if road surface changed
         if old_road_surface != self.learning_context.get('road_surface'):
             cloudlog.debug(f"Road surface changed from {old_road_surface} to {self.learning_context.get('road_surface')}")
@@ -328,10 +319,7 @@ class SelfLearningManager:
             if recent_errors:
                 avg_error = np.mean(recent_errors)
                 std_error = np.std(recent_errors)
-                cloudlog.info(f"Model Accuracy Monitoring - Last 50 samples: "
-                             f"Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
-                             f"Current Error: {prediction_error:.5f}, "
-                             f"Confidence: {model_confidence:.3f}")
+                cloudlog.info(f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}")
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
         self._update_performance_metrics(update_time)
@@ -348,9 +336,7 @@ class SelfLearningManager:
         # Log performance statistics periodically
         if self.total_updates % 1000 == 0:  # Log every 1000 updates
             avg_update_time = np.mean(self.update_time_samples) if self.update_time_samples else 0
-            cloudlog.info(f"Self-Learning Performance - Updates: {self.total_updates}, "
-                         f"Avg time: {avg_update_time*1000:.2f}ms, "
-                         f"Max time: {self.max_update_time*1000:.2f}ms")
+            cloudlog.info(f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, Max time: {self.max_update_time*1000:.2f}ms")
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
         Apply learned adjustments to the desired curvature prediction.
@@ -561,13 +547,7 @@ class SelfLearningManager:
         self.last_update_time = current_time
         # Log learning statistics periodically with enhanced detail
         if self.learning_samples % 50 == 0:
-            cloudlog.info(f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, "
-                         f"Bias: {self.adaptive_params['curvature_bias']:.5f}, "
-                         f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, "
-                         f"Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
-                         f"Samples: {self.learning_samples}, "
-                         f"Base_LR: {self.base_learning_rate:.4f}, "
-                         f"Context: {self.learning_context}")
+            cloudlog.info(f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}")
         # Comprehensive monitoring and logging for self-learning system
         self._comprehensive_monitoring()
         # Enhanced monitoring for over-adaptation and system reliability
@@ -643,27 +623,19 @@ class SelfLearningManager:
             monitoring_data['learning_efficiency'] = learning_efficiency
         # Log detailed monitoring data periodically (less frequently than basic stats)
         if self.learning_samples % 200 == 0:  # Log detailed metrics every 200 learning samples
-            cloudlog.info(f"Self-Learning Monitoring - "
-                         f"Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
-                         f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
-                         f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
-                         f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
-                         f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+            cloudlog.info(f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, Max Param Drift: {monitoring_data['max_param_drift']:.4f}, Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
         # Log warnings if parameters drift too far from baseline
         drift_threshold = 0.5  # 50% drift from baseline
         for param_name, drift in param_stability.items():
             if drift > drift_threshold:
-                cloudlog.warning(f"Self-Learning Parameter Drift Alert - {param_name}: {drift:.4f} "
-                               f"(current: {self.adaptive_params[param_name]:.4f})")
+                cloudlog.warning(f"Self-Learning Parameter Drift Alert - {param_name}: {drift:.4f} (current: {self.adaptive_params[param_name]:.4f})")
         # Log if learning efficiency is unexpectedly high or low
         if 'learning_efficiency' in monitoring_data:
             eff = monitoring_data['learning_efficiency']
             if eff > 0.8:  # Very high learning frequency might indicate instability
-                cloudlog.warning(f"Self-Learning High Activity Alert - Learning Efficiency: {eff:.3f}, "
-                               f"Learning may be too frequent, consider adjusting thresholds")
+                cloudlog.warning(f"Self-Learning High Activity Alert - Learning Efficiency: {eff:.3f}, Learning may be too frequent, consider adjusting thresholds")
             elif eff < 0.01 and self.total_updates > 100:  # Very low might indicate no learning happening
-                cloudlog.info(f"Self-Learning Low Activity - Learning Efficiency: {eff:.3f}, "
-                            f"May need to adjust intervention thresholds")
+                cloudlog.info(f"Self-Learning Low Activity - Learning Efficiency: {eff:.3f}, May need to adjust intervention thresholds")
         # Store monitoring data for potential external analysis
         if not hasattr(self, '_monitoring_history'):
             self._monitoring_history = []
@@ -732,7 +704,7 @@ class SelfLearningManager:
         """
         Save the current learning state to persistent storage.
         """
-        try {
+        try:
             learning_state = {
                 'adaptive_params': self.adaptive_params,
                 'learning_rate': self.learning_rate,
@@ -741,14 +713,13 @@ class SelfLearningManager:
             }
             self.params.put("SelfLearningState", str(learning_state))
             cloudlog.info("Learning state saved")
-        } catch (Exception e) {
+        except Exception as e:
             cloudlog.error(f"Failed to save learning state: {e}")
-        }
     def load_adaptive_params(self):
         """
         Load adaptive parameters from persistent storage if available.
         """
-        try {
+        try:
             saved_state_str = self.params.get("SelfLearningState")
             if saved_state_str:
                 import ast
@@ -764,15 +735,13 @@ class SelfLearningManager:
                 if 'learning_samples' in saved_state:
                     self.learning_samples = saved_state['learning_samples']
                 cloudlog.info(f"Learning state loaded - samples: {self.learning_samples}")
-            }
-        } catch (Exception e) {
+        except Exception as e:
             cloudlog.warning(f"Failed to load learning state: {e}")
-        }
     def _save_adaptive_params_if_needed(self):
         """
         Save adaptive parameters periodically to persistent storage.
         """
-        if self.learning_samples % 100 == 0:  // Save every 100 learning samples
+        if self.learning_samples % 100 == 0:  # Save every 100 learning samples
             self.save_learning_state()
     def reset_learning_state(self):
         """
@@ -987,15 +956,13 @@ class SelfLearningManager:
         Check for reset request from parameters and perform reset if requested.
         This provides a user-facing mechanism to reset learned parameters.
         """
-        try {
+        try:
             # Check if reset parameter has been set
             reset_request = self.params.get("ResetSelfLearning")
-            if reset_request and reset_request.lower() == "1") {
+            if reset_request and reset_request.lower() == "1":
                 cloudlog.info("Reset request detected, resetting self-learning state")
                 self.reset_learning_state()
                 # Clear the reset parameter so it doesn't trigger again
                 self.params.delete("ResetSelfLearning")
-            }
-        } catch (Exception e) {
+        except Exception as e:
             cloudlog.warning(f"Error checking for reset request: {e}")
-        }
