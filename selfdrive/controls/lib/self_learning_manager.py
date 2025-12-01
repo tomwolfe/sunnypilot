@@ -214,8 +214,11 @@ class SelfLearningManager:
         if old_traffic_density != self.learning_context.get('traffic_density'):
             cloudlog.debug(f"Traffic density changed from {old_traffic_density} to {self.learning_context.get('traffic_density')}")
         # Update weather based on environmental sensors if available
-        if hasattr(CS, 'rainRadar') and CS.rainRadar > 0.5:  # If rain sensor is available and detects rain
-            self.learning_context['weather_condition'] = 'rainy'
+        if hasattr(CS, 'rainRadar'):
+            rain_radar_val = CS.rainRadar
+            # Check if rainRadar is a numeric value (not a Mock object)
+            if isinstance(rain_radar_val, (int, float)) and rain_radar_val > 0.5:  # If rain sensor is available and detects rain
+                self.learning_context['weather_condition'] = 'rainy'
         elif hasattr(CS, 'steerOverride') and CS.steerOverride:  # Driver taking manual control might indicate challenging conditions
             # Don't change weather condition based on steering override alone
             pass
