@@ -7,7 +7,7 @@ to ensure that learning-based adjustments do not compromise safety.
 import numpy as np
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.filter_simple import FirstOrderFilter
-from cereal import log, car
+from cereal import car
 # Import SelfLearningManager for use in SafeSelfLearningManager
 try:
     from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
@@ -297,7 +297,7 @@ class SelfLearningSafety:
         Get current time for timing calculations.
         """
         import time
-        return time.time()
+        return time.monotonic()
     def get_safety_recommendation(self, CS: car.CarState, model_output: dict):
         """
         Provide safety recommendations based on current conditions and learning state.
@@ -383,9 +383,9 @@ class SafeSelfLearningManager:
         # Log interaction analysis every 200 updates
         if self._interaction_monitor_counter % 200 == 0:
             # This provides insight into the interaction between learned parameters and adaptive modifications
-            cloudlog.info(f"Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, "
-                         f"Learning Enabled: {self.learning_manager.learning_enabled}, "
-                         f"Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}")
+            cloudlog.info(
+                f"Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, Learning Enabled: {self.learning_manager.learning_enabled}, Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}"
+            )
         adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
         safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
         freeze_learning = self.safety.should_freeze_learning(CS, safety_score)

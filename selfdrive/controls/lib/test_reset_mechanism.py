@@ -2,13 +2,13 @@
 """
 Test script to verify the reset mechanism functionality added to address review concerns.
 """
-import tempfile
-import os
-from unittest.mock import Mock, MagicMock
+
+
+from unittest.mock import Mock
 import sys
 # Add the openpilot path to sys.path
 sys.path.insert(0, '/Users/tom/Documents/apps/sunnypilot2')
-from selfdrive.controls.lib.self_learning_manager import SelfLearningManager
+from openpilot.selfdrive.controls.lib.self_learning_manager import SelfLearningManager
 def test_reset_functionality():
     """Test the parameter-based reset functionality."""
     print("Testing reset mechanism functionality...")
@@ -25,16 +25,12 @@ def test_reset_functionality():
     manager.adaptive_params['lateral_control_factor'] = 1.25
     manager.adaptive_params['curvature_bias'] = 0.005
     manager.learning_samples = 150
-    print(f"  Before reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, "
-          f"Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-          f"Samples: {manager.learning_samples}")
+    print(f"  Before reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, Samples: {manager.learning_samples}")
     # Test that params.get returns "1" to trigger reset
     mock_params.get.return_value = "1"
     # Call the reset method directly first to verify it works
     manager.reset_learning_state()
-    print(f"  After reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, "
-          f"Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-          f"Samples: {manager.learning_samples}")
+    print(f"  After reset - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, Samples: {manager.learning_samples}")
     # Verify parameters were reset to default values
     assert manager.adaptive_params['lateral_control_factor'] == 1.0, "Lateral control factor not reset"
     assert manager.adaptive_params['curvature_bias'] == 0.0, "Curvature bias not reset"
@@ -56,15 +52,11 @@ def test_parameter_based_reset():
     manager.adaptive_params['lateral_control_factor'] = 1.30
     manager.adaptive_params['curvature_bias'] = -0.003
     manager.learning_samples = 200
-    print(f"  Before reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, "
-          f"Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-          f"Samples: {manager.learning_samples}")
+    print(f"  Before reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, Samples: {manager.learning_samples}")
     # Test 1: No reset request (parameter not set or not "1")
     mock_params.get.return_value = None
     manager.check_for_reset_request()  # Should do nothing
-    print(f"  After no-reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, "
-          f"Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-          f"Samples: {manager.learning_samples}")
+    print(f"  After no-reset check - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, Samples: {manager.learning_samples}")
     # Parameters should remain unchanged
     assert manager.adaptive_params['lateral_control_factor'] == 1.30
     assert manager.adaptive_params['curvature_bias'] == -0.003
@@ -72,9 +64,7 @@ def test_parameter_based_reset():
     # Test 2: Reset request (parameter set to "1")
     mock_params.get.return_value = "1"
     manager.check_for_reset_request()  # Should perform reset
-    print(f"  After reset request - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, "
-          f"Bias: {manager.adaptive_params['curvature_bias']:.5f}, "
-          f"Samples: {manager.learning_samples}")
+    print(f"  After reset request - Factor: {manager.adaptive_params['lateral_control_factor']:.3f}, Bias: {manager.adaptive_params['curvature_bias']:.5f}, Samples: {manager.learning_samples}")
     # Parameters should now be reset
     assert manager.adaptive_params['lateral_control_factor'] == 1.0, "Lateral control factor not reset"
     assert manager.adaptive_params['curvature_bias'] == 0.0, "Curvature bias not reset"

@@ -3,11 +3,8 @@
 Test script to verify the enhanced self-learning system functionality.
 This tests the improvements addressing critical review concerns.
 """
-import tempfile
-import os
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 import sys
-import numpy as np
 # Add the openpilot path to sys.path
 sys.path.insert(0, '/Users/tom/Documents/apps/sunnypilot2')
 # Mock the openpilot modules to avoid import errors
@@ -44,7 +41,7 @@ def test_enhanced_monitoring():
     with patch.dict('sys.modules', {
         'openpilot.common.params': MagicMock(Params=MockParams),
     }):
-        from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
+        from openpilot.selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
         # Create an EnhancedSelfLearningMonitor instance
         monitor = EnhancedSelfLearningMonitor()
         # Test over-adaptation detection
@@ -70,7 +67,7 @@ def test_enhanced_monitoring():
         # This might not immediately detect over-adaptation without history
         # Test computational performance tracking
         import time
-        start_time = time.time()
+        start_time = time.monotonic()
         time.sleep(0.0005)  # Simulate 0.5ms computation
         comp_time = monitor.track_computational_performance(start_time)
         print(f"  Tracked computation time: {comp_time*1000:.2f}ms")
@@ -83,7 +80,7 @@ def test_vehicle_calibration():
     with patch.dict('sys.modules', {
         'openpilot.common.params': MagicMock(Params=MockParams),
     }):
-        from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
+        from openpilot.selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
         # Create an EnhancedSelfLearningMonitor instance
         monitor = EnhancedSelfLearningMonitor()
         # Test initial calibration
@@ -104,7 +101,7 @@ def test_tunnel_detection():
     with patch.dict('sys.modules', {
         'openpilot.common.params': MagicMock(Params=MockParams),
     }):
-        from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
+        from openpilot.selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
         # Create an EnhancedSelfLearningMonitor instance
         monitor = EnhancedSelfLearningMonitor()
         # Test with GPS data suggesting tunnel conditions
@@ -135,7 +132,7 @@ def test_enhanced_safety_validation():
     with patch.dict('sys.modules', {
         'openpilot.common.params': MagicMock(Params=MockParams),
     }):
-        from selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor, EnhancedSafetyValidator
+        from openpilot.selfdrive.controls.lib.enhanced_self_learning_monitoring import EnhancedSafetyValidator
         # Create an EnhancedSafetyValidator instance
         validator = EnhancedSafetyValidator()
         # Test with normal parameters
@@ -157,9 +154,7 @@ def test_enhanced_safety_validation():
         # Note: This may not flag as unsafe if the thresholds in the validation function are different
         # Check performance metrics
         metrics = validator.get_performance_metrics()
-        print(f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
-              f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
-              f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
+        print(f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, Max: {metrics['max_validation_time_ms']:.2f}ms, 95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
         print("  ✅ Enhanced safety validation works correctly")
 def run_all_tests():
     """Run all enhanced functionality tests."""

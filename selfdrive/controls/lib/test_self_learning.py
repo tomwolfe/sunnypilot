@@ -17,7 +17,7 @@ except ImportError:
         def adjust_curvature_prediction(self, *args, **kwargs):
             return 0.0
 from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager, SelfLearningSafety
-from cereal import car, log
+from cereal import car
 class TestSelfLearningManager(unittest.TestCase):
     """Unit tests for the SelfLearningManager class."""
     def setUp(self):
@@ -162,17 +162,17 @@ def integration_test():
     # Initialize the safe self-learning manager
     learning_manager = SafeSelfLearningManager(CP, CP_SP)
     # Simulate multiple driving scenarios
-    for i in range(100):
+    for _i in range(100):
         # Simulate a driving state
         CS = Mock()
         CS.steeringPressed = False  # Most of the time, no intervention
-        CS.vEgo = 10.0 + (i % 20)  # Vary speed
-        CS.steeringTorque = 0.05 if i % 10 != 0 else 2.0  # Occasional large torque
+        CS.vEgo = 10.0 + (_i % 20)  # Vary speed
+        CS.steeringTorque = 0.05 if _i % 10 != 0 else 2.0  # Occasional large torque
         # Simulate driver intervention every 10th cycle
-        if i % 10 == 0:
+        if _i % 10 == 0:
             CS.steeringPressed = True
         # Simulate model inputs
-        base_curvature = 0.02 * np.sin(i * 0.1)  # Varying desired curvature
+        base_curvature = 0.02 * np.sin(_i * 0.1)  # Varying desired curvature
         actual_curvature = base_curvature * 0.98 + 0.001 * np.random.randn()  # With some noise
         # Process with learning system
         learning_manager.adjust_curvature(base_curvature, CS.vEgo)
@@ -194,8 +194,8 @@ def performance_test():
     CP_SP = Mock()
     learning_manager = SafeSelfLearningManager(CP, CP_SP)
     # Measure update time
-    start_time = time.time()
-    for i in range(1000):
+    start_time = time.monotonic()
+    for _i in range(1000):
         CS = Mock()
         CS.steeringPressed = False
         CS.vEgo = 15.0
@@ -207,7 +207,7 @@ def performance_test():
             steering_torque=0.1,
             v_ego=CS.vEgo
         )
-    end_time = time.time()
+    end_time = time.monotonic()
     elapsed = (end_time - start_time) * 1000  # Convert to milliseconds
     avg_time = elapsed / 1000  # Average time per update
     print(f"✓ Performance test passed: {avg_time:.3f}ms per update")
