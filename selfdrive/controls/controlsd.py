@@ -840,7 +840,6 @@ class Controls(ControlsExt):
     self.pm.send('carControl', cc_send)
 
   def run(self):
-<<<<<<< HEAD
     """
     Main control loop that runs at an adaptive rate based on thermal conditions.
 
