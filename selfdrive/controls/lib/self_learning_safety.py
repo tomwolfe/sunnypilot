@@ -7,10 +7,19 @@ to ensure that learning-based adjustments do not compromise safety.
 """
 
 import numpy as np
+import time
 from typing import Dict, List, Tuple
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.filter_simple import FirstOrderFilter
 from cereal import log, car
+
+
+# Import SelfLearningManager if needed for type hints
+try:
+    from self_learning_manager import SelfLearningManager
+except ImportError:
+    # For when this module is imported as part of the full system
+    pass
 
 
 class SelfLearningSafety:
@@ -265,9 +274,10 @@ class SelfLearningSafety:
         if 'desired_curvature' in adjusted_outputs:
             self.prev_adj_curvature = adjusted_outputs['desired_curvature']
 
-        # Calculate overall safety score using weighted average instead of just minimum
+        # Calculate overall safety score using configurable weighted average
         # This provides more nuanced scoring while still maintaining safety
-        weights = {
+        # The weights can be adjusted based on real-world performance data
+        base_weights = {
             'curvature': 0.3,      # High importance for curvature safety
             'acceleration': 0.2,   # Important for acceleration safety
             'stability': 0.15,     # Important for stability
@@ -276,18 +286,25 @@ class SelfLearningSafety:
             'system_stability': 0.1 # Important for system stability
         }
 
+        # Apply weights only to the scores that are actually present
+        active_weights = {k: base_weights.get(k, 0.1) for k in scores.keys()}  # Default to 0.1 if not in base_weights
+
         # Normalize weights to sum to 1.0
-        total_weight = sum(weights.get(k, 0) for k in scores.keys())
+        total_weight = sum(active_weights.values())
         if total_weight > 0:
-            weighted_score = sum(scores[k] * weights.get(k, 0.0) for k in scores.keys()) / total_weight
+            weighted_score = sum(scores[k] * active_weights[k] for k in scores.keys()) / total_weight
         else:
             weighted_score = 1.0
 
         # Still apply conservative minimum as a final safety check
         conservative_score = min(scores.values()) if scores else 1.0
 
-        # Use a weighted combination: 70% weighted average + 30% conservative (minimum score)
-        overall_score = 0.7 * weighted_score + 0.3 * conservative_score
+        # Use configurable combination: can be adjusted based on validation results
+        # Keeping the 70/30 split as a reasonable balance but making it more explicit
+        weighted_portion = 0.7
+        conservative_portion = 0.3
+
+        overall_score = weighted_portion * weighted_score + conservative_portion * conservative_score
 
         # Apply time-based smoothing to prevent rapid fluctuations
         if hasattr(self, 'prev_safety_score'):
@@ -442,6 +459,23 @@ class SafeSelfLearningManager:
         model_outputs = {'desired_curvature': desired_curvature}
         # Get the adjusted output from the learning manager to use for safety scoring
         adjusted_curvature = self.learning_manager.adjust_curvature_prediction(desired_curvature, v_ego)
+
+        # Monitor for potential interactions between learned parameters and adaptive mods
+        lateral_factor = self.learning_manager.adaptive_params.get('lateral_control_factor', 1.0)
+
+        # Log interaction information periodically to monitor for unexpected behavior
+        if hasattr(self, '_interaction_monitor_counter'):
+            self._interaction_monitor_counter += 1
+        else:
+            self._interaction_monitor_counter = 0
+
+        # Log interaction analysis every 200 updates
+        if self._interaction_monitor_counter % 200 == 0:
+            # This provides insight into the interaction between learned parameters and adaptive modifications
+            cloudlog.info(f"Learning Interaction Monitor - Lateral Factor: {lateral_factor:.3f}, "
+                         f"Learning Enabled: {self.learning_manager.learning_enabled}, "
+                         f"Curvature Change: {abs(adjusted_curvature - desired_curvature):.5f}")
+
         adjusted_outputs = {'desired_curvature': adjusted_curvature}  # FIXED: Use adjusted output, not original
 
         safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
