@@ -15,6 +15,8 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 GREEN_LIGHT_X_THRESHOLD = 30
 LEAD_DEPART_DIST_THRESHOLD = 1.0
 TRIGGER_TIMER_THRESHOLD = 0.3
+GREEN_LIGHT_CRITERIA_NEEDED = 2  # Number of criteria that must be met for green light detection
+GREEN_LIGHT_TOTAL_CRITERIA = 3  # Total number of criteria for green light detection
 
 
 class E2EStates:
@@ -96,8 +98,8 @@ class E2EAlertsHelper:
         green_light_criteria_met += 1
       total_criteria += 1
 
-      # Use majority voting - at least 2 out of 3 criteria should be met
-      if green_light_criteria_met >= 2:
+      # Use majority voting - at least required number out of total criteria should be met
+      if green_light_criteria_met >= GREEN_LIGHT_CRITERIA_NEEDED:
         self.green_light_trigger_timer += 1
       else:
         self.green_light_trigger_timer = 0

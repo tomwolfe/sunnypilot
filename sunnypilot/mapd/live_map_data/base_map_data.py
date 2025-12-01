@@ -14,6 +14,10 @@ from openpilot.sunnypilot.navd.helpers import coordinate_from_param, Coordinate
 
 MAX_SPEED_LIMIT = V_CRUISE_UNSET * CV.KPH_TO_MS
 
+# Traffic sign detection constants
+TRAFFIC_SIGN_MIN_DISTANCE = 10.0  # Minimum distance for considering a sign (in meters)
+TRAFFIC_SIGN_BEARING_THRESHOLD = 90.0  # Bearing threshold for considering a sign as "ahead" (in degrees)
+
 
 class BaseMapData(ABC):
   def __init__(self):
@@ -118,20 +122,26 @@ class BaseMapData(ABC):
               bearing_diff = abs(bearing_to_sign - self.last_bearing)
               if bearing_diff > 180:
                 bearing_diff = 360 - bearing_diff
-              # Consider it "ahead" if within 90 degrees (front 180-degree arc)
-              is_ahead = bearing_diff < 90
+              # Consider it "ahead" if within bearing threshold degrees (front 180-degree arc)
+              is_ahead = bearing_diff < TRAFFIC_SIGN_BEARING_THRESHOLD
 
             # Only consider signs ahead of us and at a relevant distance
-            if distance < min_distance and distance > 10 and is_ahead:  # At least 10m away and in front of us
+            if distance < min_distance and distance > TRAFFIC_SIGN_MIN_DISTANCE and is_ahead:  # At least min_distance away and in front of us
               min_distance = distance
               closest_sign = sign
 
           if closest_sign:
             sign_type = closest_sign.get('type', '').lower()
+
+            # Define more comprehensive mapping for different OSM tag variations
+            STOP_SIGN_TYPES = {'stop', 'stop_sign', 'stop_line', 'all_way_stop', 'stop_yield', 'stop_ahead'}
+            TRAFFIC_LIGHT_TYPES = {'traffic_light', 'light', 'traffic_signals', 'traffic_signal', 'signal_lights', 'lights'}
+            YIELD_SIGN_TYPES = {'yield', 'yield_sign', 'give_way', 'yield_ahead', 'give_way_sign'}
+
             traffic_sign_info.update({
-              'has_stop_sign': sign_type == 'stop',
-              'has_traffic_light': sign_type in ['traffic_light', 'light'],
-              'has_yield_sign': sign_type == 'yield',
+              'has_stop_sign': sign_type in STOP_SIGN_TYPES,
+              'has_traffic_light': sign_type in TRAFFIC_LIGHT_TYPES,
+              'has_yield_sign': sign_type in YIELD_SIGN_TYPES,
               'distance_to_next_sign': min_distance,
               'sign_type': sign_type,
               'sign_coordinates': sign_coords
