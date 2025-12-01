@@ -9,8 +9,7 @@ import unittest
 import numpy as np
 from unittest.mock import Mock, MagicMock
 from self_learning_manager import SelfLearningManager
-from self_learning_safety import SafeSelfLearningManager
-from self_learning_safety import SelfLearningSafety
+from self_learning_safety import SafeSelfLearningManager, SelfLearningSafety
 from cereal import car, log
 
 
