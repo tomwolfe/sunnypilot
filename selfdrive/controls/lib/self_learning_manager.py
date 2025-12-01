@@ -8,7 +8,6 @@ The system learns from driver corrections and adjusts model parameters according
 import numpy as np
 import time
 from collections import deque
-from typing import Optional
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 class SelfLearningManager:
@@ -168,7 +167,10 @@ class SelfLearningManager:
                         'to': new_value,
                         'change': change
                     }
-                cloudlog.info(f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, Context: {current_road_type}, Parameter Changes: {param_changes}")
+                cloudlog.info(
+                    (f"Self-Learning Adjustment - Curvature Error: {curvature_error:.4f}, Learning Rate: {self.base_learning_rate:.4f}, "
+                     f"Context: {current_road_type}, Parameter Changes: {param_changes}")
+                )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
         self._update_performance_metrics(update_time)
@@ -319,7 +321,10 @@ class SelfLearningManager:
             if recent_errors:
                 avg_error = np.mean(recent_errors)
                 std_error = np.std(recent_errors)
-                cloudlog.info(f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}")
+                cloudlog.info(
+                    (f"Model Accuracy Monitoring - Last 50 samples: Avg Error: {avg_error:.5f}, Std: {std_error:.5f}, "
+                     f"Current Error: {prediction_error:.5f}, Confidence: {model_confidence:.3f}")
+                )
         # Track the update for performance monitoring
         update_time = time.monotonic() - start_time
         self._update_performance_metrics(update_time)
@@ -336,7 +341,10 @@ class SelfLearningManager:
         # Log performance statistics periodically
         if self.total_updates % 1000 == 0:  # Log every 1000 updates
             avg_update_time = np.mean(self.update_time_samples) if self.update_time_samples else 0
-            cloudlog.info(f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, Max time: {self.max_update_time*1000:.2f}ms")
+            cloudlog.info(
+                (f"Self-Learning Performance - Updates: {self.total_updates}, Avg time: {avg_update_time*1000:.2f}ms, "
+                 f"Max time: {self.max_update_time*1000:.2f}ms")
+            )
     def adjust_curvature_prediction(self, original_curvature: float, v_ego: float) -> float:
         """
         Apply learned adjustments to the desired curvature prediction.
@@ -547,7 +555,11 @@ class SelfLearningManager:
         self.last_update_time = current_time
         # Log learning statistics periodically with enhanced detail
         if self.learning_samples % 50 == 0:
-            cloudlog.info(f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}")
+            cloudlog.info(
+                (f"Self-Learning Stats - Factor: {self.adaptive_params['lateral_control_factor']:.3f}, Bias: {self.adaptive_params['curvature_bias']:.5f}, "
+                 f"Weather: {self.adaptive_params['weather_adaptation_factor']:.3f}, Traffic: {self.adaptive_params['traffic_density_factor']:.3f}, "
+                 f"Samples: {self.learning_samples}, Base_LR: {self.base_learning_rate:.4f}, Context: {self.learning_context}")
+            )
         # Comprehensive monitoring and logging for self-learning system
         self._comprehensive_monitoring()
         # Enhanced monitoring for over-adaptation and system reliability
@@ -578,7 +590,7 @@ class SelfLearningManager:
         # Track computational performance
         if self.enhanced_monitor:
             start_time = time.monotonic()
-            computation_time = self.enhanced_monitor.track_computational_performance(start_time)
+            self.enhanced_monitor.track_computational_performance(start_time)
     def _comprehensive_monitoring(self):
         """
         Comprehensive monitoring and logging for the self-learning system to track
@@ -623,7 +635,13 @@ class SelfLearningManager:
             monitoring_data['learning_efficiency'] = learning_efficiency
         # Log detailed monitoring data periodically (less frequently than basic stats)
         if self.learning_samples % 200 == 0:  # Log detailed metrics every 200 learning samples
-            cloudlog.info(f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, Max Param Drift: {monitoring_data['max_param_drift']:.4f}, Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+            cloudlog.info(
+                (f"Self-Learning Monitoring - Efficiency: {monitoring_data.get('learning_efficiency', 0):.3f}, "
+                 f"Avg Error: {monitoring_data['performance_metrics'].get('avg_error', 0):.5f}, "
+                 f"Error Trend: {monitoring_data['performance_metrics'].get('error_trend', 0):.5f}, "
+                 f"Max Param Drift: {monitoring_data['max_param_drift']:.4f}, "
+                 f"Learning Rate: {monitoring_data['base_learning_rate']:.4f}")
+            )
         # Log warnings if parameters drift too far from baseline
         drift_threshold = 0.5  # 50% drift from baseline
         for param_name, drift in param_stability.items():
@@ -633,7 +651,10 @@ class SelfLearningManager:
         if 'learning_efficiency' in monitoring_data:
             eff = monitoring_data['learning_efficiency']
             if eff > 0.8:  # Very high learning frequency might indicate instability
-                cloudlog.warning(f"Self-Learning High Activity Alert - Learning Efficiency: {eff:.3f}, Learning may be too frequent, consider adjusting thresholds")
+                cloudlog.warning(
+                    (f"Self-Learning High Activity Alert - Learning Efficiency: {eff:.3f}, "
+                     f"Learning may be too frequent, consider adjusting thresholds")
+                )
             elif eff < 0.01 and self.total_updates > 100:  # Very low might indicate no learning happening
                 cloudlog.info(f"Self-Learning Low Activity - Learning Efficiency: {eff:.3f}, May need to adjust intervention thresholds")
         # Store monitoring data for potential external analysis
@@ -922,16 +943,20 @@ class SelfLearningManager:
                     validation_results['critical_violations'].extend(enhanced_validation['critical_violations'])
         # Log safety validation results with critical emphasis
         if validation_results['critical_violations']:
-            cloudlog.error(f"CRITICAL SELF-LEARNING SAFETY VIOLATIONS - Safe: {validation_results['is_safe']}, "
-                          f"Issues: {validation_results['critical_violations']}, "
-                          f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
-                          f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
+            cloudlog.error(
+                (f"CRITICAL SELF-LEARNING SAFETY VIOLATIONS - Safe: {validation_results['is_safe']}, "
+                 f"Issues: {validation_results['critical_violations']}, "
+                 f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
+                 f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
+            )
         elif not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
-            cloudlog.warning(f"Self-Learning Safety Validation - Safe: {validation_results['is_safe']}, "
-                           f"Confidence: {validation_results['confidence_in_safety']:.2f}, "
-                           f"Issues: {validation_results['safety_issues']}, "
-                           f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
-                           f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
+            cloudlog.warning(
+                (f"Self-Learning Safety Validation - Safe: {validation_results['is_safe']}, "
+                 f"Confidence: {validation_results['confidence_in_safety']:.2f}, "
+                 f"Issues: {validation_results['safety_issues']}, "
+                 f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, "
+                 f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
+            )
         # Calculate average recent change if available
         avg_recent_change = 0
         if hasattr(self, '_prev_validation_curvatures') and len(self._prev_validation_curvatures) >= 5:

@@ -905,7 +905,7 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
         # Store original values for validation
         original_dRel = getattr(lead, 'dRel', None) if hasattr(lead, 'dRel') else None
         original_vRel = getattr(lead, 'vRel', None) if hasattr(lead, 'vRel') else None
-        original_yRel = getattr(lead, 'yRel', None) if hasattr(lead, 'yRel') else None
+
 
         if hasattr(lead, 'dRel'):
           if lead.dRel < 0 or lead.dRel > 200:  # Invalid distance

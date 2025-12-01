@@ -5,6 +5,7 @@ This tests the improvements addressing critical review concerns.
 """
 from unittest.mock import MagicMock, patch
 import sys
+import time
 # Add the openpilot path to sys.path
 sys.path.insert(0, '/Users/tom/Documents/apps/sunnypilot2')
 # Mock the openpilot modules to avoid import errors
@@ -36,8 +37,6 @@ class MockParams:
         return list(self.storage.keys())
 def test_enhanced_monitoring():
     """Test the enhanced monitoring functionality."""
-    print("Testing enhanced monitoring functionality...")
-    # Mock the Params import before importing the actual modules
     with patch.dict('sys.modules', {
         'openpilot.common.params': MagicMock(Params=MockParams),
     }):
@@ -66,7 +65,7 @@ def test_enhanced_monitoring():
         print(f"  After large parameter change: {result['over_adaptation_detected']}")
         # This might not immediately detect over-adaptation without history
         # Test computational performance tracking
-        import time
+
         start_time = time.monotonic()
         time.sleep(0.0005)  # Simulate 0.5ms computation
         comp_time = monitor.track_computational_performance(start_time)
@@ -154,7 +153,11 @@ def test_enhanced_safety_validation():
         # Note: This may not flag as unsafe if the thresholds in the validation function are different
         # Check performance metrics
         metrics = validator.get_performance_metrics()
-        print(f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, Max: {metrics['max_validation_time_ms']:.2f}ms, 95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
+        print(
+            (f"  Performance metrics - Avg: {metrics['avg_validation_time_ms']:.2f}ms, "
+             f"Max: {metrics['max_validation_time_ms']:.2f}ms, "
+             f"95th percentile: {metrics['p95_validation_time_ms']:.2f}ms")
+        )
         print("  ✅ Enhanced safety validation works correctly")
 def run_all_tests():
     """Run all enhanced functionality tests."""
