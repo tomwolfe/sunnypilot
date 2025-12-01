@@ -241,7 +241,6 @@ def test_integration(safe_self_learning_manager):
     # Verify that the test completed without errors - this ensures the TypeError and NameError are fixed
     # The learning system may not always change parameters (especially conservative learning systems)
     # but the important thing is that it runs without crashing
-    final_factor = learning_manager.learning_manager.adaptive_params['lateral_control_factor']
 
     # The test should reach this point without exceptions, which verifies the original failures are fixed
     # In some configurations, parameters might not change significantly, which is acceptable

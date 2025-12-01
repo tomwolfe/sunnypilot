@@ -281,7 +281,12 @@ class EnhancedSelfLearningMonitor:
         Returns:
             Updated lateral acceleration limit in m/s²
         """
-        return self.vehicle_calibration['lateral_acceleration_limit']
+        limit = self.vehicle_calibration['lateral_acceleration_limit']
+        if isinstance(limit, (int, float)):
+            return float(limit)
+        else:
+            # Default fallback if the value is not numeric
+            return 2.5
     def detect_tunnel_conditions(self, gps_data: Optional[dict] = None, light_sensor_data: Optional[dict] = None) -> bool:
         """
         Enhanced tunnel detection using GPS, map data, and light sensors with validation.
@@ -482,7 +487,7 @@ class EnhancedSafetyValidator:
             'critical_violations_count': len(critical_violations_list)
         }
         return results
-    def get_performance_metrics(self) -> dict:
+    def get_performance_metrics(self) -> dict[str, Any]:
         """
         Get performance metrics for safety validation system.
         Returns:

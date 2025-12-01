@@ -120,7 +120,7 @@ class SelfLearningManager:
         if _model_prediction_error is not None:
             correction_direction_matches = np.sign(_model_prediction_error) == np.sign(steering_torque)
         # Additional checks for context-aware learning
-        high_model_error = model_error_significant and abs(model_prediction_error) > 0.05
+        high_model_error = model_error_significant and model_prediction_error is not None and abs(model_prediction_error) > 0.05
         low_model_confidence = model_confidence < self.confidence_threshold  # Use actual model confidence instead of hardcoded False
         driver_correction = torque_magnitude > self.intervention_threshold
         # Enhanced context: consider road type and conditions
@@ -165,7 +165,11 @@ class SelfLearningManager:
             if self.learning_samples % 25 == 0:  # Log every 25 learning events
                 param_changes = {}
                 for key in self.adaptive_params:
-                    original_value = experience['original_params'][key]
+                    original_params = experience['original_params']
+                    if isinstance(original_params, dict):
+                        original_value = original_params[key]
+                    else:
+                        original_value = 0.0  # Default value if original_params is not a dict
                     new_value = self.adaptive_params[key]
                     change = abs(new_value - original_value)
                     param_changes[key] = {
@@ -258,7 +262,12 @@ class SelfLearningManager:
             Contextually adjusted learning rate
         """
         context: dict[str, Any] = experience.get('context', {})
-        learning_factor: float = float(experience.get('learning_factor', 1.0))
+        learning_factor_raw = experience.get('learning_factor', 1.0)
+        # Ensure learning_factor is a float
+        if learning_factor_raw is None:
+            learning_factor = 1.0
+        else:
+            learning_factor = float(learning_factor_raw)
         # Start with base learning rate
         learning_rate = self.base_learning_rate * learning_factor
         # Adjust based on weather conditions
@@ -491,13 +500,15 @@ class SelfLearningManager:
         Returns:
             Factor to scale adjustments by road type
         """
-        factors = {
+        factors: dict[str, float] = {
             'low_speed_urban': 1.2,  # More aggressive adjustments in urban
             'city_roads': 1.0,
             'highway_entry': 0.9,
             'highway': 0.8   # More conservative on highways
         }
-        return factors.get(road_type, 1.0)
+        result = factors.get(road_type, 1.0)
+        # Ensure the result is a float
+        return float(result) if result is not None else 1.0
     def _classify_road_type(self, v_ego: float, curvature: float) -> str:
         """
         Classify the current road type based on speed and curvature.
@@ -978,12 +989,12 @@ class SelfLearningManager:
                              f"Curvature: {desired_curvature:.4f} -> {validation_results['corrected_curvature']:.4f}, " +
                              f"Acceleration: {desired_acceleration:.2f} -> {validation_results['corrected_acceleration']:.2f}")
         # Calculate average recent change if available
-        avg_recent_change = 0
+        avg_recent_change: float = 0.0
         if hasattr(self, '_prev_validation_curvatures') and len(self._prev_validation_curvatures) >= 5:
             recent_changes = [abs(self._prev_validation_curvatures[i] - self._prev_validation_curvatures[i-1])
                               for i in range(1, len(self._prev_validation_curvatures))]
             if recent_changes:
-                avg_recent_change = np.mean(recent_changes)
+                avg_recent_change = float(np.mean(recent_changes))
         # Set validation passed flag
         validation_results['validation_passed'] = len(critical_violations_list) == 0
         validation_results['validation_details'] = {

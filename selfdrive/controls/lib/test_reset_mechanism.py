@@ -80,7 +80,9 @@ def test_parameter_based_reset(mock_params_fixture, mock_CP_fixture, monkeypatch
     manager.learning_samples = 200
 
     # Test reset request (parameter set to "1")
-    monkeypatch.setattr(manager.params, 'get', lambda key, encoding=None: "1" if (key if isinstance(key, bytes) else key.encode()) == b"ResetSelfLearning" else None)
+    def _get_param(key, encoding=None):
+        return "1" if (key if isinstance(key, bytes) else key.encode()) == b"ResetSelfLearning" else None
+    monkeypatch.setattr(manager.params, 'get', _get_param)
     # Mock the delete method to check if it's called
     monkeypatch.setattr(manager.params, 'delete', Mock())
     manager.check_for_reset_request()  # Should perform reset
