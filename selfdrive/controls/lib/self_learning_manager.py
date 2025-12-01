@@ -86,6 +86,14 @@ class SelfLearningManager:
         # Initialize from saved parameters if available
         self.load_adaptive_params()
 
+        # Enhanced monitoring for over-adaptation and system reliability
+        try:
+            from enhanced_self_learning_monitoring import EnhancedSelfLearningMonitor
+            self.enhanced_monitor = EnhancedSelfLearningMonitor()
+        except ImportError:
+            cloudlog.warning("Enhanced monitoring module not available, using basic monitoring")
+            self.enhanced_monitor = None
+
         cloudlog.info("Self-Learning Manager initialized")
     
     def update_from_driver_intervention(self, CS, desired_curvature: float, actual_curvature: float,
@@ -433,10 +441,14 @@ class SelfLearningManager:
         if v_ego < 0.1:  # Very low speed
             return 0.5  # Higher curvature allowed at low speeds
 
+        # Use the enhanced monitor for vehicle-specific limits if available
+        max_lat_accel = 2.5  # Default value
+        if self.enhanced_monitor:
+            max_lat_accel = self.enhanced_monitor.get_updated_lateral_acceleration_limit()
+
         # Based on max lateral acceleration = v^2 * curvature
-        # Using 2.5 m/s^2 as max lateral acceleration for safety
-        max_lat_accel = 2.5
-        max_curvature = max_lat_accel / (v_ego * v_ego)
+        # So curvature = max_lat_accel / v^2
+        max_curvature = max_lat_accel / (v_ego * v_ego) if v_ego > 0.1 else 0.5
         return min(max_curvature, 0.5)  # Cap at 0.5 for additional safety
     
     def adjust_acceleration_prediction(self, original_accel: float, v_ego: float) -> float:
@@ -652,10 +664,13 @@ class SelfLearningManager:
         else:
             return 'highway'
     
-    def periodic_update(self):
+    def periodic_update(self, CS=None):
         """
         Perform periodic learning updates based on accumulated data.
         This should be called periodically to update parameters based on recent experiences.
+
+        Args:
+            CS: CarState object for additional vehicle context (optional)
         """
         current_time = time.time()
         if current_time - self.last_update_time < self.update_interval:
@@ -719,6 +734,42 @@ class SelfLearningManager:
 
         # Comprehensive monitoring and logging for self-learning system
         self._comprehensive_monitoring()
+
+        # Enhanced monitoring for over-adaptation and system reliability
+        if self.enhanced_monitor:
+            # Monitor for over-adaptation patterns
+            over_adaptation_result = self.enhanced_monitor.monitor_over_adaptation(
+                self.adaptive_params, self.learning_context
+            )
+
+            # If over-adaptation is detected, take corrective actions
+            if over_adaptation_result['over_adaptation_detected']:
+                cloudlog.warning(f"Over-adaptation detected: {', '.join(over_adaptation_result['triggering_conditions'])}")
+
+                # Reduce learning rate temporarily
+                self.base_learning_rate *= 0.7
+                cloudlog.info(f"Reduced learning rate to {self.base_learning_rate:.4f} due to over-adaptation detection")
+
+                # Apply more aggressive regularization
+                self._regularize_parameters(over_adaptation=True)
+
+                # Log suggested actions
+                if over_adaptation_result['suggested_actions']:
+                    for action in over_adaptation_result['suggested_actions']:
+                        cloudlog.info(f"Suggested action: {action}")
+
+            # Update vehicle calibration
+            if CS and hasattr(CS, 'vEgo') and hasattr(CS, 'aEgo'):
+                v_ego = CS.vEgo if CS.vEgo is not None else 0
+                # Calculate lateral acceleration if we have the needed data
+                current_curvature = self.adaptive_params.get('curvature_bias', 0.0)
+                lateral_accel = v_ego * v_ego * current_curvature if v_ego > 0.1 else 0
+                self.enhanced_monitor.update_vehicle_calibration(v_ego, current_curvature, lateral_accel)
+
+        # Track computational performance
+        if self.enhanced_monitor:
+            start_time = time.time()
+            computation_time = self.enhanced_monitor.track_computational_performance(start_time)
 
     def _comprehensive_monitoring(self):
         """
@@ -800,18 +851,36 @@ class SelfLearningManager:
         # Keep only recent history to prevent memory bloat
         self._monitoring_history = self._monitoring_history[-500:]  # Keep last 500 monitoring entries
     
-    def _regularize_parameters(self):
+    def _regularize_parameters(self, over_adaptation=False):
         """
         Apply regularization to prevent parameters from drifting too far from baseline.
         Improved regularization with more nuanced approach to balance safety with beneficial learning.
+
+        Args:
+            over_adaptation: If True, apply more aggressive regularization to address over-adaptation
         """
+        # Determine regularization factors based on whether we're dealing with over-adaptation
+        if over_adaptation:
+            # More aggressive regularization when over-adaptation is detected
+            slow_regularization_factor = 0.98  # Faster regularization
+            fast_regularization_factor = 0.95  # Much faster for dangerous deviations
+            bias_slow_reg_factor = 0.98
+            bias_fast_reg_factor = 0.95
+        else:
+            # Normal balanced regularization
+            slow_regularization_factor = 0.995  # Slower regularization for beneficial learning
+            fast_regularization_factor = 0.97   # Faster regularization for large deviations
+            bias_slow_reg_factor = 0.995
+            bias_fast_reg_factor = 0.99
+
         # Regularize lateral control factor towards 1.0 with balanced approach
         factor = self.adaptive_params['lateral_control_factor']
         if abs(factor - 1.0) > 0.02:  # Lower threshold for regularization (2% instead of 5%)
-            regularization_factor = 0.995  # Slower regularization for beneficial learning
-            if abs(factor - 1.0) > 0.25:  # More than 25% deviation - still aggressive for safety
+            if abs(factor - 1.0) > 0.25:  # More than 25% deviation - aggressive regularization
                 # Strong regularization to prevent dangerous drift
-                regularization_factor = 0.97  # Faster regularization for large deviations
+                regularization_factor = fast_regularization_factor
+            else:
+                regularization_factor = slow_regularization_factor
             self.adaptive_params['lateral_control_factor'] = (
                 regularization_factor * factor + (1 - regularization_factor) * 1.0
             )
@@ -820,23 +889,47 @@ class SelfLearningManager:
         bias = self.adaptive_params['curvature_bias']
         if abs(bias) > 0.001:  # Lower threshold for regularization
             # Adaptive regularization that's gentler for smaller biases
-            if abs(bias) > 0.01:  # For larger biases, more aggressive regularization
-                regularization_factor = 0.99  # Faster regularization
+            if abs(bias) > 0.01 or over_adaptation:  # For larger biases, or if over-adaptation detected
+                regularization_factor = bias_fast_reg_factor  # More aggressive regularization
             else:
-                regularization_factor = 0.995  # Slower regularization for small beneficial adjustments
+                regularization_factor = bias_slow_reg_factor  # Gentle regularization for small adjustments
             self.adaptive_params['curvature_bias'] *= regularization_factor
+
+        # Regularize other parameters as well to prevent over-adaptation
+        # Regularize weather adaptation factor (towards 1.0)
+        weather_factor = self.adaptive_params['weather_adaptation_factor']
+        if abs(weather_factor - 1.0) > 0.15 or over_adaptation:  # If significantly different or over-adaptation
+            self.adaptive_params['weather_adaptation_factor'] = (
+                0.99 if not over_adaptation else 0.97
+            ) * weather_factor + (1 - (0.99 if not over_adaptation else 0.97)) * 1.0
+
+        # Regularize traffic density factor (towards 1.0)
+        traffic_factor = self.adaptive_params['traffic_density_factor']
+        if abs(traffic_factor - 1.0) > 0.15 or over_adaptation:  # If significantly different or over-adaptation
+            self.adaptive_params['traffic_density_factor'] = (
+                0.99 if not over_adaptation else 0.97
+            ) * traffic_factor + (1 - (0.99 if not over_adaptation else 0.97)) * 1.0
+
+        # Regularize driver adaptation rate (towards 1.0)
+        driver_rate = self.adaptive_params['driver_adaptation_rate']
+        if abs(driver_rate - 1.0) > 0.2 or over_adaptation:  # If significantly different or over-adaptation
+            self.adaptive_params['driver_adaptation_rate'] = (
+                0.98 if not over_adaptation else 0.95
+            ) * driver_rate + (1 - (0.98 if not over_adaptation else 0.95)) * 1.0
 
         # Regularize speed compensation parameters with balanced approach
         speed_base = self.adaptive_params['speed_compensation_base']
-        if abs(speed_base - 1.0) > 0.02:  # Regularize base speed compensation toward 1.0
+        if abs(speed_base - 1.0) > 0.02 or over_adaptation:  # Regularize base speed compensation toward 1.0
             self.adaptive_params['speed_compensation_base'] = (
-                0.995 * speed_base + 0.005 * 1.0  # Balanced regularization
+                (0.995 if not over_adaptation else 0.97) * speed_base +
+                (1 - (0.995 if not over_adaptation else 0.97)) * 1.0
             )
 
         speed_rate = self.adaptive_params['speed_compensation_rate']
-        if abs(speed_rate) > 0.0005:  # Regularize speed rate toward 0 (meaning no speed dependency)
+        if abs(speed_rate) > 0.0005 or over_adaptation:  # Regularize speed rate toward 0 (meaning no speed dependency)
             # Apply balanced regularization to reduce speed dependency over time unless needed
-            self.adaptive_params['speed_compensation_rate'] *= 0.995  # Balanced regularization
+            reg_factor = 0.995 if not over_adaptation else 0.97
+            self.adaptive_params['speed_compensation_rate'] *= reg_factor
     
     def save_learning_state(self):
         """
@@ -935,6 +1028,18 @@ class SelfLearningManager:
             'validation_details': {}
         }
 
+        # Use enhanced safety validator if available
+        enhanced_validation = None
+        if self.enhanced_monitor:
+            try:
+                from enhanced_self_learning_monitoring import EnhancedSafetyValidator
+                enhanced_validator = EnhancedSafetyValidator()
+                enhanced_validation = enhanced_validator.validate_with_computational_efficiency(
+                    self.adaptive_params, v_ego
+                )
+            except ImportError:
+                enhanced_validation = None
+
         # Validate lateral control parameters (curvature)
         max_safe_curvature = self._calculate_max_safe_curvature(v_ego)
         if abs(desired_curvature) > max_safe_curvature:
@@ -944,7 +1049,10 @@ class SelfLearningManager:
 
         # Check for excessive lateral acceleration
         lateral_accel = v_ego * v_ego * desired_curvature if v_ego > 0.1 else 0.0
-        max_lateral_accel = 2.5  # m/s^2
+        max_lateral_accel = 2.5  # m/s^2 or use vehicle-specific limit
+        if self.enhanced_monitor:
+            max_lateral_accel = self.enhanced_monitor.get_updated_lateral_acceleration_limit()
+
         if abs(lateral_accel) > max_lateral_accel:
             validation_results['is_safe'] = False
             validation_results['safety_issues'].append(f"Excessive lateral acceleration: {lateral_accel:.2f} > {max_lateral_accel:.2f}")
@@ -1018,6 +1126,12 @@ class SelfLearningManager:
 
         validation_results['confidence_in_safety'] = np.mean(confidence_factors) if confidence_factors else 1.0
 
+        # Add results from enhanced safety validation if available
+        if enhanced_validation and not enhanced_validation['is_safe']:
+            validation_results['is_safe'] = False
+            validation_results['safety_issues'].extend(enhanced_validation['safety_issues'])
+            validation_results['confidence_in_safety'] *= 0.8  # Reduce confidence if enhanced validation fails
+
         # Log safety validation results
         if not validation_results['is_safe'] or validation_results['confidence_in_safety'] < 0.7:
             cloudlog.warning(f"Self-Learning Safety Validation - Safe: {validation_results['is_safe']}, "
@@ -1030,7 +1144,8 @@ class SelfLearningManager:
             'v_ego': v_ego,
             'lateral_accel': lateral_accel,
             'param_drift_count': len(param_drift_issues),
-            'avg_recent_change': np.mean(recent_changes) if 'recent_changes' in locals() and recent_changes else 0
+            'avg_recent_change': np.mean(recent_changes) if 'recent_changes' in locals() and recent_changes else 0,
+            'validation_time': enhanced_validation['validation_time'] if enhanced_validation else 0
         }
 
         return validation_results
