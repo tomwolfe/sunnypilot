@@ -2,48 +2,56 @@
 
 ## Overview
 This implementation adds online learning capabilities to sunnypilot that allow the vehicle to adapt its driving behavior based on real-world experience and driver interventions. The system learns from:
-- Driver corrections and interventions
-- Model prediction accuracy
-- Environmental conditions and driving scenarios
+- Context-aware driver corrections and interventions
+- Model prediction accuracy and prediction errors
+- Vehicle state and environmental conditions
 
 ## Key Components
 
 ### 1. SelfLearningManager
-- Tracks driver interventions and model prediction accuracy
-- Updates driving parameters based on experience
+- Tracks context-aware driver interventions and model prediction accuracy
+- Updates driving parameters based on experience with safety validation
 - Maintains adaptive parameters that influence vehicle behavior
 - Saves/loads learned parameters to persistent storage
+- Implements enhanced parameter regularization
 
 ### 2. SelfLearningSafety
 - Validates all learning-based adjustments for safety compliance
 - Ensures curvature and acceleration limits are not exceeded
-- Monitors system safety score and can freeze learning if unsafe
-- Implements parameter regularization to prevent drifting
+- Monitors system safety score based on absolute values and stability (not relative ratios)
+- Implements parameter regularization to prevent unsafe drift
+- Provides emergency learning freeze capability
 
 ### 3. SafeSelfLearningManager
-- Combines learning and safety functions
+- Combines learning and safety functions with fixed safety monitoring
 - Provides safe adjustment methods for curvature and acceleration
-- Integrates with existing control system
+- Integrates with existing control system with proper safety score calculation
 
 ## Integration Points
 
 ### In controlsd.py:
 - **Curvature adjustment**: Model outputs are passed through the learning system before actuator commands
-- **Learning updates**: Feedback is provided after each control cycle with vehicle state, desired vs actual behavior
+- **Learning updates**: Feedback is provided after each control cycle with actual vehicle curvature (not controller output) and prediction error
 - **Safety checks**: All adjustments are validated before application
 
 ## Features
 
-### Online Learning
-- Learns from driver interventions (steering corrections)
-- Adapts to individual driving preferences and road conditions
-- Updates parameters gradually to maintain stability
+### Context-Aware Learning
+- Learns only from corrective driver interventions (not all steeringPressed events)
+- Uses model prediction error to determine if intervention is correction vs. normal driving
+- Factors in vehicle speed and conditions for appropriate learning
 
 ### Safety-First Design
-- All learning-based adjustments are validated for safety
+- All learning-based adjustments are validated for safety using absolute values
 - Curvature and acceleration limits enforced at multiple levels
 - Learning can be frozen if safety conditions are not met
 - Parameter regularization prevents unsafe drift
+- Fixed safety score calculation uses absolute values instead of relative ratios
+
+### Enhanced Parameter Management
+- Integrated speed compensation as learnable parameters instead of hardcoded values
+- More aggressive parameter regularization to prevent dangerous drift
+- Additional learned parameters for speed-dependent adjustments
 
 ### Hardware-Efficient
 - Lightweight implementation suitable for Comma 3x hardware
@@ -62,14 +70,39 @@ The system adapts these key parameters:
 - **curvature_bias**: Correction bias based on historical errors
 - **acceleration_factor**: Scaling for longitudinal control
 - **reaction_time_compensation**: Time compensation for different conditions
+- **speed_compensation_base**: Base value for speed-dependent adjustments
+- **speed_compensation_rate**: Rate of change with speed (learnable)
 
 ## Safety Measures
 
-- Maximum curvature limits based on vehicle speed
+- Maximum curvature limits based on vehicle speed using kinematic model
 - Lateral jerk (rate of curvature change) limits
 - Parameter change rate limiting
-- Safety score monitoring to detect unsafe learning patterns
+- Safety score monitoring based on absolute values and system stability
 - Emergency learning freeze capability
+- Context-aware learning to prevent learning from driver errors
+
+## Key Fixes from Critical Review
+
+### Fixed: Dangerous Driver Intervention Trigger
+- **Before**: Learned from any `CS.steeringPressed` event
+- **After**: Context-aware learning that checks for significant model prediction error and corrective direction
+
+### Fixed: Data Source Error
+- **Before**: Used controller's desired curvature as "actual vehicle curvature"
+- **After**: Uses actual vehicle state with kinematic model to calculate real curvature from steering angle
+
+### Fixed: Safety Score Calculation
+- **Before**: Used relative change ratios causing meaningless scores
+- **After**: Uses absolute values against physical limits and stability measures
+
+### Fixed: Critical Implementation Bug
+- **Before**: `adjusted_outputs` was set to original curvature instead of adjusted curvature
+- **After**: Properly calculates and passes adjusted outputs for safety scoring
+
+### Fixed: Speed Factor Integration
+- **Before**: Hardcoded speed factor in adjustment logic
+- **After**: Integrated as learnable parameters in the learning system
 
 ## Testing
 
@@ -80,7 +113,7 @@ The system adapts these key parameters:
 
 ## Usage
 
-The system operates automatically when enabled. No user interaction is required. The learning system will gradually adapt the driving behavior based on real-world experience and driver interventions.
+The system operates automatically when enabled. No user interaction is required. The learning system will gradually adapt the driving behavior based on real-world experience and corrective driver interventions.
 
 ## Configuration
 
@@ -99,7 +132,7 @@ Learning parameters can be adjusted through the parameter system:
 ## Future Enhancements
 
 This implementation provides a foundation that can be extended with:
-- Deep reinforcement learning components
-- More sophisticated model prediction error correction
+- Advanced model prediction error correction
 - Collaborative learning across vehicle fleet
 - Advanced scenario-based adaptation
+- Enhanced safety monitoring and validation
