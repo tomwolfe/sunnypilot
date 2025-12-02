@@ -24,24 +24,64 @@ class LightweightAdaptiveGainScheduler:
     def __init__(self, CP):
         self.CP = CP
         # Use simple filters with minimal computational overhead
-        self.long_speed_filter = FirstOrderFilter(1.0, 1.0, 0.1)
-        self.lat_speed_filter = FirstOrderFilter(1.0, 1.0, 0.1)
-        self.long_thermal_filter = FirstOrderFilter(1.0, 1.0, 0.1)
-        self.lat_thermal_filter = FirstOrderFilter(1.0, 1.0, 0.1)
+        self.long_speed_filter = FirstOrderFilter(0.1, 0.01, 0.01)  # Faster response
+        self.lat_speed_filter = FirstOrderFilter(0.1, 0.01, 0.01)   # Faster response
+        self.long_thermal_filter = FirstOrderFilter(0.2, 0.01, 0.01)  # Faster response
+        self.lat_thermal_filter = FirstOrderFilter(0.2, 0.01, 0.01)   # Faster response
+
+        # Vehicle-specific tuning parameters based on car model
+        self.vehicle_tuning = self._get_vehicle_tuning(CP.carFingerprint)
+
+    def _get_vehicle_tuning(self, car_model: str) -> Dict:
+        """
+        Get vehicle-specific tuning parameters based on the car model.
+        """
+        # Default tuning parameters
+        tuning_params = {
+            'long_speed_gain_factor': 30.0,  # Factor for longitudinal speed-based gain adjustment
+            'lat_speed_gain_factor': 50.0,   # Factor for lateral speed-based gain adjustment
+            'max_long_gain_multiplier': 1.5,  # Maximum longitudinal gain multiplier
+            'max_lat_gain_multiplier': 1.3,   # Maximum lateral gain multiplier
+            'min_long_gain_multiplier': 0.7,  # Minimum longitudinal gain multiplier
+            'min_lat_gain_multiplier': 0.5    # Minimum lateral gain multiplier
+        }
+
+        # Customize tuning based on car model if specific parameters are available
+        car_specific_tuning = {
+            # Example: specific tuning for different car models
+            # These values would be tuned based on real-world testing
+        }
+
+        if car_model in car_specific_tuning:
+            tuning_params.update(car_specific_tuning[car_model])
+
+        return tuning_params
 
     def get_adaptive_gains(self, v_ego: float, thermal_state: float) -> Dict:
         """
         Calculate lightweight adaptive gains based on vehicle speed and thermal state.
         Longitudinal and lateral gains are scaled independently for safety.
         """
-        # Longitudinal speed-based gain adjustment
-        # Lower gains at higher speeds for longitudinal control stability
-        long_speed_factor = max(0.7, min(1.0, 1.0 - (v_ego - 10.0) / 40.0))  # Reduce beyond 10 m/s
+        # Longitudinal speed-based gain adjustment using vehicle-specific parameters
+        # Higher gains at higher speeds for better control authority at highway speeds
+        long_speed_factor = max(
+            self.vehicle_tuning['min_long_gain_multiplier'],
+            min(
+                self.vehicle_tuning['max_long_gain_multiplier'],
+                1.0 + (v_ego / self.vehicle_tuning['long_speed_gain_factor'])
+            )
+        )
         self.long_speed_filter.update(long_speed_factor)
 
-        # Lateral speed-based gain adjustment
-        # More aggressive reduction at higher speeds for lateral stability
-        lat_speed_factor = max(0.5, min(1.0, 1.0 - (v_ego - 5.0) / 35.0))  # Reduce beyond 5 m/s
+        # Lateral speed-based gain adjustment using vehicle-specific parameters
+        # Moderate increase at higher speeds for better lateral control
+        lat_speed_factor = max(
+            self.vehicle_tuning['min_lat_gain_multiplier'],
+            min(
+                self.vehicle_tuning['max_lat_gain_multiplier'],
+                1.0 + (v_ego / self.vehicle_tuning['lat_speed_gain_factor'])
+            )
+        )
         self.lat_speed_filter.update(lat_speed_factor)
 
         # Thermal factors (different for longitudinal and lateral)
@@ -53,16 +93,27 @@ class LightweightAdaptiveGainScheduler:
         lat_thermal_factor = max(0.9, 1.0 - thermal_state * 0.1)
         self.lat_thermal_filter.update(lat_thermal_factor)
 
+        # Calculate base gains from tuning tables (using first values as baseline)
+        # For longitudinal: take the first kpV and kiV values as baseline
+        base_long_kp = self.CP.longitudinalTuning.kpV[0] if hasattr(self.CP.longitudinalTuning, 'kpV') and self.CP.longitudinalTuning.kpV else 1.0
+        base_long_ki = self.CP.longitudinalTuning.kiV[0] if hasattr(self.CP.longitudinalTuning, 'kiV') and self.CP.longitudinalTuning.kiV else 0.1
+        base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
+
+        # For lateral: take the first kp, ki, kd values as baseline
+        base_lat_kp = self.CP.lateralTuning.pid.kpV[0] if hasattr(self.CP.lateralTuning.pid, 'kpV') and self.CP.lateralTuning.pid.kpV else 0.5
+        base_lat_ki = self.CP.lateralTuning.pid.kiV[0] if hasattr(self.CP.lateralTuning.pid, 'kiV') and self.CP.lateralTuning.pid.kiV else 0.05
+        base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
+
         gains = {
             'longitudinal': {
-                'kp': self.CP.longitudinalTuning.kp * self.long_speed_filter.x * self.long_thermal_filter.x,
-                'ki': self.CP.longitudinalTuning.ki * self.long_speed_filter.x * self.long_thermal_filter.x,
-                'kf': getattr(self.CP.longitudinalTuning, 'kf', 0.0) * self.long_speed_filter.x * self.long_thermal_filter.x
+                'kp': base_long_kp * self.long_speed_filter.x * self.long_thermal_filter.x,
+                'ki': base_long_ki * self.long_speed_filter.x * self.long_thermal_filter.x,
+                'kf': base_long_kf * self.long_speed_filter.x * self.long_thermal_filter.x
             },
             'lateral': {
-                'kp': self.CP.lateralTuning.pid.kp * self.lat_speed_filter.x * self.lat_thermal_filter.x,
-                'ki': self.CP.lateralTuning.pid.ki * self.lat_speed_filter.x * self.lat_thermal_filter.x,
-                'kd': getattr(self.CP.lateralTuning.pid, 'kd', 0.0) * self.lat_speed_filter.x * self.lat_thermal_filter.x
+                'kp': base_lat_kp * self.lat_speed_filter.x * self.lat_thermal_filter.x,
+                'ki': base_lat_ki * self.lat_speed_filter.x * self.lat_thermal_filter.x,
+                'kd': base_lat_kf * self.lat_speed_filter.x * self.lat_thermal_filter.x  # Using kf as kd since that's the typical third parameter for PID
             }
         }
 
@@ -117,8 +168,9 @@ class LightweightComfortOptimizer:
         Calculate adaptive jerk limit based on vehicle speed and other factors.
         Lower jerk limits at higher speeds for safety and comfort.
         """
-        # Base jerk limit decreases at higher speeds
-        speed_factor = max(0.5, 1.0 - (v_ego / 50.0))  # Reduce limit as speed increases
+        # Base jerk limit decreases at higher speeds (0 m/s to 30 m/s range)
+        # Reduce limit from 1.5 to 0.8 as speed increases from 0 to 30 m/s
+        speed_factor = max(0.5, 1.0 - (v_ego / 30.0))  # Reduce limit as speed increases up to 30 m/s
         adaptive_limit = self.comfort_jerk_limit * speed_factor
 
         # Ensure minimum jerk limit

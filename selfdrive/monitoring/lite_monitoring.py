@@ -27,6 +27,9 @@ class LightweightSafetyChecker:
             'min_safe_ttc': 2.0,       # Minimum safe time-to-collision (s) for active intervention
             'min_safe_distance': 30.0, # Minimum safe distance to lead vehicle (m)
         }
+        # Initialize tracking variables for steering rate calculation
+        self._prev_steer = 0.0
+        self._prev_time = time.monotonic()
 
     def validate_outputs(self, actuators, car_state, radar_state) -> Dict:
         """
@@ -59,6 +62,21 @@ class LightweightSafetyChecker:
             safety_report['violations'].append('steering_angle_limit_exceeded')
             safety_report['recommended_action'] = 'disengage'
 
+        # Check steering rate limit (change in steering command)
+        if hasattr(self, '_prev_steer') and hasattr(self, '_prev_time') and hasattr(actuators, 'steer'):
+            current_time = time.monotonic()
+            time_delta = current_time - self._prev_time if hasattr(self, '_prev_time') else 0.01
+            steering_rate = abs(actuators.steer - self._prev_steer) / max(time_delta, 0.01)  # Use a small dt to avoid division by zero
+            if steering_rate > self.safety_thresholds['max_steering_rate']:
+                safety_report['safe'] = False
+                safety_report['violations'].append('steering_rate_limit_exceeded')
+                safety_report['recommended_action'] = 'disengage'
+
+        # Store current steering and time for next iteration
+        if hasattr(actuators, 'steer'):
+            self._prev_steer = actuators.steer
+            self._prev_time = time.monotonic()
+
         # Enhanced forward collision check - handles all lead vehicle scenarios
         if (hasattr(radar_state, 'leadOne') and
             radar_state.leadOne.status and
@@ -76,8 +94,8 @@ class LightweightSafetyChecker:
                 else:  # Lead vehicle is stationary or moving very slowly
                     ttc = radar_state.leadOne.dRel / car_state.vEgo if car_state.vEgo > 0.1 else float('inf')
 
-                # If TTC is below threshold and within safe distance
-                if ttc < self.safety_thresholds['min_safe_ttc'] and radar_state.leadOne.dRel < 50.0:
+                # If either TTC is below threshold OR distance is below safe distance (whichever condition triggers first)
+                if ttc < self.safety_thresholds['min_safe_ttc'] or radar_state.leadOne.dRel < self.safety_thresholds['min_safe_distance']:
                     # This is a safety-critical situation regardless of current acceleration
                     safety_report['safe'] = False
                     safety_report['violations'].append('forward_collision_imminent')
@@ -168,10 +186,11 @@ class LightweightSystemMonitor:
         # Additional checks for CAN bus, disk, etc. if available
         if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
             # Simple check: if we have old CAN times, consider it potentially unhealthy
-            import time
-            current_time = time.monotonic()
-            if hasattr(device_state, 'last_can_time'):
-                if current_time - device_state.last_can_time > 2.0:  # 2 seconds without CAN
+            # Check if we have recent CAN messages by looking at the timestamps in canMonoTimes
+            if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
+                # Get the most recent CAN time from the list
+                recent_can_time = device_state.canMonoTimes[-1] if len(device_state.canMonoTimes) > 0 else 0
+                if time.monotonic() - recent_can_time > 2.0:  # 2 seconds without CAN
                     health_report['can_bus_ok'] = False
 
         # Check disk space if available
@@ -183,10 +202,15 @@ class LightweightSystemMonitor:
         current_time = time.monotonic()
         if current_time - self.last_log_time > self.log_interval:
             # Only log basic info periodically
-            cloudlog.debug(f"System Health: CPU {max_cpu_temp if 'max_cpu_temp' in locals() else 'N/A'}, "
-                          f"GPU {max_gpu_temp if 'max_gpu_temp' in locals() else 'N/A'}, "
-                          f"CPU% {cpu_usage if 'cpu_usage' in locals() else 'N/A'}, "
-                          f"RAM% {ram_usage if 'ram_usage' in locals() else 'N/A'}")
+            cpu_temp = max(device_state.cpuTempC) if hasattr(device_state, 'cpuTempC') and device_state.cpuTempC else 'N/A'
+            gpu_temp = max(device_state.gpuTempC) if hasattr(device_state, 'gpuTempC') and device_state.gpuTempC else 'N/A'
+            cpu_usage_val = device_state.cpuUsagePercent if hasattr(device_state, 'cpuUsagePercent') and device_state.cpuUsagePercent else 'N/A'
+            ram_usage_val = device_state.memoryUsagePercent if hasattr(device_state, 'memoryUsagePercent') and device_state.memoryUsagePercent else 'N/A'
+
+            cloudlog.debug(f"System Health: CPU {cpu_temp}, "
+                          f"GPU {gpu_temp}, "
+                          f"CPU% {cpu_usage_val}, "
+                          f"RAM% {ram_usage_val}")
             self.last_log_time = current_time
 
         return health_report
