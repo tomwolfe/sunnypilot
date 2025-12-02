@@ -20,6 +20,7 @@ class LightweightSafetyChecker:
     Lightweight safety validation system with minimal computational overhead.
     """
     def __init__(self, CP=None):
+        self.CP = CP
         # Vehicle-specific safety thresholds based on car model and parameters
         self.safety_thresholds = self._get_vehicle_specific_thresholds(CP) if CP else {
             'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
@@ -164,9 +165,16 @@ class LightweightSafetyChecker:
                 }
             elif safety_report['recommended_action'] == 'decelerate':
                 v_ego = car_state.vEgo if hasattr(car_state, 'vEgo') else 0.0
-                v_points = [0.0, 10.0, 30.0]  # Speeds in m/s
-                decel_points = [-2.0, -3.0, -2.5] # Deceleration values in m/s^2
-                calculated_deceleration = float(np.interp(v_ego, v_points, decel_points))
+                
+                # Use CP.stopAccel if available, otherwise fall back to hardcoded values
+                if self.CP and hasattr(self.CP, 'stopAccel') and isinstance(self.CP.stopAccel, (int, float)):
+                    calculated_deceleration = self.CP.stopAccel
+                    cloudlog.debug(f"SafetyChecker: Using CP.stopAccel for deceleration: {calculated_deceleration:.2f} m/s^2")
+                else:
+                    v_points = [0.0, 10.0, 30.0]  # Speeds in m/s
+                    decel_points = [-2.0, -3.0, -2.5] # Deceleration values in m/s^2
+                    calculated_deceleration = float(np.interp(v_ego, v_points, decel_points))
+                    cloudlog.debug(f"SafetyChecker: Using default interp for deceleration: {calculated_deceleration:.2f} m/s^2")
 
                 return {
                     'acceleration': calculated_deceleration,
