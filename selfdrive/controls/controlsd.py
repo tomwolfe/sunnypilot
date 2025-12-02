@@ -143,16 +143,23 @@ class Controls(ControlsExt):
     # Check if we're in cooldown period after an error
     current_time = time.monotonic()
     if not cb['enabled']:
-        if current_time - cb['last_error_time'] > cb['cooldown_period']:
-            # Reset the circuit breaker after cooldown, but only if it's been stable for a while
-            time_since_last_reset = current_time - cb['last_error_reset_time']
-            if time_since_last_reset >= cb['cooldown_period'] / 2:  # Only reset if stable for half the cooldown period
+        # Calculate time since the last error occurred
+        time_since_last_error = current_time - cb['last_error_time']
+
+        # Check if cooldown period has passed since the last error
+        if time_since_last_error > cb['cooldown_period']:
+            # For the breaker to reset, we need to have waited not just the cooldown period,
+            # but also a "stable" period (half the cooldown period) since the last error
+            # This prevents the breaker from resetting too soon after the last error,
+            # requiring a period of stability before re-enabling the feature
+            required_total_wait_time = cb['cooldown_period'] + (cb['cooldown_period'] / 2)
+            if time_since_last_error >= required_total_wait_time:
                 cb['enabled'] = True
                 cb['error_count'] = 0  # Reset error count on successful recovery
                 cb['last_error_reset_time'] = current_time
                 cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown and stable period")
             else:
-                return False  # Not yet ready to reset
+                return False  # Not yet ready to reset - need to wait for stable period after the error
         else:
             return False  # Still in cooldown, circuit breaker is disabled
 

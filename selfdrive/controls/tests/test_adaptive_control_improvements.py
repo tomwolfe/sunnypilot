@@ -210,7 +210,7 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
         # Create mock objects
         mock_cs = Mock()
         mock_cs.vEgo = 25.0
-        
+
         mock_sm = Mock()
         mock_model = Mock()
         mock_model.meta = Mock()
@@ -220,31 +220,68 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
             'deviceState': mock_device_state,
             'radarState': mock_radar_state
         }.get(key, Mock())
-        
+
         mock_device_state = Mock()
         mock_device_state.thermalStatus = 1  # Yellow (not red/danger)
         mock_device_state.thermalPerc = 60   # 60% thermal (under 70% limit)
-        
+
         mock_radar_state = Mock()
         mock_radar_state.leadOne = Mock()
         mock_radar_state.leadOne.status = False
         mock_radar_state.leadTwo = Mock()
         mock_radar_state.leadTwo.status = False
-        
+
         # Mock the file system operations
         with patch('builtins.open', create=True) as mock_open_func:
             # Set up the mock file object
             mock_file = Mock()
             mock_open_func.return_value.__enter__.return_value = mock_file
             mock_open_func.return_value.__exit__.return_value = None
-            
+
             # Call the method
             self.controls._adaptive_gpu_management(mock_cs, mock_sm)
-            
+
             # Verify that we tried to set governor to performance mode
             mock_open_func.assert_called_with("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w")
             # The write call could have been with "performance" or "ondemand" depending on conditions
             self.assertTrue(mock_file.write.called)
+
+    def test_circuit_breaker_stable_period_logic(self):
+        """Test the circuit breaker logic fix to ensure stable period is respected."""
+        breaker_name = 'adaptive_gains'
+        cb = self.controls._circuit_breakers[breaker_name]
+
+        # Initially should be enabled
+        self.assertTrue(self.controls._check_circuit_breaker(breaker_name))
+
+        # Trigger the circuit breaker to disable it
+        for i in range(3):  # Hit max errors
+            self.controls._trigger_circuit_breaker(breaker_name, f"Test error {i}")
+
+        # Should be disabled now
+        self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+
+        # Manually set the last error time to simulate time passing
+        original_time = time.monotonic()
+        # Set last_error_time to 12 seconds ago (past basic cooldown of 10s)
+        cb['last_error_time'] = original_time - 12.0
+
+        # Even though cooldown has passed, should NOT reset yet because we haven't had
+        # the required stable period (cooldown_period / 2 = 5 seconds)
+        # Total required time = cooldown (10s) + stable period (5s) = 15s
+        # But we only waited 12s, so it should still be disabled
+        self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+
+        # Now set last_error_time to 16 seconds ago (past both cooldown and stable period)
+        cb['last_error_time'] = original_time - 16.0
+
+        # Should now be able to reset (if we also update last_error_reset_time)
+        cb['last_error_reset_time'] = original_time - 16.0
+        self.assertTrue(self.controls._check_circuit_breaker(breaker_name))
+
+        # Verify it reset properly
+        self.assertTrue(cb['enabled'])
+        self.assertEqual(cb['error_count'], 0)
 
 
 if __name__ == '__main__':
