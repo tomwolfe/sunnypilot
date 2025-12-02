@@ -15,7 +15,14 @@ from openpilot.common.realtime import config_realtime_process, Priority
 DT_NAV = 1.0
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.navd.helpers import Coordinate, distance_along_geometry, parse_banner_instructions
-from openpilot.selfdrive.navd.safety import NavSafetyManager
+import importlib.util
+import os
+# Directly load the safety module from the navd directory to avoid naming collision
+safety_module_path = os.path.join(os.path.dirname(__file__), 'navd', 'safety.py')
+spec = importlib.util.spec_from_file_location("safety", safety_module_path)
+safety_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(safety_module)
+NavSafetyManager = safety_module.NavSafetyManager
 
 
 class RouteEngine:

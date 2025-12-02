@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from unittest.mock import Mock
 from openpilot.sunnypilot.navd.helpers import Coordinate, distance_along_geometry
-from openpilot.selfdrive.navd.safety import NavSafetyManager
+from selfdrive.navd.safety import NavSafetyManager
 # Import RouteEngine from the main navd module (selfdrive/navd.py)
-from openpilot.selfdrive.navd import RouteEngine
+from selfdrive.navd import RouteEngine
 
 
 class TestCoordinate:
