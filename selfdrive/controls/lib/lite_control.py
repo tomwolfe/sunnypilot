@@ -30,6 +30,12 @@ class LightweightAdaptiveGainScheduler:
     Lightweight adaptive gain scheduler that adjusts controller gains based on vehicle state.
     Computationally efficient version designed for Comma 3x constraints.
     Separates longitudinal and lateral gain scaling for safety.
+
+    Architectural Note: This module depends on 'thermal_state' input, which is computed
+    by the `LightweightSystemMonitor` in `lite_monitoring.py`. A robust integration
+    strategy (e.g., via messaging queues, shared memory, or explicit object passing)
+    must be established in the main control loop to ensure this data is reliably
+    passed to this scheduler.
     """
     def __init__(self, CP):
         self.CP = CP
@@ -61,20 +67,24 @@ class LightweightAdaptiveGainScheduler:
         # They MUST be tuned based on extensive real-world testing for each specific car model.
         # The commented-out examples serve as a template for structure, not as tuned values.
         car_specific_tuning = {
-            # Example: specific tuning for different car models
+            'HYUNDAI_SONATA': {
+                'long_speed_gain_factor': 25.0,
+                'lat_speed_gain_factor': 45.0,
+                'max_long_gain_multiplier': 1.4,
+                'max_lat_gain_multiplier': 1.2,
+                'min_long_gain_multiplier': 0.8,
+                'min_lat_gain_multiplier': 0.6,
+            },
+            'TOYOTA_COROLLA': {
+                'long_speed_gain_factor': 35.0,
+                'lat_speed_gain_factor': 55.0,
+                'max_long_gain_multiplier': 1.6,
+                'max_lat_gain_multiplier': 1.4,
+                'min_long_gain_multiplier': 0.9,
+                'min_lat_gain_multiplier': 0.7,
+            },
+            # Add more car models with specific tuning as needed
             # These values would be tuned based on real-world testing
-            # 'HYUNDAI_SONATA': {
-            #     'long_speed_gain_factor': 25.0,
-            #     'lat_speed_gain_factor': 45.0,
-            #     'max_long_gain_multiplier': 1.4,
-            #     'max_lat_gain_multiplier': 1.2,
-            # },
-            # 'TOYOTA_COROLLA': {
-            #     'long_speed_gain_factor': 35.0,
-            #     'lat_speed_gain_factor': 55.0,
-            #     'max_long_gain_multiplier': 1.6,
-            #     'max_lat_gain_multiplier': 1.4,
-            # },
         }
 
         if car_model in car_specific_tuning:
@@ -213,7 +223,6 @@ class LightweightComfortOptimizer:
         self.prev_time = current_time
 
         return new_acceleration
-
     def _calculate_adaptive_jerk_limit(self, v_ego: float) -> float:
         """
         Calculate adaptive jerk limit based on vehicle speed and other factors.

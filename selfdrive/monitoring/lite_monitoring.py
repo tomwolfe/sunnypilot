@@ -58,7 +58,7 @@ class LightweightSafetyChecker:
                 # A simple linear scaling, but ensuring it doesn't go too high
                 # Start with a base of 0.3 and add a scaled amount based on steerMax
                 scaled_rate = 0.3 + (CP.steerMax / 10.0) # Example: steerMax 1.0 -> 0.4 rad/s, steerMax 2.0 -> 0.5 rad/s
-                base_thresholds['max_steering_rate'] = min(scaled_rate, 0.6) # Cap at 0.6 rad/s for safety
+                base_thresholds['max_steering_rate'] = min(scaled_rate, 0.8) # Cap at 0.8 rad/s, requires further tuning for safety
 
         return base_thresholds
 
@@ -133,6 +133,29 @@ class LightweightSafetyChecker:
                 safety_report['violations'].append('forward_collision_imminent')
                 safety_report['recommended_action'] = 'decelerate'
 
+        # Enhanced forward collision check - handles all lead vehicle scenarios
+        if (hasattr(radar_state, 'leadOne') and
+            radar_state.leadOne.status and
+            car_state.vEgo > 0.1):
+
+            # Calculate relative speed: positive means approaching, negative means moving away or lead is faster
+            relative_speed = car_state.vEgo - radar_state.leadOne.vRel
+
+            # Only calculate TTC if vehicles are approaching each other (relative_speed > 0)
+            if relative_speed > 0.1:
+                ttc = radar_state.leadOne.dRel / relative_speed
+            else:
+                # If relative speed is 0 or negative, vehicles are not approaching (lead is moving away or faster)
+                # Set TTC to infinity since there's no immediate collision risk
+                ttc = float('inf')
+
+            # Check for potential collision based on TTC or distance
+            min_safe_distance_calculated = car_state.vEgo * self.safety_thresholds['min_time_gap']
+            if ttc < self.safety_thresholds['min_time_gap'] or radar_state.leadOne.dRel < min_safe_distance_calculated:
+                # This is a safety-critical situation regardless of current acceleration
+                safety_report['safe'] = False
+                safety_report['violations'].append('forward_collision_imminent')
+                safety_report['recommended_action'] = 'decelerate'
         return safety_report
 
     def trigger_fail_safe(self, safety_report: Dict, car_state) -> Dict:
@@ -279,7 +302,7 @@ class LightweightSystemMonitor:
         # 70°C to 90°C = 0.5 to 1.0 (more aggressive linear increase)
         temp_points = [0.0, 40.0, 70.0, 90.0] # Temperatures in Celsius
         thermal_state_values = [0.0, 0.0, 0.5, 1.0] # Normalized thermal state values
-        thermal_state = float(np.interp(max_temp, temp_points, thermal_state_values))
+        thermal_state = float(np.interp(max(cpu_temp, gpu_temp), temp_points, thermal_state_values))
 
         return thermal_state
 
