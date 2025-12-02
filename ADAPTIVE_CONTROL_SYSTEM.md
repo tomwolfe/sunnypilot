@@ -28,16 +28,17 @@ This system implements advanced adaptive control features for the openpilot cont
 ## Safety Measures and Risk Mitigation
 
 ### Circuit Breaker System
-The system implements a circuit breaker pattern to prevent cascading failures:
+The system implements an enhanced circuit breaker pattern to prevent cascading failures:
 
-- **Adaptive Gains Circuit Breaker**: Limits to 5 errors, 5-second cooldown
-- **Radar-Camera Fusion Circuit Breaker**: Limits to 3 errors, 10-second cooldown  
-- **Vision Model Circuit Breaker**: Limits to 10 errors, 30-second cooldown
+- **Adaptive Gains Circuit Breaker**: Reduced to 3 errors (was 5), 10-second cooldown (was 5s) with root cause analysis
+- **Radar-Camera Fusion Circuit Breaker**: 3 errors, 15-second cooldown (was 10s) with root cause analysis
+- **Vision Model Circuit Breaker**: Reduced to 5 errors (was 10), 45-second cooldown (was 30s) with root cause analysis
 
 When triggered, circuit breakers:
 - Disable the problematic feature
-- Fall back to safe default behavior
-- Allow automatic recovery after cooldown period
+- Fall back to conservative, safe default behavior
+- Include root cause analysis to identify systematic issues
+- Prevent rapid resets by requiring stable operation period
 - Log detailed error information for debugging
 
 ### Validation and Safety Checks
@@ -51,6 +52,13 @@ When triggered, circuit breakers:
 - Graceful fallback to default values when errors occur
 - Extensive logging for debugging and analysis
 - Isolated error handling to prevent system-wide failures
+
+### Additional Safety Improvements
+- **Conservative Fallback Gains**: Default gains reduced from (0.5, 0.05, etc.) to (0.3, 0.03, etc.) for enhanced safety
+- **Fixed Curvature Dependency**: Resolved missing self.curvature reference by calculating curvature directly from vehicle state
+- **Improved Longitudinal Gain Extraction**: Added safe fallback when adaptive gains structure is unexpected
+- **Adaptive GPU Management**: Intelligent switching between ondemand (thermal safety) and performance (critical situations) governors
+- **Root Cause Analysis**: Circuit breakers now track error patterns to identify systematic issues and cascade failures
 
 ## Debugging and Telemetry
 
@@ -69,12 +77,14 @@ When triggered, circuit breakers:
 
 ## Risk Mitigation Strategies
 
-1. **Complexity Management**: Modular design separates concerns, circuit breakers provide isolation
+1. **Complexity Management**: Modular design separates concerns, enhanced circuit breakers provide isolation with root cause analysis
 2. **Debugging Support**: Comprehensive logging at all system levels
 3. **Heuristic Management**: Validation and bounds checking on all parameters
-4. **Cascading Failure Prevention**: Circuit breaker system with isolation
-5. **Performance Overhead**: Optimized algorithms and caching where appropriate
+4. **Cascading Failure Prevention**: Enhanced circuit breaker system with reduced error tolerance and pattern analysis
+5. **Performance Overhead**: Optimized algorithms and adaptive thermal management
 6. **Test Coverage**: Unit tests for all major components
+7. **Safety-First Design**: Conservative fallback behaviors and reduced gain margins for critical situations
+8. **Thermal Performance Balance**: Adaptive governor switching that temporarily boosts performance during critical operations while maintaining overall thermal safety
 
 ## Performance Considerations
 
