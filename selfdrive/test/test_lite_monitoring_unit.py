@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-import time
 
 # Using builtin object as a simple mock class since unittest import is banned
 class Mock:
