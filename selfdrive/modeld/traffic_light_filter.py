@@ -143,10 +143,9 @@ class TrafficLightTemporalFilter:
     else:
       smoothed_confidence = initial_confidence
 
-    # Apply hysteresis to prevent rapid state changes
-    # Use hysteresis_factor to adjust the threshold based on the previous state
-    # Different states may require different confidence levels to transition from
-    adjusted_confidence_threshold = self.min_confidence_for_change
+    # Only change state if we have sufficient confidence AND different from previous state
+    # Initialize final_state with a value that includes all possible states to help mypy
+    final_state: TrafficLightState = self.prev_state  # Explicitly specify the type to include all states
 
     # Apply hysteresis based on the previous state and the hysteresis factor
     if self.prev_state != TrafficLightState.UNKNOWN:
@@ -158,7 +157,6 @@ class TrafficLightTemporalFilter:
         required_difference = self.hysteresis_factor * (1.0 - self.prev_confidence)
         adjusted_confidence_threshold = max(self.min_confidence_for_change, self.prev_confidence + required_difference)
 
-    # Only change state if we have sufficient confidence AND different from previous state
     if current_state != self.prev_state:
       # Special handling for transitions from UNKNOWN state
       if self.prev_state == TrafficLightState.UNKNOWN:
