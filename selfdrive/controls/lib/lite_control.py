@@ -126,6 +126,7 @@ class LightweightAdaptiveGainScheduler:
 
         # Lateral thermal factor (max 10% reduction to maintain steering capability)
         lat_thermal_factor = max(0.9, 1.0 - thermal_state * 0.1)
+        self.lat_thermal_filter.update(lat_thermal_factor)
         cloudlog.debug(f"GainScheduler: v_ego={v_ego:.2f} m/s, thermal_state={thermal_state:.2f}")
         cloudlog.debug(f"GainScheduler: Long Speed Factor={long_speed_factor:.2f}, Filtered Long Speed Factor={self.long_speed_filter.x:.2f}")
         cloudlog.debug(f"GainScheduler: Lat Speed Factor={lat_speed_factor:.2f}, Filtered Lat Speed Factor={self.lat_speed_filter.x:.2f}")
@@ -156,7 +157,7 @@ class LightweightAdaptiveGainScheduler:
             'lateral': {
                 'kp': base_lat_kp * self.lat_speed_filter.x * self.lat_thermal_filter.x,
                 'ki': base_lat_ki * self.lat_speed_filter.x * self.lat_thermal_filter.x,
-                'kd': base_lat_kd * self.lat_speed_filter.x * self.lat_thermal_filter.x,  # Fixed: Using proper kd value instead of kf
+                'kd': base_lat_kd * self.lat_speed_filter.x * self.lat_thermal_filter.x,
                 'kf': base_lat_kf * self.lat_speed_filter.x * self.lat_thermal_filter.x
             }
         }
