@@ -131,7 +131,9 @@ class Controls(ControlsExt):
         cloudlog.warning(f"deviceState is stale (last update {current_time - self.last_device_state_update_time:.2f}s ago). Assuming high thermal state.")
         thermal_state = 1.0 # Max thermal state for safety
 
-    adaptive_gains = self.gain_scheduler.get_adaptive_gains(CS.vEgo, thermal_state)
+    # Enhanced adaptive gains calculation considering multiple factors
+    driving_context = self._calculate_driving_context(CS)
+    adaptive_gains = self._calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
 
     # Update VehicleModel
     lp = self.sm['liveParameters']
@@ -239,9 +241,19 @@ class Controls(ControlsExt):
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                       self.steer_limited_by_safety, self.desired_curvature,
-                                                       self.calibrated_pose, curvature_limited, lat_delay, adaptive_gains)
+
+    # Use the adaptive gains for lateral control - pass more detailed gain information if available
+    if isinstance(adaptive_gains, dict) and 'lateral' in adaptive_gains:
+        # Pass specific lateral adaptive gains to the controller
+        lateral_gains = adaptive_gains['lateral']
+        steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                           self.steer_limited_by_safety, self.desired_curvature,
+                                                           self.calibrated_pose, curvature_limited, lat_delay, lateral_gains)
+    else:
+        # Fall back to original approach
+        steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                           self.steer_limited_by_safety, self.desired_curvature,
+                                                           self.calibrated_pose, curvature_limited, lat_delay, adaptive_gains)
 
     # Enhanced saturation detection with smoother recovery
     saturation_detected = False
@@ -331,6 +343,121 @@ class Controls(ControlsExt):
     )
 
     return CC, lac_log
+
+  def _calculate_driving_context(self, CS):
+    """
+    Calculate driving context based on vehicle state, road conditions, and environment.
+
+    Args:
+        CS: CarState message
+
+    Returns:
+        dict: Context information including road type, traffic density, weather indicators, etc.
+    """
+    context = {
+        'is_curvy_road': False,
+        'traffic_density': 'low',  # low, medium, high
+        'weather_condition': 'normal',  # normal, rain, snow, fog
+        'time_of_day': 'day',  # day, night
+        'road_quality': 'good',  # good, medium, poor
+        'current_curvature': abs(self.curvature),
+        'lateral_accel': CS.vEgo**2 * abs(self.curvature) if CS.vEgo > 1.0 else 0.0,
+        'long_accel_magnitude': abs(CS.aEgo),
+        'steering_activity': abs(CS.steeringRateDeg)  # How much steering is happening
+    }
+
+    # Determine if on a curvy road based on recent curvature history
+    if hasattr(self, '_curvature_history'):
+        avg_curvature = np.mean(np.abs(self._curvature_history))
+        context['is_curvy_road'] = avg_curvature > 0.001  # Adjust threshold as needed
+
+        # Update history (keep last 100 samples)
+        self._curvature_history.append(context['current_curvature'])
+        if len(self._curvature_history) > 100:
+            self._curvature_history.pop(0)
+    else:
+        self._curvature_history = [context['current_curvature']]
+
+    # Estimate traffic density based on radar data if available
+    if 'radarState' in self.sm and self.sm.valid['radarState']:
+        radar_state = self.sm['radarState']
+        close_leads = 0
+        for lead in [radar_state.leadOne, radar_state.leadTwo]:
+            if lead.status and lead.dRel < 50.0:  # Within 50m
+                close_leads += 1
+        if close_leads >= 2:
+            context['traffic_density'] = 'high'
+        elif close_leads == 1:
+            context['traffic_density'] = 'medium'
+        else:
+            context['traffic_density'] = 'low'
+
+    return context
+
+  def _calculate_contextual_adaptive_gains(self, v_ego, thermal_state, context):
+    """
+    Calculate adaptive gains based on vehicle speed, thermal state and driving context.
+
+    Args:
+        v_ego: Vehicle speed in m/s
+        thermal_state: Thermal stress factor (0.0-1.0)
+        context: Driving context information
+
+    Returns:
+        dict: Adaptive gain parameters
+    """
+    # Base gains that get adjusted based on context
+    base_gains = {
+        'lateral': {
+            'steer_kp': 1.0,
+            'steer_ki': 0.1,
+            'steer_kd': 0.01,
+        },
+        'longitudinal': {
+            'accel_kp': 1.0,
+            'accel_ki': 0.1,
+        }
+    }
+
+    # Speed-dependent adjustments
+    speed_factor = min(1.0, v_ego / 30.0)  # Normalize to 30 m/s (about 108 km/h)
+    speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
+
+    # Thermal adjustments
+    thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
+
+    # Context-based adjustments
+    context_adjustment = 1.0
+
+    # Reduce gains on curvy roads for smoother steering
+    if context['is_curvy_road']:
+        context_adjustment *= 0.85
+
+    # Increase caution in high traffic
+    if context['traffic_density'] == 'high':
+        context_adjustment *= 0.9
+
+    # Reduce gains in poor weather (if we can detect it)
+    if context['weather_condition'] != 'normal':
+        context_adjustment *= 0.9
+
+    # Apply combined adjustments
+    combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
+
+    # Apply adjustments to base gains
+    adaptive_gains = {
+        'lateral': {
+            'steer_kp': base_gains['lateral']['steer_kp'] * combined_adjustment,
+            'steer_ki': base_gains['lateral']['steer_ki'] * combined_adjustment,
+            'steer_kd': base_gains['lateral']['steer_kd'] * combined_adjustment,
+        },
+        'longitudinal': {
+            'accel_kp': base_gains['longitudinal']['accel_kp'] * combined_adjustment,
+            'accel_ki': base_gains['longitudinal']['accel_ki'] * combined_adjustment,
+        }
+    }
+
+    return adaptive_gains
 
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
