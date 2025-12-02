@@ -214,11 +214,17 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             vision_reliability = closest_vision_lead.prob  # Vision probability
 
             # Fuse distance, velocity, and acceleration based on reliability
+            # Use consistent acceleration values - both should be absolute lead acceleration
+            # If vision model provides relative acceleration (aRel), we need to convert it to absolute
+            # by adding ego vehicle's acceleration: aLead = aRel + aEgo
             total_reliability = radar_reliability + vision_reliability
             if total_reliability > 0:
                 fused_dRel = (lead_radar.dRel * radar_reliability + closest_vision_lead.dRel * vision_reliability) / total_reliability
                 fused_vRel = (lead_radar.vRel * radar_reliability + closest_vision_lead.vRel * vision_reliability) / total_reliability
-                fused_aLead = (lead_radar.aLeadK * radar_reliability + closest_vision_lead.aRel * vision_reliability) / total_reliability
+                # Ensure we're using consistent acceleration values (both as absolute lead acceleration)
+                # Check if vision model has absolute lead acceleration (aLeadK) available
+                vision_aLead = closest_vision_lead.aLeadK if hasattr(closest_vision_lead, 'aLeadK') and closest_vision_lead.aLeadK != 0 else closest_vision_lead.aRel
+                fused_aLead = (lead_radar.aLeadK * radar_reliability + vision_aLead * vision_reliability) / total_reliability
 
                 # Update the lead data used by the planner with fused values
                 # This affects the x, v, a arrays that are passed to MPC
@@ -234,11 +240,13 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # This helps reduce the "jitter" that can occur with individual sensor readings
     if hasattr(self, '_prev_fused_values'):
         # Apply light smoothing between current and previous fused values
-        alpha = 0.1  # Smoothing factor (0.1 = 10% of previous, 90% of current)
+        # Alpha = 0.1 means 10% previous value, 90% current value - this provides stability while maintaining responsiveness
+        alpha = 0.1  # Smoothing factor justification: Balance between noise reduction and responsiveness to actual changes
         prev_x, prev_v, prev_a = self._prev_fused_values
 
         # Only apply smoothing if values aren't too different (to preserve responsiveness to real changes)
-        max_change_threshold = [5.0, 5.0, 5.0]  # Max allowed change before preserving current values
+        # Threshold justification: 5m distance change, 5m/s velocity change, 5m/s^2 acceleration change are significant enough to bypass smoothing
+        max_change_threshold = [5.0, 5.0, 5.0]  # Max allowed change before preserving current values without smoothing
 
         for i in range(min(len(enhanced_x), len(prev_x))):
             if abs(enhanced_x[i] - prev_x[i]) < max_change_threshold[0]:
@@ -276,6 +284,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if lead_radar.status:
       # Distance-based reliability: closer objects more reliable
+      # Threshold justification: At 50m distance, reliability is 1.0; decreases to 0.1 at 500m
+      # This reflects radar accuracy characteristics where closer objects have more reliable measurements
       distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
 
       # Adjust reliability based on distance

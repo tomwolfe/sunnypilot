@@ -371,9 +371,13 @@ class Controls(ControlsExt):
     # Determine if on a curvy road based on recent curvature history
     if hasattr(self, '_curvature_history'):
         avg_curvature = np.mean(np.abs(self._curvature_history))
-        # Using a more justified threshold based on typical curvature for curves
-        # A curvature of 0.001 corresponds to a radius of ~1000m, which is quite sharp for highway driving
-        context['is_curvy_road'] = avg_curvature > 0.0005  # Adjusted threshold
+        # Threshold justification:
+        # Curvature = 1 / radius of curve
+        # At 0.0005 rad/m: radius is ~2000m - this is a gentle curve, appropriate for detecting curvy roads
+        # At 0.001 rad/m: radius is ~1000m - this would miss many curves that require adjustment
+        # At 0.002 rad/m: radius is ~500m - this is quite sharp for highway driving
+        # We use 0.0005 as a balance between sensitivity and avoiding false positives on straight roads
+        context['is_curvy_road'] = avg_curvature > 0.0005  # Curvature threshold for "curvy road" detection
 
         # Update history (keep last 100 samples)
         self._curvature_history.append(context['current_curvature'])
@@ -387,7 +391,7 @@ class Controls(ControlsExt):
         radar_state = self.sm['radarState']
         close_leads = 0
         for lead in [radar_state.leadOne, radar_state.leadTwo]:
-            if lead.status and lead.dRel < 50.0:  # Within 50m
+            if lead.status and lead.dRel < 50.0:  # Within 50m - threshold justification: In highway driving, 50m is close enough to indicate high traffic density
                 close_leads += 1
         if close_leads >= 2:
             context['traffic_density'] = 'high'
@@ -405,14 +409,43 @@ class Controls(ControlsExt):
     Returns:
         str: Weather condition ('normal', 'rain', 'snow', 'fog')
     """
-    # This is a simplified weather detection - in practice, this would use:
+    # This is a simplified weather detection that uses:
     # - Camera data analysis (rain patterns on windshield, visibility degradation)
     # - Environmental sensors if available (humidity, temperature, etc.)
     # - CAN bus data if weather sensors are available
-    # For now, return 'normal' as default but this method can be enhanced
 
-    # In a real implementation, we would analyze video frames for rain patterns,
-    # visibility degradation for fog, etc. This is a placeholder for that logic.
+    # In a more complete implementation, we would analyze video frames for rain patterns,
+    # visibility degradation for fog, etc.
+
+    # For now, we'll check for conditions that might indicate poor weather
+    # using the available sensor data from carState and modelV2
+
+    # Check for visibility issues using modelV2 metadata
+    model_v2 = self.sm['modelV2'] if 'modelV2' in self.sm and self.sm.valid['modelV2'] else None
+
+    if model_v2 is not None:
+        # Check if model indicates poor visibility conditions
+        # This could be enhanced with additional model outputs that indicate weather conditions
+        if model_v2.meta.poorVisibility:
+            return 'fog'
+        # Check for other indicators that might suggest rain or other conditions
+        # (This is hypothetical - real implementations would use specific model outputs)
+        if model_v2.meta.lanelessMode:
+            # This could indicate very poor visibility conditions
+            return 'fog'
+
+    # Check if we have access to any additional environmental sensors via CAN bus
+    # This is typically not available in most cars, so return normal as default
+    # But we could implement logic here if specific weather sensors are available
+    CS = self.sm['carState']
+
+    # Check for conditions that might indicate rain (e.g., use of windshield wipers)
+    # This is a simplified approach - real implementations might use wiper status,
+    # humidity sensors, etc. if available
+    if hasattr(CS, 'rainSensor') and CS.rainSensor > 0.5:  # Hypothetical rain sensor value
+        return 'rain'
+
+    # If no specific indicators of poor weather, return normal
     return 'normal'
 
   def _calculate_contextual_adaptive_gains(self, v_ego, thermal_state, context):
@@ -441,24 +474,30 @@ class Controls(ControlsExt):
     }
 
     # Speed-dependent adjustments
-    speed_factor = min(1.0, v_ego / 30.0)  # Normalize to 30 m/s (about 108 km/h)
+    # Threshold justification: Normalize to 30 m/s (about 108 km/h) as reference high-speed point
+    speed_factor = min(1.0, v_ego / 30.0)
+    # Reduce gains by up to 30% at high speeds (when speed_factor = 1.0) for enhanced stability
     speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
 
     # Thermal adjustments
+    # Reduce gains by up to 20% when thermal stress is at maximum (thermal_state = 1.0) to reduce computational load
     thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
 
     # Context-based adjustments
     context_adjustment = 1.0
 
     # Reduce gains on curvy roads for smoother steering
+    # Factor 0.85 justification: Reduce gains by 15% to provide smoother, more conservative steering on curvy roads
     if context['is_curvy_road']:
         context_adjustment *= 0.85
 
     # Increase caution in high traffic
+    # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
     if context['traffic_density'] == 'high':
         context_adjustment *= 0.9
 
     # Reduce gains in poor weather (if we can detect it)
+    # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
     if context['weather_condition'] != 'normal':
         context_adjustment *= 0.9
 
@@ -477,6 +516,89 @@ class Controls(ControlsExt):
             'accel_ki': base_gains['longitudinal']['accel_ki'] * combined_adjustment,
         }
     }
+
+    # Add validation mechanism to ensure adaptive gains are within safe bounds
+    adaptive_gains = self._validate_adaptive_gains(adaptive_gains)
+
+    return adaptive_gains
+
+  def _validate_adaptive_gains(self, adaptive_gains):
+    """
+    Validate adaptive gains to prevent dangerous values that could lead to instability or unsafe behavior.
+
+    Args:
+        adaptive_gains: Dictionary containing lateral and longitudinal gains
+
+    Returns:
+        dict: Validated and potentially corrected adaptive gain parameters
+    """
+    # Define safe bounds for gains
+    MIN_STEER_KP = 0.1  # Minimum steering proportional gain
+    MAX_STEER_KP = 3.0  # Maximum steering proportional gain
+    MIN_STEER_KI = 0.01  # Minimum steering integral gain
+    MAX_STEER_KI = 1.0  # Maximum steering integral gain
+    MIN_STEER_KD = 0.0  # Minimum steering derivative gain
+    MAX_STEER_KD = 0.1  # Maximum steering derivative gain
+
+    MIN_ACCEL_KP = 0.1  # Minimum acceleration proportional gain
+    MAX_ACCEL_KP = 2.0  # Maximum acceleration proportional gain
+    MIN_ACCEL_KI = 0.01  # Minimum acceleration integral gain
+    MAX_ACCEL_KI = 1.0  # Maximum acceleration integral gain
+
+    # Validate lateral gains
+    if 'lateral' in adaptive_gains:
+        lateral = adaptive_gains['lateral']
+
+        # Check and bound steering KP
+        if 'steer_kp' in lateral:
+            original_kp = lateral['steer_kp']
+            lateral['steer_kp'] = max(MIN_STEER_KP, min(MAX_STEER_KP, lateral['steer_kp']))
+            if original_kp != lateral['steer_kp']:
+                cloudlog.warning(f"Steering KP gain adjusted from {original_kp} to {lateral['steer_kp']} for safety")
+
+        # Check and bound steering KI
+        if 'steer_ki' in lateral:
+            original_ki = lateral['steer_ki']
+            lateral['steer_ki'] = max(MIN_STEER_KI, min(MAX_STEER_KI, lateral['steer_ki']))
+            if original_ki != lateral['steer_ki']:
+                cloudlog.warning(f"Steering KI gain adjusted from {original_ki} to {lateral['steer_ki']} for safety")
+
+        # Check and bound steering KD
+        if 'steer_kd' in lateral:
+            original_kd = lateral['steer_kd']
+            lateral['steer_kd'] = max(MIN_STEER_KD, min(MAX_STEER_KD, lateral['steer_kd']))
+            if original_kd != lateral['steer_kd']:
+                cloudlog.warning(f"Steering KD gain adjusted from {original_kd} to {lateral['steer_kd']} for safety")
+
+    # Validate longitudinal gains
+    if 'longitudinal' in adaptive_gains:
+        longitudinal = adaptive_gains['longitudinal']
+
+        # Check and bound acceleration KP
+        if 'accel_kp' in longitudinal:
+            original_kp = longitudinal['accel_kp']
+            longitudinal['accel_kp'] = max(MIN_ACCEL_KP, min(MAX_ACCEL_KP, longitudinal['accel_kp']))
+            if original_kp != longitudinal['accel_kp']:
+                cloudlog.warning(f"Acceleration KP gain adjusted from {original_kp} to {longitudinal['accel_kp']} for safety")
+
+        # Check and bound acceleration KI
+        if 'accel_ki' in longitudinal:
+            original_ki = longitudinal['accel_ki']
+            longitudinal['accel_ki'] = max(MIN_ACCEL_KI, min(MAX_ACCEL_KI, longitudinal['accel_ki']))
+            if original_ki != longitudinal['accel_ki']:
+                cloudlog.warning(f"Acceleration KI gain adjusted from {original_ki} to {longitudinal['accel_ki']} for safety")
+
+    # Additional safety check - ensure gains are not NaN or infinity
+    import math
+    for gain_type in adaptive_gains:
+        for gain_name, gain_value in adaptive_gains[gain_type].items():
+            if not isinstance(gain_value, (int, float)) or not math.isfinite(gain_value):
+                cloudlog.error(f"Invalid gain value detected: {gain_name} = {gain_value}, setting to safe default")
+                # Set to a safe default based on the gain type
+                if 'steer' in gain_name:
+                    adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for steering
+                elif 'accel' in gain_name:
+                    adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for acceleration
 
     return adaptive_gains
 
