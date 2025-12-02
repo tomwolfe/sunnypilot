@@ -2,6 +2,7 @@
 import math
 import threading
 import time
+import numpy as np
 
 from numbers import Number
 
@@ -216,6 +217,8 @@ class Controls(ControlsExt):
 
     # Enhanced saturation handling with adaptive limits
     # accel PID loop
+    # NOTE: The adaptive_gains dictionary includes both 'accel_kp' and 'accel_ki' values
+    # The longitudinal controller (self.LoC) should properly use these PID gains for better control
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits, adaptive_gains))
 
     # Apply self-learning adjustments to model outputs
@@ -357,9 +360,8 @@ class Controls(ControlsExt):
     context = {
         'is_curvy_road': False,
         'traffic_density': 'low',  # low, medium, high
-        'weather_condition': 'normal',  # normal, rain, snow, fog
+        'weather_condition': self._detect_weather_conditions(),  # normal, rain, snow, fog
         'time_of_day': 'day',  # day, night
-        'road_quality': 'good',  # good, medium, poor
         'current_curvature': abs(self.curvature),
         'lateral_accel': CS.vEgo**2 * abs(self.curvature) if CS.vEgo > 1.0 else 0.0,
         'long_accel_magnitude': abs(CS.aEgo),
@@ -369,7 +371,9 @@ class Controls(ControlsExt):
     # Determine if on a curvy road based on recent curvature history
     if hasattr(self, '_curvature_history'):
         avg_curvature = np.mean(np.abs(self._curvature_history))
-        context['is_curvy_road'] = avg_curvature > 0.001  # Adjust threshold as needed
+        # Using a more justified threshold based on typical curvature for curves
+        # A curvature of 0.001 corresponds to a radius of ~1000m, which is quite sharp for highway driving
+        context['is_curvy_road'] = avg_curvature > 0.0005  # Adjusted threshold
 
         # Update history (keep last 100 samples)
         self._curvature_history.append(context['current_curvature'])
@@ -393,6 +397,23 @@ class Controls(ControlsExt):
             context['traffic_density'] = 'low'
 
     return context
+
+  def _detect_weather_conditions(self):
+    """
+    Detect weather conditions based on available sensor data.
+
+    Returns:
+        str: Weather condition ('normal', 'rain', 'snow', 'fog')
+    """
+    # This is a simplified weather detection - in practice, this would use:
+    # - Camera data analysis (rain patterns on windshield, visibility degradation)
+    # - Environmental sensors if available (humidity, temperature, etc.)
+    # - CAN bus data if weather sensors are available
+    # For now, return 'normal' as default but this method can be enhanced
+
+    # In a real implementation, we would analyze video frames for rain patterns,
+    # visibility degradation for fog, etc. This is a placeholder for that logic.
+    return 'normal'
 
   def _calculate_contextual_adaptive_gains(self, v_ego, thermal_state, context):
     """

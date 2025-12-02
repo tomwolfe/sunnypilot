@@ -321,7 +321,17 @@ class Tici(HardwareBase):
     """
     Optimize memory management for Snapdragon 845 by configuring kernel parameters
     for better real-time performance and reduced fragmentation.
+
+    NOTE: This method still uses direct sysfs access, but in a production system,
+    these optimizations should be moved to a dedicated system service or init script
+    that runs with appropriate privileges to avoid security risks.
     """
+    # Check if we have the necessary permissions before attempting to write
+    # This is a basic check to make the code more robust
+    if os.geteuid() != 0:
+      cloudlog.warning("Insufficient privileges to optimize memory management. These settings should be configured by system service.")
+      return
+
     try:
       # Enable memory compaction to reduce fragmentation
       sudo_write("1", "/proc/sys/vm/compact_memory")
@@ -350,7 +360,15 @@ class Tici(HardwareBase):
     """
     Optimize CPU performance for Snapdragon 845 by configuring additional parameters
     for better real-time performance.
+
+    NOTE: This method still uses direct sysfs access, but in a production system,
+    these optimizations should be moved to a dedicated system service or init script
+    that runs with appropriate privileges to avoid security risks.
     """
+    if os.geteuid() != 0:
+      cloudlog.warning("Insufficient privileges to optimize CPU performance. These settings should be configured by system service.")
+      return
+
     try:
       # Configure CPU frequency scaling for better performance consistency
       for n in ('0', '4'):  # Silver and Gold cluster policies
@@ -387,15 +405,25 @@ class Tici(HardwareBase):
       case = ThermalZone("case")
       intake = ThermalZone("intake")
       exhaust = ThermalZone("exhaust")
-    return ThermalConfig(cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] +
-                             [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
-                         gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
-                         dsp=ThermalZone("compute-hvx-usr"),
-                         memory=ThermalZone("ddr-usr"),
-                         pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
-                         intake=intake,
-                         exhaust=exhaust,
-                         case=case)
+
+    thermal_config = ThermalConfig(cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] +
+                                   [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
+                                 gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
+                                 dsp=ThermalZone("compute-hvx-usr"),
+                                 memory=ThermalZone("ddr-usr"),
+                                 pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
+                                 intake=intake,
+                                 exhaust=exhaust,
+                                 case=case)
+
+    # Add custom throttling thresholds for Snapdragon 845 if available
+    try:
+        thermal_config.thresholds = self.get_hw_throttling_thresholds()
+    except Exception:
+        # If getting custom thresholds fails, proceed with default configuration
+        pass
+
+    return thermal_config
 
   def get_hw_throttling_thresholds(self):
     """
@@ -424,6 +452,30 @@ class Tici(HardwareBase):
         "fan_speed_max": 100,  # Maximum fan speed percentage
       }
     }
+
+  def get_thermal_config(self):
+    # Get the base thermal configuration
+    intake, exhaust, case = None, None, None
+    if self.get_device_type() == "mici":
+      case = ThermalZone("case")
+      intake = ThermalZone("intake")
+      exhaust = ThermalZone("exhaust")
+
+    # Create the base thermal config
+    thermal_config = ThermalConfig(cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] +
+                                   [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
+                                 gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
+                                 dsp=ThermalZone("compute-hvx-usr"),
+                                 memory=ThermalZone("ddr-usr"),
+                                 pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
+                                 intake=intake,
+                                 exhaust=exhaust,
+                                 case=case)
+
+    # Add the custom throttling thresholds for Snapdragon 845
+    thermal_config.thresholds = self.get_hw_throttling_thresholds()
+
+    return thermal_config
 
   def set_display_power(self, on):
     try:
@@ -502,9 +554,12 @@ class Tici(HardwareBase):
     gpio_init(GPIO.SOM_ST_IO, True)
     gpio_set(GPIO.SOM_ST_IO, 1)
 
-    # Apply hardware-specific optimizations for Snapdragon 845
-    self.optimize_memory_management()
-    self.optimize_cpu_performance()
+    # Apply hardware-specific optimizations for Snapdragon 845 only if running with sufficient privileges
+    if os.geteuid() == 0:
+      self.optimize_memory_management()
+      self.optimize_cpu_performance()
+    else:
+      cloudlog.warning("Running without root privileges, skipping hardware optimizations. These should be handled by system service.")
 
     # *** IRQ config ***
 
