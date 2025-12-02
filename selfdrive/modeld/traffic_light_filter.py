@@ -13,7 +13,6 @@ The confidence calculation varies by state to handle different semantic meanings
 This approach is necessary because different traffic light colors produce different
 raw score patterns in the model output, so a unified approach would not be appropriate.
 """
-import numpy as np
 from collections import deque
 from enum import IntEnum
 
@@ -69,16 +68,16 @@ class TrafficLightTemporalFilter:
 
     # Dynamic max score estimation
     self.score_history = deque(maxlen=50)  # Keep track of recent scores to estimate max dynamically
-    
+
   def update(self, raw_score: float, green_threshold: float, yellow_threshold: float) -> tuple[TrafficLightState, float]:
     """
     Update the filter with a new traffic light detection score
-    
+
     Args:
       raw_score: Raw model output score for traffic light confidence
       green_threshold: Threshold for green light classification
       yellow_threshold: Threshold for yellow light classification
-      
+
     Returns:
       tuple of (filtered_state, confidence)
     """
@@ -125,7 +124,7 @@ class TrafficLightTemporalFilter:
         initial_confidence = min(1.0, max(0.0, (raw_score - yellow_threshold) / confidence_range))
       else:
         initial_confidence = 0.0  # Safety fallback
-    
+
     # Apply temporal smoothing to confidence
     # The confidence buffer is used separately from state buffer to smooth confidence values over time
     # Use running average for efficiency instead of converting deque to list each time
@@ -226,12 +225,12 @@ class TrafficLightTemporalFilter:
 
     if len(self.state_buffer) >= MAJORITY_VOTE_THRESHOLD:
       # Count states in the buffer more efficiently
-      state_counts = {}
+      state_counts: dict[TrafficLightState, int] = {}
       for state in self.state_buffer:
         state_counts[state] = state_counts.get(state, 0) + 1
 
       # Find the most common state
-      most_common_state = max(state_counts, key=state_counts.get)
+      most_common_state = max(state_counts, key=lambda k: state_counts[k])
       majority_state = TrafficLightState(most_common_state)
 
       # Calculate the proportion of majority votes
@@ -242,7 +241,7 @@ class TrafficLightTemporalFilter:
       if ((majority_state == final_state or smoothed_confidence < MAJORITY_CONFIDENCE_THRESHOLD)
           and majority_proportion > 0.5):  # Ensure true majority (more than half)
         final_state = majority_state
-    
+
     return final_state, smoothed_confidence
 
 

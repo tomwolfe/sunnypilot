@@ -81,12 +81,9 @@ class LongitudinalPlannerSP:
     self.events_sp.clear()
 
     # Update DEC with map-based traffic sign information for enhanced decision making
-    if 'liveMapDataSP' in sm.updated:
-      live_map_data = sm['liveMapDataSP']
-      # Pass map data to DEC for better contextual awareness
-      # This is now handled in the DEC's _calculate_slow_down method
-      # where it can access traffic sign info directly
-      pass
+    # Pass map data to DEC for better contextual awareness
+    # This is now handled in the DEC's _calculate_slow_down method
+    # where it can access traffic sign info directly
 
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)

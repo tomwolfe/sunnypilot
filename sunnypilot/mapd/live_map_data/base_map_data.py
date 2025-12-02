@@ -150,6 +150,5 @@ class BaseMapData(ABC):
         logging.warning(f"Error parsing MapTrafficSigns data: {e}")
         # Optionally, could set a parameter to indicate map data issues
         # Params().put_bool("MapDataError", True)
-        pass
 
     return traffic_sign_info
