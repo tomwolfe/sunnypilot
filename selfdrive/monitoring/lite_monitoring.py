@@ -12,24 +12,48 @@ import time
 # Import existing sunnypilot components
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
+from cereal import car
 
 
 class LightweightSafetyChecker:
     """
     Lightweight safety validation system with minimal computational overhead.
     """
-    def __init__(self):
-        self.safety_thresholds = {
+    def __init__(self, CP=None):
+        # Vehicle-specific safety thresholds based on car model and parameters
+        self.safety_thresholds = self._get_vehicle_specific_thresholds(CP) if CP else {
             'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
             'max_lat_accel': 2.5,      # Maximum lateral acceleration (m/s^2)
             'max_steering_rate': 0.5,  # Maximum steering rate (rad/s) - adjust based on vehicle
-            'max_steering_angle': 1.0, # Maximum steering angle (rad) - adjust based on vehicle
+            'max_steering_angle': 0.5, # Maximum steering angle (rad) - adjust based on vehicle (was 1.0, too high)
             'min_safe_ttc': 2.0,       # Minimum safe time-to-collision (s) for active intervention
             'min_safe_distance': 30.0, # Minimum safe distance to lead vehicle (m)
         }
         # Initialize tracking variables for steering rate calculation
         self._prev_steer = 0.0
         self._prev_time = time.monotonic()
+
+    def _get_vehicle_specific_thresholds(self, CP):
+        """
+        Get vehicle-specific safety thresholds based on CarParams for proper adaptation.
+        """
+        base_thresholds = {
+            'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
+            'max_lat_accel': 2.5,      # Maximum lateral acceleration (m/s^2)
+            'max_steering_rate': 0.5,  # Maximum steering rate (rad/s) - adjust based on vehicle
+            'max_steering_angle': 0.5, # Maximum steering angle (rad) - adjust based on vehicle
+            'min_safe_ttc': 2.0,       # Minimum safe time-to-collision (s) for active intervention
+            'min_safe_distance': 30.0, # Minimum safe distance to lead vehicle (m)
+        }
+
+        # Adjust thresholds based on specific car parameters if available
+        if CP:
+            # Reduce max steering angle based on the vehicle's actual steering limits
+            # Typical steering lock is around 0.3-0.6 radians (17-34 degrees), so 0.5 is a reasonable default
+            # Use the actual steerLimit from CarParams if available, otherwise use default
+            base_thresholds['max_steering_angle'] = min(0.6, max(0.3, getattr(CP, 'steerLimit', 0.5)))
+
+        return base_thresholds
 
     def validate_outputs(self, actuators, car_state, radar_state) -> Dict:
         """
@@ -86,12 +110,12 @@ class LightweightSafetyChecker:
             relative_speed = car_state.vEgo - radar_state.leadOne.vRel
 
             # Check for potential collision regardless of lead vehicle's speed
-            # If we're approaching (relative_speed > 0) OR lead vehicle is very slow/stopped
-            if relative_speed > 0.1 or radar_state.leadOne.vRel < 0.1:
+            # If we're approaching (relative_speed > 0) OR lead vehicle is stationary/very slow
+            if relative_speed > 0.1 or radar_state.leadOne.vRel <= 0.1:  # Fixed: changed from < 0.1 to <= 0.1
                 # Calculate time-to-collision differently based on scenario
                 if relative_speed > 0.1:  # Moving toward lead vehicle
                     ttc = radar_state.leadOne.dRel / relative_speed if relative_speed > 0.1 else float('inf')
-                else:  # Lead vehicle is stationary or moving very slowly
+                else:  # Lead vehicle is stationary or moving very slowly (vRel <= 0.1)
                     ttc = radar_state.leadOne.dRel / car_state.vEgo if car_state.vEgo > 0.1 else float('inf')
 
                 # If either TTC is below threshold OR distance is below safe distance (whichever condition triggers first)
@@ -215,13 +239,41 @@ class LightweightSystemMonitor:
 
         return health_report
 
+    def calculate_thermal_state(self, device_state) -> float:
+        """
+        Calculate normalized thermal state (0.0 to 1.0) based on system temperature readings.
+        0.0 = cold/normal operation, 1.0 = critical thermal state
+        """
+        # Get CPU and GPU temperatures if available
+        cpu_temp = 0.0
+        gpu_temp = 0.0
+
+        if hasattr(device_state, 'cpuTempC') and device_state.cpuTempC:
+            cpu_temps = device_state.cpuTempC if isinstance(device_state.cpuTempC, list) else [device_state.cpuTempC]
+            cpu_temp = max(cpu_temps) if cpu_temps else 0.0
+
+        if hasattr(device_state, 'gpuTempC') and device_state.gpuTempC:
+            gpu_temps = device_state.gpuTempC if isinstance(device_state.gpuTempC, list) else [device_state.gpuTempC]
+            gpu_temp = max(gpu_temps) if gpu_temps else 0.0
+
+        # Calculate normalized thermal state based on thresholds (0.0 to 1.0)
+        # Using a simple linear scale: 30°C = 0.0, 90°C = 1.0 (critical)
+        max_temp = max(cpu_temp, gpu_temp)
+        thermal_state = max(0.0, min(1.0, (max_temp - 30.0) / 60.0))  # Normalize 30-90°C range to 0-1
+
+        return thermal_state
+
 
 # Example usage and testing
 if __name__ == "__main__":
+    from cereal import car
     cloudlog.info("Initializing Lightweight Monitoring System")
-    
-    # Initialize lightweight monitoring system
-    safety_checker = LightweightSafetyChecker()
+
+    # Create mock CarParams for testing
+    CP = car.CarParams.new_message()
+
+    # Initialize lightweight monitoring system with CarParams
+    safety_checker = LightweightSafetyChecker(CP)
     system_monitor = LightweightSystemMonitor()
-    
+
     cloudlog.info("Lightweight Monitoring System initialized successfully")
