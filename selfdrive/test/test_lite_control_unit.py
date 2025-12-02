@@ -1,6 +1,16 @@
 import pytest
 import numpy as np
-from unittest.mock import Mock
+
+# Using builtin object as a simple mock class since unittest import is banned
+class Mock:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name):
+        # Return a new Mock for any attribute that doesn't exist
+        attr = Mock()
+        setattr(self, name, attr)
+        return attr
 
 
 from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler, LightweightComfortOptimizer
@@ -98,30 +108,6 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
 
         gains = scheduler.get_adaptive_gains(v_ego, thermal_state)
 
-        long_speed_factor_expected = max(
-            scheduler.vehicle_tuning['min_long_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_long_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['long_speed_gain_factor'])
-            )
-        )
-        lat_speed_factor_expected = max(
-            scheduler.vehicle_tuning['min_lat_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_lat_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['lat_speed_gain_factor'])
-            )
-        )
-
-        # Since filters are mocked to instantly update their 'x' to the input
-        expected_long_kp = np.interp(v_ego, scheduler.CP.longitudinalTuning.kpBP, scheduler.CP.longitudinalTuning.kpV)
-        expected_long_ki = np.interp(v_ego, scheduler.CP.longitudinalTuning.kiBP, scheduler.CP.longitudinalTuning.kiV)
-        expected_long_kf = scheduler.CP.longitudinalTuning.kf
-
-        expected_lat_kp = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kpBP, scheduler.CP.lateralTuning.pid.kpV)
-        expected_lat_ki = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kiBP, scheduler.CP.lateralTuning.pid.kiV)
-        expected_lat_kd = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kdBP, scheduler.CP.lateralTuning.pid.kdV)
-        expected_lat_kf = scheduler.CP.lateralTuning.pid.kf
 
         # Calculate expected precise values using exact calculations
 
@@ -141,35 +127,7 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
 
         gains = scheduler.get_adaptive_gains(v_ego, thermal_state)
 
-        long_thermal_factor_expected = max(0.85, 1.0 - thermal_state * 0.15)
-        lat_thermal_factor_expected = max(0.9, 1.0 - thermal_state * 0.1)
 
-        # Calculate speed factors as they also influence the final gain
-        long_speed_factor_expected = max(
-            scheduler.vehicle_tuning['min_long_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_long_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['long_speed_gain_factor'])
-            )
-        )
-        lat_speed_factor_expected = max(
-            scheduler.vehicle_tuning['min_lat_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_lat_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['lat_speed_gain_factor'])
-            )
-        )
-
-        # Expected base longitudinal gains (interpolated at v_ego=10.0)
-        expected_long_kp_base = np.interp(v_ego, scheduler.CP.longitudinalTuning.kpBP, scheduler.CP.longitudinalTuning.kpV)
-        expected_long_ki_base = np.interp(v_ego, scheduler.CP.longitudinalTuning.kiBP, scheduler.CP.longitudinalTuning.kiV)
-        expected_long_kf_base = scheduler.CP.longitudinalTuning.kf
-
-        # Expected base lateral gains (interpolated at v_ego=10.0)
-        expected_lat_kp_base = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kpBP, scheduler.CP.lateralTuning.pid.kpV)
-        expected_lat_ki_base = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kiBP, scheduler.CP.lateralTuning.pid.kiV)
-        expected_lat_kd_base = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kdBP, scheduler.CP.lateralTuning.pid.kdV)
-        expected_lat_kf_base = scheduler.CP.lateralTuning.pid.kf
 
 
         # Calculate expected precise values using exact calculations
@@ -200,7 +158,7 @@ class TestLightweightComfortOptimizer:
         # Simulate a small acceleration change that doesn't exceed jerk limit
         optimizer.prev_acceleration = 0.0
         optimizer.prev_time = 100.0 # Fixed time
-        
+
         mocker.patch('time.monotonic', return_value=100.1) # dt = 0.1
         optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
         # adaptive_jerk_limit for v_ego=10.0: speed_factor = 1.0 - (10.0/30.0) = 2/3. adaptive_limit = 1.5 * (2/3) = 1.0
@@ -231,4 +189,5 @@ class TestLightweightComfortOptimizer:
         # Test at medium speed
         assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=15.0), 0.75, rtol=1e-6) # max(0.5, 1.5 * (1.0 - 15/30)) = 0.75
         # Test at high speed (should cap at 0.5)
-        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.75, rtol=1e-6) # max(0.5, 1.5 * max(0.5, 1.0 - 40/30)) = max(0.5, 1.5 * 0.5) = 0.75
+        # max(0.5, 1.5 * max(0.5, 1.0 - 40/30)) = max(0.5, 1.5 * 0.5) = 0.75
+        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.75, rtol=1e-6)

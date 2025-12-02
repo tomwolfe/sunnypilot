@@ -22,7 +22,7 @@ def _interp_gain(x: float, xp: list[float], fp: list[float]) -> float:
   xp: The x-coordinates of the data points, must be increasing (breakpoint array).
   fp: The y-coordinates of the data points, same length as xp (gain array).
   """
-  return np.interp(x, xp, fp)
+  return float(np.interp(x, xp, fp))
 
 
 class LightweightAdaptiveGainScheduler:
@@ -177,8 +177,12 @@ class LightweightAdaptiveGainScheduler:
             }
         }
 
-        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: kp={gains['longitudinal']['kp']:.3f}, ki={gains['longitudinal']['ki']:.3f}, kf={gains['longitudinal']['kf']:.3f}")
-        cloudlog.debug(f"GainScheduler: Final Lateral Gains: kp={gains['lateral']['kp']:.3f}, ki={gains['lateral']['ki']:.3f}, kd={gains['lateral']['kd']:.3f}, kf={gains['lateral']['kf']:.3f}")
+        # Format debug messages to fit within line limits and avoid ISC002 error
+        log_data_long = f"kp={gains['longitudinal']['kp']:.3f}, ki={gains['longitudinal']['ki']:.3f}, kf={gains['longitudinal']['kf']:.3f}"
+        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: {log_data_long}")
+
+        log_data_lat = f"kp={gains['lateral']['kp']:.3f}, ki={gains['lateral']['ki']:.3f}, kd={gains['lateral']['kd']:.3f}, kf={gains['lateral']['kf']:.3f}"
+        cloudlog.debug(f"GainScheduler: Final Lateral Gains: {log_data_lat}")
 
         return gains
 
@@ -245,7 +249,7 @@ class LightweightComfortOptimizer:
         self.prev_acceleration = new_acceleration
         self.prev_time = current_time
 
-        return new_acceleration
+        return float(new_acceleration)
     def _calculate_adaptive_jerk_limit(self, v_ego: float) -> float:
         """
         Calculate adaptive jerk limit based on vehicle speed and other factors.
@@ -257,7 +261,7 @@ class LightweightComfortOptimizer:
         adaptive_limit = self.comfort_jerk_limit * speed_factor
 
         # Ensure minimum jerk limit
-        return max(0.5, adaptive_limit)
+        return float(max(0.5, adaptive_limit))
 
 
 # Example usage and testing

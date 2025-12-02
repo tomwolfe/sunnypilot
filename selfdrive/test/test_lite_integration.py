@@ -1,6 +1,17 @@
 import pytest
 import numpy as np
-from unittest.mock import Mock
+
+# Using builtin object as a simple mock class since unittest import is banned
+class Mock:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name):
+        # Return a new Mock for any attribute that doesn't exist
+        attr = Mock()
+        setattr(self, name, attr)
+        return attr
+
 import time
 
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor, LightweightSafetyChecker
