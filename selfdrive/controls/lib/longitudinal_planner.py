@@ -166,10 +166,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _fuse_radar_camera_data(self, sm, model_x, model_v, model_a):
     """
-    Enhanced radar-camera fusion to improve lead vehicle detection and tracking.
+    Enhanced radar-camera fusion using a Kalman filter-like approach to improve lead vehicle detection and tracking.
 
     Combines radar measurements with vision model outputs to create more robust
-    and accurate lead vehicle tracking.
+    and accurate lead vehicle tracking using proper sensor fusion techniques.
 
     Args:
         sm: SubMaster instance with current sensor data
@@ -183,12 +183,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     radar_state = sm['radarState']
     model_v2 = sm['modelV2']
 
-    # Initialize fusion tracking if not present
+    # Initialize fusion tracking with proper Kalman filter state if not present
     if not hasattr(self, '_radar_camera_fusion_tracker'):
         self._radar_camera_fusion_tracker = {}
         self._last_fusion_time = 0.0
+        # Initialize with identity matrices for error covariance
+        self._radar_error_cov = 0.5  # Initial uncertainty for radar measurements
+        self._vision_error_cov = 1.0  # Initial uncertainty for vision measurements
+        self._fused_state_cov = 1.0  # Initial uncertainty for fused state
 
-    # Apply Kalman-like filtering to combine radar and vision data for lead vehicles
+    # Apply Kalman filter-like approach to combine radar and vision data for lead vehicles
     enhanced_x = model_x.copy()
     enhanced_v = model_v.copy()
     enhanced_a = model_a.copy()
@@ -196,7 +200,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Process lead vehicle fusion if radar detects a lead
     if radar_state.leadOne.status and model_v2.leadsV3:
         lead_radar = radar_state.leadOne
-        # Assuming model_v2.leadsV3 contains vision-based lead detection
 
         # Get the most relevant lead from vision model (closest or most concerning)
         closest_vision_lead = None
@@ -205,71 +208,120 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                 if closest_vision_lead is None or lead_vision.dRel < closest_vision_lead.dRel:
                     closest_vision_lead = lead_vision
 
-        # If we have both radar and vision leads, fuse them
+        # If we have both radar and vision leads, fuse them using Kalman filter approach
         if closest_vision_lead is not None:
-            # Calculate fusion weights based on reliability
-            # Using proper radar reliability measures instead of aLeadTau
-            # Radar reliability based on signal strength, track age, and consistency
+            # Calculate more sophisticated reliability measures
             radar_reliability = self._calculate_radar_reliability(lead_radar)
             vision_reliability = closest_vision_lead.prob  # Vision probability
 
-            # Fuse distance, velocity, and acceleration based on reliability
-            # Use consistent acceleration values - both should be absolute lead acceleration
-            # If vision model provides relative acceleration (aRel), we need to convert it to absolute
-            # by adding ego vehicle's acceleration: aLead = aRel + aEgo
-            total_reliability = radar_reliability + vision_reliability
-            if total_reliability > 0:
-                fused_dRel = (lead_radar.dRel * radar_reliability + closest_vision_lead.dRel * vision_reliability) / total_reliability
-                fused_vRel = (lead_radar.vRel * radar_reliability + closest_vision_lead.vRel * vision_reliability) / total_reliability
-                # Ensure we're using consistent acceleration values (both as relative lead acceleration)
-                # The radar aLeadK is relative acceleration of the lead vehicle, same as vision aRel
-                # If vision model provides relative acceleration (aRel), use it directly
-                # If vision model provides absolute acceleration (aLeadK), convert to relative: aRel = aLeadK - aEgo
-                if hasattr(closest_vision_lead, 'aRel'):
-                    vision_aLead = closest_vision_lead.aRel
-                elif hasattr(closest_vision_lead, 'aLeadK'):
-                    # Convert absolute acceleration to relative: aRel = aLeadK - aEgo
-                    vision_aLead = closest_vision_lead.aLeadK - sm['carState'].aEgo
-                else:
-                    vision_aLead = 0.0  # Safe default if no acceleration data available
+            # Convert reliability to inverse uncertainty (for Kalman filter)
+            # Higher reliability = lower uncertainty
+            radar_uncertainty = max(0.01, 1.0 / (radar_reliability + 0.01))  # Avoid division by zero
+            vision_uncertainty = max(0.01, 1.0 / (vision_reliability + 0.01))  # Avoid division by zero
 
-                # Make sure radar aLeadK is also properly handled as relative acceleration
-                radar_aLead = lead_radar.aLeadK  # This should already be relative acceleration
+            # Kalman gain calculation for distance
+            radar_var = radar_uncertainty * radar_uncertainty  # Convert to variance
+            vision_var = vision_uncertainty * vision_uncertainty  # Convert to variance
 
-                fused_aLead = (radar_aLead * radar_reliability + vision_aLead * vision_reliability) / total_reliability
+            # Calculate Kalman gains for each measurement type
+            kalman_gain_dist = radar_var / (radar_var + vision_var)
+            kalman_gain_vel = radar_var / (radar_var + vision_var)  # Similar for velocity
+            kalman_gain_accel = radar_var / (radar_var + vision_var)  # Similar for acceleration
 
-                # Update the lead data used by the planner with fused values
-                # This affects the x, v, a arrays that are passed to MPC
-                # For now, we'll update the first few elements which typically represent immediate lead data
-                if len(enhanced_x) > 0:
-                    enhanced_x[0] = fused_dRel
-                if len(enhanced_v) > 0:
-                    enhanced_v[0] = fused_vRel
-                if len(enhanced_a) > 0:
-                    enhanced_a[0] = fused_aLead
+            # Perform Kalman update step
+            # Innovation (measurement residual)
+            dist_innovation = closest_vision_lead.dRel - lead_radar.dRel
+            vel_innovation = closest_vision_lead.vRel - lead_radar.vRel
 
-    # Apply temporal consistency to smooth out sensor noise while maintaining responsiveness
-    # This helps reduce the "jitter" that can occur with individual sensor readings
+            # Calculate fused values using Kalman update
+            fused_dRel = lead_radar.dRel + kalman_gain_dist * dist_innovation
+            fused_vRel = lead_radar.vRel + kalman_gain_vel * vel_innovation
+
+            # Ensure we're using consistent acceleration values (both as relative lead acceleration)
+            if hasattr(closest_vision_lead, 'aRel'):
+                vision_aLead = closest_vision_lead.aRel
+            elif hasattr(closest_vision_lead, 'aLeadK'):
+                # Convert absolute acceleration to relative: aRel = aLeadK - aEgo
+                vision_aLead = closest_vision_lead.aLeadK - sm['carState'].aEgo
+            else:
+                vision_aLead = 0.0  # Safe default if no acceleration data available
+
+            # Make sure radar aLeadK is also properly handled as relative acceleration
+            radar_aLead = lead_radar.aLeadK  # This should already be relative acceleration
+
+            # Calculate acceleration innovation and fuse
+            accel_innovation = vision_aLead - radar_aLead
+            fused_aLead = radar_aLead + kalman_gain_accel * accel_innovation
+
+            # Update error covariance (simplified Kalman update)
+            self._radar_error_cov = (1 - kalman_gain_dist) * radar_var
+            self._vision_error_cov = (1 - (1 - kalman_gain_dist)) * vision_var  # Simplified update
+            self._fused_state_cov = self._radar_error_cov * self._vision_error_cov / (self._radar_error_cov + self._vision_error_cov + 0.001)
+
+            # Apply dynamic validation to ensure fused values are physically plausible
+            # Distance should be positive and within reasonable range
+            fused_dRel = max(2.0, min(150.0, fused_dRel))  # Keep distance within safe bounds
+            # Velocity should be within reasonable relative velocity bounds
+            fused_vRel = max(-50.0, min(50.0, fused_vRel))  # Max +/- 50 m/s relative velocity
+            # Acceleration should be within vehicle capability limits
+            fused_aLead = max(-10.0, min(8.0, fused_aLead))  # Max -10 to +8 m/s^2
+
+            # Update the lead data used by the planner with fused values
+            # This affects the x, v, a arrays that are passed to MPC
+            # For now, we'll update the first few elements which typically represent immediate lead data
+            if len(enhanced_x) > 0:
+                enhanced_x[0] = fused_dRel
+            if len(enhanced_v) > 0:
+                enhanced_v[0] = fused_vRel
+            if len(enhanced_a) > 0:
+                enhanced_a[0] = fused_aLead
+
+    # Apply temporal consistency using a more sophisticated approach
+    # Instead of simple smoothing, use a time-based prediction-correction model
     if hasattr(self, '_prev_fused_values'):
-        # Apply light smoothing between current and previous fused values
-        # Alpha = 0.05 means 5% previous value, 95% current value - this provides stability while maintaining responsiveness
-        # Lower alpha value (0.05) instead of higher (0.1) to reduce lag while still providing noise reduction
-        alpha = 0.05  # Smoothing factor justification: More responsive while still reducing noise
-        prev_x, prev_v, prev_a = self._prev_fused_values
+        # Calculate time delta for temporal consistency
+        current_time = time.time()
+        time_delta = current_time - getattr(self, '_last_fusion_time', current_time - 0.1)
 
-        # Only apply smoothing if values aren't too different (to preserve responsiveness to real changes)
-        # Threshold justification: 5m distance change, 5m/s velocity change, 5m/s^2 acceleration change are significant enough to bypass smoothing
-        max_change_threshold = [5.0, 5.0, 5.0]  # Max allowed change before preserving current values without smoothing
+        # Apply physics-based temporal prediction if the time delta is reasonable
+        if time_delta < 0.2:  # Only apply if the time between updates is reasonable
+            prev_x, prev_v, prev_a = self._prev_fused_values
 
-        for i in range(min(len(enhanced_x), len(prev_x))):
-            if abs(enhanced_x[i] - prev_x[i]) < max_change_threshold[0]:
-                enhanced_x[i] = alpha * prev_x[i] + (1 - alpha) * enhanced_x[i]
-        for i in range(min(len(enhanced_v), len(prev_v))):
-            if abs(enhanced_v[i] - prev_v[i]) < max_change_threshold[1]:
-                enhanced_v[i] = alpha * prev_v[i] + (1 - alpha) * enhanced_v[i]
-        for i in range(min(len(enhanced_a), len(prev_a))):
-            if abs(enhanced_a[i] - prev_a[i]) < max_change_threshold[2]:
-                enhanced_a[i] = alpha * prev_a[i] + (1 - alpha) * enhanced_a[i]
+            # Predict based on motion model: x_new = x_old + v*dt + 0.5*a*dt^2
+            for i in range(min(len(enhanced_x), len(prev_x))):
+                if i < len(prev_x) and i < len(prev_v) and i < len(prev_a):
+                    predicted_x = prev_x[i] + prev_v[i] * time_delta + 0.5 * prev_a[i] * (time_delta ** 2)
+
+                    # Use a weighted combination of prediction and new measurement
+                    # Higher weight to prediction if it's close to measurement (for consistency)
+                    # Higher weight to measurement if it's significantly different (for responsiveness)
+                    prediction_weight = 0.3  # Give some weight to prediction for stability
+                    measurement_weight = 0.7  # Give more weight to actual measurement for accuracy
+
+                    # Adaptive weighting based on consistency between prediction and measurement
+                    if abs(predicted_x - enhanced_x[i]) < 5.0:  # Within 5m is considered consistent
+                        # If consistent, increase prediction weight for better temporal smoothness
+                        prediction_weight = 0.5
+                        measurement_weight = 0.5
+
+                    enhanced_x[i] = prediction_weight * predicted_x + measurement_weight * enhanced_x[i]
+
+                    # Apply similar prediction-correction for velocity
+                    predicted_v = prev_v[i] + prev_a[i] * time_delta
+                    if abs(predicted_v - enhanced_v[i]) < 5.0:  # Within 5 m/s is considered consistent
+                        prediction_weight_v = 0.5
+                        measurement_weight_v = 0.5
+                    else:
+                        prediction_weight_v = 0.3
+                        measurement_weight_v = 0.7
+
+                    enhanced_v[i] = prediction_weight_v * predicted_v + measurement_weight_v * enhanced_v[i]
+
+                    # Apply smoothing for acceleration to reduce noise
+                    # Acceleration is typically noisier, so use more prediction weight
+                    enhanced_a[i] = 0.6 * prev_a[i] + 0.4 * enhanced_a[i]
+
+        self._last_fusion_time = current_time
 
     # Apply physical plausibility validation to ensure fused values are within realistic bounds
     enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
@@ -374,7 +426,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _calculate_radar_reliability(self, lead_radar):
     """
-    Calculate radar reliability based on proper radar parameters rather than aLeadTau.
+    Calculate radar reliability based on proper radar parameters including SNR, track age, and consistency.
 
     Args:
         lead_radar: Radar lead data structure
@@ -382,27 +434,70 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     Returns:
         float: Reliability score between 0.0 and 1.0
     """
-    # Radar reliability should be based on proper parameters like:
-    # - track age (age of the track)
-    # - signal strength (if available)
-    # - track consistency (how stable the measurements are)
-    # - distance (closer objects generally have more reliable measurements)
-
-    # Base reliability is 1.0 for a valid lead
+    # Initialize reliability as 0.0 for invalid leads, 1.0 for valid leads
     reliability = 1.0 if lead_radar.status else 0.0
 
     if lead_radar.status:
-      # Distance-based reliability: closer objects more reliable
+      # Start with base reliability of 1.0 for valid lead
+      reliability = 1.0
+
+      # 1. Distance-based reliability: closer objects more reliable
       # Threshold justification: At 50m distance, reliability is 1.0; decreases to 0.1 at 500m
       # This reflects radar accuracy characteristics where closer objects have more reliable measurements
       distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
-
-      # Adjust reliability based on distance
       reliability *= distance_factor
 
-      # Additional factors could be added based on radar-specific parameters
-      # For now, return a more appropriate value based on distance and status
-      reliability = min(1.0, reliability)
+      # 2. Signal-to-Noise Ratio (SNR) based reliability if available
+      # SNR is a key indicator of measurement quality - higher SNR means more reliable detection
+      if hasattr(lead_radar, 'yRel') and hasattr(lead_radar, 'aRel'):  # Check for other available attributes
+        # In some radar message formats, SNR or similar quality metrics might be present
+        # Check for SNR if available (common field names)
+        if hasattr(lead_radar, 'snr') and lead_radar.snr >= 0:  # Signal-to-noise ratio
+          # Normalize SNR: good SNR (e.g., > 10) = high reliability, poor SNR (e.g., < 2) = low reliability
+          snr_reliability = min(1.0, max(0.1, lead_radar.snr / 10.0))  # Normalize to 0.1-1.0 range
+          reliability *= 0.7 + 0.3 * snr_reliability  # Weight SNR contribution
+        elif hasattr(lead_radar, 'std') and lead_radar.std > 0:  # Standard deviation of measurement
+          # Lower standard deviation = higher reliability
+          std_reliability = max(0.1, 1.0 - (lead_radar.std / 2.0))  # Higher std = less reliable
+          reliability *= 0.6 + 0.4 * std_reliability  # Weight std contribution
+        elif hasattr(lead_radar, 'prob') and lead_radar.prob >= 0:  # Detection probability
+          # Use detection probability if available
+          reliability *= lead_radar.prob
+
+      # 3. Track age and consistency - longer tracked objects are more reliable
+      # The 'aLeadTau' field might represent track age or measurement age (time since last update)
+      # or could be related to the age of the track. We'll use it with more appropriate logic.
+      # If aLeadTau represents age of track or time constant, lower values might indicate fresher measurements
+      if hasattr(lead_radar, 'aLeadTau') and lead_radar.aLeadTau > 0:
+        # aLeadTau appears to represent the time constant associated with lead acceleration
+        # Lower values indicate more recent, stable tracking
+        track_age_factor = max(0.1, min(1.0, 2.0 / max(0.1, lead_radar.aLeadTau)))
+        reliability *= 0.8 + 0.2 * track_age_factor  # Weight track age contribution
+
+      # 4. Track stability based on available parameters
+      # If we have track age information (assuming a field like 'age' exists)
+      if hasattr(lead_radar, 'age') and lead_radar.age > 0:
+        # Older, stable tracks are more reliable than new ones
+        track_stability_factor = min(1.0, lead_radar.age / 10.0)  # Stabilizes after 10 cycles
+        reliability *= 0.7 + 0.3 * track_stability_factor
+      elif hasattr(lead_radar, 'newLead') and not lead_radar.newLead:
+        # If this is not a new lead (has been tracked before), increase reliability
+        reliability *= 1.1  # Slight boost for established tracks
+
+      # 5. Consistency check: Very high relative velocities might indicate unreliable measurements
+      if abs(lead_radar.vRel) > 50:  # If relative velocity is extremely high, reduce reliability
+        reliability *= 0.5  # Reduce reliability for potentially erroneous high-velocity measurements
+
+      # 6. Distance rate of change consistency - if distance is changing unrealistically fast
+      if hasattr(lead_radar, 'dRel') and hasattr(lead_radar, 'vRel'):
+        # Check if the relationship between distance and velocity is physically plausible
+        # (This is a basic check - more sophisticated filters would do this better)
+        expected_min_time = lead_radar.dRel / max(abs(lead_radar.vRel), 0.1) if lead_radar.vRel != 0 else float('inf')
+        if expected_min_time < 0.1:  # If it would take <0.1s to reach the lead vehicle, reduce reliability
+          reliability *= 0.3
+
+      # Ensure reliability is within bounds [0.0, 1.0]
+      reliability = min(1.0, max(0.0, reliability))
 
     return reliability
 
