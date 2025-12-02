@@ -6,6 +6,15 @@ import numpy as np
 
 from numbers import Number
 
+# Adaptive control system constants
+WEATHER_THRESHOLD_TEMP_FREEZING = 2.0  # Temperature (in Celsius) below which snow is more likely
+WEATHER_THRESHOLD_TEMP_RAIN = 4.0     # Temperature (in Celsius) above which rain is more likely
+CURVY_ROAD_CURVATURE_THRESHOLD = 0.0005 # Curvature threshold for detecting curvy roads
+TRAFFIC_DISTANCE_THRESHOLD = 50.0       # Distance (in meters) to consider lead vehicles as "close"
+SYSTEM_LOAD_THRESHOLD = 0.8             # System load factor above which vision model may be skipped
+SCENE_COMPLEXITY_RELATIVE_CHANGE = 0.15 # Relative change in scene complexity to trigger model run
+SCENE_COMPLEXITY_ABSOLUTE_CHANGE = 30   # Absolute change in scene complexity to trigger model run
+
 from cereal import car, log
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
@@ -309,9 +318,14 @@ class Controls(ControlsExt):
 
     # Enhanced saturation handling with adaptive limits
     # accel PID loop
-    # NOTE: The adaptive_gains dictionary includes both 'accel_kp' and 'accel_ki' values
-    # The longitudinal controller (self.LoC) should properly use these PID gains for better control
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits, adaptive_gains))
+    # Extract longitudinal gains for the longitudinal controller
+    if isinstance(adaptive_gains, dict) and 'longitudinal' in adaptive_gains:
+        longitudinal_gains = adaptive_gains['longitudinal']
+    else:
+        # Fall back to original format if adaptive_gains doesn't have expected structure
+        longitudinal_gains = adaptive_gains
+
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits, longitudinal_gains))
 
     # Apply self-learning adjustments to model outputs
     base_desired_curvature = model_v2.action.desiredCurvature
@@ -337,18 +351,12 @@ class Controls(ControlsExt):
 
     actuators.curvature = self.desired_curvature
 
-    # Use the adaptive gains for lateral control - pass more detailed gain information if available
-    if isinstance(adaptive_gains, dict) and 'lateral' in adaptive_gains:
-        # Pass specific lateral adaptive gains to the controller
-        lateral_gains = adaptive_gains['lateral']
-        steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                           self.steer_limited_by_safety, self.desired_curvature,
-                                                           self.calibrated_pose, curvature_limited, lat_delay, lateral_gains)
-    else:
-        # Fall back to original approach
-        steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                           self.steer_limited_by_safety, self.desired_curvature,
-                                                           self.calibrated_pose, curvature_limited, lat_delay, adaptive_gains)
+    # Use the adaptive gains for lateral control
+    # For now, pass the overall adaptive_gains structure and let the LaC handle the format
+    # The LaC controller is expected to handle both old and new gain formats
+    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                       self.steer_limited_by_safety, self.desired_curvature,
+                                                       self.calibrated_pose, curvature_limited, lat_delay, adaptive_gains)
 
     # Enhanced saturation detection with smoother recovery
     saturation_detected = False
@@ -469,7 +477,7 @@ class Controls(ControlsExt):
         # At 0.001 rad/m: radius is ~1000m - this would miss many curves that require adjustment
         # At 0.002 rad/m: radius is ~500m - this is quite sharp for highway driving
         # We use 0.0005 as a balance between sensitivity and avoiding false positives on straight roads
-        context['is_curvy_road'] = avg_curvature > 0.0005  # Curvature threshold for "curvy road" detection
+        context['is_curvy_road'] = avg_curvature > CURVY_ROAD_CURVATURE_THRESHOLD  # Curvature threshold for "curvy road" detection
 
         # Update history (keep last 100 samples)
         self._curvature_history.append(context['current_curvature'])
@@ -483,7 +491,7 @@ class Controls(ControlsExt):
         radar_state = self.sm['radarState']
         close_leads = 0
         for lead in [radar_state.leadOne, radar_state.leadTwo]:
-            if lead.status and lead.dRel < 50.0:  # Within 50m - threshold justification: In highway driving, 50m is close enough to indicate high traffic density
+            if lead.status and lead.dRel < TRAFFIC_DISTANCE_THRESHOLD:  # Within threshold - threshold justification: In highway driving, this distance is close enough to indicate high traffic density
                 close_leads += 1
         if close_leads >= 2:
             context['traffic_density'] = 'high'
@@ -512,8 +520,11 @@ class Controls(ControlsExt):
     CS = self.sm['carState']
 
     # 1. Check for windshield wiper usage as an indicator of precipitation
-    wipers_active = (hasattr(CS, 'windshieldWiper') and CS.windshieldWiper > 0.0) or \
-                    (hasattr(CS, 'wiperState') and CS.wiperState > 0)
+    wipers_active = False
+    if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper is not None:
+        wipers_active = CS.windshieldWiper > 0.0
+    elif hasattr(CS, 'wiperState') and CS.wiperState is not None:
+        wipers_active = CS.wiperState > 0
 
     # 2. Get temperature data if available to differentiate between rain and snow
     # Many vehicle systems provide ambient temperature data
@@ -553,7 +564,7 @@ class Controls(ControlsExt):
 
         # Snow indicators: poor lane detection combined with temperature data
         # If we have temperature data and it's below freezing, and we see poor lane detection, likely snow
-        if ambient_temp is not None and ambient_temp < 2.0:  # Below 2°C (slightly above freezing to account for measurement errors)
+        if ambient_temp is not None and ambient_temp < WEATHER_THRESHOLD_TEMP_FREEZING:  # Below freezing point (slightly above to account for measurement errors)
             if avg_lane_prob < 0.5:
                 snow_indicators += 1
             # Snow often results in more cautious driving behavior
@@ -566,10 +577,10 @@ class Controls(ControlsExt):
 
         # If we have temperature data available
         if ambient_temp is not None:
-            if ambient_temp > 4.0 and wipers_active and fog_indicators == 0:
+            if ambient_temp > WEATHER_THRESHOLD_TEMP_RAIN and wipers_active and fog_indicators == 0:
                 # Above freezing, wipers on but no fog indicators - likely rain
                 return 'rain'
-            elif ambient_temp <= 2.0 and wipers_active:
+            elif ambient_temp <= WEATHER_THRESHOLD_TEMP_FREEZING and wipers_active:
                 # Below freezing and wipers on - likely snow (especially if snow indicators present)
                 if snow_indicators > 0:
                     return 'snow'
@@ -577,8 +588,8 @@ class Controls(ControlsExt):
                     # If temperature is below freezing but no clear snow indicators,
                     # it might be snow or a mix; default to snow when temp is low
                     return 'snow'
-            elif ambient_temp <= 4.0 and ambient_temp > 2.0 and wipers_active:
-                # Between 2-4°C - could be either rain or snow depending on road conditions
+            elif ambient_temp <= WEATHER_THRESHOLD_TEMP_RAIN and ambient_temp > WEATHER_THRESHOLD_TEMP_FREEZING and wipers_active:
+                # Between freezing and rain threshold - could be either rain or snow depending on road conditions
                 # Use additional indicators to make the decision
                 if snow_indicators > fog_indicators:  # More snow indicators than fog indicators
                     return 'snow'
@@ -611,10 +622,10 @@ class Controls(ControlsExt):
     if ambient_temp is not None:
         if ambient_temp <= 0.0 and wipers_active:
             return 'snow'  # Definitely below freezing, likely snow
-        elif ambient_temp > 4.0 and wipers_active:
+        elif ambient_temp > WEATHER_THRESHOLD_TEMP_RAIN and wipers_active:
             return 'rain'  # Definitely above freezing, likely rain
         elif wipers_active:
-            # Between 0-4°C, could be either; use default assumption
+            # Between 0 and rain threshold, could be either; use default assumption
             return 'rain'  # Rain is generally more common
 
     # If only wipers are active and no other indicators, default to rain (most common case)
