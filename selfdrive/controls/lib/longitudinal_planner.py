@@ -180,156 +180,162 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     Returns:
         Tuple of (fused_x, fused_v, fused_a) with improved predictions
     """
-    radar_state = sm['radarState']
-    model_v2 = sm['modelV2']
+    try:
+        radar_state = sm['radarState']
+        model_v2 = sm['modelV2']
 
-    # Initialize fusion tracking with proper Kalman filter state if not present
-    if not hasattr(self, '_radar_camera_fusion_tracker'):
-        self._radar_camera_fusion_tracker = {}
-        self._last_fusion_time = 0.0
-        # Initialize with identity matrices for error covariance
-        self._radar_error_cov = 0.5  # Initial uncertainty for radar measurements
-        self._vision_error_cov = 1.0  # Initial uncertainty for vision measurements
-        self._fused_state_cov = 1.0  # Initial uncertainty for fused state
+        # Initialize fusion tracking with proper Kalman filter state if not present
+        if not hasattr(self, '_radar_camera_fusion_tracker'):
+            self._radar_camera_fusion_tracker = {}
+            self._last_fusion_time = 0.0
+            # Initialize with identity matrices for error covariance
+            self._radar_error_cov = 0.5  # Initial uncertainty for radar measurements
+            self._vision_error_cov = 1.0  # Initial uncertainty for vision measurements
+            self._fused_state_cov = 1.0  # Initial uncertainty for fused state
 
-    # Apply Kalman filter-like approach to combine radar and vision data for lead vehicles
-    enhanced_x = model_x.copy()
-    enhanced_v = model_v.copy()
-    enhanced_a = model_a.copy()
+        # Apply Kalman filter-like approach to combine radar and vision data for lead vehicles
+        enhanced_x = model_x.copy()
+        enhanced_v = model_v.copy()
+        enhanced_a = model_a.copy()
 
-    # Process lead vehicle fusion if radar detects a lead
-    if radar_state.leadOne.status and model_v2.leadsV3:
-        lead_radar = radar_state.leadOne
+        # Process lead vehicle fusion if radar detects a lead
+        if radar_state.leadOne.status and model_v2.leadsV3:
+            lead_radar = radar_state.leadOne
 
-        # Get the most relevant lead from vision model (closest or most concerning)
-        closest_vision_lead = None
-        for lead_vision in model_v2.leadsV3:
-            if lead_vision.prob > 0.5:  # Only consider confident detections
-                if closest_vision_lead is None or lead_vision.dRel < closest_vision_lead.dRel:
-                    closest_vision_lead = lead_vision
+            # Get the most relevant lead from vision model (closest or most concerning)
+            closest_vision_lead = None
+            for lead_vision in model_v2.leadsV3:
+                if lead_vision.prob > 0.5:  # Only consider confident detections
+                    if closest_vision_lead is None or lead_vision.dRel < closest_vision_lead.dRel:
+                        closest_vision_lead = lead_vision
 
-        # If we have both radar and vision leads, fuse them using Kalman filter approach
-        if closest_vision_lead is not None:
-            # Calculate more sophisticated reliability measures
-            radar_reliability = self._calculate_radar_reliability(lead_radar)
-            vision_reliability = closest_vision_lead.prob  # Vision probability
+            # If we have both radar and vision leads, fuse them using Kalman filter approach
+            if closest_vision_lead is not None:
+                # Calculate more sophisticated reliability measures
+                radar_reliability = self._calculate_radar_reliability(lead_radar)
+                vision_reliability = closest_vision_lead.prob  # Vision probability
 
-            # Convert reliability to inverse uncertainty (for Kalman filter)
-            # Higher reliability = lower uncertainty
-            radar_uncertainty = max(0.01, 1.0 / (radar_reliability + 0.01))  # Avoid division by zero
-            vision_uncertainty = max(0.01, 1.0 / (vision_reliability + 0.01))  # Avoid division by zero
+                # Convert reliability to inverse uncertainty (for Kalman filter)
+                # Higher reliability = lower uncertainty
+                radar_uncertainty = max(0.01, 1.0 / (radar_reliability + 0.01))  # Avoid division by zero
+                vision_uncertainty = max(0.01, 1.0 / (vision_reliability + 0.01))  # Avoid division by zero
 
-            # Kalman gain calculation for distance
-            radar_var = radar_uncertainty * radar_uncertainty  # Convert to variance
-            vision_var = vision_uncertainty * vision_uncertainty  # Convert to variance
+                # Kalman gain calculation for distance
+                radar_var = radar_uncertainty * radar_uncertainty  # Convert to variance
+                vision_var = vision_uncertainty * vision_uncertainty  # Convert to variance
 
-            # Calculate Kalman gains for each measurement type
-            kalman_gain_dist = radar_var / (radar_var + vision_var)
-            kalman_gain_vel = radar_var / (radar_var + vision_var)  # Similar for velocity
-            kalman_gain_accel = radar_var / (radar_var + vision_var)  # Similar for acceleration
+                # Calculate Kalman gains for each measurement type
+                kalman_gain_dist = radar_var / (radar_var + vision_var)
+                kalman_gain_vel = radar_var / (radar_var + vision_var)  # Similar for velocity
+                kalman_gain_accel = radar_var / (radar_var + vision_var)  # Similar for acceleration
 
-            # Perform Kalman update step
-            # Innovation (measurement residual)
-            dist_innovation = closest_vision_lead.dRel - lead_radar.dRel
-            vel_innovation = closest_vision_lead.vRel - lead_radar.vRel
+                # Perform Kalman update step
+                # Innovation (measurement residual)
+                dist_innovation = closest_vision_lead.dRel - lead_radar.dRel
+                vel_innovation = closest_vision_lead.vRel - lead_radar.vRel
 
-            # Calculate fused values using Kalman update
-            fused_dRel = lead_radar.dRel + kalman_gain_dist * dist_innovation
-            fused_vRel = lead_radar.vRel + kalman_gain_vel * vel_innovation
+                # Calculate fused values using Kalman update
+                fused_dRel = lead_radar.dRel + kalman_gain_dist * dist_innovation
+                fused_vRel = lead_radar.vRel + kalman_gain_vel * vel_innovation
 
-            # Ensure we're using consistent acceleration values (both as relative lead acceleration)
-            if hasattr(closest_vision_lead, 'aRel'):
-                vision_aLead = closest_vision_lead.aRel
-            elif hasattr(closest_vision_lead, 'aLeadK'):
-                # Convert absolute acceleration to relative: aRel = aLeadK - aEgo
-                vision_aLead = closest_vision_lead.aLeadK - sm['carState'].aEgo
-            else:
-                vision_aLead = 0.0  # Safe default if no acceleration data available
+                # Ensure we're using consistent acceleration values (both as relative lead acceleration)
+                if hasattr(closest_vision_lead, 'aRel'):
+                    vision_aLead = closest_vision_lead.aRel
+                elif hasattr(closest_vision_lead, 'aLeadK'):
+                    # Convert absolute acceleration to relative: aRel = aLeadK - aEgo
+                    vision_aLead = closest_vision_lead.aLeadK - sm['carState'].aEgo
+                else:
+                    vision_aLead = 0.0  # Safe default if no acceleration data available
 
-            # Make sure radar aLeadK is also properly handled as relative acceleration
-            radar_aLead = lead_radar.aLeadK  # This should already be relative acceleration
+                # Make sure radar aLeadK is also properly handled as relative acceleration
+                radar_aLead = lead_radar.aLeadK  # This should already be relative acceleration
 
-            # Calculate acceleration innovation and fuse
-            accel_innovation = vision_aLead - radar_aLead
-            fused_aLead = radar_aLead + kalman_gain_accel * accel_innovation
+                # Calculate acceleration innovation and fuse
+                accel_innovation = vision_aLead - radar_aLead
+                fused_aLead = radar_aLead + kalman_gain_accel * accel_innovation
 
-            # Update error covariance (simplified Kalman update)
-            self._radar_error_cov = (1 - kalman_gain_dist) * radar_var
-            self._vision_error_cov = (1 - (1 - kalman_gain_dist)) * vision_var  # Simplified update
-            self._fused_state_cov = self._radar_error_cov * self._vision_error_cov / (self._radar_error_cov + self._vision_error_cov + 0.001)
+                # Update error covariance (simplified Kalman update)
+                self._radar_error_cov = (1 - kalman_gain_dist) * radar_var
+                self._vision_error_cov = (1 - (1 - kalman_gain_dist)) * vision_var  # Simplified update
+                self._fused_state_cov = self._radar_error_cov * self._vision_error_cov / (self._radar_error_cov + self._vision_error_cov + 0.001)
 
-            # Apply dynamic validation to ensure fused values are physically plausible
-            # Distance should be positive and within reasonable range
-            fused_dRel = max(2.0, min(150.0, fused_dRel))  # Keep distance within safe bounds
-            # Velocity should be within reasonable relative velocity bounds
-            fused_vRel = max(-50.0, min(50.0, fused_vRel))  # Max +/- 50 m/s relative velocity
-            # Acceleration should be within vehicle capability limits
-            fused_aLead = max(-10.0, min(8.0, fused_aLead))  # Max -10 to +8 m/s^2
+                # Apply dynamic validation to ensure fused values are physically plausible
+                # Distance should be positive and within reasonable range
+                fused_dRel = max(2.0, min(150.0, fused_dRel))  # Keep distance within safe bounds
+                # Velocity should be within reasonable relative velocity bounds
+                fused_vRel = max(-50.0, min(50.0, fused_vRel))  # Max +/- 50 m/s relative velocity
+                # Acceleration should be within vehicle capability limits
+                fused_aLead = max(-10.0, min(8.0, fused_aLead))  # Max -10 to +8 m/s^2
 
-            # Update the lead data used by the planner with fused values
-            # This affects the x, v, a arrays that are passed to MPC
-            # For now, we'll update the first few elements which typically represent immediate lead data
-            if len(enhanced_x) > 0:
-                enhanced_x[0] = fused_dRel
-            if len(enhanced_v) > 0:
-                enhanced_v[0] = fused_vRel
-            if len(enhanced_a) > 0:
-                enhanced_a[0] = fused_aLead
+                # Update the lead data used by the planner with fused values
+                # This affects the x, v, a arrays that are passed to MPC
+                # For now, we'll update the first few elements which typically represent immediate lead data
+                if len(enhanced_x) > 0:
+                    enhanced_x[0] = fused_dRel
+                if len(enhanced_v) > 0:
+                    enhanced_v[0] = fused_vRel
+                if len(enhanced_a) > 0:
+                    enhanced_a[0] = fused_aLead
 
-    # Apply temporal consistency using a more sophisticated approach
-    # Instead of simple smoothing, use a time-based prediction-correction model
-    if hasattr(self, '_prev_fused_values'):
-        # Calculate time delta for temporal consistency
-        current_time = time.time()
-        time_delta = current_time - getattr(self, '_last_fusion_time', current_time - 0.1)
+        # Apply temporal consistency using a more sophisticated approach
+        # Instead of simple smoothing, use a time-based prediction-correction model
+        if hasattr(self, '_prev_fused_values'):
+            # Calculate time delta for temporal consistency
+            current_time = time.time()
+            time_delta = current_time - getattr(self, '_last_fusion_time', current_time - 0.1)
 
-        # Apply physics-based temporal prediction if the time delta is reasonable
-        if time_delta < 0.2:  # Only apply if the time between updates is reasonable
-            prev_x, prev_v, prev_a = self._prev_fused_values
+            # Apply physics-based temporal prediction if the time delta is reasonable
+            if time_delta < 0.2:  # Only apply if the time between updates is reasonable
+                prev_x, prev_v, prev_a = self._prev_fused_values
 
-            # Predict based on motion model: x_new = x_old + v*dt + 0.5*a*dt^2
-            for i in range(min(len(enhanced_x), len(prev_x))):
-                if i < len(prev_x) and i < len(prev_v) and i < len(prev_a):
-                    predicted_x = prev_x[i] + prev_v[i] * time_delta + 0.5 * prev_a[i] * (time_delta ** 2)
+                # Predict based on motion model: x_new = x_old + v*dt + 0.5*a*dt^2
+                for i in range(min(len(enhanced_x), len(prev_x))):
+                    if i < len(prev_x) and i < len(prev_v) and i < len(prev_a):
+                        predicted_x = prev_x[i] + prev_v[i] * time_delta + 0.5 * prev_a[i] * (time_delta ** 2)
 
-                    # Use a weighted combination of prediction and new measurement
-                    # Higher weight to prediction if it's close to measurement (for consistency)
-                    # Higher weight to measurement if it's significantly different (for responsiveness)
-                    prediction_weight = 0.3  # Give some weight to prediction for stability
-                    measurement_weight = 0.7  # Give more weight to actual measurement for accuracy
+                        # Use a weighted combination of prediction and new measurement
+                        # Higher weight to prediction if it's close to measurement (for consistency)
+                        # Higher weight to measurement if it's significantly different (for responsiveness)
+                        prediction_weight = 0.3  # Give some weight to prediction for stability
+                        measurement_weight = 0.7  # Give more weight to actual measurement for accuracy
 
-                    # Adaptive weighting based on consistency between prediction and measurement
-                    if abs(predicted_x - enhanced_x[i]) < 5.0:  # Within 5m is considered consistent
-                        # If consistent, increase prediction weight for better temporal smoothness
-                        prediction_weight = 0.5
-                        measurement_weight = 0.5
+                        # Adaptive weighting based on consistency between prediction and measurement
+                        if abs(predicted_x - enhanced_x[i]) < 5.0:  # Within 5m is considered consistent
+                            # If consistent, increase prediction weight for better temporal smoothness
+                            prediction_weight = 0.5
+                            measurement_weight = 0.5
 
-                    enhanced_x[i] = prediction_weight * predicted_x + measurement_weight * enhanced_x[i]
+                        enhanced_x[i] = prediction_weight * predicted_x + measurement_weight * enhanced_x[i]
 
-                    # Apply similar prediction-correction for velocity
-                    predicted_v = prev_v[i] + prev_a[i] * time_delta
-                    if abs(predicted_v - enhanced_v[i]) < 5.0:  # Within 5 m/s is considered consistent
-                        prediction_weight_v = 0.5
-                        measurement_weight_v = 0.5
-                    else:
-                        prediction_weight_v = 0.3
-                        measurement_weight_v = 0.7
+                        # Apply similar prediction-correction for velocity
+                        predicted_v = prev_v[i] + prev_a[i] * time_delta
+                        if abs(predicted_v - enhanced_v[i]) < 5.0:  # Within 5 m/s is considered consistent
+                            prediction_weight_v = 0.5
+                            measurement_weight_v = 0.5
+                        else:
+                            prediction_weight_v = 0.3
+                            measurement_weight_v = 0.7
 
-                    enhanced_v[i] = prediction_weight_v * predicted_v + measurement_weight_v * enhanced_v[i]
+                        enhanced_v[i] = prediction_weight_v * predicted_v + measurement_weight_v * enhanced_v[i]
 
-                    # Apply smoothing for acceleration to reduce noise
-                    # Acceleration is typically noisier, so use more prediction weight
-                    enhanced_a[i] = 0.6 * prev_a[i] + 0.4 * enhanced_a[i]
+                        # Apply smoothing for acceleration to reduce noise
+                        # Acceleration is typically noisier, so use more prediction weight
+                        enhanced_a[i] = 0.6 * prev_a[i] + 0.4 * enhanced_a[i]
 
-        self._last_fusion_time = current_time
+            self._last_fusion_time = current_time
 
-    # Apply physical plausibility validation to ensure fused values are within realistic bounds
-    enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
+        # Apply physical plausibility validation to ensure fused values are within realistic bounds
+        enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
 
-    # Store current fused values for next iteration
-    self._prev_fused_values = (enhanced_x.copy(), enhanced_v.copy(), enhanced_a.copy())
+        # Store current fused values for next iteration
+        self._prev_fused_values = (enhanced_x.copy(), enhanced_v.copy(), enhanced_a.copy())
 
-    return enhanced_x, enhanced_v, enhanced_a
+        return enhanced_x, enhanced_v, enhanced_a
+    except Exception as e:
+        # Log error and return original model data without fusion (safe fallback)
+        cloudlog.error(f"Error in radar-camera fusion: {e}")
+        cloudlog.warning("Falling back to original model data without fusion")
+        return model_x, model_v, model_a  # Safe fallback: return original values
 
   def _validate_fused_sensor_data(self, x, v, a):
     """
