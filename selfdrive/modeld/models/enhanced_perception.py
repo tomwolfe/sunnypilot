@@ -181,64 +181,163 @@ class EnhancedTrafficLightRecognition:
         return enhanced_result
 
 
-class 3DObjectEstimator:
+class Object3DInfo:
     """
-    3D object estimation and validation system.
+    Class to represent 3D object information with proper structure.
     """
-    def __init__(self):
+    def __init__(self, width=0.0, length=0.0, height=0.0, position_3d=None, confidence=0.0):
+        self.width = width
+        self.length = length
+        self.height = height
+        self.position_3d = position_3d or [0.0, 0.0, 0.0]
+        self.confidence = confidence
+        self.valid = False
+
+
+class Object3DInfoEstimator:
+    """
+    3D object estimation and validation system using calibrated camera parameters.
+    """
+    def __init__(self, camera_matrix=None, distortion_coeffs=None):
+        """
+        Initialize with camera calibration parameters.
+
+        Args:
+            camera_matrix: 3x3 camera intrinsic matrix
+            distortion_coeffs: Distortion coefficients
+        """
+        # Use default camera parameters if not provided
+        if camera_matrix is None:
+            # Default camera matrix for typical automotive camera
+            self.camera_matrix = np.array([
+                [1000.0, 0.0, 640.0],  # fx, 0, cx
+                [0.0, 1000.0, 360.0],  # 0, fy, cy
+                [0.0, 0.0, 1.0]        # homogeneous coordinate
+            ])
+        else:
+            self.camera_matrix = camera_matrix
+
+        if distortion_coeffs is None:
+            # Default distortion coefficients (assuming minimal distortion)
+            self.distortion_coeffs = np.zeros((4, 1))
+        else:
+            self.distortion_coeffs = distortion_coeffs
+
         self.max_vehicle_length = 8.0  # meters (for trucks)
         self.min_vehicle_length = 3.5  # meters (for small cars)
         self.max_vehicle_width = 2.5   # meters
         self.min_vehicle_width = 1.5   # meters
-        
-    def estimate_3d_dimensions(self, detection_2d, depth_info=None) -> Dict:
+        self.max_vehicle_height = 3.0  # meters
+        self.min_vehicle_height = 1.2  # meters
+
+        # Pre-computed inverse of camera matrix for efficiency
+        self.inv_camera_matrix = np.linalg.inv(self.camera_matrix)
+
+    def estimate_3d_dimensions(self, detection_2d, depth_info=None, distance_3d=None) -> Object3DInfo:
         """
-        Estimate 3D dimensions and position of detected objects.
-        
+        Estimate 3D dimensions and position of detected objects using calibrated parameters.
+
         Args:
-            detection_2d: 2D detection with bounding box
+            detection_2d: 2D detection with bounding box (x, y, w, h)
             depth_info: Optional depth information from model or sensors
-            
+            distance_3d: Known distance to object in meters (from radar/lidar)
+
         Returns:
-            Dictionary with 3D object information
+            Object3DInfo with 3D object information
         """
-        result = {
-            'valid': False,
-            'length': 0.0,
-            'width': 0.0,
-            'height': 0.0,
-            'position_3d': None,
-            'confidence': 0.0
-        }
-        
-        # If depth info is available, calculate rough 3D dimensions
-        if depth_info and hasattr(detection_2d, 'x') and hasattr(detection_2d, 'y'):
-            # Simple geometric estimation based on size and distance
-            bbox_width_pixels = detection_2d.x[1] - detection_2d.x[0]
-            bbox_height_pixels = detection_2d.y[1] - detection_2d.y[0]
-            
-            # Assume average vehicle dimensions at known distance for calibration
-            avg_vehicle_width_m = 1.8  # meters
-            avg_vehicle_dist_m = 50.0  # meters (calibration distance)
-            
-            # Estimate pixel-to-meter ratio at calibration distance
-            px_to_m_ratio = avg_vehicle_width_m / bbox_width_pixels if bbox_width_pixels > 0 else 1.0
-            
-            # Estimate 3D dimensions
-            est_width = bbox_width_pixels * px_to_m_ratio
-            est_length = bbox_height_pixels * px_to_m_ratio * 1.5  # Length typically 1.5x width
-            
-            # Validate against realistic dimensions
-            if (self.min_vehicle_width <= est_width <= self.max_vehicle_width and
-                self.min_vehicle_length <= est_length <= self.max_vehicle_length):
-                result.update({
-                    'valid': True,
-                    'width': est_width,
-                    'length': est_length,
-                    'height': 1.5,  # Average vehicle height
-                    'confidence': 0.8  # Confidence based on dimension validation
-                })
-        
+        result = Object3DInfo()
+
+        # Check if detection has proper bounding box data
+        if not hasattr(detection_2d, 'x') or not hasattr(detection_2d, 'y'):
+            return result
+
+        # Get bounding box dimensions in pixels
+        if hasattr(detection_2d, 'w') and hasattr(detection_2d, 'h'):
+            # Using width/height attributes
+            bbox_width_px = detection_2d.w
+            bbox_height_px = detection_2d.h
+        elif hasattr(detection_2d.x, '__len__') and hasattr(detection_2d.y, '__len__'):
+            # Using coordinate arrays [x1, x2], [y1, y2]
+            bbox_width_px = detection_2d.x[1] - detection_2d.x[0]
+            bbox_height_px = detection_2d.y[1] - detection_2d.y[0]
+        else:
+            return result
+
+        # We need distance information to get accurate 3D dimensions
+        # Priority: provided distance_3d > depth_info > radar data (if available)
+        estimated_distance = distance_3d
+
+        if estimated_distance is None and depth_info:
+            # Use depth info if available
+            if hasattr(depth_info, 'distance'):
+                estimated_distance = depth_info.distance
+            elif isinstance(depth_info, (int, float)):
+                estimated_distance = depth_info
+            else:
+                # Try to get distance from detection if available
+                if hasattr(detection_2d, 'distance'):
+                    estimated_distance = detection_2d.distance
+                elif hasattr(detection_2d, 'dRel'):
+                    # Use radar relative distance as approximation
+                    estimated_distance = detection_2d.dRel
+
+        if estimated_distance is None:
+            # Without distance, we cannot accurately estimate 3D dimensions
+            # Return with low confidence
+            result.confidence = 0.1
+            return result
+
+        # Calculate focal length from camera matrix
+        fx = self.camera_matrix[0, 0]  # focal length in x direction
+        fy = self.camera_matrix[1, 1]  # focal length in y direction
+
+        # Calculate 3D dimensions using similar triangles
+        # Real world dimension = (pixel dimension * distance) / focal length
+        est_width = (bbox_width_px * 1.8) / fx  # Assuming avg vehicle width at 1m is 1.8m in pixels
+        est_length = (bbox_height_px * 4.0) / fy  # Assuming avg vehicle length at 1m is 4m in pixels
+
+        # Improve estimation using known distance
+        # For a vehicle at distance d, if we know its real-world width W,
+        # then W = (w_pixels * d) / f, so real W = (w_pixels * d) / f
+        real_width_at_distance = (bbox_width_px * 1.8 * estimated_distance) / (fx * 50.0)  # calibrated at 50m
+        real_length_at_distance = (bbox_height_px * 4.0 * estimated_distance) / (fy * 50.0)
+
+        # Validate against realistic dimensions
+        if (self.min_vehicle_width <= real_width_at_distance <= self.max_vehicle_width and
+            self.min_vehicle_length <= real_length_at_distance <= self.max_vehicle_length):
+            result.width = real_width_at_distance
+            result.length = real_length_at_distance
+            result.height = 1.5  # Average vehicle height
+            result.confidence = 0.8  # High confidence with valid dimensions
+            result.valid = True
+
+            # Adjust confidence based on distance (close objects more accurate)
+            if estimated_distance < 20:
+                result.confidence = min(0.95, result.confidence * 1.2)
+            elif estimated_distance > 100:
+                result.confidence = max(0.6, result.confidence * 0.8)
+
+        else:
+            # Estimate using known vehicle class priors if dimensions are off
+            # For example, if it's probably a motorcycle (narrow) or truck (wide)
+            if real_width_at_distance < self.min_vehicle_width * 0.8:
+                # Likely a narrow vehicle like a motorcycle
+                real_width_at_distance = 0.8  # Approximate motorcycle width
+                real_length_at_distance = 2.0  # Approximate motorcycle length
+            elif real_width_at_distance > self.max_vehicle_width * 1.2:
+                # Likely a wide vehicle like a truck
+                real_width_at_distance = min(self.max_vehicle_width, real_width_at_distance)
+                real_length_at_distance = min(self.max_vehicle_length, real_length_at_distance * 1.5)
+
+            # Re-validate with adjusted dimensions
+            if (self.min_vehicle_width * 0.5 <= real_width_at_distance <= self.max_vehicle_width * 1.5 and
+                self.min_vehicle_length * 0.5 <= real_length_at_distance <= self.max_vehicle_length * 1.5):
+                result.width = real_width_at_distance
+                result.length = real_length_at_distance
+                result.height = 1.5  # Average vehicle height
+                result.confidence = 0.5  # Medium confidence for adjusted dimensions
+                result.valid = True
+
         return result
 
 
@@ -323,7 +422,7 @@ class EnhancedPerceptionSystem:
     def __init__(self):
         self.multi_frame_fusion = MultiFrameFusion()
         self.traffic_light_recognizer = EnhancedTrafficLightRecognition()
-        self.object_3d_estimator = 3DObjectEstimator()
+        self.object_3d_estimator = Object3DInfoEstimator()
         self.environment_detector = EnvironmentalConditionDetector()
         
     def process(self, model_output, car_state, frame_id, timestamp) -> Dict:
@@ -359,8 +458,17 @@ class EnhancedPerceptionSystem:
             for i, lead in enumerate(enhanced_output['leads']):
                 if hasattr(lead, 'dRel'):
                     # Estimate 3D dimensions and validate
-                    obj_3d = self.object_3d_estimator.estimate_3d_dimensions(lead)
-                    enhanced_output['leads'][i]['_3d_info'] = obj_3d
+                    obj_3d = self.object_3d_estimator.estimate_3d_dimensions(lead, distance_3d=lead.dRel)
+                    # Convert Object3DInfo to dict for serialization
+                    obj_3d_dict = {
+                        'valid': obj_3d.valid,
+                        'width': obj_3d.width,
+                        'length': obj_3d.length,
+                        'height': obj_3d.height,
+                        'position_3d': obj_3d.position_3d,
+                        'confidence': obj_3d.confidence
+                    }
+                    enhanced_output['leads'][i]['_3d_info'] = obj_3d_dict
         
         # Combine all enhanced perception data
         result = {

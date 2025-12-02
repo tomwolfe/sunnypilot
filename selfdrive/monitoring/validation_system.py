@@ -341,6 +341,9 @@ class PerformanceMonitor:
             'max_avg_lat_jerk': 2.0,          # m/s^3
             'min_tracking_accuracy': 0.8      # 0-1 scale
         }
+
+        # Initialize acceleration tracking
+        self.prev_accel = 0.0
         
     def update_metrics(self, car_state, actuators, model_data, plan_data) -> Dict:
         """
@@ -361,13 +364,13 @@ class PerformanceMonitor:
             self.performance_metrics['longitudinal_error'].append(0.0)
         
         # Calculate longitudinal jerk (rate of acceleration change)
-        if len(self.performance_metrics['jerk_longitudinal']) > 0:
-            prev_accel = self._get_prev_accel()  # Would need to track previous acceleration
-            current_accel = actuators.accel if hasattr(actuators, 'accel') else 0.0
-            jerk = abs(current_accel - prev_accel) / 0.01  # Assuming 100Hz
-            self.performance_metrics['jerk_longitudinal'].append(jerk)
-        else:
-            self.performance_metrics['jerk_longitudinal'].append(0.0)
+        current_accel = actuators.accel if hasattr(actuators, 'accel') else 0.0
+        prev_accel = self._get_prev_accel()
+        jerk = abs(current_accel - prev_accel) / 0.01  # Assuming 100Hz
+        self.performance_metrics['jerk_longitudinal'].append(jerk)
+
+        # Store current acceleration for next iteration
+        self.prev_accel = current_accel
         
         # Calculate lateral jerk
         # Would need rate of curvature change
@@ -404,7 +407,9 @@ class PerformanceMonitor:
     
     def _get_prev_accel(self):
         """Helper to get previous acceleration from history."""
-        # This would be implemented to track acceleration history
+        # Return the last acceleration value if available, otherwise 0
+        if hasattr(self, 'prev_accel') and self.prev_accel is not None:
+            return self.prev_accel
         return 0.0
     
     def get_performance_report(self) -> Dict:

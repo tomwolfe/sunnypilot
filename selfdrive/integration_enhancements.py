@@ -17,10 +17,10 @@ from cereal import car, log
 import cereal.messaging as messaging
 
 # Import our new enhanced modules
-from openpilot.selfdrive.modeld.models.enhanced_perception import EnhancedPerceptionSystem
-from openpilot.selfdrive.controls.lib.enhanced_planning import EnhancedPlanner
-from openpilot.selfdrive.controls.lib.enhanced_control import EnhancedController
-from openpilot.selfdrive.monitoring.validation_system import MonitoringSystem
+from selfdrive.modeld.models.enhanced_perception import EnhancedPerceptionSystem
+from selfdrive.controls.lib.enhanced_planning import EnhancedPlanner
+from selfdrive.controls.lib.enhanced_control import EnhancedController
+from selfdrive.monitoring.validation_system import MonitoringSystem
 
 
 class EnhancedSelfdriveD:
