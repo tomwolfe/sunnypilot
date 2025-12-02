@@ -126,7 +126,11 @@ class LightweightAdaptiveGainScheduler:
 
         # Lateral thermal factor (max 10% reduction to maintain steering capability)
         lat_thermal_factor = max(0.9, 1.0 - thermal_state * 0.1)
-        self.lat_thermal_filter.update(lat_thermal_factor)
+        cloudlog.debug(f"GainScheduler: v_ego={v_ego:.2f} m/s, thermal_state={thermal_state:.2f}")
+        cloudlog.debug(f"GainScheduler: Long Speed Factor={long_speed_factor:.2f}, Filtered Long Speed Factor={self.long_speed_filter.x:.2f}")
+        cloudlog.debug(f"GainScheduler: Lat Speed Factor={lat_speed_factor:.2f}, Filtered Lat Speed Factor={self.lat_speed_filter.x:.2f}")
+        cloudlog.debug(f"GainScheduler: Long Thermal Factor={long_thermal_factor:.2f}, Filtered Long Thermal Factor={self.long_thermal_filter.x:.2f}")
+        cloudlog.debug(f"GainScheduler: Lat Thermal Factor={lat_thermal_factor:.2f}, Filtered Lat Thermal Factor={self.lat_thermal_filter.x:.2f}")
 
         # Calculate base gains from tuning tables, using interpolation
         # For longitudinal:
@@ -156,6 +160,9 @@ class LightweightAdaptiveGainScheduler:
                 'kf': base_lat_kf * self.lat_speed_filter.x * self.lat_thermal_filter.x
             }
         }
+
+        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: kp={gains['longitudinal']['kp']:.3f}, ki={gains['longitudinal']['ki']:.3f}, kf={gains['longitudinal']['kf']:.3f}")
+        cloudlog.debug(f"GainScheduler: Final Lateral Gains: kp={gains['lateral']['kp']:.3f}, ki={gains['lateral']['ki']:.3f}, kd={gains['lateral']['kd']:.3f}, kf={gains['lateral']['kf']:.3f}")
 
         return gains
 
