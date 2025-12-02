@@ -201,15 +201,14 @@ class TestLightweightComfortOptimizer:
         optimizer.prev_acceleration = 0.0
         optimizer.prev_time = 100.0 # Fixed time
         
-        # Patch time.monotonic to control dt
-        with mocker.patch('time.monotonic', return_value=100.1): # dt = 0.1
-            optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
-            # adaptive_jerk_limit for v_ego=10.0: speed_factor = 1.0 - (10.0/30.0) = 2/3. adaptive_limit = 1.5 * (2/3) = 1.0
-            # desired_jerk = (1.0 - 0.0) / 0.1 = 10.0
-            # Since 10.0 > 1.0, jerk limit should apply.
-            # max_delta_a = 1.0 * 0.1 = 0.1
-            # new_acceleration = 0.0 + 0.1 * sign(10.0) = 0.1
-            assert np.isclose(optimized_accel, 0.1, rtol=1e-6)
+        mocker.patch('time.monotonic', return_value=100.1) # dt = 0.1
+        optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
+        # adaptive_jerk_limit for v_ego=10.0: speed_factor = 1.0 - (10.0/30.0) = 2/3. adaptive_limit = 1.5 * (2/3) = 1.0
+        # desired_jerk = (1.0 - 0.0) / 0.1 = 10.0
+        # Since 10.0 > 1.0, jerk limit should apply.
+        # max_delta_a = 1.0 * 0.1 = 0.1
+        # new_acceleration = 0.0 + 0.1 * sign(10.0) = 0.1
+        assert np.isclose(optimized_accel, 0.1, rtol=1e-6)
 
     def test_optimize_for_comfort_jerk_limit_active(self, optimizer, mocker):
         desired_acceleration = 2.0
@@ -217,14 +216,14 @@ class TestLightweightComfortOptimizer:
         optimizer.prev_acceleration = 0.0
         optimizer.prev_time = 100.0
 
-        with mocker.patch('time.monotonic', return_value=100.1): # dt = 0.1
-            optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
-            # adaptive_jerk_limit for v_ego=20.0: speed_factor = 1.0 - (20.0/30.0) = 1/3. adaptive_limit = 1.5 * (1/3) = 0.5
-            # desired_jerk = (2.0 - 0.0) / 0.1 = 20.0
-            # Since 20.0 > 0.5, jerk limit should apply.
-            # max_delta_a = 0.5 * 0.1 = 0.05
-            # new_acceleration = 0.0 + 0.05 * sign(20.0) = 0.05
-            assert np.isclose(optimized_accel, 0.05, rtol=1e-6) # Corrected expected value
+        mocker.patch('time.monotonic', return_value=100.1) # dt = 0.1
+        optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
+        # adaptive_jerk_limit for v_ego=20.0: speed_factor = 1.0 - (20.0/30.0) = 1/3. adaptive_limit = 1.5 * (1/3) = 0.5
+        # desired_jerk = (2.0 - 0.0) / 0.1 = 20.0
+        # Since 20.0 > 0.5, jerk limit should apply.
+        # max_delta_a = 0.5 * 0.1 = 0.05
+        # new_acceleration = 0.0 + 0.05 * sign(20.0) = 0.05
+        assert np.isclose(optimized_accel, 0.05, rtol=1e-6) # Corrected expected value
 
     def test_calculate_adaptive_jerk_limit(self, optimizer):
         # Test at low speed
