@@ -5,7 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 
-from cereal import messaging, custom, log
+from cereal import messaging, custom
 
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL

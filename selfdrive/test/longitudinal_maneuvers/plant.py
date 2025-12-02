@@ -168,11 +168,11 @@ class Plant:
                   'carStateSP', 'liveMapDataSP', 'gpsLocation'}
 
     # Also set valid and logMonoTime to simulate a proper SubMaster
-    sm.valid = {key: True for key in sm.updated}
+    sm.valid = dict.fromkeys(sm.updated, True)
 
     import time
-    current_time = int(time.time() * 1e9)  # nanoseconds
-    sm.logMonoTime = {key: current_time for key in sm.updated}
+    current_time = int(time.monotonic() * 1e9)  # nanoseconds
+    sm.logMonoTime = dict.fromkeys(sm.updated, current_time)
 
     self.planner.update(sm)
     self.acceleration = self.planner.output_a_target

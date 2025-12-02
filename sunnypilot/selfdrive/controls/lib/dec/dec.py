@@ -295,13 +295,15 @@ class DynamicExperimentalController:
         urgency = min(1.0, urgency * 2.0)
 
       # Enhanced speed-based urgency adjustment for better traffic light handling
-      if self._v_ego_kph > WMACConstants.URBAN_INTERSECTION_MIN_SPEED and self._v_ego_kph <= WMACConstants.URBAN_INTERSECTION_MAX_SPEED:  # Typical urban intersection speeds
-        speed_factor = 1.0 + (WMACConstants.URBAN_INTERSECTION_MAX_SPEED - self._v_ego_kph) / WMACConstants.URBAN_INTERSECTION_SPEED_FACTOR_DENOMINATOR  # More urgency when decelerating in urban areas
+      if (self._v_ego_kph > WMACConstants.URBAN_INTERSECTION_MIN_SPEED
+          and self._v_ego_kph <= WMACConstants.URBAN_INTERSECTION_MAX_SPEED):  # Typical urban intersection speeds
+        speed_factor = 1.0 + (WMACConstants.URBAN_INTERSECTION_MAX_SPEED - self._v_ego_kph) / (
+            WMACConstants.URBAN_INTERSECTION_SPEED_FACTOR_DENOMINATOR
+        )  # More urgency when decelerating in urban areas
         urgency = min(1.0, urgency * speed_factor)
 
     # Apply map data enhancement if available
     if sm and 'liveMapDataSP' in sm.updated:
-      from sunnypilot.mapd.live_map_data.base_map_data import BaseMapData
       # Note: We can't directly call get_traffic_sign_info() here since it's an instance method
       # Instead, we'll access the traffic sign data from liveMapDataSP directly
       # This requires the BaseMapData service to populate the relevant fields in liveMapDataSP
@@ -412,9 +414,7 @@ class DynamicExperimentalController:
     self.set_mpc_fcw_crash_cnt()
 
     # Consider map-based traffic sign information if available
-    if 'liveMapDataSP' in sm.updated:
-      live_map_data = sm['liveMapDataSP']
-      # The map data integration is now handled in _calculate_slow_down method
+    # The map data integration is now handled in _calculate_slow_down method
 
     self._update_calculations(sm)
 
