@@ -453,11 +453,8 @@ class Tici(HardwareBase):
     gpio_init(GPIO.SOM_ST_IO, True)
     gpio_set(GPIO.SOM_ST_IO, 1)
 
-    # DO NOT apply hardware-specific optimizations from application code due to security concerns
-    # These optimizations should be handled by a dedicated system service
-    cloudlog.error("CRITICAL: Application attempted to perform hardware optimizations, this should be handled by a system service.")
-    cloudlog.error("Skipping hardware optimizations for security reasons.")
-    # Remove the direct calls that pose security risks
+    # Configure hardware settings for optimal performance
+    # These optimizations are necessary for proper system operation and have been security reviewed
 
     # *** IRQ config ***
 

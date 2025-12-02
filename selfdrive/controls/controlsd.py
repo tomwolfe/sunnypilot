@@ -570,7 +570,6 @@ class Controls(ControlsExt):
                 cloudlog.warning(f"Acceleration KI gain adjusted from {original_ki} to {longitudinal['accel_ki']} for safety")
 
     # Additional safety check - ensure gains are not NaN or infinity
-    import math
     for gain_type in adaptive_gains:
         for gain_name, gain_value in adaptive_gains[gain_type].items():
             if not isinstance(gain_value, (int, float)) or not math.isfinite(gain_value):
