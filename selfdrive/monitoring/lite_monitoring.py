@@ -39,21 +39,26 @@ class LightweightSafetyChecker:
         base_thresholds = {
             'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
             'max_lat_accel': 2.5,      # Maximum lateral acceleration (m/s^2)
-            'max_steering_rate': 1.0,  # Maximum steering rate (rad/s) - adjust based on vehicle.
-                                       # This value may require tuning per vehicle.
-            'max_steering_angle': 0.5, # Maximum steering angle (rad) - adjust based on vehicle
+            'max_steering_rate': 0.3,  # Default maximum steering rate (rad/s)
+            'max_steering_angle': 0.5, # Default maximum steering angle (rad)
             'min_time_gap': 2.0,       # Minimum safe time gap (s) for active intervention
         }
 
         # Adjust thresholds based on specific car parameters if available
         if CP:
-            # The `actuators.steer` value is typically a normalized command (0.0-1.0)
-            # where 1.0 represents the maximum physical steering angle the car can achieve.
-            # `CP.steerMax` is the physical steering angle limit in radians.
-            # The `max_steering_angle` safety threshold should compare against the normalized `actuators.steer`.
-            # We keep a high default normalized value (0.95) to allow full steering range before disengagement.
-            # Adjustments based on `CP.steerMax` are not directly applied to this normalized threshold.
+            # Use CP.steerMax for max_steering_angle, which is the physical steering angle limit in radians.
+            # A small buffer is added for safety to prevent hitting the absolute limit.
+            if CP.steerMax:
+                base_thresholds['max_steering_angle'] = CP.steerMax * 0.95 # 95% of max steer to allow some buffer
 
+            # Dynamically adjust max_steering_rate based on steerMax.
+            # Cars with higher steerMax can typically handle faster steering rates.
+            # Using a scaling factor, but capping it to remain conservative.
+            if CP.steerMax:
+                # A simple linear scaling, but ensuring it doesn't go too high
+                # Start with a base of 0.3 and add a scaled amount based on steerMax
+                scaled_rate = 0.3 + (CP.steerMax / 10.0) # Example: steerMax 1.0 -> 0.4 rad/s, steerMax 2.0 -> 0.5 rad/s
+                base_thresholds['max_steering_rate'] = min(scaled_rate, 0.6) # Cap at 0.6 rad/s for safety
 
         return base_thresholds
 
@@ -130,7 +135,7 @@ class LightweightSafetyChecker:
 
         return safety_report
 
-    def trigger_fail_safe(self, safety_report: Dict) -> Dict:
+    def trigger_fail_safe(self, safety_report: Dict, car_state) -> Dict:
         """
         Trigger appropriate fail-safe action based on safety report.
         """
@@ -143,9 +148,13 @@ class LightweightSafetyChecker:
                     'enabled': False      # Disable control
                 }
             elif safety_report['recommended_action'] == 'decelerate':
-                # Return commands to apply emergency deceleration
+                v_ego = car_state.vEgo if hasattr(car_state, 'vEgo') else 0.0
+                v_points = [0.0, 10.0, 30.0]  # Speeds in m/s
+                decel_points = [-2.0, -3.0, -2.5] # Deceleration values in m/s^2
+                calculated_deceleration = float(np.interp(v_ego, v_points, decel_points))
+
                 return {
-                    'acceleration': -3.0,  # Apply braking
+                    'acceleration': calculated_deceleration,
                     'steering': 0.0,       # Maintain current steering
                     'enabled': True        # Keep enabled but with safe commands
                 }
@@ -264,10 +273,13 @@ class LightweightSystemMonitor:
             gpu_temp = max(gpu_temps) if gpu_temps else 0.0
 
         # Calculate normalized thermal state based on thresholds (0.0 to 1.0)
-        # Using a simple linear scale: 30°C = 0.0, 90°C = 1.0 (critical).
-        # Values below 30°C are clamped to 0.0, and values above 90°C are clamped to 1.0.
-        max_temp = max(cpu_temp, gpu_temp)
-        thermal_state = max(0.0, min(1.0, (max_temp - 30.0) / 60.0))  # Normalize 30-90°C range to 0-1
+        # Using a piecewise linear scale:
+        # Below 40°C = 0.0 (cool/normal)
+        # 40°C to 70°C = 0.0 to 0.5 (linear increase)
+        # 70°C to 90°C = 0.5 to 1.0 (more aggressive linear increase)
+        temp_points = [0.0, 40.0, 70.0, 90.0] # Temperatures in Celsius
+        thermal_state_values = [0.0, 0.0, 0.5, 1.0] # Normalized thermal state values
+        thermal_state = float(np.interp(max_temp, temp_points, thermal_state_values))
 
         return thermal_state
 
