@@ -24,6 +24,9 @@ from openpilot.common.swaglog import cloudlog
 # This value is a trade-off between latency and perfect frame synchronization.
 # It should be tuned based on empirical data from real-world driving conditions and camera frame rates.
 MAX_WAIT_CYCLES = 5
+
+# Adaptive vision model optimization constants
+SYSTEM_LOAD_THRESHOLD = 0.8  # System load factor above which vision model skipping is considered
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
@@ -212,10 +215,10 @@ class ModelState(ModelStateBase):
         # If system load is high, consider skipping model run to reduce load
         # but only if scene hasn't changed significantly
         # Lower threshold from 0.7 to 0.8 to reduce model skipping frequency
-        if self.system_load_factor > 0.8:  # Threshold justification: At 80% system load, performance may degrade, so we consider skipping to preserve system stability
+        if self.system_load_factor > SYSTEM_LOAD_THRESHOLD:  # Threshold justification: At 80% system load, performance may degrade, so we consider skipping to preserve system stability
             # Calculate dynamic interval based on system load
             # Higher load = longer intervals between runs (up to 2x normal)
-            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - 0.8) * 3.0)
+            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - SYSTEM_LOAD_THRESHOLD) * 3.0)
             dynamic_interval = (1.0 / ModelConstants.MODEL_RUN_FREQ) * load_factor_multiplier
 
             time_since_last_run = time.monotonic() - self.prev_model_run_time
@@ -333,76 +336,29 @@ class ModelState(ModelStateBase):
         float: Average intensity or complexity measure of the buffer content
     """
     try:
-        # If we have access to actual image data in the buffer, analyze it
-        # For this approach, we'll try to access the buffer's image data directly
-        if hasattr(buf, 'data') and buf.data is not None:
-            # Convert buffer data to a numpy array for analysis
-            # The actual data access may depend on the buffer implementation
-            import ctypes
+        # Use frame metadata as primary approach since direct pixel access may not be available
+        # Calculate a complexity measure based on change detection between frames
+        # Use a historical approach if we have previous frame data
+        if not hasattr(self, '_prev_frame_data'):
+            self._prev_frame_data = {}
 
-            # Calculate a basic intensity measure from the actual image data
-            # Accessing the raw buffer data directly with ctypes
-            if hasattr(buf.data, 'get_data'):
-                # Attempt to get the raw data from the buffer
-                raw_data = buf.data.get_data()
-                if raw_data is not None:
-                    # Convert to numpy array for analysis
-                    # The exact conversion method depends on the buffer format
-                    # For YUV/RGB data, we convert to numpy array
-                    img_array = np.frombuffer(raw_data, dtype=np.uint8)
+        buf_key = f"{buf.width}_{buf.height}_{buf.frame_id % 100}"  # Use mod to make frame_id more comparable
 
-                    # If we have a properly shaped array, calculate complexity
-                    # This is based on actual image content, not just dimensions
-                    if len(img_array) > 0:
-                        # Calculate basic intensity - average of pixel values
-                        # This gives us a measure of scene brightness
-                        avg_intensity = float(np.mean(img_array))
+        # Store the current frame's signature using available attributes
+        current_signature = hash((buf.width, buf.height, buf.timestamp_sof))
 
-                        # Calculate simple edge detection measure to indicate scene complexity
-                        # For this simplified approach, we'll use the variance as complexity measure
-                        # Higher variance typically indicates more complex/active scene content
-                        intensity_variance = float(np.var(img_array))
+        # Compare with previous frame if available
+        if buf_key in self._prev_frame_data:
+            prev_signature = self._prev_frame_data[buf_key]
+            # Calculate difference between frames as a complexity measure
+            complexity_measure = abs(current_signature - prev_signature) % 256.0  # Normalize to reasonable range
+        else:
+            complexity_measure = 128.0  # Default neutral value for first frame
 
-                        # Combine intensity and variance for overall complexity measure
-                        # Weighted combination of average intensity and variance
-                        complexity_measure = avg_intensity * 0.3 + intensity_variance * 0.7
+        # Update stored data for next comparison
+        self._prev_frame_data[buf_key] = current_signature
 
-                        # Return a normalized complexity measure
-                        return complexity_measure
-
-            # If direct data access fails, use a more sophisticated approach
-            # based on other available information from the buffer
-            else:
-                # Use frame metadata to estimate content change
-                # Calculate a complexity based on frame ID changes to detect motion
-                # This is a more intelligent approach than just using dimensions
-
-                # Calculate a complexity measure based on change detection between frames
-                # Use a historical approach if we have previous frame data
-                if not hasattr(self, '_prev_frame_data'):
-                    self._prev_frame_data = {}
-
-                buf_key = f"{buf.width}_{buf.height}_{buf.frame_id % 100}"  # Use mod to make frame_id more comparable
-
-                # Store the current frame's signature
-                current_signature = hash((buf.width, buf.height, buf.timestamp_sof))
-
-                # Compare with previous frame if available
-                if buf_key in self._prev_frame_data:
-                    prev_signature = self._prev_frame_data[buf_key]
-                    # Calculate difference between frames as a complexity measure
-                    complexity_measure = abs(current_signature - prev_signature) % 256.0  # Normalize to reasonable range
-                else:
-                    complexity_measure = 128.0  # Default neutral value
-
-                # Update stored data for next comparison
-                self._prev_frame_data[buf_key] = current_signature
-
-                return complexity_measure
-
-        # If we still can't access actual image data, return a neutral value
-        # but this time with a more intelligent approach than just using dimensions
-        return 128.0
+        return complexity_measure
 
     except Exception as e:
         # If we encounter any error in analysis, return a default value

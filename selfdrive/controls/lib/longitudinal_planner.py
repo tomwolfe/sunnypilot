@@ -453,22 +453,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
       reliability *= distance_factor
 
-      # 2. Signal-to-Noise Ratio (SNR) based reliability if available
+      # 2. Signal-to-Noise Ratio (SNR) or other quality metrics based reliability if available
       # SNR is a key indicator of measurement quality - higher SNR means more reliable detection
-      if hasattr(lead_radar, 'yRel') and hasattr(lead_radar, 'aRel'):  # Check for other available attributes
-        # In some radar message formats, SNR or similar quality metrics might be present
-        # Check for SNR if available (common field names)
-        if hasattr(lead_radar, 'snr') and lead_radar.snr >= 0:  # Signal-to-noise ratio
-          # Normalize SNR: good SNR (e.g., > 10) = high reliability, poor SNR (e.g., < 2) = low reliability
-          snr_reliability = min(1.0, max(0.1, lead_radar.snr / 10.0))  # Normalize to 0.1-1.0 range
-          reliability *= 0.7 + 0.3 * snr_reliability  # Weight SNR contribution
-        elif hasattr(lead_radar, 'std') and lead_radar.std > 0:  # Standard deviation of measurement
-          # Lower standard deviation = higher reliability
-          std_reliability = max(0.1, 1.0 - (lead_radar.std / 2.0))  # Higher std = less reliable
-          reliability *= 0.6 + 0.4 * std_reliability  # Weight std contribution
-        elif hasattr(lead_radar, 'prob') and lead_radar.prob >= 0:  # Detection probability
-          # Use detection probability if available
-          reliability *= lead_radar.prob
+      # Check for common radar quality metrics
+      if hasattr(lead_radar, 'snr') and lead_radar.snr is not None and lead_radar.snr >= 0:  # Signal-to-noise ratio
+        # Normalize SNR: good SNR (e.g., > 10) = high reliability, poor SNR (e.g., < 2) = low reliability
+        snr_reliability = min(1.0, max(0.1, lead_radar.snr / 10.0))  # Normalize to 0.1-1.0 range
+        reliability *= 0.7 + 0.3 * snr_reliability  # Weight SNR contribution
+      elif hasattr(lead_radar, 'std') and lead_radar.std is not None and lead_radar.std > 0:  # Standard deviation of measurement
+        # Lower standard deviation = higher reliability
+        std_reliability = max(0.1, 1.0 - (lead_radar.std / 2.0))  # Higher std = less reliable
+        reliability *= 0.6 + 0.4 * std_reliability  # Weight std contribution
+      elif hasattr(lead_radar, 'prob') and lead_radar.prob is not None and lead_radar.prob >= 0:  # Detection probability
+        # Use detection probability if available
+        reliability *= lead_radar.prob
 
       # 3. Track age and consistency - longer tracked objects are more reliable
       # The 'aLeadTau' field might represent track age or measurement age (time since last update)
