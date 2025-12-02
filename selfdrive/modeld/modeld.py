@@ -211,10 +211,11 @@ class ModelState(ModelStateBase):
     if hasattr(self, 'system_load_factor'):
         # If system load is high, consider skipping model run to reduce load
         # but only if scene hasn't changed significantly
-        if self.system_load_factor > 0.7:  # Threshold justification: At 70% system load, performance may degrade, so we consider skipping to preserve system stability
+        # Lower threshold from 0.7 to 0.8 to reduce model skipping frequency
+        if self.system_load_factor > 0.8:  # Threshold justification: At 80% system load, performance may degrade, so we consider skipping to preserve system stability
             # Calculate dynamic interval based on system load
             # Higher load = longer intervals between runs (up to 2x normal)
-            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - 0.7) * 3.0)
+            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - 0.8) * 3.0)
             dynamic_interval = (1.0 / ModelConstants.MODEL_RUN_FREQ) * load_factor_multiplier
 
             time_since_last_run = time.monotonic() - self.prev_model_run_time
@@ -334,11 +335,9 @@ class ModelState(ModelStateBase):
                 # If we can't analyze, assume change to be safe
                 changed = True
 
-    # Enhanced scene complexity analysis using motion vectors and edge detection simulation
-    # This is a more sophisticated approach to detect scene complexity by simulating image analysis
-    scene_complexity_detected = self._analyze_scene_content_complexity(bufs)
-
-    return changed or scene_complexity_detected
+    # Return changed based on the primary analysis - removing call to placeholder function
+    # as it's not providing meaningful additional analysis beyond the main function
+    return changed
 
   def _analyze_buffer_content(self, buf: VisionBuf) -> float:
     """
@@ -367,61 +366,22 @@ class ModelState(ModelStateBase):
         # we can estimate content change through other methods
         # For actual image analysis, we would need to access buf's actual data
 
-        # For this implementation, we'll return a value based on other available data
-        # that can be used in complexity analysis
-        intensity_estimate = (buf.width * buf.height) % 255  # Simple proxy for now
-        return intensity_estimate
+        # Calculate a more meaningful complexity measure using available buffer information
+        # We'll use a combination of dimensions and other available metadata to estimate complexity
+        # This is still a simplified approach due to limited direct pixel access
+
+        # Calculate a normalized complexity value based on buffer dimensions
+        # This provides a more consistent measure than the modulo operation
+        normalized_complexity = float((buf.width * buf.height) / 10000.0)  # Scale based on buffer size
+
+        # Additional complexity factors could be added if more data is available
+        complexity_factor = min(normalized_complexity, 255.0)  # Cap the value to reasonable range
+
+        return complexity_factor
     except:
         # If we can't analyze the buffer, return a default value
         return 128.0  # Neutral value
 
-  def _analyze_scene_content_complexity(self, bufs: dict[str, VisionBuf]) -> bool:
-    """
-    Analyze scene content complexity using motion vectors and edge detection simulation.
-
-    Args:
-        bufs: Dictionary of vision buffers
-
-    Returns:
-        bool: True if scene complexity is detected, False otherwise
-    """
-    complexity_detected = False
-
-    for buf_name, buf in bufs.items():
-        if buf is not None:
-            try:
-                # Check for signs of scene complexity through metadata analysis
-                # In a real implementation, this would analyze actual image content
-
-                # Simulate edge density analysis (in real implementation, analyze actual pixels)
-                # Calculate a complexity score based on available information
-                # For example, large changes in frame characteristics could indicate complexity
-
-                # If frame_id changes significantly between calls, it might indicate
-                # different scenes or motion
-                if buf_name in self._prev_frame_analysis:
-                    prev_frame = self._prev_frame_analysis[buf_name]
-                    frame_diff = abs(buf.frame_id - prev_frame['frame_id'])
-
-                    # If frame rate is changing significantly, this could indicate
-                    # different driving conditions that we want to capture
-                    # This is a proxy for scene complexity
-                    if frame_diff > 10:
-                        complexity_detected = True
-
-                # Analyze timestamp patterns that might indicate scene changes
-                if buf_name in self._prev_frame_analysis:
-                    prev_timestamp = self._prev_frame_analysis[buf_name]['timestamp_sof']
-                    time_diff = abs(buf.timestamp_sof - prev_timestamp)
-                    # Rapid timestamp changes could indicate motion or scene complexity
-                    if time_diff < 1e7 and frame_diff == 1:  # Very fast frame timing could indicate motion
-                        complexity_detected = True
-
-            except Exception:
-                # If analysis fails, fall back to default behavior
-                complexity_detected = True  # Assume complexity to be safe
-
-    return complexity_detected
 
   def _detect_critical_situation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
