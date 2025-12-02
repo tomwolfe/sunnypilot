@@ -322,79 +322,95 @@ class Tici(HardwareBase):
     Optimize memory management for Snapdragon 845 by configuring kernel parameters
     for better real-time performance and reduced fragmentation.
 
-    NOTE: This method still uses direct sysfs access, but in a production system,
-    these optimizations should be moved to a dedicated system service or init script
-    that runs with appropriate privileges to avoid security risks.
+    CRITICAL SECURITY NOTICE: This method uses direct sysfs access which is a security risk.
+    In a production system, these optimizations MUST be moved to a dedicated system service
+    or init script that runs with appropriate privileges. This application should never run
+    with root privileges in production.
     """
+    # This method should never be called in a production environment
+    # Issue a critical warning and return without making changes
+    cloudlog.error("CRITICAL: Memory management optimization attempted from application code, skipping for security reasons.")
+    cloudlog.error("These optimizations should be handled by a system service, not application code.")
+    return
+
+    # OLD CODE COMMENTED OUT FOR SECURITY:
     # Check if we have the necessary permissions before attempting to write
     # This is a basic check to make the code more robust
-    if os.geteuid() != 0:
-      cloudlog.warning("Insufficient privileges to optimize memory management. These settings should be configured by system service.")
-      return
-
-    try:
-      # Enable memory compaction to reduce fragmentation
-      sudo_write("1", "/proc/sys/vm/compact_memory")
-
-      # Adjust memory overcommit (more conservative to prevent OOM issues during heavy processing)
-      sudo_write("1", "/proc/sys/vm/overcommit_memory")  # Always check for sufficient memory
-
-      # Reduce swappiness to prefer RAM over swap for real-time performance
-      sudo_write("10", "/proc/sys/vm/swappiness")  # Low but not zero, to still allow swap as safety net
-
-      # Increase the amount of memory that can be kept in reclaimable caches
-      sudo_write("200", "/proc/sys/vm/vfs_cache_pressure")  # Less aggressive cache clearing
-
-      # Optimize dirty page handling for better I/O performance
-      sudo_write("15", "/proc/sys/vm/dirty_background_ratio")  # Start background write at 15% dirty
-      sudo_write("25", "/proc/sys/vm/dirty_ratio")  # Throttle processes at 25% dirty
-
-      # Memory defragmentation parameters
-      sudo_write("1", "/proc/sys/vm/zone_reclaim_mode")  # Enable zone reclaim for NUMA optimization
-      sudo_write("1000", "/proc/sys/vm/compact_unevictable_allowed")  # Allow compacting unevictable pages periodically
-
-    except Exception as e:
-      cloudlog.warning(f"Failed to optimize memory management: {e}")
+    # if os.geteuid() != 0:
+    #   cloudlog.warning("Insufficient privileges to optimize memory management. These settings should be configured by system service.")
+    #   return
+    #
+    # try:
+    #   # Enable memory compaction to reduce fragmentation
+    #   sudo_write("1", "/proc/sys/vm/compact_memory")
+    #
+    #   # Adjust memory overcommit (more conservative to prevent OOM issues during heavy processing)
+    #   sudo_write("1", "/proc/sys/vm/overcommit_memory")  # Always check for sufficient memory
+    #
+    #   # Reduce swappiness to prefer RAM over swap for real-time performance
+    #   sudo_write("10", "/proc/sys/vm/swappiness")  # Low but not zero, to still allow swap as safety net
+    #
+    #   # Increase the amount of memory that can be kept in reclaimable caches
+    #   sudo_write("200", "/proc/sys/vm/vfs_cache_pressure")  # Less aggressive cache clearing
+    #
+    #   # Optimize dirty page handling for better I/O performance
+    #   sudo_write("15", "/proc/sys/vm/dirty_background_ratio")  # Start background write at 15% dirty
+    #   sudo_write("25", "/proc/sys/vm/dirty_ratio")  # Throttle processes at 25% dirty
+    #
+    #   # Memory defragmentation parameters
+    #   sudo_write("1", "/proc/sys/vm/zone_reclaim_mode")  # Enable zone reclaim for NUMA optimization
+    #   sudo_write("1000", "/proc/sys/vm/compact_unevictable_allowed")  # Allow compacting unevictable pages periodically
+    #
+    # except Exception as e:
+    #   cloudlog.warning(f"Failed to optimize memory management: {e}")
 
   def optimize_cpu_performance(self):
     """
     Optimize CPU performance for Snapdragon 845 by configuring additional parameters
     for better real-time performance.
 
-    NOTE: This method still uses direct sysfs access, but in a production system,
-    these optimizations should be moved to a dedicated system service or init script
-    that runs with appropriate privileges to avoid security risks.
+    CRITICAL SECURITY NOTICE: This method uses direct sysfs access which is a security risk.
+    In a production system, these optimizations MUST be moved to a dedicated system service
+    or init script that runs with appropriate privileges. This application should never run
+    with root privileges in production.
     """
-    if os.geteuid() != 0:
-      cloudlog.warning("Insufficient privileges to optimize CPU performance. These settings should be configured by system service.")
-      return
+    # This method should never be called in a production environment
+    # Issue a critical warning and return without making changes
+    cloudlog.error("CRITICAL: CPU performance optimization attempted from application code, skipping for security reasons.")
+    cloudlog.error("These optimizations should be handled by a system service, not application code.")
+    return
 
-    try:
-      # Configure CPU frequency scaling for better performance consistency
-      for n in ('0', '4'):  # Silver and Gold cluster policies
-        # Set to performance governor for consistent performance
-        sudo_write("performance", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_governor")
-
-        # Set minimum frequencies to reduce latency when performance is needed
-        if n == '0':  # Silver cluster (Cortex-A55)
-          sudo_write("652800", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~653MHz
-        else:  # Gold cluster (Cortex-A75)
-          sudo_write("729600", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~730MHz
-
-      # Enable core control for adaptive core management
-      sudo_write("1", "/sys/devices/system/cpu/cpu4/core_ctl/enable")
-
-      # Configure core control parameters for better performance
-      sudo_write("4", "/sys/devices/system/cpu/cpu4/core_ctl/min_cpus")  # Keep at least 4 performance cores ready
-      sudo_write("6", "/sys/devices/system/cpu/cpu4/core_ctl/max_cpus")  # Max 6 cores for performance
-      sudo_write("60", "/sys/devices/system/cpu/cpu4/core_ctl/busy_up_thres")  # More aggressive core enable
-      sudo_write("30", "/sys/devices/system/cpu/cpu4/core_ctl/busy_down_thres")  # Less aggressive core disable
-
-      # Configure CPU thermal controls
-      sudo_write("1", "/sys/devices/system/cpu/cpu_boost/sched_boost_on_enable")  # Enable CPU boost
-
-    except Exception as e:
-      cloudlog.warning(f"Failed to optimize CPU performance: {e}")
+    # OLD CODE COMMENTED OUT FOR SECURITY:
+    # if os.geteuid() != 0:
+    #   cloudlog.warning("Insufficient privileges to optimize CPU performance. These settings should be configured by system service.")
+    #   return
+    #
+    # try:
+    #   # Configure CPU frequency scaling for better performance consistency
+    #   for n in ('0', '4'):  # Silver and Gold cluster policies
+    #     # Set to performance governor for consistent performance
+    #     sudo_write("performance", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_governor")
+    #
+    #     # Set minimum frequencies to reduce latency when performance is needed
+    #     if n == '0':  # Silver cluster (Cortex-A55)
+    #       sudo_write("652800", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~653MHz
+    #     else:  # Gold cluster (Cortex-A75)
+    #       sudo_write("729600", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~730MHz
+    #
+    #   # Enable core control for adaptive core management
+    #   sudo_write("1", "/sys/devices/system/cpu/cpu4/core_ctl/enable")
+    #
+    #   # Configure core control parameters for better performance
+    #   sudo_write("4", "/sys/devices/system/cpu/cpu4/core_ctl/min_cpus")  # Keep at least 4 performance cores ready
+    #   sudo_write("6", "/sys/devices/system/cpu/cpu4/core_ctl/max_cpus")  # Max 6 cores for performance
+    #   sudo_write("60", "/sys/devices/system/cpu/cpu4/core_ctl/busy_up_thres")  # More aggressive core enable
+    #   sudo_write("30", "/sys/devices/system/cpu/cpu4/core_ctl/busy_down_thres")  # Less aggressive core disable
+    #
+    #   # Configure CPU thermal controls
+    #   sudo_write("1", "/sys/devices/system/cpu/cpu_boost/sched_boost_on_enable")  # Enable CPU boost
+    #
+    # except Exception as e:
+    #   cloudlog.warning(f"Failed to optimize CPU performance: {e}")
 
   def shutdown(self):
     os.system("sudo poweroff")
@@ -554,12 +570,11 @@ class Tici(HardwareBase):
     gpio_init(GPIO.SOM_ST_IO, True)
     gpio_set(GPIO.SOM_ST_IO, 1)
 
-    # Apply hardware-specific optimizations for Snapdragon 845 only if running with sufficient privileges
-    if os.geteuid() == 0:
-      self.optimize_memory_management()
-      self.optimize_cpu_performance()
-    else:
-      cloudlog.warning("Running without root privileges, skipping hardware optimizations. These should be handled by system service.")
+    # DO NOT apply hardware-specific optimizations from application code due to security concerns
+    # These optimizations should be handled by a dedicated system service
+    cloudlog.error("CRITICAL: Application attempted to perform hardware optimizations, this should be handled by a system service.")
+    cloudlog.error("Skipping hardware optimizations for security reasons.")
+    # Remove the direct calls that pose security risks
 
     # *** IRQ config ***
 
