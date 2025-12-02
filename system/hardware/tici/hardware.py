@@ -471,19 +471,15 @@ class Tici(HardwareBase):
     affine_irq(5, "fts_ts")    # touch
     affine_irq(5, "msm_drm")   # display
 
-    # Implement thermal-aware GPU configuration with dynamic settings
-    # Instead of always setting high-performance mode, check thermal state and adjust accordingly
-    # For initialization, start with a moderate configuration and allow dynamic adjustment later
-
-    # Default to moderate performance settings that can be adjusted dynamically later
-    # This prevents the initial aggressive thermal configuration while still providing good performance
+    # Implement thermal-aware GPU configuration with adaptive settings
+    # Use ondemand by default for thermal management, but allow for temporary performance increases when needed
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")  # Medium performance level
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")  # Don't limit to highest performance
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")   # Keep bus active
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")   # Keep clock active
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_rail_on")  # Keep voltage rail active
     sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")   # Moderate idle timeout
-    sudo_write("ondemand", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Adaptive governor
+    sudo_write("ondemand", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Adaptive governor for thermal management
     # Set GPU clock to moderate level that can be adjusted per thermal conditions
     sudo_write("600", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")  # Moderate clock speed
     sudo_write("190", "/sys/class/kgsl/kgsl-3d0/min_clock_mhz")  # Balanced responsive clock
@@ -491,7 +487,7 @@ class Tici(HardwareBase):
     # Optimize GPU memory settings
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_no_nap")  # Disable NAP mode initially for performance
 
-    # setup governors for memory and bandwidth
+    # setup governors for memory and bandwidth - use ondemand for thermal management with occasional performance boost
     sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,cpubw/governor")
     sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,memlat-cpu0/governor")  # Silver cluster
     sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,memlat-cpu4/governor")  # Gold cluster

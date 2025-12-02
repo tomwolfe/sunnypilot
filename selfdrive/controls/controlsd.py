@@ -110,23 +110,29 @@ class Controls(ControlsExt):
         'adaptive_gains': {
             'enabled': True,
             'error_count': 0,
-            'max_errors': 5,
+            'max_errors': 3,  # Reduced from 5 to prevent potential abuse
             'last_error_time': 0,
-            'cooldown_period': 5.0  # 5 seconds cooldown after disabling
+            'last_error_reset_time': 0,  # Time when error count was last reset
+            'cooldown_period': 10.0,  # Increased cooldown to 10 seconds to allow for root cause analysis
+            'root_cause_analysis': []  # Store recent error patterns for analysis
         },
         'radar_camera_fusion': {
             'enabled': True,
             'error_count': 0,
             'max_errors': 3,
             'last_error_time': 0,
-            'cooldown_period': 10.0  # 10 seconds cooldown for fusion
+            'last_error_reset_time': 0,
+            'cooldown_period': 15.0,  # Increased for fusion which is critical
+            'root_cause_analysis': []  # Store recent error patterns for analysis
         },
         'vision_model_optimization': {
             'enabled': True,
             'error_count': 0,
-            'max_errors': 10,
+            'max_errors': 5,  # Reduced from 10 to prevent abuse
             'last_error_time': 0,
-            'cooldown_period': 30.0  # 30 seconds cooldown for vision model
+            'last_error_reset_time': 0,
+            'cooldown_period': 45.0,  # Increased to 45 seconds for vision model
+            'root_cause_analysis': []  # Store recent error patterns for analysis
         }
     }
 
@@ -138,27 +144,63 @@ class Controls(ControlsExt):
     current_time = time.monotonic()
     if not cb['enabled']:
         if current_time - cb['last_error_time'] > cb['cooldown_period']:
-            # Reset the circuit breaker after cooldown
-            cb['enabled'] = True
-            cb['error_count'] = 0
-            cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown")
+            # Reset the circuit breaker after cooldown, but only if it's been stable for a while
+            time_since_last_reset = current_time - cb['last_error_reset_time']
+            if time_since_last_reset >= cb['cooldown_period'] / 2:  # Only reset if stable for half the cooldown period
+                cb['enabled'] = True
+                cb['error_count'] = 0  # Reset error count on successful recovery
+                cb['last_error_reset_time'] = current_time
+                cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown and stable period")
+            else:
+                return False  # Not yet ready to reset
         else:
             return False  # Still in cooldown, circuit breaker is disabled
 
     return cb['enabled']
 
-  def _trigger_circuit_breaker(self, breaker_name, error_msg):
-    """Trigger a circuit breaker due to an error."""
+  def _trigger_circuit_breaker(self, breaker_name, error_msg, error_type=None):
+    """Trigger a circuit breaker due to an error with enhanced root cause tracking."""
     cb = self._circuit_breakers[breaker_name]
     cb['error_count'] += 1
     cb['enabled'] = False
     cb['last_error_time'] = time.monotonic()
 
-    cloudlog.error(f"Circuit breaker {breaker_name} triggered due to error: {error_msg}. "
-                   f"Error count: {cb['error_count']}/{cb['max_errors']}")
+    # Add error to root cause analysis
+    if error_type is None:
+        error_type = "unknown"
+    cb['root_cause_analysis'].append({
+        'timestamp': cb['last_error_time'],
+        'error_type': error_type,
+        'error_msg': error_msg,
+        'error_count_at_time': cb['error_count']
+    })
+
+    # Keep only the most recent 10 errors for analysis
+    if len(cb['root_cause_analysis']) > 10:
+        cb['root_cause_analysis'] = cb['root_cause_analysis'][-10:]
+
+    cloudlog.error(f"Circuit breaker {breaker_name} triggered due to error: {error_msg} "
+                   f"(type: {error_type}). Error count: {cb['error_count']}/{cb['max_errors']} "
+                   f"at time {cb['last_error_time']:.2f}")
+
+    # Log detailed root cause analysis if we have multiple errors
+    if cb['error_count'] > 1 and len(cb['root_cause_analysis']) > 1:
+        # Analyze error patterns
+        recent_errors = cb['root_cause_analysis'][-5:]  # Look at last 5 errors
+        error_types = [e['error_type'] for e in recent_errors]
+        time_diffs = [recent_errors[i+1]['timestamp'] - recent_errors[i]['timestamp']
+                     for i in range(len(recent_errors)-1)] if len(recent_errors) > 1 else []
+
+        if len(set(error_types)) == 1:
+            # All recent errors are the same type - potential systematic issue
+            cloudlog.warning(f"Circuit breaker {breaker_name}: Repeated {error_types[0]} errors detected - possible systematic issue")
+        if time_diffs and all(td < 2.0 for td in time_diffs):
+            # Errors happening in rapid succession - potential cascade
+            cloudlog.warning(f"Circuit breaker {breaker_name}: Rapid error sequence detected - possible cascade failure")
 
     if cb['error_count'] >= cb['max_errors']:
-        cloudlog.critical(f"Circuit breaker {breaker_name} permanently disabled due to excessive errors")
+        cloudlog.critical(f"Circuit breaker {breaker_name} permanently disabled due to excessive errors. "
+                          f"Root cause analysis: {cb['root_cause_analysis'][-3:] if cb['root_cause_analysis'] else []}")
 
 
 
@@ -207,32 +249,32 @@ class Controls(ControlsExt):
             adaptive_gains = self._calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
         except Exception as e:
             cloudlog.error(f"Error in adaptive gains calculation: {e}")
-            self._trigger_circuit_breaker('adaptive_gains', str(e))
-            # Fall back to safe default gains
+            self._trigger_circuit_breaker('adaptive_gains', str(e), error_type='adaptive_gains_calculation')
+            # Fall back to very conservative gains to ensure safety in all scenarios
             adaptive_gains = {
                 'lateral': {
-                    'steer_kp': 0.5,  # Conservative gain
-                    'steer_ki': 0.05,
-                    'steer_kd': 0.005,
+                    'steer_kp': 0.3,  # More conservative gain for lateral control
+                    'steer_ki': 0.03,
+                    'steer_kd': 0.003,
                 },
                 'longitudinal': {
-                    'accel_kp': 0.5,
-                    'accel_ki': 0.05,
+                    'accel_kp': 0.3,  # More conservative gain for longitudinal control
+                    'accel_ki': 0.03,
                 }
             }
             # Log the fallback to safe mode
             cloudlog.warning("Fell back to safe default gains due to error")
     else:
-        # Circuit breaker is triggered, use safe default gains
+        # Circuit breaker is triggered, use very conservative gains to ensure safety in all scenarios
         adaptive_gains = {
             'lateral': {
-                'steer_kp': 0.5,  # Conservative gain
-                'steer_ki': 0.05,
-                'steer_kd': 0.005,
+                'steer_kp': 0.3,  # More conservative gain for lateral control
+                'steer_ki': 0.03,
+                'steer_kd': 0.003,
             },
             'longitudinal': {
-                'accel_kp': 0.5,
-                'accel_ki': 0.05,
+                'accel_kp': 0.3,  # More conservative gain for longitudinal control
+                'accel_ki': 0.03,
             }
         }
         cloudlog.warning("Using safe default gains - adaptive gains circuit breaker is active")
@@ -318,12 +360,16 @@ class Controls(ControlsExt):
 
     # Enhanced saturation handling with adaptive limits
     # accel PID loop
-    # Extract longitudinal gains for the longitudinal controller
+    # Extract longitudinal gains for the longitudinal controller - with safe fallback
     if isinstance(adaptive_gains, dict) and 'longitudinal' in adaptive_gains:
         longitudinal_gains = adaptive_gains['longitudinal']
     else:
-        # Fall back to original format if adaptive_gains doesn't have expected structure
-        longitudinal_gains = adaptive_gains
+        # Fall back to safe default longitudinal gains if structure is unexpected
+        longitudinal_gains = {
+            'accel_kp': 0.5,
+            'accel_ki': 0.05,
+        }
+        cloudlog.warning(f"Adaptive gains has unexpected structure, using default longitudinal gains: {type(adaptive_gains)}")
 
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits, longitudinal_gains))
 
@@ -366,6 +412,9 @@ class Controls(ControlsExt):
 
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
+
+    # Apply adaptive GPU management to balance thermal concerns with performance needs
+    self._adaptive_gpu_management(CS, self.sm)
 
 
 
@@ -457,13 +506,18 @@ class Controls(ControlsExt):
     Returns:
         dict: Context information including road type, traffic density, weather indicators, etc.
     """
+    # Calculate current curvature from vehicle state to avoid dependency issues
+    lp = self.sm['liveParameters']
+    steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
+    current_curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
+
     context = {
         'is_curvy_road': False,
         'traffic_density': 'low',  # low, medium, high
         'weather_condition': self._detect_weather_conditions(),  # normal, rain, snow, fog
         'time_of_day': 'day',  # day, night
-        'current_curvature': abs(self.curvature),
-        'lateral_accel': CS.vEgo**2 * abs(self.curvature) if CS.vEgo > 1.0 else 0.0,
+        'current_curvature': abs(current_curvature),
+        'lateral_accel': CS.vEgo**2 * abs(current_curvature) if CS.vEgo > 1.0 else 0.0,
         'long_accel_magnitude': abs(CS.aEgo),
         'steering_activity': abs(CS.steeringRateDeg)  # How much steering is happening
     }
@@ -749,6 +803,73 @@ class Controls(ControlsExt):
                    f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}")
 
     return adaptive_gains
+
+  def _adaptive_gpu_management(self, CS, sm):
+    """
+    Adaptive GPU management to temporarily increase performance when needed for safety-critical operations.
+    This addresses the thermal management trade-off by allowing temporary performance boosts when needed.
+    """
+    try:
+        # Check if we're in a critical situation that may require higher GPU performance
+        critical_situation = (
+            sm['modelV2'].meta.hardBrakePredicted if 'modelV2' in sm and hasattr(sm['modelV2'].meta, 'hardBrakePredicted') else False
+        )
+
+        # Check for lead vehicle emergency situations
+        if 'radarState' in sm and sm.valid['radarState']:
+            radar_state = sm['radarState']
+            for lead in [radar_state.leadOne, radar_state.leadTwo]:
+                if (lead.status and
+                    lead.aLeadK < -3.0 and  # Lead vehicle braking hard
+                    lead.dRel < 50.0 and    # Close distance
+                    CS.vEgo > 5.0):         # Moving at significant speed
+                    critical_situation = True
+                    break
+
+        # If in critical situation and if we have thermal headroom, temporarily boost performance
+        if critical_situation and 'deviceState' in sm and sm.valid['deviceState']:
+            thermal_status = sm['deviceState'].thermalStatus
+            thermal_pwr = sm['deviceState'].thermalPerc
+
+            # Only boost if we're not already in thermal danger
+            if thermal_status < 2 and thermal_pwr < 70:  # Not in red/yellow thermal state and under 70% thermal
+                # Temporarily switch GPU to performance mode for critical operations
+                # This helps reduce latency during critical driving situations
+                with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
+                    f.write("performance")
+
+                # Log the temporary performance boost for monitoring
+                cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. "
+                               f"Thermal: {thermal_status}, Power: {thermal_pwr}%")
+
+                # Set a flag to switch back to ondemand after a short period
+                if not hasattr(self, '_temp_perf_end_time'):
+                    self._temp_perf_end_time = time.monotonic() + 2.0  # Revert after 2 seconds
+            else:
+                # If not in critical situation or thermal limits, make sure we're in ondemand
+                with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
+                    f.write("ondemand")
+        else:
+            # If not in critical situation, ensure we're using ondemand for thermal management
+            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
+                f.write("ondemand")
+
+        # Check if we need to revert from temporary performance mode
+        if hasattr(self, '_temp_perf_end_time') and time.monotonic() > self._temp_perf_end_time:
+            # Revert to ondemand governor after critical situation passes
+            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
+                f.write("ondemand")
+            cloudlog.debug("Reverted GPU governor to ondemand after critical situation")
+            delattr(self, '_temp_perf_end_time')
+    except Exception as e:
+        # If we encounter an error in GPU management, continue with current operation
+        cloudlog.error(f"Error in adaptive GPU management: {e}")
+        # Still try to ensure ondemand governor in case of error
+        try:
+            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
+                f.write("ondemand")
+        except:
+            pass  # If we can't write the governor, continue anyway
 
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
