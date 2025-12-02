@@ -6,11 +6,10 @@ Copyright (c) 2025, sunnypilot community
 
 import math
 import time
-from typing import List, Optional, Tuple
 
 from cereal import messaging, log
 from openpilot.common.params import Params
-from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority
+from openpilot.common.realtime import config_realtime_process, Priority
 
 # Navigation update rate (1 Hz for route updates, faster for position tracking)
 DT_NAV = 1.0
@@ -23,15 +22,15 @@ class RouteEngine:
   """Handles route following logic with turn-by-turn navigation"""
   
   def __init__(self):
-    self.coordinates: List[Coordinate] = []
+    self.coordinates: list[Coordinate] = []
     self.banners = []
-    self.current_instruction: Optional[NavInstruction] = None
+    self.current_instruction = None
     self.route_valid = False
     self.distance_to_maneuver = 0.0
     self.total_route_distance = 0.0
     self.route_progress = 0.0
-    
-  def update_route(self, coordinates: List[Coordinate], banners: List[dict] = None):
+
+  def update_route(self, coordinates: list[Coordinate], banners: list[dict] = None):
     """Update route with new coordinates and banners"""
     self.coordinates = coordinates
     self.banners = banners or []
@@ -44,7 +43,7 @@ class RouteEngine:
         total += self.coordinates[i].distance_to(self.coordinates[i+1])
       self.total_route_distance = total
   
-  def update_position(self, current_pos: Coordinate) -> Optional[NavInstruction]:
+  def update_position(self, current_pos: Coordinate):
     """Update position and return navigation instruction"""
     if not self.route_valid:
       return None
@@ -61,15 +60,17 @@ class RouteEngine:
           self.distance_to_maneuver = banner_distance - self.route_progress
           instruction = parse_banner_instructions([banner], self.distance_to_maneuver)
           if instruction:
-            # Create NavInstruction object from parsed data
-            self.current_instruction = NavInstruction(
-              maneuver_type=instruction.get('maneuverType', ''),
-              maneuver_modifier=instruction.get('maneuverModifier', ''),
-              primary_text=instruction.get('maneuverPrimaryText', ''),
-              secondary_text=instruction.get('maneuverSecondaryText', ''),
-              distance_to_maneuver=self.distance_to_maneuver,
-              show_full=instruction.get('showFull', False)
-            )
+            # Create NavInstruction message from parsed data
+            nav_msg = messaging.new_message('navInstruction')
+            nav_instr = nav_msg.navInstruction
+            nav_instr.maneuverType = instruction.get('maneuverType', '')
+            nav_instr.maneuverModifier = instruction.get('maneuverModifier', '')
+            nav_instr.maneuverPrimaryText = instruction.get('maneuverPrimaryText', '')
+            nav_instr.maneuverSecondaryText = instruction.get('maneuverSecondaryText', '')
+            nav_instr.maneuverDistance = self.distance_to_maneuver
+            nav_instr.showFull = instruction.get('showFull', False)
+
+            self.current_instruction = nav_instr
             return self.current_instruction
           break
     
@@ -126,7 +127,7 @@ def main():
         # Calculate bearing if we have previous position
         if last_pos is not None:
           bearing_delta = current_pos.latitude - last_pos.latitude
-          current_bearing = math.atan2(current_pos.longitude - last_pos.longitude,
+          math.atan2(current_pos.longitude - last_pos.longitude,
                                       bearing_delta) * 180.0 / math.pi
         last_pos = current_pos
 

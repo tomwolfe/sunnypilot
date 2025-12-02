@@ -1,7 +1,6 @@
 """
 Unit tests for NavRoadView - Focus on testing the core logic
 """
-import unittest
 from unittest.mock import Mock, MagicMock, patch
 import sys
 import os
@@ -10,13 +9,13 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 
-class TestNavRoadView(unittest.TestCase):
+class TestNavRoadView:
     """Unit tests for NavRoadView class focusing on core logic"""
 
-    def setUp(self):
+    def setup_method(self):
         """Set up test fixtures before each test method."""
         # We'll test the logic parts by patching the imports
-        with patch('selfdrive.ui.onroad.nav_road_view.ui_state') as mock_ui_state:
+        with patch('openpilot.selfdrive.ui.onroad.nav_road_view.ui_state') as mock_ui_state:
             # Mock the dependencies
             mock_ui_state.sm = Mock()
             mock_ui_state.sm.updated = {'navInstruction': False}
@@ -38,7 +37,7 @@ class TestNavRoadView(unittest.TestCase):
                 sys.modules['openpilot.system.ui.widgets'] = mock_widget_module
 
                 # Now import our class
-                from selfdrive.ui.onroad.nav_road_view import NavRoadView
+                from openpilot.selfdrive.ui.onroad.nav_road_view import NavRoadView
                 self.nav_view_class = NavRoadView
 
     def test_truncate_text(self):
@@ -80,14 +79,13 @@ class TestNavRoadView(unittest.TestCase):
 
         # Test with text that fits
         result = test_nav._truncate_text("Short", 100, 20)
-        self.assertEqual(result, "Short")
+        assert result == "Short"
 
         # Test with text that needs truncation
-        long_text = "This is a very long text that should be truncated"
-        result = test_nav._truncate_text(long_text, 50, 20)  # Small max width
+        result = test_nav._truncate_text("This is a very long text that should be truncated", 50, 20)  # Small max width
         # Should be truncated with ellipsis
-        self.assertIn("...", result)
-        self.assertLess(len(result), len(long_text))
+        assert "..." in result
+        assert len(result) < len("This is a very long text that should be truncated")
 
     def test_truncate_text_with_none_or_empty(self):
         """Test truncating None or empty text"""
@@ -101,10 +99,10 @@ class TestNavRoadView(unittest.TestCase):
         test_nav = TestNavView()
 
         result = test_nav._truncate_text(None, 100, 20)
-        self.assertIsNone(result)
+        assert result is None
 
         result = test_nav._truncate_text("", 100, 20)
-        self.assertEqual(result, "")
+        assert result == ""
 
     def test_get_turn_texture_logic(self):
         """Test the logic for getting turn texture based on maneuver type"""
@@ -130,30 +128,30 @@ class TestNavRoadView(unittest.TestCase):
 
         # Test left turn
         texture = test_nav._get_turn_texture("turn-left")
-        self.assertEqual(texture, 'left_arrow')
+        assert texture == 'left_arrow'
 
         # Test right turn
         texture = test_nav._get_turn_texture("turn-right")
-        self.assertEqual(texture, 'right_arrow')
+        assert texture == 'right_arrow'
 
         # Test straight
         texture = test_nav._get_turn_texture("go-straight")
-        self.assertEqual(texture, 'straight_arrow')
+        assert texture == 'straight_arrow'
 
         # Test slight turns
         texture = test_nav._get_turn_texture("slight-left")
-        self.assertEqual(texture, 'slight_left_arrow')
+        assert texture == 'slight_left_arrow'
 
         texture = test_nav._get_turn_texture("slight-right")
-        self.assertEqual(texture, 'slight_right_arrow')
+        assert texture == 'slight_right_arrow'
 
         # Test None input
         texture = test_nav._get_turn_texture(None)
-        self.assertIsNone(texture)
+        assert texture is None
 
         # Test empty input
         texture = test_nav._get_turn_texture("")
-        self.assertIsNone(texture)
+        assert texture is None
 
     def test_critical_bug_fix_validation(self):
         """Test that critical null-check bug fix is properly implemented"""
@@ -170,8 +168,8 @@ class TestNavRoadView(unittest.TestCase):
                 # This is the FIXED version - check for self._nav_instruction before accessing properties
                 if self._nav_instruction:  # This check prevents the crash
                     # Safe access because we verified _nav_instruction exists
-                    primary_text = getattr(self._nav_instruction, 'maneuverPrimaryText', '')
-                    secondary_text = getattr(self._nav_instruction, 'maneuverSecondaryText', '')
+                    getattr(self._nav_instruction, 'maneuverPrimaryText', '')
+                    getattr(self._nav_instruction, 'maneuverSecondaryText', '')
                     # Access other properties only when nav_instruction exists
                     return True
                 else:
@@ -182,8 +180,8 @@ class TestNavRoadView(unittest.TestCase):
                 """Bug-prone version - would crash if _nav_instruction is None"""
                 # This is the BUGGY version - no check for self._nav_instruction before accessing properties
                 if self._nav_instruction and hasattr(self._nav_instruction, 'maneuverPrimaryText'):
-                    # This line is OK, but elsewhere in the original code there were direct accesses
-                    primary_text = self._nav_instruction.maneuverPrimaryText  # This would crash if _nav_instruction is None
+                    # This line would crash if _nav_instruction is None
+                    self._nav_instruction.maneuverPrimaryText  # This would crash if _nav_instruction is None
                     return True
                 return False
 
@@ -191,7 +189,7 @@ class TestNavRoadView(unittest.TestCase):
         test_nav = TestNavView()
         # When _nav_instruction is None, safe version should handle it gracefully
         result = test_nav._draw_info_panel_safe()
-        self.assertFalse(result)  # Should return False when no nav instruction
+        assert not result  # Should return False when no nav instruction
 
     def test_eta_formatting(self):
         """Test the improved ETA formatting function"""
@@ -224,24 +222,22 @@ class TestNavRoadView(unittest.TestCase):
 
         # Test infinite ETA
         result = test_nav._format_eta(float('inf'))
-        self.assertEqual(result, "ETA: --")
+        assert result == "ETA: --"
 
         # Test seconds only
         result = test_nav._format_eta(45)
-        self.assertEqual(result, "ETA: 45s")
+        assert result == "ETA: 45s"
 
         result = test_nav._format_eta(90)  # 1m 30s
-        self.assertEqual(result, "ETA: 1m 30s")
+        assert result == "ETA: 1m 30s"
 
         result = test_nav._format_eta(120)  # 2m exactly
-        self.assertEqual(result, "ETA: 2m")
+        assert result == "ETA: 2m"
 
         result = test_nav._format_eta(3661)  # 1h 1m 1s
-        self.assertEqual(result, "ETA: 1h 1m 1s")
+        assert result == "ETA: 1h 1m 1s"
 
         result = test_nav._format_eta(3720)  # 1h 2m exactly
-        self.assertEqual(result, "ETA: 1h 2m")
+        assert result == "ETA: 1h 2m"
 
 
-if __name__ == '__main__':
-    unittest.main()

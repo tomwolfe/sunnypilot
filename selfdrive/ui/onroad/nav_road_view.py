@@ -8,12 +8,11 @@ Turn arrows appear at top center and distance/ETA info at top right,
 avoiding overlap with lane lines, vehicle detection and other critical
 driving information areas.
 """
-import datetime
 import pyray as rl
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
-from openpilot.common.realtime import DT_MDL
+from openpilot.system.ui.lib.text_measure import measure_text_cached
 
 
 class NavRoadView(Widget):
@@ -123,7 +122,7 @@ class NavRoadView(Widget):
       return text
 
     # First measure the full text
-    full_size = rl.measure_text_ex(gui_app.font, text, font_size, 2)
+    full_size = measure_text_cached(gui_app.font, text, font_size, 2)
     if full_size.x <= max_width:
       return text
 
@@ -132,7 +131,7 @@ class NavRoadView(Widget):
     ellipsis = "..."
     for i in range(len(text), 0, -1):
       candidate = text[:i] + ellipsis
-      candidate_size = rl.measure_text_ex(gui_app.font, candidate, font_size, 2)
+      candidate_size = measure_text_cached(gui_app.font, candidate, font_size, 2)
       if candidate_size.x <= max_width:
         truncated_text = candidate
         break
@@ -232,7 +231,7 @@ class NavRoadView(Widget):
           self._nav_instruction.maneuverPrimaryText):
         primary_text = self._nav_instruction.maneuverPrimaryText
         distance_text = self._truncate_text(primary_text, max_text_width, self.DISTANCE_FONT_SIZE)
-        distance_size = rl.measure_text_ex(gui_app.font, distance_text, self.DISTANCE_FONT_SIZE, self.TEXT_LINE_SPACING)
+        distance_size = measure_text_cached(gui_app.font, distance_text, self.DISTANCE_FONT_SIZE, self.TEXT_LINE_SPACING)
         distance_color = rl.Color(self.DISTANCE_TEXT_COLOR.r, self.DISTANCE_TEXT_COLOR.g, self.DISTANCE_TEXT_COLOR.b,
                                  int(255 * self._info_panel_alpha))
         rl.draw_text_ex(gui_app.font, distance_text,
@@ -243,7 +242,6 @@ class NavRoadView(Widget):
       if (hasattr(self._nav_instruction, 'maneuverSecondaryText') and
           self._nav_instruction.maneuverSecondaryText):
         secondary_text = self._truncate_text(self._nav_instruction.maneuverSecondaryText, max_text_width, self.SECONDARY_FONT_SIZE)
-        secondary_size = rl.measure_text_ex(gui_app.font, secondary_text, self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
         secondary_color = rl.Color(self.SECONDARY_TEXT_COLOR.r, self.SECONDARY_TEXT_COLOR.g, self.SECONDARY_TEXT_COLOR.b,
                                   int(255 * self._info_panel_alpha))
 
@@ -259,7 +257,7 @@ class NavRoadView(Widget):
       # Distance to maneuver - only show if we have navigation instruction information
       if hasattr(self, '_distance_to_maneuver') and self._distance_to_maneuver != float('inf'):
         dist_maneuver_text = f"{self._distance_to_maneuver:.0f}m"
-        dist_maneuver_size = rl.measure_text_ex(gui_app.font, dist_maneuver_text, self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
+        dist_maneuver_size = measure_text_cached(gui_app.font, dist_maneuver_text, self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
         dist_maneuver_color = rl.Color(self.DISTANCE_TEXT_COLOR.r, self.DISTANCE_TEXT_COLOR.g, self.DISTANCE_TEXT_COLOR.b,
                                       int(255 * self._info_panel_alpha))
         # Position distance text on the right side of the panel, accounting for potential text overlap
@@ -275,7 +273,7 @@ class NavRoadView(Widget):
       if hasattr(self._nav_instruction, 'timeRemaining') and self._nav_instruction.timeRemaining != float('inf'):
         eta_text = self._format_eta(self._nav_instruction.timeRemaining)
 
-      eta_size = rl.measure_text_ex(gui_app.font, eta_text, self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
+      eta_size = measure_text_cached(gui_app.font, eta_text, self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
 
       # Calculate ETA position with better vertical spacing to avoid overlap
       # ETA should appear below other right-aligned text (distance to maneuver)

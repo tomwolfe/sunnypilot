@@ -5,7 +5,6 @@ Copyright (c) 2025, sunnypilot community
 from cereal import messaging
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.car.car_helpers import get_car_can
 import time
 
 
@@ -52,7 +51,7 @@ class NavSafetyManager:
   
   def check_route_validity(self, sm: messaging.SubMaster):
     """Check if navigation route is still valid"""
-    current_time = time.time()
+    current_time = time.monotonic()
     
     # Check if nav instruction has been updated recently
     if sm.updated['navInstruction']:
@@ -121,4 +120,4 @@ class NavSafetyManager:
     """Reset safety state when navigation is re-enabled"""
     self.route_deviation_counter = 0
     self.safety_disengaged = False
-    self.last_valid_nav_time = time.time()
+    self.last_valid_nav_time = time.monotonic()
