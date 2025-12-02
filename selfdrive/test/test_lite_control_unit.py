@@ -99,13 +99,22 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
             )
         )
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor * 1.0, rtol=1e-6)
+        # Calculate expected precise values using exact calculations
+        expected_long_kp_result = expected_long_kp * long_speed_factor * 1.0
+        expected_long_ki_result = expected_long_ki * long_speed_factor * 1.0
+        expected_long_kf_result = expected_long_kf * long_speed_factor * 1.0
+        expected_lat_kp_result = expected_lat_kp * lat_speed_factor * 1.0
+        expected_lat_ki_result = expected_lat_ki * lat_speed_factor * 1.0
+        expected_lat_kd_result = expected_lat_kd * lat_speed_factor * 1.0
+        expected_lat_kf_result = expected_lat_kf * lat_speed_factor * 1.0
+
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_result, rtol=1e-6)
 
     def test_get_adaptive_gains_speed_scaling(self, scheduler):
         v_ego = 20.0 # High speed
@@ -138,13 +147,22 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
         expected_lat_kd = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kdBP, scheduler.CP.lateralTuning.pid.kdV)
         expected_lat_kf = scheduler.CP.lateralTuning.pid.kf
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor_expected * 1.0, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor_expected * 1.0, rtol=1e-6)
+        # Calculate expected precise values using exact calculations
+        expected_long_kp_result = expected_long_kp * long_speed_factor_expected * 1.0
+        expected_long_ki_result = expected_long_ki * long_speed_factor_expected * 1.0
+        expected_long_kf_result = expected_long_kf * long_speed_factor_expected * 1.0
+        expected_lat_kp_result = expected_lat_kp * lat_speed_factor_expected * 1.0
+        expected_lat_ki_result = expected_lat_ki * lat_speed_factor_expected * 1.0
+        expected_lat_kd_result = expected_lat_kd * lat_speed_factor_expected * 1.0
+        expected_lat_kf_result = expected_lat_kf * lat_speed_factor_expected * 1.0
+
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_result, rtol=1e-6)
 
 
     def test_get_adaptive_gains_thermal_scaling(self, scheduler):
@@ -184,13 +202,22 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
         expected_lat_kf_base = scheduler.CP.lateralTuning.pid.kf
 
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
+        # Calculate expected precise values using exact calculations
+        expected_long_kp_result = expected_long_kp_base * long_speed_factor_expected * long_thermal_factor_expected
+        expected_long_ki_result = expected_long_ki_base * long_speed_factor_expected * long_thermal_factor_expected
+        expected_long_kf_result = expected_long_kf_base * long_speed_factor_expected * long_thermal_factor_expected
+        expected_lat_kp_result = expected_lat_kp_base * lat_speed_factor_expected * lat_thermal_factor_expected
+        expected_lat_ki_result = expected_lat_ki_base * lat_speed_factor_expected * lat_thermal_factor_expected
+        expected_lat_kd_result = expected_lat_kd_base * lat_speed_factor_expected * lat_thermal_factor_expected
+        expected_lat_kf_result = expected_lat_kf_base * lat_speed_factor_expected * lat_thermal_factor_expected
+
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_result, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_result, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_result, rtol=1e-6)
 
 
 

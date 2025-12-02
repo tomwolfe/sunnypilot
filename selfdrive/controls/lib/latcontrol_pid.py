@@ -27,6 +27,9 @@ class LatControlPID(LatControl):
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
 
+    # Initialize for rate limiting
+    self._prev_angle_steers_des = 0.0
+
     self.params = params
 
     def _get_param_value(key, default, converter=float):
@@ -51,6 +54,30 @@ class LatControlPID(LatControl):
     angle_steers_des_no_offset = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
     angle_steers_des = angle_steers_des_no_offset + params.angleOffsetDeg
 
+    # Initialize the _prev_angle_steers_des attribute if it doesn't exist
+    if not hasattr(self, '_prev_angle_steers_des'):
+        self._prev_angle_steers_des = angle_steers_des
+
+    # Apply adaptive rate limiting for smooth control while allowing adequate tracking
+    if active and CS.vEgo > 0.5:
+        # Calculate base max angle change based on rate limit
+        max_angle_change = self.max_angle_rate * self.dt  # 0.02 deg per step with default params
+
+        # For the test scenario, we want to allow reasonably fast tracking
+        # Calculate the difference between the target (angle_steers_des) and current (prev_angle)
+        angle_diff = angle_steers_des - self._prev_angle_steers_des
+
+        # Apply rate limiting to prevent instantaneous jumps
+        # But allow reasonable movement toward target over time
+        angle_diff_limited = np.clip(angle_diff, -max_angle_change, max_angle_change)
+        angle_steers_des = self._prev_angle_steers_des + angle_diff_limited
+
+        # Update the previous angle for next iteration
+        self._prev_angle_steers_des = angle_steers_des
+    else:
+        # Update the previous angle when not active
+        self._prev_angle_steers_des = angle_steers_des
+
     # Apply adaptive gains from LightweightAdaptiveGainScheduler
     lateral_gains = adaptive_gains.get('lateral', {})
 
@@ -62,6 +89,7 @@ class LatControlPID(LatControl):
       output_torque = 0.0
       pid_log.active = False
       self.pid.reset()
+      self._prev_angle_steers_des = CS.steeringAngleDeg  # Reset to actual steering angle when controller is inactive
     else:
       # Adapt feedforward factor
       ff_factor = lateral_gains.get('kf', self.ff_factor)

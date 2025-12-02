@@ -95,8 +95,8 @@ class TestLiteIntegration:
         # Verify gains are not significantly reduced due to thermal state
         # For kf: base is 0.05. thermal factor is max(0.85, 1.0 - 0.333*0.15) = max(0.85, 1.0 - 0.05) = 0.95
         # speed_factor at 15m/s (TOYOTA_COROLLA long_speed_gain_factor=35): 1.0 + (15/35) = 1.428. Capped at 1.6. So 1.428
-        # Final kf = 0.05 * 1.428 * 0.95 = 0.06783
-        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06783, rtol=1e-6) 
+        # Final kf = 0.05 * (1.0 + 15/35) * 0.95 = 0.05 * 1.4285714285714286 * 0.95 = 0.06785714285714287
+        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06785714285714287, rtol=1e-6) 
 
         # No safety violations
         mock_actuators.accel = 0.5
