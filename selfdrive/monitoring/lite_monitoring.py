@@ -58,6 +58,7 @@ class LightweightSafetyChecker:
                 # A simple linear scaling, but ensuring it doesn't go too high
                 # Start with a base of 0.3 and add a scaled amount based on steerMax
                 scaled_rate = 0.3 + (CP.steerMax / 10.0) # Example: steerMax 1.0 -> 0.4 rad/s, steerMax 2.0 -> 0.5 rad/s
+                # IMPORTANT: This heuristic needs validation with real-world data across different vehicle models
                 base_thresholds['max_steering_rate'] = min(scaled_rate, 0.8) # Cap at 0.8 rad/s, requires further tuning for safety
 
         return base_thresholds
@@ -108,30 +109,6 @@ class LightweightSafetyChecker:
             # Update current values immediately after calculation to prevent race condition
             self._prev_steer = actuators.steer
             self._prev_time = current_time
-
-        # Enhanced forward collision check - handles all lead vehicle scenarios
-        if (hasattr(radar_state, 'leadOne') and
-            radar_state.leadOne.status and
-            car_state.vEgo > 0.1):
-
-            # Calculate relative speed: positive means approaching, negative means moving away or lead is faster
-            relative_speed = car_state.vEgo - radar_state.leadOne.vRel
-
-            # Only calculate TTC if vehicles are approaching each other (relative_speed > 0)
-            if relative_speed > 0.1:
-                ttc = radar_state.leadOne.dRel / relative_speed
-            else:
-                # If relative speed is 0 or negative, vehicles are not approaching (lead is moving away or faster)
-                # Set TTC to infinity since there's no immediate collision risk
-                ttc = float('inf')
-
-            # Check for potential collision based on TTC or distance
-            min_safe_distance_calculated = car_state.vEgo * self.safety_thresholds['min_time_gap']
-            if ttc < self.safety_thresholds['min_time_gap'] or radar_state.leadOne.dRel < min_safe_distance_calculated:
-                # This is a safety-critical situation regardless of current acceleration
-                safety_report['safe'] = False
-                safety_report['violations'].append('forward_collision_imminent')
-                safety_report['recommended_action'] = 'decelerate'
 
         # Enhanced forward collision check - handles all lead vehicle scenarios
         if (hasattr(radar_state, 'leadOne') and
@@ -246,9 +223,12 @@ class LightweightSystemMonitor:
                 health_report['ram_low'] = True
 
         # Additional checks for CAN bus, disk, etc. if available
+        # A more robust check would verify that the specific messages needed for control
+        # (e.g., carState, radarState) are arriving at their expected frequency
         if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
             current_mono_time = time.monotonic()
             recent_can_message_found = False
+            # Check if recent CAN messages have been received within expected time window (2 seconds)
             for can_time_ns in device_state.canMonoTimes: # canMonoTimes are in nanoseconds
                 if (current_mono_time - (can_time_ns * 1e-9)) < 2.0: # Check if message is within last 2 seconds
                     recent_can_message_found = True
