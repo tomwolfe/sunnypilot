@@ -82,26 +82,7 @@ class LatControlTorque(LatControl):
       # while 1.0 means no scaling is applied based on curvature.
       # This helps to prevent oscillations and aggressive steering in turns.
 
-  def _validate_parameter(self, value, min_val, max_val, name):
-    """
-    Validate that a parameter is within safe bounds.
 
-    Args:
-        value: Parameter value to validate
-        min_val: Minimum allowed value
-        max_val: Maximum allowed value
-        name: Name of the parameter for logging
-
-    Returns:
-        Validated parameter value within bounds
-    """
-    if value < min_val:
-      print(f"Warning: {name} value {value} below minimum {min_val}, clamping to minimum")
-      return min_val
-    elif value > max_val:
-      print(f"Warning: {name} value {value} above maximum {max_val}, clamping to maximum")
-      return max_val
-    return value
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -114,7 +95,7 @@ class LatControlTorque(LatControl):
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, # Desired path curvature in 1/meter
-             calibrated_pose, curvature_limited, lat_delay):
+             calibrated_pose, curvature_limited, lat_delay, adaptive_gains: Dict):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()
@@ -124,7 +105,15 @@ class LatControlTorque(LatControl):
     if not active:
       output_torque = 0.0
       pid_log.active = False
+      self.pid.reset()
     else:
+      # Apply adaptive gains from LightweightAdaptiveGainScheduler
+      lateral_gains = adaptive_gains.get('lateral', {})
+      self.pid.kp = lateral_gains.get('kp', self.pid.kp)
+      self.pid.ki = lateral_gains.get('ki', self.pid.ki)
+      self.pid.kd = lateral_gains.get('kd', self.pid.kd)
+      self.pid.kf = lateral_gains.get('kf', self.pid.kf)
+
       measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
       roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
       curvature_deadzone = abs(VM.calc_curvature(math.radians(self.steering_angle_deadzone_deg), CS.vEgo, 0.0))
@@ -132,27 +121,20 @@ class LatControlTorque(LatControl):
 
       delay_frames = int(np.clip(lat_delay / self.dt, 1, self.lat_accel_request_buffer_len))
       expected_lateral_accel = self.lat_accel_request_buffer[-delay_frames]
-      # TODO factor out lateral jerk from error to later replace it with delay independent alternative
+      
       future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
       self.lat_accel_request_buffer.append(future_desired_lateral_accel)
       gravity_adjusted_future_lateral_accel = future_desired_lateral_accel - roll_compensation
-      desired_lateral_jerk = (future_desired_lateral_accel - expected_lateral_accel) / lat_delay
+      
+      # Setpoint is directly the future desired lateral acceleration
+      setpoint = future_desired_lateral_accel
 
       measurement = measured_curvature * CS.vEgo ** 2
       measurement_rate = self.measurement_rate_filter.update((measurement - self.previous_measurement) / self.dt)
       self.previous_measurement = measurement
 
-      # Smoother setpoint calculation with predictive control enhancement
-      # Apply jerk limiting to reduce abrupt changes
-      max_lateral_jerk = self.max_lateral_jerk  # Limit lateral jerk for smoother transitions - now configurable
-      limited_lateral_jerk = np.clip(desired_lateral_jerk, -max_lateral_jerk, max_lateral_jerk)
-      setpoint = lat_delay * limited_lateral_jerk + expected_lateral_accel
-
-      # Apply smoothing filter to reduce noise in error calculation
       error = setpoint - measurement
 
-      # Enhanced feedforward with speed-dependent adjustments
-      # Apply smoother roll compensation and friction handling
       pid_log.error = float(error)
       ff = gravity_adjusted_future_lateral_accel
       # latAccelOffset corrects roll compensation bias from device roll misalignment relative to car roll
@@ -162,92 +144,12 @@ class LatControlTorque(LatControl):
 
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
-      # Enhanced adaptive PID parameters for smoother response
-      # Increase damping based on multiple factors: speed, curvature, and system load
-      original_kp_values = list(self.pid._k_p[1])  # Store original kp values
-      original_ki_values = list(self.pid._k_i[1])  # Store original ki values
-      original_kd_values = list(self.pid._k_d[1])  # Store original kd values
-
-      # Calculate adaptive gains based on multiple factors
-      # 1. Curvature-based scaling: reduce gains in high-curvature situations to prevent oscillations
-      curvature_factor = 1.0 - np.clip(abs(desired_curvature) * self.curvature_ki_scaler, 0.0, 0.8)  # Limit reduction to 80%
-
-      # 2. Speed-based scaling: adjust for different driving conditions
-      speed_factor = np.interp(CS.vEgo, [0, 10, 30, 50], [1.0, 1.0, 0.8, 0.7])  # Higher speeds use lower gains
-
-      # 3. Error-based scaling: increase gains when error is high to respond more aggressively
-      # Apply smoothing to error magnitude to reduce noise sensitivity, especially for Kd scaling
-      raw_error_magnitude_factor = abs(error) * 0.5
-      # Apply a simple first-order filter to reduce high-frequency noise in error magnitude
-      if not hasattr(self, 'filtered_error_magnitude'):
-        self.filtered_error_magnitude = raw_error_magnitude_factor
-      # Use a simple exponential moving average for filtering
-      # alpha=0.3 provides a good balance between noise reduction and responsiveness
-      # Based on empirical testing to reduce derivative noise while maintaining control authority
-      alpha = 0.3  # Filter coefficient (lower = more filtering)
-      self.filtered_error_magnitude = alpha * raw_error_magnitude_factor + (1 - alpha) * self.filtered_error_magnitude
-      # Apply the final clipping to the filtered value
-      # Bounds [0.8, 1.5] provide conservative gain scaling: minimum 0.8 to prevent over-damping,
-      # maximum 1.5 to prevent excessive response to transient errors, validated through testing
-      error_magnitude_factor = np.clip(self.filtered_error_magnitude, 0.8, 1.5)  # Boost gains for large errors
-
-      # 4. Thermal-aware gain adjustment: adjust gains based on thermal stress to maintain stability
-      if hasattr(self, 'thermal_stress_level') and hasattr(self, 'thermal_performance_factor'):
-        # Reduce gains under thermal stress to maintain stability
-        thermal_stability_factor = self.thermal_performance_factor  # 1.0 = no stress, lower = more stress
-        if self.thermal_stress_level >= 2:  # High/very high thermal stress
-          # More aggressive gain reduction under high thermal stress
-          thermal_stability_factor = max(0.6, thermal_stability_factor)  # Don't go below 60% of normal
-        elif self.thermal_stress_level == 1:  # Moderate thermal stress
-          thermal_stability_factor = max(0.8, thermal_stability_factor)  # Don't go below 80% of normal
-      else:
-        # Default thermal factor if not provided (assume normal conditions)
-        thermal_stability_factor = 1.0
-
-      # Calculate adjusted gains using all factors
-      # For Kd, use a more conservative approach to reduce noise sensitivity
-      adjusted_kp = self.pid.k_p * curvature_factor * speed_factor * error_magnitude_factor * thermal_stability_factor
-      adjusted_ki = self.pid.k_i * curvature_factor * speed_factor * thermal_stability_factor
-      # Use a separate, more conservative factor for Kd to reduce noise sensitivity
-      # Kd controls derivative action which is most sensitive to noise
-      # Factor of 0.7 reduces the base magnitude, and bounds [0.8, 1.2] provide even more conservative
-      # scaling than the main error factor to minimize derivative-induced oscillations
-      kd_error_magnitude_factor = np.clip(self.filtered_error_magnitude * 0.7, 0.8, 1.2)  # More conservative for Kd
-      adjusted_kd = self.pid.k_d * curvature_factor * speed_factor * kd_error_magnitude_factor * thermal_stability_factor
-
-      # Apply high-speed specific constraints
-      if CS.vEgo > self.high_speed_threshold:  # Above configurable threshold (default 15 m/s or 54 km/h)
-        # Further reduce integral gain to prevent oscillations at high speeds
-        adjusted_ki = min(adjusted_ki, self.high_speed_ki_limit)
-        # Also slightly reduce proportional gain at high speeds for stability
-        adjusted_kp = min(adjusted_kp, self.pid.k_p * 0.9)
-
-      # Temporarily modify the gain values for this update
-      # This needs to be done at the data structure level since gains are properties
-      temp_kp_array = [adjusted_kp] * len(original_kp_values)
-      temp_ki_array = [adjusted_ki] * len(original_ki_values)
-      temp_kd_array = [adjusted_kd] * len(original_kd_values)
-
-      # Create new tuples to replace the original gain structures
-      new_kp_structure = (self.pid._k_p[0], tuple(temp_kp_array))  # Keep speed points, update kp values
-      new_ki_structure = (self.pid._k_i[0], tuple(temp_ki_array))  # Keep speed points, update ki values
-      new_kd_structure = (self.pid._k_d[0], tuple(temp_kd_array))  # Keep speed points, update kd values
-
-      # Apply the adjusted gains
-      self.pid._k_p = new_kp_structure
-      self.pid._k_i = new_ki_structure
-      self.pid._k_d = new_kd_structure
-
       output_lataccel = self.pid.update(pid_log.error,
                                           -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
                                           freeze_integrator=freeze_integrator)
-      # Restore original gain values after the update to maintain baseline tuning
-      self.pid._k_p = (self.pid._k_p[0], original_kp_values)
-      self.pid._k_i = (self.pid._k_i[0], original_ki_values)
-      self.pid._k_d = (self.pid._k_d[0], original_kd_values)
-
+      
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       # Lateral acceleration torque controller extension updates
@@ -264,7 +166,7 @@ class LatControlTorque(LatControl):
       pid_log.output = float(-output_torque) # TODO: log lat accel?
       pid_log.actualLateralAccel = float(measurement)
       pid_log.desiredLateralAccel = float(setpoint)
-      pid_log.desiredLateralJerk = float(desired_lateral_jerk)
+      pid_log.desiredLateralJerk = float(0.0) # Adaptive jerk removed, set to 0.0
 
       # Saturation logic: when NNLC is enabled, also consider physical torque saturation
       # Otherwise, only consider curvature limited state

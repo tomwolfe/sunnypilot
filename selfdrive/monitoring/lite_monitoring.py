@@ -58,8 +58,10 @@ class LightweightSafetyChecker:
                 # A simple linear scaling, but ensuring it doesn't go too high
                 # Start with a base of 0.3 and add a scaled amount based on steerMax
                 scaled_rate = 0.3 + (CP.steerMax / 10.0) # Example: steerMax 1.0 -> 0.4 rad/s, steerMax 2.0 -> 0.5 rad/s
+                cloudlog.debug(f"SafetyChecker: CP.steerMax={CP.steerMax:.2f}, calculated scaled_rate={scaled_rate:.2f}")
                 # IMPORTANT: This heuristic needs validation with real-world data across different vehicle models
                 base_thresholds['max_steering_rate'] = min(scaled_rate, 0.8) # Cap at 0.8 rad/s, requires further tuning for safety
+                cloudlog.debug(f"SafetyChecker: Final max_steering_rate set to {base_thresholds['max_steering_rate']:.2f} rad/s")
 
         return base_thresholds
 
@@ -101,10 +103,13 @@ class LightweightSafetyChecker:
             if hasattr(self, '_prev_time') and self._prev_time > 0:
                 time_delta = current_time - self._prev_time
                 steering_rate = abs(actuators.steer - self._prev_steer) / max(time_delta, 0.01)  # Use a small dt to avoid division by zero
+                cloudlog.debug(f"SafetyChecker: Steering rate={steering_rate:.2f} rad/s, Max rate={self.safety_thresholds['max_steering_rate']:.2f} rad/s")
                 if steering_rate > self.safety_thresholds['max_steering_rate']:
                     safety_report['safe'] = False
                     safety_report['violations'].append('steering_rate_limit_exceeded')
                     safety_report['recommended_action'] = 'disengage'
+                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! rate={steering_rate:.2f}, limit={self.safety_thresholds['max_steering_rate']:.2f}, vEgo={car_state.vEgo:.2f}")
+
 
             # Update current values immediately after calculation to prevent race condition
             self._prev_steer = actuators.steer
