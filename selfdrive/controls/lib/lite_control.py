@@ -50,6 +50,18 @@ class LightweightAdaptiveGainScheduler:
         car_specific_tuning = {
             # Example: specific tuning for different car models
             # These values would be tuned based on real-world testing
+            # 'HYUNDAI_SONATA': {
+            #     'long_speed_gain_factor': 25.0,
+            #     'lat_speed_gain_factor': 45.0,
+            #     'max_long_gain_multiplier': 1.4,
+            #     'max_lat_gain_multiplier': 1.2,
+            # },
+            # 'TOYOTA_COROLLA': {
+            #     'long_speed_gain_factor': 35.0,
+            #     'lat_speed_gain_factor': 55.0,
+            #     'max_long_gain_multiplier': 1.6,
+            #     'max_lat_gain_multiplier': 1.4,
+            # },
         }
 
         if car_model in car_specific_tuning:
@@ -102,6 +114,7 @@ class LightweightAdaptiveGainScheduler:
         # For lateral: take the first kp, ki, kd values as baseline
         base_lat_kp = self.CP.lateralTuning.pid.kpV[0] if hasattr(self.CP.lateralTuning.pid, 'kpV') and self.CP.lateralTuning.pid.kpV else 0.5
         base_lat_ki = self.CP.lateralTuning.pid.kiV[0] if hasattr(self.CP.lateralTuning.pid, 'kiV') and self.CP.lateralTuning.pid.kiV else 0.05
+        base_lat_kd = self.CP.lateralTuning.pid.kdV[0] if hasattr(self.CP.lateralTuning.pid, 'kdV') and self.CP.lateralTuning.pid.kdV else 0.0
         base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
 
         gains = {
@@ -113,7 +126,8 @@ class LightweightAdaptiveGainScheduler:
             'lateral': {
                 'kp': base_lat_kp * self.lat_speed_filter.x * self.lat_thermal_filter.x,
                 'ki': base_lat_ki * self.lat_speed_filter.x * self.lat_thermal_filter.x,
-                'kd': base_lat_kf * self.lat_speed_filter.x * self.lat_thermal_filter.x  # Using kf as kd since that's the typical third parameter for PID
+                'kd': base_lat_kd * self.lat_speed_filter.x * self.lat_thermal_filter.x,  # Fixed: Using proper kd value instead of kf
+                'kf': base_lat_kf * self.lat_speed_filter.x * self.lat_thermal_filter.x
             }
         }
 
@@ -182,13 +196,18 @@ if __name__ == "__main__":
     from openpilot.common.params import Params
     from cereal import car
     cloudlog.info("Initializing Lightweight Control System")
-    
+
     # Create mock parameters and car params for testing
     params = Params()
     CP = car.CarParams.new_message()
-    
+
     # Initialize lightweight systems
     gain_scheduler = LightweightAdaptiveGainScheduler(CP)
     comfort_optimizer = LightweightComfortOptimizer()
-    
+
+    # Example of how to use the system with a thermal state from monitoring system
+    v_ego = 20.0  # Current speed in m/s
+    thermal_state = 0.3  # Example thermal state from monitoring system
+    gains = gain_scheduler.get_adaptive_gains(v_ego, thermal_state)
+
     cloudlog.info("Lightweight Control System initialized successfully")
