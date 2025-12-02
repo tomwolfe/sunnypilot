@@ -6,7 +6,7 @@ for the Comma 3x hardware, focusing on high-impact, low-cost features.
 """
 
 import numpy as np
-from typing import Optional, List
+from typing import Optional
 import time
 
 # Import existing sunnypilot components
@@ -15,7 +15,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 
 
-def _interp_gain(x: float, xp: List[float], fp: List[float]) -> float:
+def _interp_gain(x: float, xp: list[float], fp: list[float]) -> float:
   """
   Linear interpolation function.
   x: The x-coordinate(s) at which to evaluate the interpolated values (v_ego).
@@ -177,19 +177,12 @@ class LightweightAdaptiveGainScheduler:
             }
         }
 
-        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: "
-                        f"kp={gains['longitudinal']['kp']:.3f}, "
-                        f"ki={gains['longitudinal']['ki']:.3f}, "
-                        f"kf={gains['longitudinal']['kf']:.3f}")
-        cloudlog.debug(f"GainScheduler: Final Lateral Gains: "
-                        f"kp={gains['lateral']['kp']:.3f}, "
-                        f"ki={gains['lateral']['ki']:.3f}, "
-                        f"kd={gains['lateral']['kd']:.3f}, "
-                        f"kf={gains['lateral']['kf']:.3f}")
+        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: kp={gains['longitudinal']['kp']:.3f}, ki={gains['longitudinal']['ki']:.3f}, kf={gains['longitudinal']['kf']:.3f}")
+        cloudlog.debug(f"GainScheduler: Final Lateral Gains: kp={gains['lateral']['kp']:.3f}, ki={gains['lateral']['ki']:.3f}, kd={gains['lateral']['kd']:.3f}, kf={gains['lateral']['kf']:.3f}")
 
         return gains
 
-    def _get_base_gain(self, v_ego: float, bp_array: Optional[List[float]], gain_array: List[float], default_gain: float, gain_name: str) -> float:
+    def _get_base_gain(self, v_ego: float, bp_array: Optional[list[float]], gain_array: list[float], default_gain: float, gain_name: str) -> float:
         """
         Helper method to safely get a gain value, using linear interpolation if breakpoints are provided.
         If breakpoint or gain arrays are missing/invalid for interpolation, it falls back to a single value (gain_array[0])

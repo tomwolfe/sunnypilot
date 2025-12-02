@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from unittest.mock import Mock
-from pytest_mock import mocker
+
 
 from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler, LightweightComfortOptimizer
 
@@ -69,34 +69,17 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
         gains = scheduler.get_adaptive_gains(v_ego, thermal_state)
 
         # Expected base longitudinal gains (interpolated at v_ego=5.0)
-        expected_long_kp = np.interp(v_ego, [0.0, 10.0, 20.0], [0.1, 0.5, 1.0])
-        expected_long_ki = np.interp(v_ego, [0.0, 10.0, 20.0], [0.01, 0.03, 0.05])
-        expected_long_kf = 0.05
+
 
         # Expected base lateral gains (interpolated at v_ego=5.0)
-        expected_lat_kp = np.interp(v_ego, [0.0, 10.0, 20.0], [0.2, 0.8, 1.5])
-        expected_lat_ki = np.interp(v_ego, [0.0, 10.0, 20.0], [0.02, 0.04, 0.06])
-        expected_lat_kd = np.interp(v_ego, [0.0, 10.0, 20.0], [0.0, 0.1, 0.2])
-        expected_lat_kf = 0.1
+
 
         # With mock filters that instantly update their .x to the input value (factor)
         # And since thermal_state=0.0 -> long_thermal_factor = 1.0, lat_thermal_factor = 1.0
         # And long_speed_factor and lat_speed_factor will be calculated.
 
-        long_speed_factor = max(
-            scheduler.vehicle_tuning['min_long_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_long_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['long_speed_gain_factor'])
-            )
-        )
-        lat_speed_factor = max(
-            scheduler.vehicle_tuning['min_lat_gain_multiplier'],
-            min(
-                scheduler.vehicle_tuning['max_lat_gain_multiplier'],
-                1.0 + (v_ego / scheduler.vehicle_tuning['lat_speed_gain_factor'])
-            )
-        )
+
+
 
         # Calculate expected precise values using exact calculations
 
@@ -219,7 +202,7 @@ class TestLightweightComfortOptimizer:
         optimizer.prev_time = 100.0 # Fixed time
         
         # Patch time.monotonic to control dt
-        with patch('time.monotonic', return_value=100.1): # dt = 0.1
+        with mocker.patch('time.monotonic', return_value=100.1): # dt = 0.1
             optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
             # adaptive_jerk_limit for v_ego=10.0: speed_factor = 1.0 - (10.0/30.0) = 2/3. adaptive_limit = 1.5 * (2/3) = 1.0
             # desired_jerk = (1.0 - 0.0) / 0.1 = 10.0
@@ -234,7 +217,7 @@ class TestLightweightComfortOptimizer:
         optimizer.prev_acceleration = 0.0
         optimizer.prev_time = 100.0
 
-        with patch('time.monotonic', return_value=100.1): # dt = 0.1
+        with mocker.patch('time.monotonic', return_value=100.1): # dt = 0.1
             optimized_accel = optimizer.optimize_for_comfort(desired_acceleration, v_ego)
             # adaptive_jerk_limit for v_ego=20.0: speed_factor = 1.0 - (20.0/30.0) = 1/3. adaptive_limit = 1.5 * (1/3) = 0.5
             # desired_jerk = (2.0 - 0.0) / 0.1 = 20.0

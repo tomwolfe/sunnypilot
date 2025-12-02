@@ -6,7 +6,7 @@ designed for Comma 3x hardware constraints.
 """
 
 import numpy as np
-from typing import List, cast
+from typing import cast
 
 import time
 
@@ -74,7 +74,7 @@ class LightweightSafetyChecker:
         """
         safety_report = {
             'safe': True,
-            'violations': cast(List[str], []),
+            'violations': cast(list[str], []),
             'recommended_action': 'continue'  # Options: 'continue', 'decelerate', 'disengage'
         }
 
@@ -110,10 +110,7 @@ class LightweightSafetyChecker:
                     safety_report['safe'] = False
                     safety_report['violations'].append('steering_rate_limit_exceeded')
                     safety_report['recommended_action'] = 'disengage'
-                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! "
-                                  f"rate={{steering_rate:.2f}}, "
-                                  f"limit={{self.safety_thresholds['max_steering_rate']:.2f}}, "
-                                  f"vEgo={{car_state.vEgo:.2f}}")
+                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! rate={{steering_rate:.2f}}, limit={{self.safety_thresholds['max_steering_rate']:.2f}}, vEgo={{car_state.vEgo:.2f}}")
 
 
             # Update current values immediately after calculation to prevent race condition
@@ -148,11 +145,13 @@ class LightweightSafetyChecker:
             if 'steering_angle_limit_exceeded' in safety_report['violations'] or \
                'steering_rate_limit_exceeded' in safety_report['violations']:
                 safety_report['recommended_action'] = 'disengage'
-                        elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
-                             'lat_accel_limit_exceeded' in safety_report['violations'] or \
-                             'forward_collision_imminent' in safety_report['violations']:
-                                             safety_report['recommended_action'] = 'decelerate'
-                                    return safety_report    def trigger_fail_safe(self, safety_report: dict, car_state) -> dict:
+            elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
+                 'lat_accel_limit_exceeded' in safety_report['violations'] or \
+                 'forward_collision_imminent' in safety_report['violations']:
+                safety_report['recommended_action'] = 'decelerate'
+        return safety_report
+
+    def trigger_fail_safe(self, safety_report: dict, car_state) -> dict:
         """
         Trigger appropriate fail-safe action based on safety report.
         """

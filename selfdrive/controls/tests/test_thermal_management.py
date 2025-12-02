@@ -1,5 +1,5 @@
 from collections import deque
-from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+
 from opendbc.car.structs import CarParams
 
 
@@ -19,7 +19,7 @@ def test_thermal_compensation_longitudinal():
     enableGasInterceptor = False
     neuralNetworkLateralControl = type('obj', (object,), {'model': type('obj', (object,), {'path': ''})})()
 
-  CP_SP = MockCarParamsSP()
+
 
 
 
