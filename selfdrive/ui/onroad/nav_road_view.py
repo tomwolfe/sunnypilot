@@ -174,6 +174,30 @@ class NavRoadView(Widget):
     # Draw arrow
     rl.draw_texture_ex(texture, rl.Vector2(arrow_x, arrow_y), 0.0, 1.0, color)
 
+  def _format_eta(self, seconds):
+    """Format ETA in a more precise way (e.g. '1h 22m' or '5m 30s' or '90s')"""
+    if seconds == float('inf'):
+      return "ETA: --"
+
+    total_seconds = int(seconds)
+
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    remaining_seconds = total_seconds % 60
+
+    if hours > 0:
+      if remaining_seconds > 0:
+        return f"ETA: {hours}h {minutes}m {remaining_seconds}s"
+      else:
+        return f"ETA: {hours}h {minutes}m"
+    elif minutes > 0:
+      if remaining_seconds > 0:
+        return f"ETA: {minutes}m {remaining_seconds}s"
+      else:
+        return f"ETA: {minutes}m"
+    else:
+      return f"ETA: {remaining_seconds}s"
+
   def _draw_info_panel(self, rect):
     """Draw navigation information panel"""
     # Safety: Only render when alpha > 0.01 to prevent rendering nearly invisible elements
@@ -246,11 +270,11 @@ class NavRoadView(Widget):
 
     # ETA - only show if we have ETA information and nav instruction exists to provide context
     if self._eta_seconds != float('inf') and self._nav_instruction:
-      eta_text = f"ETA: {int(self._eta_seconds / 60)} min"
+      eta_text = self._format_eta(self._eta_seconds)
 
       # Check if we have timeRemaining attribute in nav_instruction for defensive programming
       if hasattr(self._nav_instruction, 'timeRemaining') and self._nav_instruction.timeRemaining != float('inf'):
-        eta_text = f"ETA: {int(self._nav_instruction.timeRemaining / 60)} min"
+        eta_text = self._format_eta(self._nav_instruction.timeRemaining)
 
       eta_size = rl.measure_text_ex(gui_app.font, eta_text, self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
 

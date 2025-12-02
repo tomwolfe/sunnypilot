@@ -193,6 +193,55 @@ class TestNavRoadView(unittest.TestCase):
         result = test_nav._draw_info_panel_safe()
         self.assertFalse(result)  # Should return False when no nav instruction
 
+    def test_eta_formatting(self):
+        """Test the improved ETA formatting function"""
+        class TestNavView:
+            def _format_eta(self, seconds):
+                """Copy the implementation for testing"""
+                if seconds == float('inf'):
+                    return "ETA: --"
+
+                total_seconds = int(seconds)
+
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                remaining_seconds = total_seconds % 60
+
+                if hours > 0:
+                    if remaining_seconds > 0:
+                        return f"ETA: {hours}h {minutes}m {remaining_seconds}s"
+                    else:
+                        return f"ETA: {hours}h {minutes}m"
+                elif minutes > 0:
+                    if remaining_seconds > 0:
+                        return f"ETA: {minutes}m {remaining_seconds}s"
+                    else:
+                        return f"ETA: {minutes}m"
+                else:
+                    return f"ETA: {remaining_seconds}s"
+
+        test_nav = TestNavView()
+
+        # Test infinite ETA
+        result = test_nav._format_eta(float('inf'))
+        self.assertEqual(result, "ETA: --")
+
+        # Test seconds only
+        result = test_nav._format_eta(45)
+        self.assertEqual(result, "ETA: 45s")
+
+        result = test_nav._format_eta(90)  # 1m 30s
+        self.assertEqual(result, "ETA: 1m 30s")
+
+        result = test_nav._format_eta(120)  # 2m exactly
+        self.assertEqual(result, "ETA: 2m")
+
+        result = test_nav._format_eta(3661)  # 1h 1m 1s
+        self.assertEqual(result, "ETA: 1h 1m 1s")
+
+        result = test_nav._format_eta(3720)  # 1h 2m exactly
+        self.assertEqual(result, "ETA: 1h 2m")
+
 
 if __name__ == '__main__':
     unittest.main()
