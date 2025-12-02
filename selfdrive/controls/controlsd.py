@@ -412,91 +412,63 @@ class Controls(ControlsExt):
     # Use reliable sensor data from carState and modelV2 for comprehensive weather detection
     CS = self.sm['carState']
 
-    # 1. Check for windshield wiper usage as an indicator of rain or snow
-    if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper > 0.0:
-        return 'rain'  # Wipers are on, likely rainy conditions
-    elif hasattr(CS, 'wiperState') and CS.wiperState > 0:  # Different possible wiper status names
-        return 'rain'
+    # 1. Check for windshield wiper usage as an indicator of precipitation
+    wipers_active = (hasattr(CS, 'windshieldWiper') and CS.windshieldWiper > 0.0) or \
+                    (hasattr(CS, 'wiperState') and CS.wiperState > 0)
 
-    # 2. Use camera-based scene analysis for fog and snow detection
-    # Analyze image contrast, visibility and scene characteristics from modelV2
+    # 2. Check for additional indicators to differentiate between weather types
     if 'modelV2' in self.sm and self.sm.valid['modelV2'] and self.sm.valid['radarState']:
         model_v2 = self.sm['modelV2']
         radar_state = self.sm['radarState']
 
-        # Check for fog detection based on scene analysis
-        # Fog and snow reduce contrast and visibility - analyze lead detection patterns
-        # In foggy conditions, objects may be detected at closer distances than usual
-        # For fog detection, we'll analyze the detection range consistency
-        if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'lowVis'):
-            if model_v2.meta.lowVis:  # Low visibility detected by scene analysis
-                return 'fog'
-
-        # Analyze camera-based indicators for fog/snow
-        # Check lane line detection quality as fog/snow affects visual clarity
-        if (hasattr(model_v2, 'laneLines') and
-            len(model_v2.laneLines) > 0 and
+        # Analyze scene characteristics for different weather types
+        avg_lane_prob = 0.0
+        if (hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0 and
             hasattr(model_v2.laneLines[0], 'prob')):
-            # If lane line detection probabilities are low, it may indicate poor visibility
             avg_lane_prob = sum([line.prob for line in model_v2.laneLines]) / len(model_v2.laneLines)
-            if avg_lane_prob < 0.5:  # Low confidence in lane detection may indicate fog/snow
-                # Check if radar still detects leads at reasonable distances to confirm
-                # that it's a visibility issue rather than no traffic
-                if radar_state.leadOne.status and radar_state.leadOne.dRel > 50.0:
-                    # Radar detects leads but camera has low confidence - likely fog/snow
-                    return 'fog'
 
-        # Analyze image clarity through model's driving probability outputs
-        # In poor weather, driving behavior may change and model confidence may drop
-        # Use model metadata that might indicate weather-related scene characteristics
-        # Look for scene complexity indicators that might suggest bad weather
-        if hasattr(model_v2, 'meta'):
-            # Check for indicators of reduced visibility or adverse conditions
-            if hasattr(model_v2.meta, 'sceneName') or hasattr(model_v2.meta, 'weatherProb'):
-                # If model has explicit weather detection capabilities, use them
-                # This is a placeholder - implementation depends on actual model capabilities
-                pass
+        # Additional indicators for fog detection
+        fog_indicators = 0
+        snow_indicators = 0
 
-        # 3. Use multi-sensor fusion to detect fog conditions
-        # In foggy conditions, there's often a discrepancy between radar and camera detection
-        camera_leads_count = sum(1 for lead in model_v2.leadsV3 if lead.prob > 0.5) if hasattr(model_v2, 'leadsV3') else 0
-        radar_leads_count = sum(1 for lead in [radar_state.leadOne, radar_state.leadTwo] if lead.status)
+        # Fog: low visibility + low lane line confidence + radar-camera discrepancy
+        if (hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'lowVis') and model_v2.meta.lowVis) or \
+           (avg_lane_prob < 0.5 and radar_state.leadOne.status and radar_state.leadOne.dRel > 50.0) or \
+           (hasattr(model_v2, 'leadsV3') and
+            sum(1 for lead in model_v2.leadsV3 if lead.prob > 0.5) == 0 and
+            any(lead.status for lead in [radar_state.leadOne, radar_state.leadTwo])):
+            fog_indicators += 1
 
-        # If radar detects more objects than camera model at similar distances,
-        # it may indicate foggy/rainy conditions affecting camera visibility
-        if radar_leads_count > 0 and camera_leads_count == 0:
-            return 'fog'  # Radar sees leads but camera doesn't - likely poor visibility
+        # Snow: may have similar indicators but often occurs at lower speeds/temperatures
+        # In absence of temperature sensors, differentiate based on driving style
+        if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'drivingStyle'):
+            # If driving more cautiously and lane detection is poor, might indicate snow
+            if avg_lane_prob < 0.5 and CS.vEgo < 20.0:  # Lower speeds often seen in snow
+                snow_indicators += 1
 
-        # 4. Add contrast-based fog detection using temporal consistency
-        # Fog reduces contrast which affects frame-to-frame consistency
-        if hasattr(model_v2, 'temporalBatch') and len(model_v2.temporalBatch) > 0:
-            # Analyze temporal consistency to detect fog
-            # Fog creates less consistent detection between frames
-            pass  # Implementation depends on actual temporal data structure
+        # Check for headlight usage as ancillary indicator
+        headlights_on_in_daytime = (hasattr(CS, 'lowBeam') and CS.lowBeam and
+                                    hasattr(CS, 'solarRad') and CS.solarRad > 10000)
 
-        # 5. Combine multiple indicators in a more sophisticated way
-        weather_indicators = []
-
-        # Indicator 1: Low lane line detection confidence
-        if hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0:
-            avg_confidence = sum([line.prob for line in model_v2.laneLines]) / len(model_v2.laneLines)
-            if avg_confidence < 0.5:
-                weather_indicators.append('low_camera_visibility')
-
-        # Indicator 2: Radar-camera detection discrepancy
-        if (radar_leads_count > 1 and camera_leads_count == 0) or (radar_leads_count > 2 and camera_leads_count < radar_leads_count/2):
-            weather_indicators.append('radar_camera_discrepancy')
-
-        # If multiple indicators are present, return fog
-        if len(weather_indicators) >= 1:
+        # If we have wipers + no fog indicators, likely rain
+        if wipers_active and fog_indicators == 0:
+            return 'rain'
+        # If we have wipers + snow indicators, likely snow
+        elif wipers_active and snow_indicators > 0:
+            return 'snow'
+        # If we have fog indicators but no wipers, likely fog
+        elif fog_indicators > 0 and not wipers_active:
             return 'fog'
+        # If we have wipers + fog indicators, check which is more likely based on context
+        elif wipers_active and fog_indicators > 0:
+            if CS.vEgo > 15.0 and avg_lane_prob < 0.5:  # Higher speeds with poor visibility = fog
+                return 'fog'
+            else:  # Lower speeds with wipers = rain/snow
+                return 'rain'  # Default to rain if can't differentiate
 
-    # 6. Use headlight usage as ancillary indicator for poor visibility (fog, snow at night)
-    if hasattr(CS, 'lowBeam') and CS.lowBeam and CS.vEgo > 5:
-        # Headlights on during daytime could indicate visibility issues
-        if hasattr(CS, 'solarRad') and CS.solarRad > 10000:  # Daytime solar radiation threshold
-            # Bright daytime but headlights on suggests visibility issues
-            return 'fog'  # Or other visibility issue
+    # If only wipers are active and no other indicators, default to rain (most common case)
+    if wipers_active:
+        return 'rain'
 
     # If no specific indicators of poor weather, return normal
     return 'normal'

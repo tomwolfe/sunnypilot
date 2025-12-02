@@ -221,18 +221,22 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             if total_reliability > 0:
                 fused_dRel = (lead_radar.dRel * radar_reliability + closest_vision_lead.dRel * vision_reliability) / total_reliability
                 fused_vRel = (lead_radar.vRel * radar_reliability + closest_vision_lead.vRel * vision_reliability) / total_reliability
-                # Ensure we're using consistent acceleration values (both as absolute lead acceleration)
-                # Check if vision model has absolute lead acceleration (aLeadK) available
-                # If only relative acceleration (aRel) is available, convert to absolute by adding ego acceleration
-                if hasattr(closest_vision_lead, 'aLeadK') and closest_vision_lead.aLeadK != 0:
-                    vision_aLead = closest_vision_lead.aLeadK
-                elif hasattr(closest_vision_lead, 'aRel'):
-                    # Convert relative acceleration to absolute: aLead = aRel + aEgo
-                    vision_aLead = closest_vision_lead.aRel + sm['carState'].aEgo
+                # Ensure we're using consistent acceleration values (both as relative lead acceleration)
+                # The radar aLeadK is relative acceleration of the lead vehicle, same as vision aRel
+                # If vision model provides relative acceleration (aRel), use it directly
+                # If vision model provides absolute acceleration (aLeadK), convert to relative: aRel = aLeadK - aEgo
+                if hasattr(closest_vision_lead, 'aRel'):
+                    vision_aLead = closest_vision_lead.aRel
+                elif hasattr(closest_vision_lead, 'aLeadK'):
+                    # Convert absolute acceleration to relative: aRel = aLeadK - aEgo
+                    vision_aLead = closest_vision_lead.aLeadK - sm['carState'].aEgo
                 else:
                     vision_aLead = 0.0  # Safe default if no acceleration data available
 
-                fused_aLead = (lead_radar.aLeadK * radar_reliability + vision_aLead * vision_reliability) / total_reliability
+                # Make sure radar aLeadK is also properly handled as relative acceleration
+                radar_aLead = lead_radar.aLeadK  # This should already be relative acceleration
+
+                fused_aLead = (radar_aLead * radar_reliability + vision_aLead * vision_reliability) / total_reliability
 
                 # Update the lead data used by the planner with fused values
                 # This affects the x, v, a arrays that are passed to MPC
@@ -248,8 +252,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # This helps reduce the "jitter" that can occur with individual sensor readings
     if hasattr(self, '_prev_fused_values'):
         # Apply light smoothing between current and previous fused values
-        # Alpha = 0.1 means 10% previous value, 90% current value - this provides stability while maintaining responsiveness
-        alpha = 0.1  # Smoothing factor justification: Balance between noise reduction and responsiveness to actual changes
+        # Alpha = 0.05 means 5% previous value, 95% current value - this provides stability while maintaining responsiveness
+        # Lower alpha value (0.05) instead of higher (0.1) to reduce lag while still providing noise reduction
+        alpha = 0.05  # Smoothing factor justification: More responsive while still reducing noise
         prev_x, prev_v, prev_a = self._prev_fused_values
 
         # Only apply smoothing if values aren't too different (to preserve responsiveness to real changes)
