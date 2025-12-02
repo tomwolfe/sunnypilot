@@ -55,6 +55,51 @@ class TestLightweightSystemMonitor:
         thermal_state = monitor.calculate_thermal_state(mock_device_state)
         assert thermal_state == 0.0
 
+    def _create_mock_device_state(self, canMonoTimes=None, freeSpacePercent=50.0):
+        mock_ds = Mock()
+        mock_ds.cpuTempC = [50.0]
+        mock_ds.gpuTempC = 50.0
+        mock_ds.cpuUsagePercent = 50.0
+        mock_ds.memoryUsagePercent = 50.0
+        mock_ds.freeSpacePercent = freeSpacePercent
+        mock_ds.canMonoTimes = canMonoTimes if canMonoTimes is not None else []
+        return mock_ds
+
+    def test_check_system_health_can_bus_ok(self, monitor):
+        mock_device_state = self._create_mock_device_state(canMonoTimes=[int(time.monotonic() * 1e9 - 1e8)]) # 0.1 seconds ago
+        mock_car_state = Mock()
+        with patch('time.monotonic', return_value=time.monotonic()):
+            report = monitor.check_system_health(mock_device_state, mock_car_state)
+            assert report['can_bus_ok'] is True
+
+    def test_check_system_health_can_bus_stale(self, monitor):
+        mock_device_state = self._create_mock_device_state(canMonoTimes=[int(time.monotonic() * 1e9 - 3e9)]) # 3 seconds ago
+        mock_car_state = Mock()
+        with patch('time.monotonic', return_value=time.monotonic()):
+            report = monitor.check_system_health(mock_device_state, mock_car_state)
+            assert report['can_bus_ok'] is False
+
+    def test_check_system_health_can_bus_no_messages(self, monitor):
+        mock_device_state = self._create_mock_device_state(canMonoTimes=[])
+        mock_car_state = Mock()
+        with patch('time.monotonic', return_value=time.monotonic()):
+            report = monitor.check_system_health(mock_device_state, mock_car_state)
+            assert report['can_bus_ok'] is False
+
+    def test_check_system_health_disk_space_ok(self, monitor):
+        mock_device_state = self._create_mock_device_state(freeSpacePercent=10.0) # 10% free, which is > 5%
+        mock_car_state = Mock()
+        with patch('time.monotonic', return_value=time.monotonic()):
+            report = monitor.check_system_health(mock_device_state, mock_car_state)
+            assert report['disk_space_ok'] is True
+
+    def test_check_system_health_disk_space_low(self, monitor):
+        mock_device_state = self._create_mock_device_state(freeSpacePercent=3.0) # 3% free, which is < 5%
+        mock_car_state = Mock()
+        with patch('time.monotonic', return_value=time.monotonic()):
+            report = monitor.check_system_health(mock_device_state, mock_car_state)
+            assert report['disk_space_ok'] is False
+
 class TestLightweightSafetyChecker:
     @pytest.fixture
     def safety_checker(self):
@@ -173,6 +218,57 @@ class TestLightweightSafetyChecker:
         assert report['safe'] is False
         assert 'forward_collision_imminent' in report['violations']
         assert report['recommended_action'] == 'decelerate'
+
+    def test_multiple_violations_accel_and_collision(self, safety_checker):
+        mock_actuators = Mock()
+        mock_actuators.accel = 4.0  # Exceeds max_long_accel (3.0)
+        mock_actuators.steer = 0.0
+        mock_actuators.curvature = 0.0
+
+        mock_car_state = Mock()
+        mock_car_state.vEgo = 15.0
+
+        mock_radar_state = Mock()
+        mock_radar_state.leadOne.status = True
+        mock_radar_state.leadOne.dRel = 10.0
+        mock_radar_state.leadOne.vRel = -5.0
+
+        report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
+
+        assert report['safe'] is False
+        assert 'long_accel_limit_exceeded' in report['violations']
+        assert 'forward_collision_imminent' in report['violations']
+        assert report['recommended_action'] == 'decelerate' # Deceleration is prioritized for these
+
+    def test_multiple_violations_steering_rate_and_collision(self, safety_checker):
+        mock_actuators = Mock()
+        mock_actuators.accel = 0.0
+        mock_actuators.steer = 0.1 # Will be changed to simulate rate
+        mock_actuators.curvature = 0.0
+
+        mock_car_state = Mock()
+        mock_car_state.vEgo = 15.0
+
+        mock_radar_state = Mock()
+        mock_radar_state.leadOne.status = True
+        mock_radar_state.leadOne.dRel = 10.0
+        mock_radar_state.leadOne.vRel = -5.0
+
+        initial_monotonic_time = 100.0
+        with patch('time.monotonic', return_value=initial_monotonic_time):
+            # First call to set initial steer and time for rate calculation
+            safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
+
+        # Simulate rapid steering change AND forward collision
+        second_monotonic_time = initial_monotonic_time + 0.01 # 0.01s time delta
+        mock_actuators.steer = 0.5 # A large change to trigger steering rate violation
+        with patch('time.monotonic', return_value=second_monotonic_time):
+            report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
+
+            assert report['safe'] is False
+            assert 'steering_rate_limit_exceeded' in report['violations']
+            assert 'forward_collision_imminent' in report['violations']
+            assert report['recommended_action'] == 'disengage' # Disengage is prioritized over decelerate
 
     def test_trigger_fail_safe_disengage(self, safety_checker, mock_car_state):
         safety_report = {
