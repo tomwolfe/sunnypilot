@@ -141,7 +141,7 @@ class TestLateralControlImprovements:
 
         try:
             output_torque, angle_steers_des, pid_log = controller.update(
-                active, CS, VM, params, False, desired_curvature, calibrated_pose, curvature_limited, lat_delay
+                active, CS, VM, params, False, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains={}
             )
             assert hasattr(controller, '_prev_angle_steers_des'), "Controller should track previous desired angle for rate limiting"
         except Exception as e:
@@ -170,7 +170,7 @@ class TestLateralControlImprovements:
 
         try:
             output_torque, angle_steers_des, pid_log = controller.update(
-                active, CS, VM, params, False, desired_curvature, calibrated_pose, curvature_limited, lat_delay
+                active, CS, VM, params, False, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains={}
             )
             assert output_torque is not None
             assert pid_log is not None
@@ -198,10 +198,10 @@ class TestLongitudinalControlImprovements:
         accel_limits = [-3.0, 2.0]
 
         active = True
-        controller.update(active, CS, a_target, should_stop, accel_limits)
+        controller.update(active, CS, a_target, should_stop, accel_limits, adaptive_gains={})
 
         try:
-            output_accel = controller.update(active, CS, a_target, should_stop, accel_limits)
+            output_accel = controller.update(active, CS, a_target, should_stop, accel_limits, adaptive_gains={})
             assert isinstance(output_accel, float)
             assert output_accel >= accel_limits[0]
             assert output_accel <= accel_limits[1]
@@ -225,7 +225,7 @@ class TestLongitudinalControlImprovements:
         accel_limits = [-3.0, 2.0]
 
         active = True
-        output_accel = controller.update(active, CS, a_target, should_stop, accel_limits)
+        output_accel = controller.update(active, CS, a_target, should_stop, accel_limits, adaptive_gains={})
         assert isinstance(output_accel, float)
 
 

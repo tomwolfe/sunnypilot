@@ -60,6 +60,25 @@ class LongControl:
                              rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
 
+    self.params = params
+
+    def _get_param_value(key, default, converter=float):
+      if self.params and self.params.get(key) is not None:
+        try:
+          return converter(self.params.get(key).decode('utf8'))
+        except (ValueError, AttributeError):
+          pass
+      return default
+
+    self.max_jerk = _get_param_value("LongitudinalMaxJerk", 2.2)
+    self.max_stopping_jerk = _get_param_value("LongitudinalMaxStoppingJerk", 1.5)
+    self.max_output_jerk = _get_param_value("LongitudinalMaxOutputJerk", 2.0)
+    self.starting_speed_threshold = _get_param_value("LongitudinalStartingSpeedThreshold", 3.0)
+    self.starting_accel_multiplier = _get_param_value("LongitudinalStartingAccelMultiplier", 0.8)
+    self.starting_accel_limit = _get_param_value("LongitudinalStartingAccelLimit", 0.8)
+    self.adaptive_error_threshold = _get_param_value("LongitudinalAdaptiveErrorThreshold", 0.6)
+    self.adaptive_speed_threshold = _get_param_value("LongitudinalAdaptiveSpeedThreshold", 5.0)
+
 
   def reset(self):
     self.pid.reset()

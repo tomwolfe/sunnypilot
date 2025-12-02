@@ -58,6 +58,20 @@ class LatControlTorque(LatControl):
     self.previous_measurement = 0.0
     self.measurement_rate_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
 
+    self.params = params
+
+    def _get_param_value(key, default, converter=float):
+      if self.params and self.params.get(key) is not None:
+        try:
+          return converter(self.params.get(key).decode('utf8'))
+        except (ValueError, AttributeError):
+          pass
+      return default
+
+    self.max_lateral_jerk = _get_param_value("LateralMaxJerk", 5.0)
+    self.high_speed_threshold = _get_param_value("LateralHighSpeedThreshold", 15.0)
+    self.high_speed_ki_limit = _get_param_value("LateralHighSpeedKiLimit", 0.15)
+
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
 
   def _validate_parameter(self, value, min_val, max_val, name):

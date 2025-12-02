@@ -51,11 +51,11 @@ def test_improved_longitudinal_control_jerk_limiting():
   a_target_2 = 4.0  # Large change to test jerk limiting
 
   # Update with first target
-  output_accel_1 = long_control.update(True, CS, a_target_1, False, accel_limits)
+  output_accel_1 = long_control.update(True, CS, a_target_1, False, accel_limits, adaptive_gains={})
 
   # Update with second target (should be jerk-limited)
   CS.aEgo = float(output_accel_1)  # Update ego acceleration, convert numpy.float64 to Python float
-  output_accel_2 = long_control.update(True, CS, a_target_2, False, accel_limits)
+  output_accel_2 = long_control.update(True, CS, a_target_2, False, accel_limits, adaptive_gains={})
 
   # Verify that acceleration doesn't change too rapidly due to jerk limiting
   print(f"Target change: {a_target_1} -> {a_target_2}, Output change: {output_accel_1:.2f} -> {output_accel_2:.2f}")
@@ -107,7 +107,7 @@ def test_adaptive_pid_in_longitudinal_control():
   a_target = 0.1  # Close to aEgo of 0.0
   accel_limits = (-3.0, 2.0)
 
-  output_accel = long_control.update(True, CS, a_target, False, accel_limits)
+  output_accel = long_control.update(True, CS, a_target, False, accel_limits, adaptive_gains={})
 
   # The control should work without errors
   assert isinstance(output_accel, float), "Output should be a float"
@@ -158,7 +158,7 @@ def test_low_speed_crawl_control():
   a_target = 0.5
   accel_limits = (-2.0, 1.5)
 
-  output_accel = long_control.update(True, CS, a_target, False, accel_limits)
+  output_accel = long_control.update(True, CS, a_target, False, accel_limits, adaptive_gains={})
 
   # Control should work at low speeds
   assert -2.0 <= output_accel <= 1.5, "Output should respect limits"
