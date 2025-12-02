@@ -132,7 +132,7 @@ class LightweightAdaptiveGainScheduler:
         # For longitudinal:
         base_long_kp = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kpBP, self.CP.longitudinalTuning.kpV, 1.0, "longitudinal kpV")
         base_long_ki = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kiBP, self.CP.longitudinalTuning.kiV, 0.1, "longitudinal kiV")
-        base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0) # kf is a single float, not interpolated
+        base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
 
         # For lateral:
         base_lat_kp = self._get_base_gain(v_ego, self.CP.lateralTuning.pid.kpBP, self.CP.lateralTuning.pid.kpV, 0.5, "lateral kpV")
@@ -174,7 +174,7 @@ class LightweightAdaptiveGainScheduler:
         else:
             # Fallback to single value or default if interpolation not possible
             if hasattr(gain_array, '__getitem__') and len(gain_array) > 0:
-                cloudlog.warning(f"Could not interpolate {gain_name} (BP array missing/invalid or lengths mismatch), using first value: {gain_array[0]}")
+                cloudlog.warning(f"No valid BP array provided for {gain_name}, using first value: {gain_array[0]}")
                 return gain_array[0]
             else:
                 cloudlog.warning(f"Missing or invalid {gain_name} parameter (no valid array), using default value: {default_gain}")
