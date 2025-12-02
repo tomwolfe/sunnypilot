@@ -60,30 +60,11 @@ class LatControlTorque(LatControl):
 
     self.extension = LatControlTorqueExt(self, CP, CP_SP, CI)
 
-    # Load configurable parameters with validation to ensure safe operation
-    if params is None:
-      params = Params()
-    self.max_lateral_jerk = self._validate_parameter(
-        float(params.get("LateralMaxJerk") or "5.0"),
-        0.5, 10.0, "LateralMaxJerk"
-    )  # m/s^3
-    self.high_speed_threshold = self._validate_parameter(
-        float(params.get("LateralHighSpeedThreshold") or "15.0"),
-        5.0, 30.0, "LateralHighSpeedThreshold"
-    )  # m/s
-    self.high_speed_ki_limit = self._validate_parameter(
-        float(params.get("LateralHighSpeedKiLimit") or "0.15"),
-        0.01, 0.5, "LateralHighSpeedKiLimit"
-    )
-    self.curvature_ki_scaler = self._validate_parameter(
-        float(params.get("LateralCurvatureKiScaler") or "0.2"),
-        0.0, 1.0, "LateralCurvatureKiScaler"
-    ) # Scales down the integral gain (Ki) of the PID controller based on the absolute desired curvature.
-      # A value of 0.0 means Ki is fully turned off at high curvatures,
-      # while 1.0 means no scaling is applied based on curvature.
-      # This helps to prevent oscillations and aggressive steering in turns.
-
-
+  def _validate_parameter(self, value, min_val, max_val, name):
+    if not (min_val <= value <= max_val):
+      print(f"WARNING: Parameter '{name}' with value {value} out of range [{min_val}, {max_val}]. Clipping to range.")
+      value = np.clip(value, min_val, max_val)
+    return value
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
