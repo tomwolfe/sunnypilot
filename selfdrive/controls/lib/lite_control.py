@@ -134,17 +134,17 @@ class LightweightAdaptiveGainScheduler:
 
         # Calculate base gains from tuning tables, using interpolation
         # For longitudinal:
-        base_long_kp = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kpBP, self.CP.longitudinalTuning.kpV, 1.0, "longitudinal kpV")
-        base_long_ki = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kiBP, self.CP.longitudinalTuning.kiV, 0.1, "longitudinal kiV")
+        base_long_kp = self._get_base_gain(v_ego, getattr(self.CP.longitudinalTuning, 'kpBP', None), getattr(self.CP.longitudinalTuning, 'kpV', []), 1.0, "longitudinal kpV")
+        base_long_ki = self._get_base_gain(v_ego, getattr(self.CP.longitudinalTuning, 'kiBP', None), getattr(self.CP.longitudinalTuning, 'kiV', []), 0.1, "longitudinal kiV")
         base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
 
         # For lateral:
-        base_lat_kp = self._get_base_gain(v_ego, self.CP.lateralTuning.pid.kpBP, self.CP.lateralTuning.pid.kpV, 0.5, "lateral kpV")
-        base_lat_ki = self._get_base_gain(v_ego, self.CP.lateralTuning.pid.kiBP, self.CP.lateralTuning.pid.kiV, 0.05, "lateral kiV")
+        base_lat_kp = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kpBP', None), getattr(self.CP.lateralTuning.pid, 'kpV', []), 0.5, "lateral kpV")
+        base_lat_ki = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kiBP', None), getattr(self.CP.lateralTuning.pid, 'kiV', []), 0.05, "lateral kiV")
         base_lat_kd = 0.0
         # Check if kdV exists and if a corresponding kdBP exists for interpolation
-        if hasattr(self.CP.lateralTuning.pid, 'kdV') and self.CP.lateralTuning.pid.kdV:
-            base_lat_kd = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kdBP', None), self.CP.lateralTuning.pid.kdV, 0.0, "lateral kdV")
+        if hasattr(self.CP.lateralTuning.pid, 'kdV') and getattr(self.CP.lateralTuning.pid, 'kdV', None):
+            base_lat_kd = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kdBP', None), getattr(self.CP.lateralTuning.pid, 'kdV', []), 0.0, "lateral kdV")
         base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
 
         gains = {
