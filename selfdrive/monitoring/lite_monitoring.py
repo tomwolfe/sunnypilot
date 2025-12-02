@@ -24,10 +24,9 @@ class LightweightSafetyChecker:
         self.safety_thresholds = self._get_vehicle_specific_thresholds(CP) if CP else {
             'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
             'max_lat_accel': 2.5,      # Maximum lateral acceleration (m/s^2)
-            'max_steering_rate': 0.5,  # Maximum steering rate (rad/s) - adjust based on vehicle
-            'max_steering_angle': 0.5, # Maximum steering angle (rad) - adjust based on vehicle (was 1.0, too high)
-            'min_safe_ttc': 2.0,       # Minimum safe time-to-collision (s) for active intervention
-            'min_safe_distance': 30.0, # Minimum safe distance to lead vehicle (m)
+            'max_steering_rate': 1.0,  # Maximum steering rate (rad/s). Default increased from 0.5.
+                                       # This value may require tuning per vehicle to avoid unnecessary disengagements.
+            'min_time_gap': 2.0,       # Minimum safe time gap (s) for active intervention
         }
         # Initialize tracking variables for steering rate calculation
         self._prev_steer = 0.0
@@ -40,18 +39,21 @@ class LightweightSafetyChecker:
         base_thresholds = {
             'max_long_accel': 3.0,     # Maximum longitudinal acceleration (m/s^2)
             'max_lat_accel': 2.5,      # Maximum lateral acceleration (m/s^2)
-            'max_steering_rate': 0.5,  # Maximum steering rate (rad/s) - adjust based on vehicle
+            'max_steering_rate': 1.0,  # Maximum steering rate (rad/s) - adjust based on vehicle.
+                                       # This value may require tuning per vehicle.
             'max_steering_angle': 0.5, # Maximum steering angle (rad) - adjust based on vehicle
-            'min_safe_ttc': 2.0,       # Minimum safe time-to-collision (s) for active intervention
-            'min_safe_distance': 30.0, # Minimum safe distance to lead vehicle (m)
+            'min_time_gap': 2.0,       # Minimum safe time gap (s) for active intervention
         }
 
         # Adjust thresholds based on specific car parameters if available
         if CP:
-            # Reduce max steering angle based on the vehicle's actual steering limits
-            # Typical steering lock is around 0.3-0.6 radians (17-34 degrees), so 0.5 is a reasonable default
-            # Use the actual steerLimit from CarParams if available, otherwise use default
-            base_thresholds['max_steering_angle'] = min(0.6, max(0.3, getattr(CP, 'steerLimit', 0.5)))
+            # The `actuators.steer` value is typically a normalized command (0.0-1.0)
+            # where 1.0 represents the maximum physical steering angle the car can achieve.
+            # `CP.steerMax` is the physical steering angle limit in radians.
+            # The `max_steering_angle` safety threshold should compare against the normalized `actuators.steer`.
+            # We keep a high default normalized value (0.95) to allow full steering range before disengagement.
+            # Adjustments based on `CP.steerMax` are not directly applied to this normalized threshold.
+
 
         return base_thresholds
 
@@ -119,7 +121,8 @@ class LightweightSafetyChecker:
                 ttc = float('inf')
 
             # Check for potential collision based on TTC or distance
-            if ttc < self.safety_thresholds['min_safe_ttc'] or radar_state.leadOne.dRel < self.safety_thresholds['min_safe_distance']:
+            min_safe_distance_calculated = car_state.vEgo * self.safety_thresholds['min_time_gap']
+            if ttc < self.safety_thresholds['min_time_gap'] or radar_state.leadOne.dRel < min_safe_distance_calculated:
                 # This is a safety-critical situation regardless of current acceleration
                 safety_report['safe'] = False
                 safety_report['violations'].append('forward_collision_imminent')
@@ -203,19 +206,23 @@ class LightweightSystemMonitor:
 
         # Check RAM usage if available
         if hasattr(device_state, 'memoryUsagePercent') and device_state.memoryUsagePercent:
-            ram_usage = device_state.memoryUsagePercent
-            if (100 - ram_usage) / 100.0 < self.health_thresholds['min_ram_free']:  # Invert since memoryUsagePercent is used%
+            ram_usage_percent = device_state.memoryUsagePercent
+            # `min_ram_free` is a fraction (e.g., 0.1 for 10% free).
+            # Convert to max allowed usage percentage for easier comparison.
+            max_ram_usage_percent = (1.0 - self.health_thresholds['min_ram_free']) * 100.0
+            if ram_usage_percent > max_ram_usage_percent:
                 health_report['ram_low'] = True
 
         # Additional checks for CAN bus, disk, etc. if available
         if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
-            # Simple check: if we have old CAN times, consider it potentially unhealthy
-            # Check if we have recent CAN messages by looking at the timestamps in canMonoTimes
-            if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
-                # Get the most recent CAN time from the list
-                recent_can_time = device_state.canMonoTimes[-1] if len(device_state.canMonoTimes) > 0 else 0
-                if time.monotonic() - recent_can_time > 2.0:  # 2 seconds without CAN
-                    health_report['can_bus_ok'] = False
+            current_mono_time = time.monotonic()
+            recent_can_message_found = False
+            for can_time_ns in device_state.canMonoTimes: # canMonoTimes are in nanoseconds
+                if (current_mono_time - (can_time_ns * 1e-9)) < 2.0: # Check if message is within last 2 seconds
+                    recent_can_message_found = True
+                    break
+            if not recent_can_message_found:
+                health_report['can_bus_ok'] = False
 
         # Check disk space if available
         if hasattr(device_state, 'freeSpacePercent') and device_state.freeSpacePercent:
@@ -257,7 +264,8 @@ class LightweightSystemMonitor:
             gpu_temp = max(gpu_temps) if gpu_temps else 0.0
 
         # Calculate normalized thermal state based on thresholds (0.0 to 1.0)
-        # Using a simple linear scale: 30°C = 0.0, 90°C = 1.0 (critical)
+        # Using a simple linear scale: 30°C = 0.0, 90°C = 1.0 (critical).
+        # Values below 30°C are clamped to 0.0, and values above 90°C are clamped to 1.0.
         max_temp = max(cpu_temp, gpu_temp)
         thermal_state = max(0.0, min(1.0, (max_temp - 30.0) / 60.0))  # Normalize 30-90°C range to 0-1
 

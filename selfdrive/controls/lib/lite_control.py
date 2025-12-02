@@ -6,13 +6,23 @@ for the Comma 3x hardware, focusing on high-impact, low-cost features.
 """
 
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import time
 
 # Import existing sunnypilot components
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.swaglog import cloudlog
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
+
+
+def _interp_gain(x, xp, fp):
+  """
+  Linear interpolation function.
+  x: The x-coordinate(s) at which to evaluate the interpolated values (v_ego).
+  xp: The x-coordinates of the data points, must be increasing (breakpoint array).
+  fp: The y-coordinates of the data points, same length as xp (gain array).
+  """
+  return np.interp(x, xp, fp)
 
 
 class LightweightAdaptiveGainScheduler:
@@ -47,6 +57,9 @@ class LightweightAdaptiveGainScheduler:
         }
 
         # Customize tuning based on car model if specific parameters are available
+        # IMPORTANT: These parameters are crucial for optimal performance and safety.
+        # They MUST be tuned based on extensive real-world testing for each specific car model.
+        # The commented-out examples serve as a template for structure, not as tuned values.
         car_specific_tuning = {
             # Example: specific tuning for different car models
             # These values would be tuned based on real-world testing
@@ -105,19 +118,19 @@ class LightweightAdaptiveGainScheduler:
         lat_thermal_factor = max(0.9, 1.0 - thermal_state * 0.1)
         self.lat_thermal_filter.update(lat_thermal_factor)
 
-        # Calculate base gains from tuning tables (using first values as baseline)
-        # For longitudinal: take the first kpV and kiV values as baseline
-        base_long_kp = self._get_base_gain(self.CP.longitudinalTuning.kpV, 0, 1.0, "longitudinal kpV")
-        base_long_ki = self._get_base_gain(self.CP.longitudinalTuning.kiV, 0, 0.1, "longitudinal kiV")
-        base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
+        # Calculate base gains from tuning tables, using interpolation
+        # For longitudinal:
+        base_long_kp = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kpBP, self.CP.longitudinalTuning.kpV, 1.0, "longitudinal kpV")
+        base_long_ki = self._get_base_gain(v_ego, self.CP.longitudinalTuning.kiBP, self.CP.longitudinalTuning.kiV, 0.1, "longitudinal kiV")
+        base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0) # kf is a single float, not interpolated
 
-        # For lateral: take the first kp, ki values as baseline (kdV may not exist in all car models)
-        base_lat_kp = self._get_base_gain(self.CP.lateralTuning.pid.kpV, 0, 0.5, "lateral kpV")
-        base_lat_ki = self._get_base_gain(self.CP.lateralTuning.pid.kiV, 0, 0.05, "lateral kiV")
-        # Check if kdV exists, otherwise use 0 as default
+        # For lateral:
+        base_lat_kp = self._get_base_gain(v_ego, self.CP.lateralTuning.pid.kpBP, self.CP.lateralTuning.pid.kpV, 0.5, "lateral kpV")
+        base_lat_ki = self._get_base_gain(v_ego, self.CP.lateralTuning.pid.kiBP, self.CP.lateralTuning.pid.kiV, 0.05, "lateral kiV")
         base_lat_kd = 0.0
+        # Check if kdV exists and if a corresponding kdBP exists for interpolation
         if hasattr(self.CP.lateralTuning.pid, 'kdV') and self.CP.lateralTuning.pid.kdV:
-            base_lat_kd = self._get_base_gain(self.CP.lateralTuning.pid.kdV, 0, 0.0, "lateral kdV")
+            base_lat_kd = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kdBP', None), self.CP.lateralTuning.pid.kdV, 0.0, "lateral kdV")
         base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
 
         gains = {
@@ -136,16 +149,26 @@ class LightweightAdaptiveGainScheduler:
 
         return gains
 
-    def _get_base_gain(self, gain_array, index, default_gain, gain_name):
+    def _get_base_gain(self, v_ego: float, bp_array: Optional[list], gain_array: list, default_gain: float, gain_name: str) -> float:
         """
-        Helper method to safely get a base gain value with proper error reporting.
-        Returns the default only if the array is missing or empty.
+        Helper method to safely get a gain value, using linear interpolation if breakpoints are provided.
+        If breakpoint or gain arrays are missing/invalid for interpolation, it falls back to a single value (gain_array[0])
+        or the default_gain.
         """
-        if hasattr(gain_array, '__getitem__') and len(gain_array) > index:
-            return gain_array[index]
+        # Check if interpolation is possible
+        if (bp_array is not None and
+                hasattr(bp_array, '__getitem__') and len(bp_array) > 0 and
+                hasattr(gain_array, '__getitem__') and len(gain_array) > 0 and
+                len(bp_array) == len(gain_array)):
+            return _interp_gain(v_ego, bp_array, gain_array)
         else:
-            cloudlog.error(f"Missing or invalid {gain_name} parameter, using default value: {default_gain}")
-            return default_gain
+            # Fallback to single value or default if interpolation not possible
+            if hasattr(gain_array, '__getitem__') and len(gain_array) > 0:
+                cloudlog.warning(f"Could not interpolate {gain_name} (BP array missing/invalid or lengths mismatch), using first value: {gain_array[0]}")
+                return gain_array[0]
+            else:
+                cloudlog.warning(f"Missing or invalid {gain_name} parameter (no valid array), using default value: {default_gain}")
+                return default_gain
 
 
 class LightweightComfortOptimizer:
