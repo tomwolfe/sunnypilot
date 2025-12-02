@@ -317,6 +317,67 @@ class Tici(HardwareBase):
   def get_som_power_draw(self):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
+  def optimize_memory_management(self):
+    """
+    Optimize memory management for Snapdragon 845 by configuring kernel parameters
+    for better real-time performance and reduced fragmentation.
+    """
+    try:
+      # Enable memory compaction to reduce fragmentation
+      sudo_write("1", "/proc/sys/vm/compact_memory")
+
+      # Adjust memory overcommit (more conservative to prevent OOM issues during heavy processing)
+      sudo_write("1", "/proc/sys/vm/overcommit_memory")  # Always check for sufficient memory
+
+      # Reduce swappiness to prefer RAM over swap for real-time performance
+      sudo_write("10", "/proc/sys/vm/swappiness")  # Low but not zero, to still allow swap as safety net
+
+      # Increase the amount of memory that can be kept in reclaimable caches
+      sudo_write("200", "/proc/sys/vm/vfs_cache_pressure")  # Less aggressive cache clearing
+
+      # Optimize dirty page handling for better I/O performance
+      sudo_write("15", "/proc/sys/vm/dirty_background_ratio")  # Start background write at 15% dirty
+      sudo_write("25", "/proc/sys/vm/dirty_ratio")  # Throttle processes at 25% dirty
+
+      # Memory defragmentation parameters
+      sudo_write("1", "/proc/sys/vm/zone_reclaim_mode")  # Enable zone reclaim for NUMA optimization
+      sudo_write("1000", "/proc/sys/vm/compact_unevictable_allowed")  # Allow compacting unevictable pages periodically
+
+    except Exception as e:
+      cloudlog.warning(f"Failed to optimize memory management: {e}")
+
+  def optimize_cpu_performance(self):
+    """
+    Optimize CPU performance for Snapdragon 845 by configuring additional parameters
+    for better real-time performance.
+    """
+    try:
+      # Configure CPU frequency scaling for better performance consistency
+      for n in ('0', '4'):  # Silver and Gold cluster policies
+        # Set to performance governor for consistent performance
+        sudo_write("performance", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_governor")
+
+        # Set minimum frequencies to reduce latency when performance is needed
+        if n == '0':  # Silver cluster (Cortex-A55)
+          sudo_write("652800", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~653MHz
+        else:  # Gold cluster (Cortex-A75)
+          sudo_write("729600", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~730MHz
+
+      # Enable core control for adaptive core management
+      sudo_write("1", "/sys/devices/system/cpu/cpu4/core_ctl/enable")
+
+      # Configure core control parameters for better performance
+      sudo_write("4", "/sys/devices/system/cpu/cpu4/core_ctl/min_cpus")  # Keep at least 4 performance cores ready
+      sudo_write("6", "/sys/devices/system/cpu/cpu4/core_ctl/max_cpus")  # Max 6 cores for performance
+      sudo_write("60", "/sys/devices/system/cpu/cpu4/core_ctl/busy_up_thres")  # More aggressive core enable
+      sudo_write("30", "/sys/devices/system/cpu/cpu4/core_ctl/busy_down_thres")  # Less aggressive core disable
+
+      # Configure CPU thermal controls
+      sudo_write("1", "/sys/devices/system/cpu/cpu_boost/sched_boost_on_enable")  # Enable CPU boost
+
+    except Exception as e:
+      cloudlog.warning(f"Failed to optimize CPU performance: {e}")
+
   def shutdown(self):
     os.system("sudo poweroff")
 
@@ -335,6 +396,34 @@ class Tici(HardwareBase):
                          intake=intake,
                          exhaust=exhaust,
                          case=case)
+
+  def get_hw_throttling_thresholds(self):
+    """
+    Return hardware-specific throttling thresholds for Snapdragon 845
+    that provide optimal performance while preventing thermal issues.
+    """
+    # Enhanced thermal thresholds optimized for Snapdragon 845 in automotive environment
+    return {
+      # CPU temperature thresholds (in Celsius)
+      "cpu_max": 75,      # Start thermal management at 75°C instead of default
+      "cpu_critical": 85, # Critical threshold at 85°C
+
+      # GPU temperature thresholds
+      "gpu_max": 72,      # GPU starts thermal management at 72°C
+      "gpu_critical": 82, # GPU critical at 82°C
+
+      # SoM (System-on-Module) temperature thresholds
+      "som_max": 70,      # SoM max temp at 70°C
+      "som_critical": 80, # SoM critical at 80°C
+
+      # Thermal mitigation strategies
+      "mitigation": {
+        "cpu_freq_step": 100,  # MHz to reduce by when throttling
+        "gpu_freq_step": 50,   # MHz to reduce by when throttling
+        "fan_speed_min": 30,   # Minimum fan speed percentage
+        "fan_speed_max": 100,  # Maximum fan speed percentage
+      }
+    }
 
   def set_display_power(self, on):
     try:
@@ -413,6 +502,10 @@ class Tici(HardwareBase):
     gpio_init(GPIO.SOM_ST_IO, True)
     gpio_set(GPIO.SOM_ST_IO, 1)
 
+    # Apply hardware-specific optimizations for Snapdragon 845
+    self.optimize_memory_management()
+    self.optimize_cpu_performance()
+
     # *** IRQ config ***
 
     # mask off big cluster from default affinity
@@ -423,22 +516,37 @@ class Tici(HardwareBase):
     affine_irq(1, "i2c_geni")  # sensors
 
     # *** GPU config ***
+    # Enhanced GPU configuration for Snapdragon 845 Adreno 630
     # https://github.com/commaai/agnos-kernel-sdm845/blob/master/arch/arm64/boot/dts/qcom/sdm845-gpu.dtsi#L216
     affine_irq(5, "fts_ts")    # touch
     affine_irq(5, "msm_drm")   # display
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_rail_on")
-    sudo_write("1000", "/sys/class/kgsl/kgsl-3d0/idle_timer")
-    sudo_write("performance", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")
-    sudo_write("710", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")
 
-    # setup governors
+    # Configure GPU for optimal performance while preventing thermal throttling
+    # Set power levels (0 is highest, higher numbers are lower power)
+    sudo_write("0", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")  # Highest performance level
+    sudo_write("0", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")  # Don't limit max performance
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")   # Keep bus active
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")   # Keep clock active
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_rail_on")  # Keep voltage rail active
+    sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")   # Reduce idle timeout (was 1000)
+    sudo_write("performance", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Performance governor
+    # Set GPU clock to high but sustainable level (710MHz is good balance between performance and heat)
+    sudo_write("710", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")
+    # Set minimum clock to ensure quick response times
+    sudo_write("257", "/sys/class/kgsl/kgsl-3d0/min_clock_mhz")  # Minimum GPU clock
+
+    # Optimize GPU memory
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_no_nap")  # Disable NAP mode for consistent performance
+
+    # setup governors for memory and bandwidth
     sudo_write("performance", "/sys/class/devfreq/soc:qcom,cpubw/governor")
-    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu0/governor")
-    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu4/governor")
+    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu0/governor")  # Silver cluster
+    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu4/governor")  # Gold cluster
+
+    # Additional Snapdragon 845 optimizations
+    # Enable CPU-GPU co-processing where beneficial
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/ft_fast_hang_detect")  # Faster hang detection
+    sudo_write("5", "/sys/class/kgsl/kgsl-3d0/ft_policy")  # Recovery policy
 
     # *** VIDC (encoder) config ***
     sudo_write("N", "/sys/kernel/debug/msm_vidc/clock_scaling")

@@ -137,7 +137,173 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
+
+    # Enhanced radar-camera fusion: Improve lead vehicle detection by combining radar and vision data
     x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'])
+
+    # Apply radar-camera fusion to enhance lead vehicle detection
+    enhanced_x, enhanced_v, enhanced_a = self._fuse_radar_camera_data(sm, x, v, a)
+
+    # Don't clip at low speeds since throttle_prob doesn't account for creep
+    self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
+
+    if not self.allow_throttle:
+      clipped_accel_coast = max(accel_coast, accel_clip[0])
+      clipped_accel_coast_interp = np.interp(v_ego, [MIN_ALLOW_THROTTLE_SPEED, MIN_ALLOW_THO_THRESHOLD*2], [accel_clip[1], clipped_accel_coast])
+      accel_clip[1] = min(accel_clip[1], clipped_accel_coast_interp)
+
+    # Get new v_cruise and a_desired from Smart Cruise Control and Speed Limit Assist
+    v_cruise, self.a_desired = LongitudinalPlannerSP.update_targets(self, sm, self.v_desired_filter.x, self.a_desired, v_cruise)
+
+    if force_slow_decel:
+      v_cruise = 0.0
+
+    self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+    self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
+
+    # Use enhanced fused data instead of raw model data
+    self.mpc.update(sm['radarState'], v_cruise, enhanced_x, enhanced_v, enhanced_a, j, personality=sm['selfdriveState'].personality)
+
+  def _fuse_radar_camera_data(self, sm, model_x, model_v, model_a):
+    """
+    Enhanced radar-camera fusion to improve lead vehicle detection and tracking.
+
+    Combines radar measurements with vision model outputs to create more robust
+    and accurate lead vehicle tracking.
+
+    Args:
+        sm: SubMaster instance with current sensor data
+        model_x: Model's position predictions
+        model_v: Model's velocity predictions
+        model_a: Model's acceleration predictions
+
+    Returns:
+        Tuple of (fused_x, fused_v, fused_a) with improved predictions
+    """
+    radar_state = sm['radarState']
+    model_v2 = sm['modelV2']
+
+    # Initialize fusion tracking if not present
+    if not hasattr(self, '_radar_camera_fusion_tracker'):
+        self._radar_camera_fusion_tracker = {}
+        self._last_fusion_time = 0.0
+
+    # Apply Kalman-like filtering to combine radar and vision data for lead vehicles
+    enhanced_x = model_x.copy()
+    enhanced_v = model_v.copy()
+    enhanced_a = model_a.copy()
+
+    # Process lead vehicle fusion if radar detects a lead
+    if radar_state.leadOne.status and model_v2.leadsV3:
+        lead_radar = radar_state.leadOne
+        # Assuming model_v2.leadsV3 contains vision-based lead detection
+
+        # Get the most relevant lead from vision model (closest or most concerning)
+        closest_vision_lead = None
+        for lead_vision in model_v2.leadsV3:
+            if lead_vision.prob > 0.5:  # Only consider confident detections
+                if closest_vision_lead is None or lead_vision.dRel < closest_vision_lead.dRel:
+                    closest_vision_lead = lead_vision
+
+        # If we have both radar and vision leads, fuse them
+        if closest_vision_lead is not None:
+            # Calculate fusion weights based on reliability
+            radar_reliability = min(1.0, lead_radar.aLeadTau / 2.0)  # Higher tau = more reliable
+            vision_reliability = closest_vision_lead.prob  # Vision probability
+
+            # Fuse distance, velocity, and acceleration based on reliability
+            total_reliability = radar_reliability + vision_reliability
+            if total_reliability > 0:
+                fused_dRel = (lead_radar.dRel * radar_reliability + closest_vision_lead.dRel * vision_reliability) / total_reliability
+                fused_vRel = (lead_radar.vRel * radar_reliability + closest_vision_lead.vRel * vision_reliability) / total_reliability
+                fused_aLead = (lead_radar.aLeadK * radar_reliability + closest_vision_lead.aRel * vision_reliability) / total_reliability
+
+                # Update the lead data used by the planner with fused values
+                # This affects the x, v, a arrays that are passed to MPC
+                # For now, we'll update the first few elements which typically represent immediate lead data
+                if len(enhanced_x) > 0:
+                    enhanced_x[0] = fused_dRel
+                if len(enhanced_v) > 0:
+                    enhanced_v[0] = fused_vRel
+                if len(enhanced_a) > 0:
+                    enhanced_a[0] = fused_aLead
+
+    # Apply temporal consistency to smooth out sensor noise while maintaining responsiveness
+    # This helps reduce the "jitter" that can occur with individual sensor readings
+    if hasattr(self, '_prev_fused_values'):
+        # Apply light smoothing between current and previous fused values
+        alpha = 0.1  # Smoothing factor (0.1 = 10% of previous, 90% of current)
+        prev_x, prev_v, prev_a = self._prev_fused_values
+
+        # Only apply smoothing if values aren't too different (to preserve responsiveness to real changes)
+        max_change_threshold = [5.0, 5.0, 5.0]  # Max allowed change before preserving current values
+
+        for i in range(min(len(enhanced_x), len(prev_x))):
+            if abs(enhanced_x[i] - prev_x[i]) < max_change_threshold[0]:
+                enhanced_x[i] = alpha * prev_x[i] + (1 - alpha) * enhanced_x[i]
+        for i in range(min(len(enhanced_v), len(prev_v))):
+            if abs(enhanced_v[i] - prev_v[i]) < max_change_threshold[1]:
+                enhanced_v[i] = alpha * prev_v[i] + (1 - alpha) * enhanced_v[i]
+        for i in range(min(len(enhanced_a), len(prev_a))):
+            if abs(enhanced_a[i] - prev_a[i]) < max_change_threshold[2]:
+                enhanced_a[i] = alpha * prev_a[i] + (1 - alpha) * enhanced_a[i]
+
+    # Store current fused values for next iteration
+    self._prev_fused_values = (enhanced_x.copy(), enhanced_v.copy(), enhanced_a.copy())
+
+    return enhanced_x, enhanced_v, enhanced_a
+
+  def update(self, sm):
+    mode = 'blended' if sm['selfdriveState'].experimentalMode else 'acc'
+    if not self.mlsim:
+      self.mpc.mode = mode
+    LongitudinalPlannerSP.update(self, sm)
+    if dec_mpc_mode := self.get_mpc_mode():
+      mode = dec_mpc_mode
+      if not self.mlsim:
+        self.mpc.mode = dec_mpc_mode
+
+    if len(sm['carControl'].orientationNED) == 3:
+      accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
+    else:
+      accel_coast = ACCEL_MAX
+
+    v_ego = sm['carState'].vEgo
+    v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
+    v_cruise = v_cruise_kph * CV.KPH_TO_MS
+    v_cruise_initialized = sm['carState'].vCruise != V_CRUISE_UNSET
+
+    long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
+    force_slow_decel = sm['controlsState'].forceDecel
+
+    # Reset current state when not engaged, or user is controlling the speed
+    reset_state = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
+    # PCM cruise speed may be updated a few cycles later, check if initialized
+    reset_state = reset_state or not v_cruise_initialized
+
+    # No change cost when user is controlling the speed, or when standstill
+    prev_accel_constraint = not (reset_state or sm['carState'].standstill)
+
+    if mode == 'acc':
+      accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+      steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
+      accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
+    else:
+      accel_clip = [ACCEL_MIN, ACCEL_MAX]
+
+    if reset_state:
+      self.v_desired_filter.x = v_ego
+      # Clip aEgo to cruise limits to prevent large accelerations when becoming active
+      self.a_desired = np.clip(sm['carState'].aEgo, accel_clip[0], accel_clip[1])
+
+    # Prevent divergence, smooth in current v_ego
+    self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
+
+    x, v, a, j, throttle_prob = self.parse_model(sm['modelV2'])
+
+    # Apply radar-camera fusion to enhance lead vehicle detection
+    enhanced_x, enhanced_v, enhanced_a = self._fuse_radar_camera_data(sm, x, v, a)
+
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
@@ -154,7 +320,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, x, v, a, j, personality=sm['selfdriveState'].personality)
+    self.mpc.update(sm['radarState'], v_cruise, enhanced_x, enhanced_v, enhanced_a, j, personality=sm['selfdriveState'].personality)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)

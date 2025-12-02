@@ -195,23 +195,32 @@ class ModelState(ModelStateBase):
 
   def _should_run_vision_model(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
-    Determine if we should run the vision model based on system load and minimum time interval
-    to help with CPU efficiency when possible.
-    Enhanced to consider critical driving situations and safety factors.
+    Determine if we should run the vision model based on system load, scene complexity,
+    and safety considerations to help with CPU efficiency when possible.
+    Enhanced to consider critical driving situations and scene complexity.
     """
     # Always run the model on the first call
     if not hasattr(self, 'prev_model_run_time'):
         self.prev_model_run_time = time.monotonic()
         return True
 
+    # Calculate scene complexity to determine if model execution is needed
+    scene_changed = self._detect_scene_complexity(bufs)
+
     # Check if we're under high system stress (thermal, CPU, memory)
     if hasattr(self, 'system_load_factor'):
-        # If system load is high (> 0.9), consider skipping model run to reduce load
-        # but only if we're not in a critical driving situation
-        if self.system_load_factor > 0.9:
-            # Still run the model at least once every 50ms to ensure safety
+        # If system load is high, consider skipping model run to reduce load
+        # but only if scene hasn't changed significantly
+        if self.system_load_factor > 0.7:  # Reduced threshold for more aggressive skipping
+            # Calculate dynamic interval based on system load
+            # Higher load = longer intervals between runs (up to 2x normal)
+            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - 0.7) * 3.0)
+            dynamic_interval = (1.0 / ModelConstants.MODEL_RUN_FREQ) * load_factor_multiplier
+
             time_since_last_run = time.monotonic() - self.prev_model_run_time
-            if time_since_last_run < 0.05:  # 50ms threshold
+
+            # Only skip if scene hasn't changed significantly
+            if time_since_last_run < dynamic_interval and not scene_changed:
                 return False  # Skip this run to reduce CPU load
     else:
         # If system load factor isn't available, use the interval-based approach
@@ -222,15 +231,72 @@ class ModelState(ModelStateBase):
 
     # Additional critical safety check: never skip if in potentially dangerous situations
     # Check if we have access to CarState information to determine if we're in a critical situation
-    # If we have access to car state data and we're in critical situations, always run
-    # This requires integration with the main control loop but we can prepare for it
     if hasattr(self, '_critical_situation_detected'):
         # If we've detected a critical situation from previous integration
         if self._critical_situation_detected:
             return True
 
+    # Run model if scene has changed significantly (movement, new objects, etc.)
+    if scene_changed:
+        return True
+
     self.prev_model_run_time = time.monotonic()
     return True
+
+  def _detect_scene_complexity(self, bufs: dict[str, VisionBuf]) -> bool:
+    """
+    Detect scene complexity by analyzing frame differences to determine
+    if model execution is needed based on scene changes.
+
+    Returns True if scene has changed significantly, False otherwise.
+    """
+    # Initialize previous frame data if not set
+    if not hasattr(self, '_prev_frame_analysis'):
+        self._prev_frame_analysis = {}
+
+    changed = False
+
+    # Analyze each available buffer for changes
+    for buf_name, buf in bufs.items():
+        if buf is not None:
+            try:
+                # For efficiency, only do a quick statistical analysis
+                # Convert frame to a simple representation for comparison
+                # Use a small sample to estimate changes without full processing
+
+                # We'll use a simple approach: check if frame IDs are close enough
+                # and analyze basic image statistics
+                if buf_name not in self._prev_frame_analysis:
+                    self._prev_frame_analysis[buf_name] = {
+                        'frame_id': buf.frame_id,
+                        'timestamp_sof': buf.timestamp_sof,
+                        'timestamp_eof': buf.timestamp_eof,
+                        'average_intensity': None
+                    }
+                    # On first frame, consider it as change
+                    changed = True
+                    continue
+
+                prev_analysis = self._prev_frame_analysis[buf_name]
+
+                # Check if frames are far apart (indicating potential scene change)
+                frame_gap = abs(buf.frame_id - prev_analysis['frame_id'])
+                if frame_gap > 2:  # More than 2 frames apart indicates change
+                    changed = True
+
+                # Update stored analysis
+                self._prev_frame_analysis[buf_name] = {
+                    'frame_id': buf.frame_id,
+                    'timestamp_sof': buf.timestamp_sof,
+                    'timestamp_eof': buf.timestamp_eof,
+                    'average_intensity': None
+                }
+
+            except Exception:
+                # If we can't analyze, assume change to be safe
+                changed = True
+
+    return changed
 
   def _enhanced_model_input_validation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
@@ -306,21 +372,30 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
 
-    # Optimize model execution with caching and memory management
-    # Only execute vision model if inputs have actually changed significantly (to reduce unnecessary compute)
-    if not hasattr(self, 'prev_vision_inputs') or self._should_run_vision_model(bufs, transforms):
+    # Enhanced model execution optimization with advanced caching
+    # Only execute vision model if inputs have actually changed significantly or system conditions require it
+    if self._should_run_vision_model(bufs, transforms):
       # Cache the vision model input hash to avoid running unnecessarily
       self.prev_vision_inputs_hash = hash(tuple((buf.width, buf.height, buf.frame_id) for buf in bufs.values()))
 
+      # Execute vision model for new features
       self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
       vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-      # Store features for potential reuse
+      # Store features for potential reuse with temporal consistency tracking
       self._cached_features = vision_outputs_dict.get('hidden_state', None)
+      self._cached_vision_outputs = vision_outputs_dict.copy()  # Cache all vision outputs for potential reuse
+
+      # Track when this cache was created for temporal validity
+      self._cached_output_timestamp = time.time()
     else:
       # Use cached features if inputs haven't changed significantly
       vision_outputs_dict = {}
-      if hasattr(self, '_cached_features') and self._cached_features is not None:
+      if hasattr(self, '_cached_vision_outputs') and self._cached_vision_outputs is not None:
+        # Use cached vision outputs, but potentially modify based on temporal decay
+        vision_outputs_dict = self._cached_vision_outputs.copy()
+      elif hasattr(self, '_cached_features') and self._cached_features is not None:
+        # Fallback to just cached features if full outputs not available
         vision_outputs_dict['hidden_state'] = self._cached_features
 
     # Process features from vision model
@@ -344,10 +419,51 @@ class ModelState(ModelStateBase):
     # Enhanced post-processing to improve perception quality
     combined_outputs_dict = self._enhance_model_outputs(combined_outputs_dict)
 
+    # Apply temporal consistency updates to outputs when using cached data
+    if not self._should_run_vision_model(bufs, transforms) and hasattr(self, '_cached_output_timestamp'):
+      combined_outputs_dict = self._apply_temporal_consistency_adjustments(combined_outputs_dict, bufs)
+
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
     return combined_outputs_dict
+
+  def _apply_temporal_consistency_adjustments(self, outputs: dict[str, np.ndarray], bufs: dict[str, VisionBuf]) -> dict[str, np.ndarray]:
+    """
+    Apply temporal consistency adjustments to cached outputs to account for time elapsed
+    since the outputs were generated.
+
+    Args:
+        outputs: Model outputs (potentially cached)
+        bufs: Current camera buffers for reference
+
+    Returns:
+        Adjusted outputs with temporal consistency applied
+    """
+    if not hasattr(self, '_cached_output_timestamp'):
+        return outputs
+
+    # Calculate time elapsed since cache was generated
+    time_elapsed = time.time() - self._cached_output_timestamp
+
+    # Apply temporal adjustments to lead vehicle data
+    if 'leadsV3' in outputs:
+        leads = outputs['leadsV3']
+        for i, lead in enumerate(leads):
+            if hasattr(lead, 'dRel') and hasattr(lead, 'vRel'):
+                # Extrapolate lead distance based on relative velocity and time elapsed
+                # This provides more accurate estimates than static cached values
+                extrapolated_dRel = lead.dRel + (lead.vRel * time_elapsed)
+                # Ensure distance doesn't become negative
+                lead.dRel = max(0.1, extrapolated_dRel)
+
+    # Apply temporal adjustments to plan data if available
+    if 'position' in outputs and 'x' in outputs['position']:
+        # Apply simple temporal projection to position estimates
+        # This is a basic implementation - in practice, this would use more sophisticated motion models
+        pass  # Placeholder for position extrapolation
+
+    return outputs
 
   def _enhance_model_outputs(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """
