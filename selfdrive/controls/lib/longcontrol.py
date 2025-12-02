@@ -90,9 +90,6 @@ class LongControl:
 
     # Apply adaptive gains from LightweightAdaptiveGainScheduler
     long_gains = adaptive_gains.get('longitudinal', {})
-    self.pid.kp = long_gains.get('kp', self.pid.kp)
-    self.pid.ki = long_gains.get('ki', self.pid.ki)
-    self.pid.kf = long_gains.get('kf', self.pid.kf)
 
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop, CS.brakePressed,
@@ -132,8 +129,13 @@ class LongControl:
     else:  # LongCtrlState.pid
       # error is the difference between target and current acceleration
       error = a_target - CS.aEgo
+      # Apply kf from adaptive gains to feedforward
+      kf_factor = long_gains.get('kf', 1.0) # Default to 1.0 if not found
+      feedforward_accel = a_target * kf_factor
       output_accel = self.pid.update(error, speed=CS.vEgo,
-                                     feedforward=a_target)
+                                     feedforward=feedforward_accel,
+                                     k_p_override=long_gains.get('kp'),
+                                     k_i_override=long_gains.get('ki'))
 
       self.last_output_accel = output_accel
       return output_accel

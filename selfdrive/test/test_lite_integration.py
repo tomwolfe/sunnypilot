@@ -89,14 +89,14 @@ class TestLiteIntegration:
         mock_device_state.cpuTempC = [60.0] # Thermal state should be low (0.0 to 0.5 range)
         thermal_state = monitor.calculate_thermal_state(mock_device_state)
         # Based on interp logic: 40C=0, 70C=0.5. 60C is 2/3 of the way, so 0.5 * (2/3) = 0.333
-        assert np.isclose(thermal_state, 0.3333333333333333)
+        assert np.isclose(thermal_state, 0.3333333333333333, rtol=1e-6)
 
         gains_normal = scheduler.get_adaptive_gains(mock_car_state.vEgo, thermal_state)
         # Verify gains are not significantly reduced due to thermal state
         # For kf: base is 0.05. thermal factor is max(0.85, 1.0 - 0.333*0.15) = max(0.85, 1.0 - 0.05) = 0.95
         # speed_factor at 15m/s (TOYOTA_COROLLA long_speed_gain_factor=35): 1.0 + (15/35) = 1.428. Capped at 1.6. So 1.428
         # Final kf = 0.05 * 1.428 * 0.95 = 0.06783
-        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06783) 
+        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06783, rtol=1e-6) 
 
         # No safety violations
         mock_actuators.accel = 0.5
@@ -109,18 +109,18 @@ class TestLiteIntegration:
         mock_device_state.cpuTempC = [90.0] # Critical thermal state
         mock_device_state.gpuTempC = 90.0
         thermal_state_critical = monitor.calculate_thermal_state(mock_device_state)
-        assert thermal_state_critical == 1.0
+        assert np.isclose(thermal_state_critical, 1.0, rtol=1e-6)
 
         gains_thermal = scheduler.get_adaptive_gains(mock_car_state.vEgo, thermal_state_critical)
         # Verify gains are reduced due to thermal state
         # Thermal factor for long: max(0.85, 1.0 - 1.0 * 0.15) = 0.85
         # Thermal factor for lat: max(0.9, 1.0 - 1.0 * 0.1) = 0.9
         # Final kf = 0.05 * 1.428 * 0.85 = 0.06069
-        assert np.isclose(gains_thermal['longitudinal']['kf'], 0.06069)
+        assert np.isclose(gains_thermal['longitudinal']['kf'], 0.06069, rtol=1e-6)
         # For lateral, base_lat_kp at 15m/s (0.2, 0.8, 1.5) -> interp(15, [0,10,20], [0.2,0.8,1.5]) = 1.15
         # lat_speed_factor (TOYOTA_COROLLA lat_speed_gain_factor=55): 1.0 + (15/55) = 1.2727. Capped at 1.4. So 1.2727
         # Final lat_kp = 1.15 * 1.2727 * 0.9 = 1.317
-        assert np.isclose(gains_thermal['lateral']['kp'], 1.317)
+        assert np.isclose(gains_thermal['lateral']['kp'], 1.317, rtol=1e-6)
 
         # --- Scenario 3: Safety check triggers deceleration due to high accel ---
         mock_actuators.accel = 4.0 # Exceeds max_long_accel (3.0)

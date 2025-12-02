@@ -53,10 +53,6 @@ class LatControlPID(LatControl):
 
     # Apply adaptive gains from LightweightAdaptiveGainScheduler
     lateral_gains = adaptive_gains.get('lateral', {})
-    self.pid.kp = lateral_gains.get('kp', self.pid.kp)
-    self.pid.ki = lateral_gains.get('ki', self.pid.ki)
-    self.pid.kd = lateral_gains.get('kd', self.pid.kd)
-    self.pid.kf = lateral_gains.get('kf', self.pid.kf)
 
     error = angle_steers_des - CS.steeringAngleDeg
 
@@ -67,13 +63,18 @@ class LatControlPID(LatControl):
       pid_log.active = False
       self.pid.reset()
     else:
-      ff = self.ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
+      # Adapt feedforward factor
+      ff_factor = lateral_gains.get('kf', self.ff_factor)
+      ff = ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
       output_torque = self.pid.update(error,
                                   feedforward=ff,
                                   speed=CS.vEgo,
-                                  freeze_integrator=freeze_integrator)
+                                  freeze_integrator=freeze_integrator,
+                                  k_p_override=lateral_gains.get('kp'),
+                                  k_i_override=lateral_gains.get('ki'),
+                                  k_d_override=lateral_gains.get('kd'))
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

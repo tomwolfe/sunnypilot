@@ -105,10 +105,6 @@ class LatControlTorque(LatControl):
     else:
       # Apply adaptive gains from LightweightAdaptiveGainScheduler
       lateral_gains = adaptive_gains.get('lateral', {})
-      self.pid.kp = lateral_gains.get('kp', self.pid.kp)
-      self.pid.ki = lateral_gains.get('ki', self.pid.ki)
-      self.pid.kd = lateral_gains.get('kd', self.pid.kd)
-      self.pid.kf = lateral_gains.get('kf', self.pid.kf)
 
       measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
       roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY
@@ -138,13 +134,20 @@ class LatControlTorque(LatControl):
       # Apply enhanced friction model with adaptive parameters based on speed and road condition
       ff += get_friction(error, lateral_accel_deadzone, FRICTION_THRESHOLD, self.torque_params)
 
+      # Scale feedforward with kf from adaptive gains
+      kf_factor = lateral_gains.get('kf', 1.0) # Default to 1.0 if not found, to keep original behavior
+      ff *= kf_factor
+
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
       output_lataccel = self.pid.update(pid_log.error,
                                           -measurement_rate,
                                           feedforward=ff,
                                           speed=CS.vEgo,
-                                          freeze_integrator=freeze_integrator)
+                                          freeze_integrator=freeze_integrator,
+                                          k_p_override=lateral_gains.get('kp'),
+                                          k_i_override=lateral_gains.get('ki'),
+                                          k_d_override=lateral_gains.get('kd'))
       
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
