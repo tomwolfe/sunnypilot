@@ -87,43 +87,43 @@ class LightweightSafetyChecker:
             safety_report['recommended_action'] = 'disengage'
 
         # Check steering rate limit (change in steering command)
-        if hasattr(self, '_prev_steer') and hasattr(self, '_prev_time') and hasattr(actuators, 'steer'):
-            current_time = time.monotonic()
-            time_delta = current_time - self._prev_time if hasattr(self, '_prev_time') else 0.01
-            steering_rate = abs(actuators.steer - self._prev_steer) / max(time_delta, 0.01)  # Use a small dt to avoid division by zero
-            if steering_rate > self.safety_thresholds['max_steering_rate']:
-                safety_report['safe'] = False
-                safety_report['violations'].append('steering_rate_limit_exceeded')
-                safety_report['recommended_action'] = 'disengage'
-
-        # Store current steering and time for next iteration
         if hasattr(actuators, 'steer'):
+            current_time = time.monotonic()
+            # Calculate the steering rate using current and previous values
+            if hasattr(self, '_prev_time') and self._prev_time > 0:
+                time_delta = current_time - self._prev_time
+                steering_rate = abs(actuators.steer - self._prev_steer) / max(time_delta, 0.01)  # Use a small dt to avoid division by zero
+                if steering_rate > self.safety_thresholds['max_steering_rate']:
+                    safety_report['safe'] = False
+                    safety_report['violations'].append('steering_rate_limit_exceeded')
+                    safety_report['recommended_action'] = 'disengage'
+
+            # Update current values immediately after calculation to prevent race condition
             self._prev_steer = actuators.steer
-            self._prev_time = time.monotonic()
+            self._prev_time = current_time
 
         # Enhanced forward collision check - handles all lead vehicle scenarios
         if (hasattr(radar_state, 'leadOne') and
             radar_state.leadOne.status and
             car_state.vEgo > 0.1):
 
-            # Calculate relative speed: positive means approaching, negative means moving away
+            # Calculate relative speed: positive means approaching, negative means moving away or lead is faster
             relative_speed = car_state.vEgo - radar_state.leadOne.vRel
 
-            # Check for potential collision regardless of lead vehicle's speed
-            # If we're approaching (relative_speed > 0) OR lead vehicle is stationary/very slow
-            if relative_speed > 0.1 or radar_state.leadOne.vRel <= 0.1:  # Fixed: changed from < 0.1 to <= 0.1
-                # Calculate time-to-collision differently based on scenario
-                if relative_speed > 0.1:  # Moving toward lead vehicle
-                    ttc = radar_state.leadOne.dRel / relative_speed if relative_speed > 0.1 else float('inf')
-                else:  # Lead vehicle is stationary or moving very slowly (vRel <= 0.1)
-                    ttc = radar_state.leadOne.dRel / car_state.vEgo if car_state.vEgo > 0.1 else float('inf')
+            # Only calculate TTC if vehicles are approaching each other (relative_speed > 0)
+            if relative_speed > 0.1:
+                ttc = radar_state.leadOne.dRel / relative_speed
+            else:
+                # If relative speed is 0 or negative, vehicles are not approaching (lead is moving away or faster)
+                # Set TTC to infinity since there's no immediate collision risk
+                ttc = float('inf')
 
-                # If either TTC is below threshold OR distance is below safe distance (whichever condition triggers first)
-                if ttc < self.safety_thresholds['min_safe_ttc'] or radar_state.leadOne.dRel < self.safety_thresholds['min_safe_distance']:
-                    # This is a safety-critical situation regardless of current acceleration
-                    safety_report['safe'] = False
-                    safety_report['violations'].append('forward_collision_imminent')
-                    safety_report['recommended_action'] = 'decelerate'
+            # Check for potential collision based on TTC or distance
+            if ttc < self.safety_thresholds['min_safe_ttc'] or radar_state.leadOne.dRel < self.safety_thresholds['min_safe_distance']:
+                # This is a safety-critical situation regardless of current acceleration
+                safety_report['safe'] = False
+                safety_report['violations'].append('forward_collision_imminent')
+                safety_report['recommended_action'] = 'decelerate'
 
         return safety_report
 
@@ -219,7 +219,7 @@ class LightweightSystemMonitor:
 
         # Check disk space if available
         if hasattr(device_state, 'freeSpacePercent') and device_state.freeSpacePercent:
-            if device_state.freeSpacePercent < 0.05:  # Less than 5% free
+            if device_state.freeSpacePercent < 5:  # Less than 5% free (assuming value is 0-100%)
                 health_report['disk_space_ok'] = False
 
         # Log periodically to reduce overhead
