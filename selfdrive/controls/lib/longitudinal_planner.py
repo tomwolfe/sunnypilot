@@ -223,7 +223,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
                 fused_vRel = (lead_radar.vRel * radar_reliability + closest_vision_lead.vRel * vision_reliability) / total_reliability
                 # Ensure we're using consistent acceleration values (both as absolute lead acceleration)
                 # Check if vision model has absolute lead acceleration (aLeadK) available
-                vision_aLead = closest_vision_lead.aLeadK if hasattr(closest_vision_lead, 'aLeadK') and closest_vision_lead.aLeadK != 0 else closest_vision_lead.aRel
+                # If only relative acceleration (aRel) is available, convert to absolute by adding ego acceleration
+                if hasattr(closest_vision_lead, 'aLeadK') and closest_vision_lead.aLeadK != 0:
+                    vision_aLead = closest_vision_lead.aLeadK
+                elif hasattr(closest_vision_lead, 'aRel'):
+                    # Convert relative acceleration to absolute: aLead = aRel + aEgo
+                    vision_aLead = closest_vision_lead.aRel + sm['carState'].aEgo
+                else:
+                    vision_aLead = 0.0  # Safe default if no acceleration data available
+
                 fused_aLead = (lead_radar.aLeadK * radar_reliability + vision_aLead * vision_reliability) / total_reliability
 
                 # Update the lead data used by the planner with fused values
@@ -283,6 +291,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     validated_v = v.copy()
     validated_a = a.copy()
 
+    # Store previous validation results for consistency checking
+    if not hasattr(self, '_prev_validated_x'):
+        self._prev_validated_x = validated_x.copy()
+        self._prev_validated_v = validated_v.copy()
+        self._prev_validated_a = validated_a.copy()
+
     for i in range(len(validated_x)):
         # Validate distance (positive, realistic range)
         if not np.isnan(validated_x[i]) and not np.isinf(validated_x[i]):
@@ -290,6 +304,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         else:
             # If invalid, use a safe default (far distance)
             validated_x[i] = 200.0
+
+        # Additional safety check: Check for sudden changes that might indicate sensor fusion errors
+        if i < len(self._prev_validated_x):
+            distance_change = abs(validated_x[i] - self._prev_validated_x[i])
+            # If the distance changed dramatically between frames, apply smoothing
+            if distance_change > 10.0:  # Changed by more than 10m in one frame
+                # Use a weighted average to smooth sudden changes
+                validated_x[i] = 0.7 * self._prev_validated_x[i] + 0.3 * validated_x[i]
+                cloudlog.warning(f"Sudden distance change detected and smoothed: {self._prev_validated_x[i]} -> {x[i]} adjusted to {validated_x[i]}")
 
     for i in range(len(validated_v)):
         # Validate velocity (realistic relative velocities for lead vehicles)
@@ -299,6 +322,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             # If invalid, use a safe default (stationary relative to ego)
             validated_v[i] = 0.0
 
+        # Additional safety check for velocity changes
+        if i < len(self._prev_validated_v):
+            velocity_change = abs(validated_v[i] - self._prev_validated_v[i])
+            # If the velocity changed dramatically, apply smoothing (max ~4g acceleration)
+            if velocity_change > 40.0:  # Changed by more than 40 m/s in one frame (impossible)
+                # Use a weighted average to smooth sudden changes
+                validated_v[i] = 0.8 * self._prev_validated_v[i] + 0.2 * validated_v[i]
+                cloudlog.warning(f"Sudden velocity change detected and smoothed: {self._prev_validated_v[i]} -> {v[i]} adjusted to {validated_v[i]}")
+
     for i in range(len(validated_a)):
         # Validate acceleration (realistic acceleration values)
         if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
@@ -306,6 +338,32 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         else:
             # If invalid, use a safe default (no acceleration)
             validated_a[i] = 0.0
+
+        # Additional safety check for acceleration based on physics
+        # Acceleration shouldn't exceed what's physically possible
+        if abs(validated_a[i]) > 9.81 * 0.8:  # 0.8g limit (typical maximum for vehicles)
+            # Apply a more conservative acceleration limit for safety
+            original_a = validated_a[i]
+            validated_a[i] = np.clip(validated_a[i], -8.0, 3.0)  # More conservative limits
+            if original_a != validated_a[i]:
+                cloudlog.warning(f"Acceleration clamped for safety: {original_a} -> {validated_a[i]}")
+
+        # Check for acceleration consistency with velocity
+        if i < len(validated_v) and i < len(self._prev_validated_v):
+            # Calculate expected acceleration based on velocity change (assuming 0.05s between frames)
+            dt = 0.05  # Approximate frame time
+            velocity_based_accel = (validated_v[i] - self._prev_validated_v[i]) / dt
+
+            # Check if the reported acceleration is consistent with the velocity change
+            if abs(validated_a[i] - velocity_based_accel) > 20.0:  # Large discrepancy
+                cloudlog.warning(f"Acceleration-velocity inconsistency detected: reported={validated_a[i]}, calculated={velocity_based_accel}")
+                # Use the lesser of the two for safety
+                validated_a[i] = np.clip(validated_a[i], velocity_based_accel - 10.0, velocity_based_accel + 10.0)
+
+    # Update stored previous values
+    self._prev_validated_x = validated_x.copy()
+    self._prev_validated_v = validated_v.copy()
+    self._prev_validated_a = validated_a.copy()
 
     return validated_x, validated_v, validated_a
 

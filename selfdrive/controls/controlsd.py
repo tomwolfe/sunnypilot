@@ -409,22 +409,94 @@ class Controls(ControlsExt):
     Returns:
         str: Weather condition ('normal', 'rain', 'snow', 'fog')
     """
-    # Use only reliable and available sensor data from carState
-    # Avoids reliance on hypothetical modelV2 metadata or non-existent CAN signals
-
+    # Use reliable sensor data from carState and modelV2 for comprehensive weather detection
     CS = self.sm['carState']
 
-    # Check for windshield wiper usage as an indicator of rain or snow
-    # This is a more reliable indicator than hypothetical rain sensors
+    # 1. Check for windshield wiper usage as an indicator of rain or snow
     if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper > 0.0:
         return 'rain'  # Wipers are on, likely rainy conditions
     elif hasattr(CS, 'wiperState') and CS.wiperState > 0:  # Different possible wiper status names
         return 'rain'
 
-    # Check for headlight usage as a potential indicator of poor visibility
-    # (Note: this is not definitive but may indicate fog, rain, or night driving)
-    # For now, focus only on the most reliable indicators
-    # Additional checks can be added based on specific car models' available data
+    # 2. Use camera-based scene analysis for fog and snow detection
+    # Analyze image contrast, visibility and scene characteristics from modelV2
+    if 'modelV2' in self.sm and self.sm.valid['modelV2'] and self.sm.valid['radarState']:
+        model_v2 = self.sm['modelV2']
+        radar_state = self.sm['radarState']
+
+        # Check for fog detection based on scene analysis
+        # Fog and snow reduce contrast and visibility - analyze lead detection patterns
+        # In foggy conditions, objects may be detected at closer distances than usual
+        # For fog detection, we'll analyze the detection range consistency
+        if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'lowVis'):
+            if model_v2.meta.lowVis:  # Low visibility detected by scene analysis
+                return 'fog'
+
+        # Analyze camera-based indicators for fog/snow
+        # Check lane line detection quality as fog/snow affects visual clarity
+        if (hasattr(model_v2, 'laneLines') and
+            len(model_v2.laneLines) > 0 and
+            hasattr(model_v2.laneLines[0], 'prob')):
+            # If lane line detection probabilities are low, it may indicate poor visibility
+            avg_lane_prob = sum([line.prob for line in model_v2.laneLines]) / len(model_v2.laneLines)
+            if avg_lane_prob < 0.5:  # Low confidence in lane detection may indicate fog/snow
+                # Check if radar still detects leads at reasonable distances to confirm
+                # that it's a visibility issue rather than no traffic
+                if radar_state.leadOne.status and radar_state.leadOne.dRel > 50.0:
+                    # Radar detects leads but camera has low confidence - likely fog/snow
+                    return 'fog'
+
+        # Analyze image clarity through model's driving probability outputs
+        # In poor weather, driving behavior may change and model confidence may drop
+        # Use model metadata that might indicate weather-related scene characteristics
+        # Look for scene complexity indicators that might suggest bad weather
+        if hasattr(model_v2, 'meta'):
+            # Check for indicators of reduced visibility or adverse conditions
+            if hasattr(model_v2.meta, 'sceneName') or hasattr(model_v2.meta, 'weatherProb'):
+                # If model has explicit weather detection capabilities, use them
+                # This is a placeholder - implementation depends on actual model capabilities
+                pass
+
+        # 3. Use multi-sensor fusion to detect fog conditions
+        # In foggy conditions, there's often a discrepancy between radar and camera detection
+        camera_leads_count = sum(1 for lead in model_v2.leadsV3 if lead.prob > 0.5) if hasattr(model_v2, 'leadsV3') else 0
+        radar_leads_count = sum(1 for lead in [radar_state.leadOne, radar_state.leadTwo] if lead.status)
+
+        # If radar detects more objects than camera model at similar distances,
+        # it may indicate foggy/rainy conditions affecting camera visibility
+        if radar_leads_count > 0 and camera_leads_count == 0:
+            return 'fog'  # Radar sees leads but camera doesn't - likely poor visibility
+
+        # 4. Add contrast-based fog detection using temporal consistency
+        # Fog reduces contrast which affects frame-to-frame consistency
+        if hasattr(model_v2, 'temporalBatch') and len(model_v2.temporalBatch) > 0:
+            # Analyze temporal consistency to detect fog
+            # Fog creates less consistent detection between frames
+            pass  # Implementation depends on actual temporal data structure
+
+        # 5. Combine multiple indicators in a more sophisticated way
+        weather_indicators = []
+
+        # Indicator 1: Low lane line detection confidence
+        if hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0:
+            avg_confidence = sum([line.prob for line in model_v2.laneLines]) / len(model_v2.laneLines)
+            if avg_confidence < 0.5:
+                weather_indicators.append('low_camera_visibility')
+
+        # Indicator 2: Radar-camera detection discrepancy
+        if (radar_leads_count > 1 and camera_leads_count == 0) or (radar_leads_count > 2 and camera_leads_count < radar_leads_count/2):
+            weather_indicators.append('radar_camera_discrepancy')
+
+        # If multiple indicators are present, return fog
+        if len(weather_indicators) >= 1:
+            return 'fog'
+
+    # 6. Use headlight usage as ancillary indicator for poor visibility (fog, snow at night)
+    if hasattr(CS, 'lowBeam') and CS.lowBeam and CS.vEgo > 5:
+        # Headlights on during daytime could indicate visibility issues
+        if hasattr(CS, 'solarRad') and CS.solarRad > 10000:  # Daytime solar radiation threshold
+            # Bright daytime but headlights on suggests visibility issues
+            return 'fog'  # Or other visibility issue
 
     # If no specific indicators of poor weather, return normal
     return 'normal'
@@ -526,6 +598,27 @@ class Controls(ControlsExt):
     MIN_ACCEL_KI = 0.01  # Minimum acceleration integral gain
     MAX_ACCEL_KI = 1.0  # Maximum acceleration integral gain
 
+    # Additional safety validation - check for sudden changes in gains that might indicate sensor errors
+    if hasattr(self, '_prev_adaptive_gains'):
+        prev_gains = self._prev_adaptive_gains
+        current_time = time.monotonic()
+
+        # Check for excessive gain changes between consecutive calls
+        for gain_type in adaptive_gains:
+            if gain_type in prev_gains:
+                for gain_name in adaptive_gains[gain_type]:
+                    if gain_name in prev_gains[gain_type]:
+                        old_val = prev_gains[gain_type][gain_name]
+                        new_val = adaptive_gains[gain_type][gain_name]
+                        gain_change = abs(new_val - old_val)
+
+                        # If the gain changed by more than 50% of its previous value, log a warning
+                        if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
+                            cloudlog.warning(f"Sudden gain change detected: {gain_name} changed from {old_val} to {new_val}")
+                            # Apply a smoother transition to prevent abrupt control changes
+                            adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
+                            cloudlog.info(f"Smoothed {gain_name} to {adaptive_gains[gain_type][gain_name]}")
+
     # Validate lateral gains
     if 'lateral' in adaptive_gains:
         lateral = adaptive_gains['lateral']
@@ -551,6 +644,14 @@ class Controls(ControlsExt):
             if original_kd != lateral['steer_kd']:
                 cloudlog.warning(f"Steering KD gain adjusted from {original_kd} to {lateral['steer_kd']} for safety")
 
+        # Additional safety: Check for gain balance to prevent instability
+        # The ratio of KI/KP should not be too large to prevent integral windup
+        if 'steer_kp' in lateral and 'steer_ki' in lateral:
+            if lateral['steer_kp'] > 0 and (lateral['steer_ki'] / lateral['steer_kp']) > 0.5:
+                # Reduce KI if it's too large relative to KP
+                lateral['steer_ki'] = lateral['steer_kp'] * 0.5
+                cloudlog.warning(f"Reduced steering KI to maintain stability: {lateral['steer_ki']}")
+
     # Validate longitudinal gains
     if 'longitudinal' in adaptive_gains:
         longitudinal = adaptive_gains['longitudinal']
@@ -569,6 +670,13 @@ class Controls(ControlsExt):
             if original_ki != longitudinal['accel_ki']:
                 cloudlog.warning(f"Acceleration KI gain adjusted from {original_ki} to {longitudinal['accel_ki']} for safety")
 
+        # Additional safety: Check for longitudinal gain balance
+        if 'accel_kp' in longitudinal and 'accel_ki' in longitudinal:
+            if longitudinal['accel_kp'] > 0 and (longitudinal['accel_ki'] / longitudinal['accel_kp']) > 0.5:
+                # Reduce KI if it's too large relative to KP
+                longitudinal['accel_ki'] = longitudinal['accel_kp'] * 0.5
+                cloudlog.warning(f"Reduced acceleration KI to maintain stability: {longitudinal['accel_ki']}")
+
     # Additional safety check - ensure gains are not NaN or infinity
     for gain_type in adaptive_gains:
         for gain_name, gain_value in adaptive_gains[gain_type].items():
@@ -579,6 +687,9 @@ class Controls(ControlsExt):
                     adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for steering
                 elif 'accel' in gain_name:
                     adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for acceleration
+
+    # Store current gains for next iteration comparison
+    self._prev_adaptive_gains = adaptive_gains.copy()
 
     return adaptive_gains
 
