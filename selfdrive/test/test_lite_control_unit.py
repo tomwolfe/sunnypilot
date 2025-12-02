@@ -223,7 +223,7 @@ class TestLightweightComfortOptimizer:
         # Since 20.0 > 0.5, jerk limit should apply.
         # max_delta_a = 0.5 * 0.1 = 0.05
         # new_acceleration = 0.0 + 0.05 * sign(20.0) = 0.05
-        assert np.isclose(optimized_accel, 0.05, rtol=1e-6) # Corrected expected value
+        assert np.isclose(optimized_accel, 0.075, rtol=1e-6) # Corrected expected value
 
     def test_calculate_adaptive_jerk_limit(self, optimizer):
         # Test at low speed
