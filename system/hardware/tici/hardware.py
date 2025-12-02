@@ -317,100 +317,6 @@ class Tici(HardwareBase):
   def get_som_power_draw(self):
     return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
 
-  def optimize_memory_management(self):
-    """
-    Optimize memory management for Snapdragon 845 by configuring kernel parameters
-    for better real-time performance and reduced fragmentation.
-
-    CRITICAL SECURITY NOTICE: This method uses direct sysfs access which is a security risk.
-    In a production system, these optimizations MUST be moved to a dedicated system service
-    or init script that runs with appropriate privileges. This application should never run
-    with root privileges in production.
-    """
-    # This method should never be called in a production environment
-    # Issue a critical warning and return without making changes
-    cloudlog.error("CRITICAL: Memory management optimization attempted from application code, skipping for security reasons.")
-    cloudlog.error("These optimizations should be handled by a system service, not application code.")
-    return
-
-    # OLD CODE COMMENTED OUT FOR SECURITY:
-    # Check if we have the necessary permissions before attempting to write
-    # This is a basic check to make the code more robust
-    # if os.geteuid() != 0:
-    #   cloudlog.warning("Insufficient privileges to optimize memory management. These settings should be configured by system service.")
-    #   return
-    #
-    # try:
-    #   # Enable memory compaction to reduce fragmentation
-    #   sudo_write("1", "/proc/sys/vm/compact_memory")
-    #
-    #   # Adjust memory overcommit (more conservative to prevent OOM issues during heavy processing)
-    #   sudo_write("1", "/proc/sys/vm/overcommit_memory")  # Always check for sufficient memory
-    #
-    #   # Reduce swappiness to prefer RAM over swap for real-time performance
-    #   sudo_write("10", "/proc/sys/vm/swappiness")  # Low but not zero, to still allow swap as safety net
-    #
-    #   # Increase the amount of memory that can be kept in reclaimable caches
-    #   sudo_write("200", "/proc/sys/vm/vfs_cache_pressure")  # Less aggressive cache clearing
-    #
-    #   # Optimize dirty page handling for better I/O performance
-    #   sudo_write("15", "/proc/sys/vm/dirty_background_ratio")  # Start background write at 15% dirty
-    #   sudo_write("25", "/proc/sys/vm/dirty_ratio")  # Throttle processes at 25% dirty
-    #
-    #   # Memory defragmentation parameters
-    #   sudo_write("1", "/proc/sys/vm/zone_reclaim_mode")  # Enable zone reclaim for NUMA optimization
-    #   sudo_write("1000", "/proc/sys/vm/compact_unevictable_allowed")  # Allow compacting unevictable pages periodically
-    #
-    # except Exception as e:
-    #   cloudlog.warning(f"Failed to optimize memory management: {e}")
-
-  def optimize_cpu_performance(self):
-    """
-    Optimize CPU performance for Snapdragon 845 by configuring additional parameters
-    for better real-time performance.
-
-    CRITICAL SECURITY NOTICE: This method uses direct sysfs access which is a security risk.
-    In a production system, these optimizations MUST be moved to a dedicated system service
-    or init script that runs with appropriate privileges. This application should never run
-    with root privileges in production.
-    """
-    # This method should never be called in a production environment
-    # Issue a critical warning and return without making changes
-    cloudlog.error("CRITICAL: CPU performance optimization attempted from application code, skipping for security reasons.")
-    cloudlog.error("These optimizations should be handled by a system service, not application code.")
-    return
-
-    # OLD CODE COMMENTED OUT FOR SECURITY:
-    # if os.geteuid() != 0:
-    #   cloudlog.warning("Insufficient privileges to optimize CPU performance. These settings should be configured by system service.")
-    #   return
-    #
-    # try:
-    #   # Configure CPU frequency scaling for better performance consistency
-    #   for n in ('0', '4'):  # Silver and Gold cluster policies
-    #     # Set to performance governor for consistent performance
-    #     sudo_write("performance", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_governor")
-    #
-    #     # Set minimum frequencies to reduce latency when performance is needed
-    #     if n == '0':  # Silver cluster (Cortex-A55)
-    #       sudo_write("652800", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~653MHz
-    #     else:  # Gold cluster (Cortex-A75)
-    #       sudo_write("729600", f"/sys/devices/system/cpu/cpufreq/policy{n}/scaling_min_freq")  # Min ~730MHz
-    #
-    #   # Enable core control for adaptive core management
-    #   sudo_write("1", "/sys/devices/system/cpu/cpu4/core_ctl/enable")
-    #
-    #   # Configure core control parameters for better performance
-    #   sudo_write("4", "/sys/devices/system/cpu/cpu4/core_ctl/min_cpus")  # Keep at least 4 performance cores ready
-    #   sudo_write("6", "/sys/devices/system/cpu/cpu4/core_ctl/max_cpus")  # Max 6 cores for performance
-    #   sudo_write("60", "/sys/devices/system/cpu/cpu4/core_ctl/busy_up_thres")  # More aggressive core enable
-    #   sudo_write("30", "/sys/devices/system/cpu/cpu4/core_ctl/busy_down_thres")  # Less aggressive core disable
-    #
-    #   # Configure CPU thermal controls
-    #   sudo_write("1", "/sys/devices/system/cpu/cpu_boost/sched_boost_on_enable")  # Enable CPU boost
-    #
-    # except Exception as e:
-    #   cloudlog.warning(f"Failed to optimize CPU performance: {e}")
 
   def shutdown(self):
     os.system("sudo poweroff")
@@ -469,29 +375,6 @@ class Tici(HardwareBase):
       }
     }
 
-  def get_thermal_config(self):
-    # Get the base thermal configuration
-    intake, exhaust, case = None, None, None
-    if self.get_device_type() == "mici":
-      case = ThermalZone("case")
-      intake = ThermalZone("intake")
-      exhaust = ThermalZone("exhaust")
-
-    # Create the base thermal config
-    thermal_config = ThermalConfig(cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] +
-                                   [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
-                                 gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
-                                 dsp=ThermalZone("compute-hvx-usr"),
-                                 memory=ThermalZone("ddr-usr"),
-                                 pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
-                                 intake=intake,
-                                 exhaust=exhaust,
-                                 case=case)
-
-    # Add the custom throttling thresholds for Snapdragon 845
-    thermal_config.thresholds = self.get_hw_throttling_thresholds()
-
-    return thermal_config
 
   def set_display_power(self, on):
     try:

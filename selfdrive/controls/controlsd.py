@@ -404,46 +404,27 @@ class Controls(ControlsExt):
 
   def _detect_weather_conditions(self):
     """
-    Detect weather conditions based on available sensor data.
+    Detect weather conditions based on available and reliable sensor data.
 
     Returns:
         str: Weather condition ('normal', 'rain', 'snow', 'fog')
     """
-    # This is a simplified weather detection that uses:
-    # - Camera data analysis (rain patterns on windshield, visibility degradation)
-    # - Environmental sensors if available (humidity, temperature, etc.)
-    # - CAN bus data if weather sensors are available
+    # Use only reliable and available sensor data from carState
+    # Avoids reliance on hypothetical modelV2 metadata or non-existent CAN signals
 
-    # In a more complete implementation, we would analyze video frames for rain patterns,
-    # visibility degradation for fog, etc.
-
-    # For now, we'll check for conditions that might indicate poor weather
-    # using the available sensor data from carState and modelV2
-
-    # Check for visibility issues using modelV2 metadata
-    model_v2 = self.sm['modelV2'] if 'modelV2' in self.sm and self.sm.valid['modelV2'] else None
-
-    if model_v2 is not None:
-        # Check if model indicates poor visibility conditions
-        # This could be enhanced with additional model outputs that indicate weather conditions
-        if model_v2.meta.poorVisibility:
-            return 'fog'
-        # Check for other indicators that might suggest rain or other conditions
-        # (This is hypothetical - real implementations would use specific model outputs)
-        if model_v2.meta.lanelessMode:
-            # This could indicate very poor visibility conditions
-            return 'fog'
-
-    # Check if we have access to any additional environmental sensors via CAN bus
-    # This is typically not available in most cars, so return normal as default
-    # But we could implement logic here if specific weather sensors are available
     CS = self.sm['carState']
 
-    # Check for conditions that might indicate rain (e.g., use of windshield wipers)
-    # This is a simplified approach - real implementations might use wiper status,
-    # humidity sensors, etc. if available
-    if hasattr(CS, 'rainSensor') and CS.rainSensor > 0.5:  # Hypothetical rain sensor value
+    # Check for windshield wiper usage as an indicator of rain or snow
+    # This is a more reliable indicator than hypothetical rain sensors
+    if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper > 0.0:
+        return 'rain'  # Wipers are on, likely rainy conditions
+    elif hasattr(CS, 'wiperState') and CS.wiperState > 0:  # Different possible wiper status names
         return 'rain'
+
+    # Check for headlight usage as a potential indicator of poor visibility
+    # (Note: this is not definitive but may indicate fog, rain, or night driving)
+    # For now, focus only on the most reliable indicators
+    # Additional checks can be added based on specific car models' available data
 
     # If no specific indicators of poor weather, return normal
     return 'normal'
