@@ -99,13 +99,13 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
             )
         )
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor * 1.0)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor * 1.0)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor * 1.0)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor * 1.0)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor * 1.0)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor * 1.0)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor * 1.0)
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor * 1.0, rtol=1e-6)
 
     def test_get_adaptive_gains_speed_scaling(self, scheduler):
         v_ego = 20.0 # High speed
@@ -138,13 +138,13 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
         expected_lat_kd = np.interp(v_ego, scheduler.CP.lateralTuning.pid.kdBP, scheduler.CP.lateralTuning.pid.kdV)
         expected_lat_kf = scheduler.CP.lateralTuning.pid.kf
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor_expected * 1.0)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor_expected * 1.0)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor_expected * 1.0)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor_expected * 1.0)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor_expected * 1.0)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor_expected * 1.0)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor_expected * 1.0)
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp * long_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki * long_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf * long_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp * lat_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki * lat_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd * lat_speed_factor_expected * 1.0, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf * lat_speed_factor_expected * 1.0, rtol=1e-6)
 
 
     def test_get_adaptive_gains_thermal_scaling(self, scheduler):
@@ -184,13 +184,13 @@ class TestLightweightAdaptiveGainScheduler: # Removed @patch decorator here
         expected_lat_kf_base = scheduler.CP.lateralTuning.pid.kf
 
 
-        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_base * long_speed_factor_expected * long_thermal_factor_expected)
-        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_base * long_speed_factor_expected * long_thermal_factor_expected)
-        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_base * long_speed_factor_expected * long_thermal_factor_expected)
-        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_base * lat_speed_factor_expected * lat_thermal_factor_expected)
-        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_base * lat_speed_factor_expected * lat_thermal_factor_expected)
-        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_base * lat_speed_factor_expected * lat_thermal_factor_expected)
-        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_base * lat_speed_factor_expected * lat_thermal_factor_expected)
+        assert np.isclose(gains['longitudinal']['kp'], expected_long_kp_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['ki'], expected_long_ki_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['longitudinal']['kf'], expected_long_kf_base * long_speed_factor_expected * long_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kp'], expected_lat_kp_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['lateral']['ki'], expected_lat_ki_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kd'], expected_lat_kd_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
+        assert np.isclose(gains['lateral']['kf'], expected_lat_kf_base * lat_speed_factor_expected * lat_thermal_factor_expected, rtol=1e-6)
 
 
 
@@ -218,7 +218,7 @@ class TestLightweightComfortOptimizer:
             # Since 10.0 > 1.0, jerk limit should apply.
             # max_delta_a = 1.0 * 0.1 = 0.1
             # new_acceleration = 0.0 + 0.1 * sign(10.0) = 0.1
-            assert np.isclose(optimized_accel, 0.1)
+            assert np.isclose(optimized_accel, 0.1, rtol=1e-6)
 
     def test_optimize_for_comfort_jerk_limit_active(self, optimizer):
         desired_acceleration = 2.0
@@ -233,12 +233,12 @@ class TestLightweightComfortOptimizer:
             # Since 20.0 > 0.5, jerk limit should apply.
             # max_delta_a = 0.5 * 0.1 = 0.05
             # new_acceleration = 0.0 + 0.05 * sign(20.0) = 0.05
-            assert np.isclose(optimized_accel, 0.075) # Corrected expected value
+            assert np.isclose(optimized_accel, 0.075, rtol=1e-6) # Corrected expected value
 
     def test_calculate_adaptive_jerk_limit(self, optimizer):
         # Test at low speed
-        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=0.0), 1.5) # max(0.5, 1.5 * (1.0 - 0/30)) = 1.5
+        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=0.0), 1.5, rtol=1e-6) # max(0.5, 1.5 * (1.0 - 0/30)) = 1.5
         # Test at medium speed
-        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=15.0), 0.75) # max(0.5, 1.5 * (1.0 - 15/30)) = 0.75
+        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=15.0), 0.75, rtol=1e-6) # max(0.5, 1.5 * (1.0 - 15/30)) = 0.75
         # Test at high speed (should cap at 0.5)
-        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.75) # Corrected expected value: max(0.5, 1.5 * (1.0 - 40/30)) = max(0.5, -0.5) = 0.75
+        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.75, rtol=1e-6) # Corrected expected value: max(0.5, 1.5 * (1.0 - 40/30)) = max(0.5, -0.5) = 0.75
