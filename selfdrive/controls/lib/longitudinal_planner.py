@@ -258,10 +258,56 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             if abs(enhanced_a[i] - prev_a[i]) < max_change_threshold[2]:
                 enhanced_a[i] = alpha * prev_a[i] + (1 - alpha) * enhanced_a[i]
 
+    # Apply physical plausibility validation to ensure fused values are within realistic bounds
+    enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
+
     # Store current fused values for next iteration
     self._prev_fused_values = (enhanced_x.copy(), enhanced_v.copy(), enhanced_a.copy())
 
     return enhanced_x, enhanced_v, enhanced_a
+
+  def _validate_fused_sensor_data(self, x, v, a):
+    """
+    Validate fused sensor data to ensure physical plausibility and safety.
+
+    Args:
+        x: Fused distance values
+        v: Fused velocity values
+        a: Fused acceleration values
+
+    Returns:
+        Tuple of validated (x, v, a) arrays with physically plausible values
+    """
+    # Create copies to avoid modifying original arrays directly
+    validated_x = x.copy()
+    validated_v = v.copy()
+    validated_a = a.copy()
+
+    for i in range(len(validated_x)):
+        # Validate distance (positive, realistic range)
+        if not np.isnan(validated_x[i]) and not np.isinf(validated_x[i]):
+            validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)  # 0.1m to 200m range
+        else:
+            # If invalid, use a safe default (far distance)
+            validated_x[i] = 200.0
+
+    for i in range(len(validated_v)):
+        # Validate velocity (realistic relative velocities for lead vehicles)
+        if not np.isnan(validated_v[i]) and not np.isinf(validated_v[i]):
+            validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)  # -50 to +50 m/s (about -180 to +180 km/h)
+        else:
+            # If invalid, use a safe default (stationary relative to ego)
+            validated_v[i] = 0.0
+
+    for i in range(len(validated_a)):
+        # Validate acceleration (realistic acceleration values)
+        if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
+            validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # -15 to +8 m/s^2 (extreme but possible)
+        else:
+            # If invalid, use a safe default (no acceleration)
+            validated_a[i] = 0.0
+
+    return validated_x, validated_v, validated_a
 
   def _calculate_radar_reliability(self, lead_radar):
     """
