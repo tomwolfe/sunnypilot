@@ -1,11 +1,9 @@
 import math
 import numpy as np
-from typing import Dict
 
 from cereal import log
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
-from openpilot.common.params import Params
 
 
 class LatControlPID(LatControl):
@@ -46,7 +44,7 @@ class LatControlPID(LatControl):
 
 
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: Dict):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: dict):
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
     pid_log.steeringRateDeg = float(CS.steeringRateDeg)

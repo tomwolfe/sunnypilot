@@ -2,7 +2,7 @@
 import math
 import threading
 import time
-from collections import deque
+
 from numbers import Number
 
 from cereal import car, log
@@ -27,6 +27,8 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
 from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager
+from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor
+from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -128,7 +130,7 @@ class Controls(ControlsExt):
         # If deviceState is stale, assume high thermal stress for safety
         cloudlog.warning(f"deviceState is stale (last update {current_time - self.last_device_state_update_time:.2f}s ago). Assuming high thermal state.")
         thermal_state = 1.0 # Max thermal state for safety
-    
+
     adaptive_gains = self.gain_scheduler.get_adaptive_gains(CS.vEgo, thermal_state)
 
     # Update VehicleModel

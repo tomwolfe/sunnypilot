@@ -6,7 +6,7 @@ for the Comma 3x hardware, focusing on high-impact, low-cost features.
 """
 
 import numpy as np
-from typing import Dict, Tuple, Optional
+from typing import Optional, List
 import time
 
 # Import existing sunnypilot components
@@ -15,7 +15,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 
 
-def _interp_gain(x, xp, fp):
+def _interp_gain(x: float, xp: List[float], fp: List[float]) -> float:
   """
   Linear interpolation function.
   x: The x-coordinate(s) at which to evaluate the interpolated values (v_ego).
@@ -48,7 +48,7 @@ class LightweightAdaptiveGainScheduler:
         # Vehicle-specific tuning parameters based on car model
         self.vehicle_tuning = self._get_vehicle_tuning(CP.carFingerprint)
 
-    def _get_vehicle_tuning(self, car_model: str) -> Dict:
+    def _get_vehicle_tuning(self, car_model: str) -> dict:
         """
         Get vehicle-specific tuning parameters based on the car model.
         """
@@ -92,7 +92,7 @@ class LightweightAdaptiveGainScheduler:
 
         return tuning_params
 
-    def get_adaptive_gains(self, v_ego: float, thermal_state: float) -> Dict:
+    def get_adaptive_gains(self, v_ego: float, thermal_state: float) -> dict:
         """
         Calculate lightweight adaptive gains based on vehicle speed and thermal state.
         Longitudinal and lateral gains are scaled independently for safety.
@@ -135,17 +135,32 @@ class LightweightAdaptiveGainScheduler:
 
         # Calculate base gains from tuning tables, using interpolation
         # For longitudinal:
-        base_long_kp = self._get_base_gain(v_ego, getattr(self.CP.longitudinalTuning, 'kpBP', None), getattr(self.CP.longitudinalTuning, 'kpV', []), 1.0, "longitudinal kpV")
-        base_long_ki = self._get_base_gain(v_ego, getattr(self.CP.longitudinalTuning, 'kiBP', None), getattr(self.CP.longitudinalTuning, 'kiV', []), 0.1, "longitudinal kiV")
+        base_long_kp = self._get_base_gain(v_ego,
+                                           getattr(self.CP.longitudinalTuning, 'kpBP', None),
+                                           getattr(self.CP.longitudinalTuning, 'kpV', []),
+                                           1.0, "longitudinal kpV")
+        base_long_ki = self._get_base_gain(v_ego,
+                                           getattr(self.CP.longitudinalTuning, 'kiBP', None),
+                                           getattr(self.CP.longitudinalTuning, 'kiV', []),
+                                           0.1, "longitudinal kiV")
         base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
 
         # For lateral:
-        base_lat_kp = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kpBP', None), getattr(self.CP.lateralTuning.pid, 'kpV', []), 0.5, "lateral kpV")
-        base_lat_ki = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kiBP', None), getattr(self.CP.lateralTuning.pid, 'kiV', []), 0.05, "lateral kiV")
+        base_lat_kp = self._get_base_gain(v_ego,
+                                           getattr(self.CP.lateralTuning.pid, 'kpBP', None),
+                                           getattr(self.CP.lateralTuning.pid, 'kpV', []),
+                                           0.5, "lateral kpV")
+        base_lat_ki = self._get_base_gain(v_ego,
+                                           getattr(self.CP.lateralTuning.pid, 'kiBP', None),
+                                           getattr(self.CP.lateralTuning.pid, 'kiV', []),
+                                           0.05, "lateral kiV")
         base_lat_kd = 0.0
         # Check if kdV exists and if a corresponding kdBP exists for interpolation
         if hasattr(self.CP.lateralTuning.pid, 'kdV') and getattr(self.CP.lateralTuning.pid, 'kdV', None):
-            base_lat_kd = self._get_base_gain(v_ego, getattr(self.CP.lateralTuning.pid, 'kdBP', None), getattr(self.CP.lateralTuning.pid, 'kdV', []), 0.0, "lateral kdV")
+            base_lat_kd = self._get_base_gain(v_ego,
+                                               getattr(self.CP.lateralTuning.pid, 'kdBP', None),
+                                               getattr(self.CP.lateralTuning.pid, 'kdV', []),
+                                               0.0, "lateral kdV")
         base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
 
         gains = {
@@ -162,12 +177,19 @@ class LightweightAdaptiveGainScheduler:
             }
         }
 
-        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: kp={gains['longitudinal']['kp']:.3f}, ki={gains['longitudinal']['ki']:.3f}, kf={gains['longitudinal']['kf']:.3f}")
-        cloudlog.debug(f"GainScheduler: Final Lateral Gains: kp={gains['lateral']['kp']:.3f}, ki={gains['lateral']['ki']:.3f}, kd={gains['lateral']['kd']:.3f}, kf={gains['lateral']['kf']:.3f}")
+        cloudlog.debug(f"GainScheduler: Final Longitudinal Gains: "
+                        f"kp={gains['longitudinal']['kp']:.3f}, "
+                        f"ki={gains['longitudinal']['ki']:.3f}, "
+                        f"kf={gains['longitudinal']['kf']:.3f}")
+        cloudlog.debug(f"GainScheduler: Final Lateral Gains: "
+                        f"kp={gains['lateral']['kp']:.3f}, "
+                        f"ki={gains['lateral']['ki']:.3f}, "
+                        f"kd={gains['lateral']['kd']:.3f}, "
+                        f"kf={gains['lateral']['kf']:.3f}")
 
         return gains
 
-    def _get_base_gain(self, v_ego: float, bp_array: Optional[list], gain_array: list, default_gain: float, gain_name: str) -> float:
+    def _get_base_gain(self, v_ego: float, bp_array: Optional[List[float]], gain_array: List[float], default_gain: float, gain_name: str) -> float:
         """
         Helper method to safely get a gain value, using linear interpolation if breakpoints are provided.
         If breakpoint or gain arrays are missing/invalid for interpolation, it falls back to a single value (gain_array[0])

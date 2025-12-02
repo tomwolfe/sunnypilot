@@ -6,12 +6,13 @@ designed for Comma 3x hardware constraints.
 """
 
 import numpy as np
-from typing import Dict
+from typing import List, cast
+
 import time
 
 # Import existing sunnypilot components
 from openpilot.common.swaglog import cloudlog
-from openpilot.common.params import Params
+
 from cereal import car
 
 
@@ -66,14 +67,14 @@ class LightweightSafetyChecker:
 
         return base_thresholds
 
-    def validate_outputs(self, actuators, car_state, radar_state) -> Dict:
+    def validate_outputs(self, actuators, car_state, radar_state) -> dict:
         """
         Lightweight validation of control outputs for safety.
         Returns a detailed report instead of just True/False.
         """
         safety_report = {
             'safe': True,
-            'violations': [],
+            'violations': cast(List[str], []),
             'recommended_action': 'continue'  # Options: 'continue', 'decelerate', 'disengage'
         }
 
@@ -109,7 +110,10 @@ class LightweightSafetyChecker:
                     safety_report['safe'] = False
                     safety_report['violations'].append('steering_rate_limit_exceeded')
                     safety_report['recommended_action'] = 'disengage'
-                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! rate={steering_rate:.2f}, limit={self.safety_thresholds['max_steering_rate']:.2f}, vEgo={car_state.vEgo:.2f}")
+                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! "
+                                  f"rate={{steering_rate:.2f}}, "
+                                  f"limit={{self.safety_thresholds['max_steering_rate']:.2f}}, "
+                                  f"vEgo={{car_state.vEgo:.2f}}")
 
 
             # Update current values immediately after calculation to prevent race condition
@@ -144,14 +148,11 @@ class LightweightSafetyChecker:
             if 'steering_angle_limit_exceeded' in safety_report['violations'] or \
                'steering_rate_limit_exceeded' in safety_report['violations']:
                 safety_report['recommended_action'] = 'disengage'
-            elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
-                 'lat_accel_limit_exceeded' in safety_report['violations'] or \
-                 'forward_collision_imminent' in safety_report['violations']:
-                safety_report['recommended_action'] = 'decelerate'
-        
-        return safety_report
-
-    def trigger_fail_safe(self, safety_report: Dict, car_state) -> Dict:
+                        elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
+                             'lat_accel_limit_exceeded' in safety_report['violations'] or \
+                             'forward_collision_imminent' in safety_report['violations']:
+                                             safety_report['recommended_action'] = 'decelerate'
+                                    return safety_report    def trigger_fail_safe(self, safety_report: dict, car_state) -> dict:
         """
         Trigger appropriate fail-safe action based on safety report.
         """
@@ -165,7 +166,7 @@ class LightweightSafetyChecker:
                 }
             elif safety_report['recommended_action'] == 'decelerate':
                 v_ego = car_state.vEgo if hasattr(car_state, 'vEgo') else 0.0
-                
+
                 # Use CP.stopAccel if available, otherwise fall back to hardcoded values
                 if self.CP and hasattr(self.CP, 'stopAccel') and isinstance(self.CP.stopAccel, (int, float)):
                     calculated_deceleration = self.CP.stopAccel
@@ -203,7 +204,7 @@ class LightweightSystemMonitor:
             'max_cpu_usage': 0.95,  # Maximum CPU usage fraction
         }
 
-    def check_system_health(self, device_state, car_state) -> Dict:
+    def check_system_health(self, device_state, car_state) -> dict:
         """
         Check comprehensive system health with minimal computation.
         """
@@ -276,10 +277,7 @@ class LightweightSystemMonitor:
             cpu_usage_val = device_state.cpuUsagePercent if hasattr(device_state, 'cpuUsagePercent') and device_state.cpuUsagePercent else 'N/A'
             ram_usage_val = device_state.memoryUsagePercent if hasattr(device_state, 'memoryUsagePercent') and device_state.memoryUsagePercent else 'N/A'
 
-            cloudlog.debug(f"System Health: CPU {cpu_temp}, "
-                          f"GPU {gpu_temp}, "
-                          f"CPU% {cpu_usage_val}, "
-                          f"RAM% {ram_usage_val}")
+            cloudlog.debug(f"System Health: CPU {cpu_temp}, GPU {gpu_temp}, CPU% {cpu_usage_val}, RAM% {ram_usage_val}")
             self.last_log_time = current_time
 
         return health_report

@@ -1,7 +1,6 @@
 import math
 import numpy as np
 from collections import deque
-from typing import Dict
 
 from cereal import log
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
@@ -9,7 +8,6 @@ from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.common.pid import PIDController
-from openpilot.common.params import Params
 
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_ext import LatControlTorqueExt
 
@@ -91,7 +89,7 @@ class LatControlTorque(LatControl):
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, # Desired path curvature in 1/meter
-             calibrated_pose, curvature_limited, lat_delay, adaptive_gains: Dict):
+             calibrated_pose, curvature_limited, lat_delay, adaptive_gains: dict):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()
@@ -112,12 +110,11 @@ class LatControlTorque(LatControl):
       lateral_accel_deadzone = curvature_deadzone * CS.vEgo ** 2
 
       delay_frames = int(np.clip(lat_delay / self.dt, 1, self.lat_accel_request_buffer_len))
-      expected_lateral_accel = self.lat_accel_request_buffer[-delay_frames]
-      
+
       future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
       self.lat_accel_request_buffer.append(future_desired_lateral_accel)
       gravity_adjusted_future_lateral_accel = future_desired_lateral_accel - roll_compensation
-      
+
       # Setpoint is directly the future desired lateral acceleration
       setpoint = future_desired_lateral_accel
 
@@ -148,7 +145,7 @@ class LatControlTorque(LatControl):
                                           k_p_override=lateral_gains.get('kp'),
                                           k_i_override=lateral_gains.get('ki'),
                                           k_d_override=lateral_gains.get('kd'))
-      
+
       output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       # Lateral acceleration torque controller extension updates
@@ -165,7 +162,7 @@ class LatControlTorque(LatControl):
       pid_log.output = float(-output_torque) # TODO: log lat accel?
       pid_log.actualLateralAccel = float(measurement)
       pid_log.desiredLateralAccel = float(setpoint)
-      pid_log.desiredLateralJerk = float(0.0) # Adaptive jerk removed, set to 0.0
+      pid_log.desiredLateralJerk = 0.0 # Adaptive jerk removed, set to 0.0
 
       # Saturation logic: when NNLC is enabled, also consider physical torque saturation
       # Otherwise, only consider curvature limited state

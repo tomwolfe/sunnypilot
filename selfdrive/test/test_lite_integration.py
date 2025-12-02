@@ -1,12 +1,10 @@
 import pytest
 import numpy as np
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import time
 
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor, LightweightSafetyChecker
 from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler
-from cereal import car, log
-from openpilot.common.filter_simple import FirstOrderFilter # Keep original import for patching
 
 # Mock FirstOrderFilter for predictable behavior in tests
 class MockFirstOrderFilter:
@@ -76,7 +74,7 @@ class TestLiteIntegration:
     def setup_modules(self, mock_car_params, mocker):
         # Patch FirstOrderFilter for LightweightAdaptiveGainScheduler
         mocker.patch('openpilot.selfdrive.controls.lib.lite_control.FirstOrderFilter', new=MockFirstOrderFilter)
-        
+
         monitor = LightweightSystemMonitor()
         scheduler = LightweightAdaptiveGainScheduler(mock_car_params)
         safety_checker = LightweightSafetyChecker(mock_car_params)
@@ -96,7 +94,7 @@ class TestLiteIntegration:
         # For kf: base is 0.05. thermal factor is max(0.85, 1.0 - 0.333*0.15) = max(0.85, 1.0 - 0.05) = 0.95
         # speed_factor at 15m/s (TOYOTA_COROLLA long_speed_gain_factor=35): 1.0 + (15/35) = 1.428. Capped at 1.6. So 1.428
         # Final kf = 0.05 * (1.0 + 15/35) * 0.95 = 0.05 * 1.4285714285714286 * 0.95 = 0.06785714285714287
-        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06785714285714287, rtol=1e-6) 
+        assert np.isclose(gains_normal['longitudinal']['kf'], 0.06785714285714287, rtol=1e-6)
 
         # No safety violations
         mock_actuators.accel = 0.5
@@ -104,10 +102,9 @@ class TestLiteIntegration:
 
         # Initialize safety_checker's previous state to reflect current actuators for the first check
         safety_checker._prev_steer = mock_actuators.steer
-        safety_checker._prev_time = time.monotonic() 
-        
-        safety_report_normal = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
-        assert safety_report_normal['safe'] is True
+                        safety_checker._prev_time = time.monotonic()
+                
+                        safety_report_normal = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)        assert safety_report_normal['safe'] is True
         assert safety_report_normal['recommended_action'] == 'continue'
 
         # --- Scenario 2: High thermal stress ---
