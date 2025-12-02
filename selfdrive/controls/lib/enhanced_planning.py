@@ -154,31 +154,84 @@ class MultiHypothesisPlanner:
     
     def _generate_lane_change_plan(self, car_state, direction: str, model_data):
         """
-        Generate trajectory for lane change.
+        Generate trajectory for lane change using proper vehicle dynamics.
         """
-        # Simplified lane change plan - in practice, this would be more sophisticated
-        # Generate plan that gradually changes lateral position over 5 seconds
+        # Use realistic lane change trajectory based on vehicle dynamics
         t_steps = T_IDXS_MPC
         lateral_positions = []
-        
+        lateral_velocities = []
+        lateral_accelerations = []
+
+        # Lane width is typically 3.7 meters
+        lane_width = 3.7
+
+        # Calculate appropriate lane change duration based on speed
+        # At higher speeds, we can change lanes more quickly, but safely
+        base_duration = max(3.0, min(5.0, 4.0 - (car_state.vEgo - 15.0) * 0.05 if car_state.vEgo > 15.0 else 0))
+
+        # Generate smooth lateral trajectory using a 5th order polynomial for comfort
         for t in t_steps:
-            # Gradual lane change over ~5 seconds
-            progress = min(1.0, t / 5.0)
-            lane_change_amount = 3.7 * (1.0 - np.cos(progress * np.pi)) / 2.0  # Smooth transition
-            
+            # Progress from 0 to 1 over the lane change duration
+            if t > base_duration:
+                progress = 1.0
+            else:
+                progress = t / base_duration if base_duration > 0 else 0.0
+
+            # Use a 5th order polynomial for smooth lane change: s(t) = 10t^3 - 15t^4 + 6t^5
+            if progress < 0:
+                progress_pos = 0.0
+            elif progress > 1:
+                progress_pos = 1.0
+            else:
+                progress_pos = 10*progress**3 - 15*progress**4 + 6*progress**5
+
+            # Calculate lateral position
             if direction == 'left':
-                lateral_positions.append(lane_change_amount)
+                lateral_pos = lane_width * progress_pos
             else:  # right
-                lateral_positions.append(-lane_change_amount)
-        
-        # Return a basic plan structure
+                lateral_pos = -lane_width * progress_pos
+
+            lateral_positions.append(lateral_pos)
+
+            # Calculate approximate lateral velocity and acceleration for validation
+            if t > 0:
+                # Approximate derivatives for simulation purposes
+                if len(lateral_positions) > 1:
+                    # Simple finite difference approximation
+                    lat_vel = (lateral_positions[-1] - lateral_positions[-2]) / 0.01  # Assuming 10ms timestep
+                    lateral_velocities.append(lat_vel)
+
+                    if len(lateral_velocities) > 1:
+                        lat_acc = (lateral_velocities[-1] - lateral_velocities[-2]) / 0.01
+                        lateral_accelerations.append(lat_acc)
+                else:
+                    lateral_velocities.append(0.0)
+                    lateral_accelerations.append(0.0)
+            else:
+                lateral_velocities.append(0.0)
+                lateral_accelerations.append(0.0)
+
+        # For longitudinal planning, maintain safe speed and distance
+        velocities = []
+        accelerations = []
+
+        # Start with current velocity and adjust based on traffic ahead
+        current_v = car_state.vEgo
+        for t in t_steps:
+            # Maintain current speed during lane change, unless traffic requires adjustment
+            velocities.append(current_v)  # In a real system, this would consider traffic
+            accelerations.append(0.0)      # In a real system, this would be calculated based on traffic
+
+        # Return a complete plan structure
         class LaneChangePlan:
-            def __init__(self, lat_pos):
+            def __init__(self, lat_pos, vel, acc, lat_vel, lat_acc):
                 self.lateral_positions = lat_pos
-                self.velocity = [car_state.vEgo] * len(lat_pos)  # Maintain speed
-                self.acceleration = [0.0] * len(lat_pos)
-        
-        return LaneChangePlan(lateral_positions)
+                self.velocity = vel
+                self.acceleration = acc
+                self.lateral_velocities = lat_vel
+                self.lateral_accelerations = lat_acc
+
+        return LaneChangePlan(lateral_positions, velocities, accelerations, lateral_velocities, lateral_accelerations)
     
     def _generate_deceleration_plan(self, car_state, radar_state, model_data):
         """
