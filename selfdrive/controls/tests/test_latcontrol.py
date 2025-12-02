@@ -49,6 +49,8 @@ class TestLatControl:
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, True, 0.2, adaptive_gains={})
     assert lac_log.saturated
 
+    controller.reset() # Reset the controller state before the next set of tests
+
     for _ in range(1000):
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2, adaptive_gains={})
     assert not lac_log.saturated

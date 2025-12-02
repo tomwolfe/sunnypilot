@@ -101,6 +101,11 @@ class TestLiteIntegration:
         # No safety violations
         mock_actuators.accel = 0.5
         mock_actuators.steer = 0.1
+
+        # Initialize safety_checker's previous state to reflect current actuators for the first check
+        safety_checker._prev_steer = mock_actuators.steer
+        safety_checker._prev_time = time.monotonic() 
+        
         safety_report_normal = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
         assert safety_report_normal['safe'] is True
         assert safety_report_normal['recommended_action'] == 'continue'
