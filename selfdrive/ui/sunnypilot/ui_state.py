@@ -13,7 +13,10 @@ class UIStateSP:
     self.params = Params()
     self.sm_services_ext = [
       "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP"
+      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP",
+      # Safety: Added navInstruction for navigation overlay - provides turn-by-turn directions
+      # without interfering with core driving data
+      "navInstruction"
     ]
 
   def update(self) -> None:

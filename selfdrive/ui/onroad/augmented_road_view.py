@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
+from openpilot.selfdrive.ui.onroad.nav_road_view import NavRoadView
 
 OpState = log.SelfdriveState.OpenpilotState
 CALIBRATED = log.LiveCalibrationData.Status.calibrated
@@ -48,6 +49,8 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer = HudRenderer()
     self.alert_renderer = AlertRenderer()
     self.driver_state_renderer = DriverStateRenderer()
+    # Safety: Initialize navigation overlay - positioned in non-critical areas to avoid visual distraction
+    self.nav_road_view = NavRoadView()
 
     # debug
     self._pm = messaging.PubMaster(['uiDebug'])
@@ -88,6 +91,10 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer.render(self._content_rect)
     self.alert_renderer.render(self._content_rect)
     self.driver_state_renderer.render(self._content_rect)
+
+    # Draw navigation overlays
+    # Safety: Nav elements are positioned in non-critical areas (top center/right) to avoid interfering with driving info
+    self.nav_road_view.render(self._content_rect)
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
