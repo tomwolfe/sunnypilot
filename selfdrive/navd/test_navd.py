@@ -8,10 +8,10 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from unittest.mock import Mock
-from openpilot.sunnypilot.navd.helpers import Coordinate, distance_along_geometry
-from selfdrive.navd.safety import NavSafetyManager
+from openpilot.selfdrive.navd.helpers import Coordinate, distance_along_geometry
+from openpilot.selfdrive.navd.safety import NavSafetyManager
 # Import RouteEngine from the main navd module (selfdrive/navd/main.py)
-from selfdrive.navd.main import RouteEngine
+from openpilot.selfdrive.navd.main import RouteEngine
 
 
 class TestCoordinate:
@@ -52,7 +52,7 @@ class TestRouteEngine:
             Coordinate(40.7130, -74.0050),
             Coordinate(40.7140, -74.0040)
         ]
-    
+
     def test_route_update(self):
         """Test updating route with coordinates"""
         self.route_engine.update_route(self.test_coordinates)
@@ -103,7 +103,7 @@ class TestNavSafetyManager:
         self.sm.__getitem__ = Mock(side_effect=sm_getitem)
         self.sm.get = Mock()
         self.sm.get.return_value = Mock()
-        
+
     def test_speed_compliance(self):
         """Test speed compliance checks"""
         # Test compliance with appropriate speed
@@ -145,7 +145,10 @@ class TestNavSafetyManager:
         assert is_valid
 
         # Simulate timeout by setting last valid time far in past
+        # and ensuring navInstruction is not updated to prevent time reset
         self.safety_manager.last_valid_nav_time = 0
+        # Update the mock to simulate no navInstruction update
+        self.sm.updated = {'navInstruction': False}
         is_valid_after_timeout = self.safety_manager.check_route_validity(self.sm)
         assert not is_valid_after_timeout
 

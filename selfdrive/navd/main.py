@@ -5,9 +5,8 @@ Copyright (c) 2025, sunnypilot community
 """
 
 import math
-import time
 
-from cereal import messaging, log
+from cereal import messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, Priority
 
@@ -20,14 +19,18 @@ import os
 # Directly load the safety module from the same directory
 safety_module_path = os.path.join(os.path.dirname(__file__), 'safety.py')
 spec = importlib.util.spec_from_file_location("safety", safety_module_path)
-safety_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(safety_module)
-NavSafetyManager = safety_module.NavSafetyManager
+if spec is not None and spec.loader is not None:
+  safety_module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(safety_module)
+  NavSafetyManager = safety_module.NavSafetyManager
+else:
+  # Fallback import if dynamic loading fails
+  from openpilot.selfdrive.navd.safety import NavSafetyManager
 
 
 class RouteEngine:
   """Handles route following logic with turn-by-turn navigation"""
-  
+
   def __init__(self):
     self.coordinates: list[Coordinate] = []
     self.banners = []
@@ -42,22 +45,22 @@ class RouteEngine:
     self.coordinates = coordinates
     self.banners = banners or []
     self.route_valid = len(coordinates) > 1
-    
+
     # Calculate total route distance
     if self.route_valid:
       total = 0.0
       for i in range(len(self.coordinates) - 1):
         total += self.coordinates[i].distance_to(self.coordinates[i+1])
       self.total_route_distance = total
-  
+
   def update_position(self, current_pos: Coordinate):
     """Update position and return navigation instruction"""
     if not self.route_valid:
       return None
-      
+
     # Calculate distance along route
     self.route_progress = distance_along_geometry(self.coordinates, current_pos)
-    
+
     # Calculate distance to next maneuver
     if self.banners:
       # Find next maneuver by looking at distance along geometry
@@ -80,7 +83,7 @@ class RouteEngine:
             self.current_instruction = nav_instr
             return self.current_instruction
           break
-    
+
     return self.current_instruction
 
 
@@ -112,7 +115,6 @@ def main():
   current_pos = None
   last_pos = None
   current_speed = 0.0
-  current_bearing = 0.0
 
   # Navigation context for DEC
   upcoming_turn_info = {
