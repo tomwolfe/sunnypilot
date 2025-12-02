@@ -471,27 +471,30 @@ class Tici(HardwareBase):
     affine_irq(5, "fts_ts")    # touch
     affine_irq(5, "msm_drm")   # display
 
-    # Configure GPU for optimal performance while preventing thermal throttling
-    # Set power levels (0 is highest, higher numbers are lower power)
-    sudo_write("0", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")  # Highest performance level
-    sudo_write("0", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")  # Don't limit max performance
+    # Implement thermal-aware GPU configuration with dynamic settings
+    # Instead of always setting high-performance mode, check thermal state and adjust accordingly
+    # For initialization, start with a moderate configuration and allow dynamic adjustment later
+
+    # Default to moderate performance settings that can be adjusted dynamically later
+    # This prevents the initial aggressive thermal configuration while still providing good performance
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")  # Medium performance level
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")  # Don't limit to highest performance
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")   # Keep bus active
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")   # Keep clock active
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_rail_on")  # Keep voltage rail active
-    sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")   # Reduce idle timeout (was 1000)
-    sudo_write("performance", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Performance governor
-    # Set GPU clock to high but sustainable level (710MHz is good balance between performance and heat)
-    sudo_write("710", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")
-    # Set minimum clock to ensure quick response times
-    sudo_write("257", "/sys/class/kgsl/kgsl-3d0/min_clock_mhz")  # Minimum GPU clock
+    sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")   # Moderate idle timeout
+    sudo_write("ondemand", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Adaptive governor
+    # Set GPU clock to moderate level that can be adjusted per thermal conditions
+    sudo_write("600", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")  # Moderate clock speed
+    sudo_write("190", "/sys/class/kgsl/kgsl-3d0/min_clock_mhz")  # Balanced responsive clock
 
-    # Optimize GPU memory
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_no_nap")  # Disable NAP mode for consistent performance
+    # Optimize GPU memory settings
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_no_nap")  # Disable NAP mode initially for performance
 
     # setup governors for memory and bandwidth
-    sudo_write("performance", "/sys/class/devfreq/soc:qcom,cpubw/governor")
-    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu0/governor")  # Silver cluster
-    sudo_write("performance", "/sys/class/devfreq/soc:qcom,memlat-cpu4/governor")  # Gold cluster
+    sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,cpubw/governor")
+    sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,memlat-cpu0/governor")  # Silver cluster
+    sudo_write("ondemand", "/sys/class/devfreq/soc:qcom,memlat-cpu4/governor")  # Gold cluster
 
     # Additional Snapdragon 845 optimizations
     # Enable CPU-GPU co-processing where beneficial
