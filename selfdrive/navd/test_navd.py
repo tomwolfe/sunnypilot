@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from unittest.mock import Mock
 from openpilot.sunnypilot.navd.helpers import Coordinate, distance_along_geometry
 from selfdrive.navd.safety import NavSafetyManager
-# Import RouteEngine from the main navd module (selfdrive/navd.py)
-from selfdrive.navd import RouteEngine
+# Import RouteEngine from the main navd module (selfdrive/navd/main.py)
+from selfdrive.navd.main import RouteEngine
 
 
 class TestCoordinate:
@@ -88,8 +88,19 @@ class TestNavSafetyManager:
         # Create mock SubMaster
         self.sm = Mock()
         self.sm.updated = {'navInstruction': True}
-        self.sm['carState'] = Mock()
-        self.sm['carState'].vEgo = 15.0  # 15 m/s
+
+        # Create a mock carState object
+        car_state_mock = Mock()
+        car_state_mock.vEgo = 15.0  # 15 m/s
+
+        # Configure the mock to behave like a subscription system
+        def sm_getitem(key):
+            if key == 'carState':
+                return car_state_mock
+            else:
+                return Mock()
+
+        self.sm.__getitem__ = Mock(side_effect=sm_getitem)
         self.sm.get = Mock()
         self.sm.get.return_value = Mock()
         
