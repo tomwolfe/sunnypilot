@@ -133,6 +133,16 @@ class LightweightSafetyChecker:
                 safety_report['safe'] = False
                 safety_report['violations'].append('forward_collision_imminent')
                 safety_report['recommended_action'] = 'decelerate'
+        # Determine recommended_action based on violations, with disengage having priority
+        if not safety_report['safe']:
+            if 'steering_angle_limit_exceeded' in safety_report['violations'] or \
+               'steering_rate_limit_exceeded' in safety_report['violations']:
+                safety_report['recommended_action'] = 'disengage'
+            elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
+                 'lat_accel_limit_exceeded' in safety_report['violations'] or \
+                 'forward_collision_imminent' in safety_report['violations']:
+                safety_report['recommended_action'] = 'decelerate'
+        
         return safety_report
 
     def trigger_fail_safe(self, safety_report: Dict, car_state) -> Dict:
@@ -225,16 +235,19 @@ class LightweightSystemMonitor:
         # Additional checks for CAN bus, disk, etc. if available
         # A more robust check would verify that the specific messages needed for control
         # (e.g., carState, radarState) are arriving at their expected frequency
-        if hasattr(device_state, 'canMonoTimes') and device_state.canMonoTimes:
-            current_mono_time = time.monotonic()
-            recent_can_message_found = False
-            # Check if recent CAN messages have been received within expected time window (2 seconds)
-            for can_time_ns in device_state.canMonoTimes: # canMonoTimes are in nanoseconds
-                if (current_mono_time - (can_time_ns * 1e-9)) < 2.0: # Check if message is within last 2 seconds
-                    recent_can_message_found = True
-                    break
-            if not recent_can_message_found:
+        if hasattr(device_state, 'canMonoTimes'):
+            if not device_state.canMonoTimes: # If list is empty, CAN bus is not ok
                 health_report['can_bus_ok'] = False
+            else:
+                current_mono_time = time.monotonic()
+                recent_can_message_found = False
+                # Check if recent CAN messages have been received within expected time window (2 seconds)
+                for can_time_ns in device_state.canMonoTimes: # canMonoTimes are in nanoseconds
+                    if (current_mono_time - (can_time_ns * 1e-9)) < 2.0: # Check if message is within last 2 seconds
+                        recent_can_message_found = True
+                        break
+                if not recent_can_message_found:
+                    health_report['can_bus_ok'] = False
 
         # Check disk space if available
         if hasattr(device_state, 'freeSpacePercent') and device_state.freeSpacePercent:
