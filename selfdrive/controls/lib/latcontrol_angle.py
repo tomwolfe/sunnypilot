@@ -1,4 +1,5 @@
 import math
+from typing import Dict
 
 from cereal import log
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl

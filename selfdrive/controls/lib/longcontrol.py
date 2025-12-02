@@ -1,4 +1,6 @@
 import numpy as np
+from typing import Dict
+
 from cereal import car
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
