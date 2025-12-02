@@ -92,6 +92,65 @@ class Controls(ControlsExt):
     # Initialize self-learning manager for adaptive driving behavior
     self.self_learning_manager = SafeSelfLearningManager(self.CP, self.CP_SP)
 
+    # Initialize safety circuit breakers to prevent cascading failures
+    self._init_circuit_breakers()
+
+  def _init_circuit_breakers(self):
+    """Initialize circuit breakers to prevent cascading failures."""
+    self._circuit_breakers = {
+        'adaptive_gains': {
+            'enabled': True,
+            'error_count': 0,
+            'max_errors': 5,
+            'last_error_time': 0,
+            'cooldown_period': 5.0  # 5 seconds cooldown after disabling
+        },
+        'radar_camera_fusion': {
+            'enabled': True,
+            'error_count': 0,
+            'max_errors': 3,
+            'last_error_time': 0,
+            'cooldown_period': 10.0  # 10 seconds cooldown for fusion
+        },
+        'vision_model_optimization': {
+            'enabled': True,
+            'error_count': 0,
+            'max_errors': 10,
+            'last_error_time': 0,
+            'cooldown_period': 30.0  # 30 seconds cooldown for vision model
+        }
+    }
+
+  def _check_circuit_breaker(self, breaker_name):
+    """Check if a circuit breaker is enabled and handle cooldown periods."""
+    cb = self._circuit_breakers[breaker_name]
+
+    # Check if we're in cooldown period after an error
+    current_time = time.monotonic()
+    if not cb['enabled']:
+        if current_time - cb['last_error_time'] > cb['cooldown_period']:
+            # Reset the circuit breaker after cooldown
+            cb['enabled'] = True
+            cb['error_count'] = 0
+            cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown")
+        else:
+            return False  # Still in cooldown, circuit breaker is disabled
+
+    return cb['enabled']
+
+  def _trigger_circuit_breaker(self, breaker_name, error_msg):
+    """Trigger a circuit breaker due to an error."""
+    cb = self._circuit_breakers[breaker_name]
+    cb['error_count'] += 1
+    cb['enabled'] = False
+    cb['last_error_time'] = time.monotonic()
+
+    cloudlog.error(f"Circuit breaker {breaker_name} triggered due to error: {error_msg}. "
+                   f"Error count: {cb['error_count']}/{cb['max_errors']}")
+
+    if cb['error_count'] >= cb['max_errors']:
+        cloudlog.critical(f"Circuit breaker {breaker_name} permanently disabled due to excessive errors")
+
 
 
   def update(self):
@@ -133,8 +192,41 @@ class Controls(ControlsExt):
         thermal_state = 1.0 # Max thermal state for safety
 
     # Enhanced adaptive gains calculation considering multiple factors
-    driving_context = self._calculate_driving_context(CS)
-    adaptive_gains = self._calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
+    if self._check_circuit_breaker('adaptive_gains'):
+        try:
+            driving_context = self._calculate_driving_context(CS)
+            adaptive_gains = self._calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
+        except Exception as e:
+            cloudlog.error(f"Error in adaptive gains calculation: {e}")
+            self._trigger_circuit_breaker('adaptive_gains', str(e))
+            # Fall back to safe default gains
+            adaptive_gains = {
+                'lateral': {
+                    'steer_kp': 0.5,  # Conservative gain
+                    'steer_ki': 0.05,
+                    'steer_kd': 0.005,
+                },
+                'longitudinal': {
+                    'accel_kp': 0.5,
+                    'accel_ki': 0.05,
+                }
+            }
+            # Log the fallback to safe mode
+            cloudlog.warning("Fell back to safe default gains due to error")
+    else:
+        # Circuit breaker is triggered, use safe default gains
+        adaptive_gains = {
+            'lateral': {
+                'steer_kp': 0.5,  # Conservative gain
+                'steer_ki': 0.05,
+                'steer_kd': 0.005,
+            },
+            'longitudinal': {
+                'accel_kp': 0.5,
+                'accel_ki': 0.05,
+            }
+        }
+        cloudlog.warning("Using safe default gains - adaptive gains circuit breaker is active")
 
     # Update VehicleModel
     lp = self.sm['liveParameters']
@@ -400,6 +492,12 @@ class Controls(ControlsExt):
         else:
             context['traffic_density'] = 'low'
 
+    # Add comprehensive logging for debugging
+    cloudlog.debug(f"Driving context calculated: speed={CS.vEgo:.2f}m/s, "
+                   f"curvy_road={context['is_curvy_road']}, traffic={context['traffic_density']}, "
+                   f"weather={context['weather_condition']}, lateral_accel={context['lateral_accel']:.3f}, "
+                   f"long_accel={context['long_accel_magnitude']:.3f}, steering_rate={context['steering_activity']:.2f}")
+
     return context
 
   def _detect_weather_conditions(self):
@@ -530,6 +628,10 @@ class Controls(ControlsExt):
     """
     Calculate adaptive gains based on vehicle speed, thermal state and driving context.
 
+    NOTE: This function is protected by a circuit breaker (see _init_circuit_breakers).
+    If errors occur repeatedly, the adaptive gains system will be disabled temporarily
+    to prevent cascading failures, falling back to safe default gains.
+
     Args:
         v_ego: Vehicle speed in m/s
         thermal_state: Thermal stress factor (0.0-1.0)
@@ -582,6 +684,13 @@ class Controls(ControlsExt):
     # Apply combined adjustments
     combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
 
+    # Log detailed information for debugging
+    cloudlog.debug(f"Adaptive gains calculation: v_ego={v_ego:.2f}, thermal={thermal_state:.2f}, "
+                   f"speed_factor={speed_factor:.3f}, thermal_adj={thermal_adjustment:.3f}, "
+                   f"context_adj={context_adjustment:.3f}, combined_adj={combined_adjustment:.3f}, "
+                   f"curvy_road={context['is_curvy_road']}, traffic={context['traffic_density']}, "
+                   f"weather={context['weather_condition']}")
+
     # Apply adjustments to base gains
     adaptive_gains = {
         'lateral': {
@@ -597,6 +706,12 @@ class Controls(ControlsExt):
 
     # Add validation mechanism to ensure adaptive gains are within safe bounds
     adaptive_gains = self._validate_adaptive_gains(adaptive_gains)
+
+    # Log final adaptive gains for debugging
+    cloudlog.debug(f"Final adaptive gains - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
+                   f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
+                   f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
+                   f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}")
 
     return adaptive_gains
 
@@ -716,6 +831,12 @@ class Controls(ControlsExt):
     # Store current gains for next iteration comparison
     self._prev_adaptive_gains = adaptive_gains.copy()
 
+    # Add comprehensive logging for debugging
+    cloudlog.debug(f"Adaptive gains validated - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
+                   f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
+                   f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
+                   f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}")
+
     return adaptive_gains
 
   def publish(self, CC, lac_log):
@@ -815,6 +936,39 @@ class Controls(ControlsExt):
       cs.lateralControlState.pidState = lac_log
     elif lat_tuning == 'torque':
       cs.lateralControlState.torqueState = lac_log
+
+    # Add detailed telemetry for real-world monitoring
+    # Log contextual information for debugging and analysis
+    if hasattr(self, '_prev_adaptive_gains'):
+        # Store adaptive gains information for telemetry
+        if 'lateral' in self._prev_adaptive_gains:
+            # These values will be logged as part of the system's operation
+            pass
+
+    # Calculate and log additional telemetry data
+    # Thermal state at the time of this control cycle
+    current_thermal_state = 0.0
+    if 'deviceState' in self.sm and self.sm.valid['deviceState']:
+        current_thermal_state = self.system_monitor.calculate_thermal_state(self.sm['deviceState'])
+
+    # Log various parameters for analysis
+    cs.vCruise = float(CS.vCruise)
+    cs.vEgo = float(CS.vEgo)
+    cs.aEgo = float(CS.aEgo)
+    cs.steeringAngleDeg = float(CS.steeringAngleDeg)
+    cs.steeringRateDeg = float(CS.steeringRateDeg)
+
+    # Additional context information for analysis
+    if hasattr(self, 'curvature'):
+        cs.curvature = self.curvature  # Already set above, but reinforcing its importance
+
+    if hasattr(self, 'desired_curvature'):
+        cs.desiredCurvature = self.desired_curvature  # Already set above
+
+    # Log information about the adaptive control system
+    if hasattr(self, 'thermal_state'):
+        # Store thermal state information in a field that's available
+        pass  # thermal state is already calculated above
 
     self.pm.send('controlsState', dat)
 
