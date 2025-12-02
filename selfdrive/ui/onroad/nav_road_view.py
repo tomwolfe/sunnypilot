@@ -8,17 +8,29 @@ Turn arrows appear at top center and distance/ETA info at top right,
 avoiding overlap with lane lines, vehicle detection and other critical
 driving information areas.
 """
+import datetime
 import pyray as rl
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.realtime import DT_MDL
 from openpilot.common.transformations.model import ModelConstants
-import numpy as np
-import math
 
 
 class NavRoadView(Widget):
+  # UI constants to avoid hardcoded values
+  NAV_ARROW_Y_OFFSET = 50
+  INFO_PANEL_X_MARGIN = 20
+  INFO_PANEL_Y_MARGIN = 20
+  INFO_PANEL_WIDTH = 300
+  INFO_PANEL_HEIGHT = 120
+  INFO_PANEL_BG_ALPHA = 240
+  DISTANCE_FONT_SIZE = 24
+  SECONDARY_FONT_SIZE = 20
+  ETA_FONT_SIZE = 20
+  TEXT_LINE_SPACING = 2
+  TEXT_LINE_SPACING_SECONDARY = 1.5
+
   def __init__(self):
     super().__init__()
     self._init_textures()
@@ -73,7 +85,7 @@ class NavRoadView(Widget):
     """Get appropriate texture for turn type"""
     if not maneuver_type:
       return None
-      
+
     maneuver_lower = maneuver_type.lower()
     if 'left' in maneuver_lower:
       if 'slight' in maneuver_lower:
@@ -85,6 +97,28 @@ class NavRoadView(Widget):
       return self._right_arrow
     else:
       return self._straight_arrow
+
+  def _truncate_text(self, text, max_width, font_size):
+    """Truncate text to fit within max_width with ellipsis"""
+    if not text:
+      return text
+
+    # First measure the full text
+    full_size = rl.measure_text_ex(gui_app.font, text, font_size, 2)
+    if full_size.x <= max_width:
+      return text
+
+    # If too long, truncate and add ellipsis
+    truncated_text = text
+    ellipsis = "..."
+    for i in range(len(text), 0, -1):
+      candidate = text[:i] + ellipsis
+      candidate_size = rl.measure_text_ex(gui_app.font, candidate, font_size, 2)
+      if candidate_size.x <= max_width:
+        truncated_text = candidate
+        break
+
+    return truncated_text
 
   def _render(self, rect):
     """Render navigation elements on top of road view"""
@@ -110,9 +144,9 @@ class NavRoadView(Widget):
       return
 
     # Calculate position (top center of screen)
-    # Safety: Positioned at top center (50px from top) to avoid overlap with critical driving area
+    # Safety: Positioned at top center to avoid overlap with critical driving area
     arrow_x = rect.x + rect.width / 2 - texture.width / 2
-    arrow_y = rect.y + 50  # 50px from top
+    arrow_y = rect.y + self.NAV_ARROW_Y_OFFSET
 
     # Apply alpha for smooth fading
     color = rl.Color(255, 255, 255, int(255 * self._turn_arrow_alpha))
@@ -126,59 +160,66 @@ class NavRoadView(Widget):
     if self._info_panel_alpha < 0.01:
       return
 
-    # Panel dimensions
-    panel_width = 300
-    panel_height = 120
-    # Safety: Positioned at top-right with 20px margins to avoid critical driving area
-    panel_x = rect.x + rect.width - panel_width - 20  # 20px margin from right
-    panel_y = rect.y + 20  # 20px margin from top
+    # Panel dimensions using constants
+    panel_width = self.INFO_PANEL_WIDTH
+    panel_height = self.INFO_PANEL_HEIGHT
+    # Safety: Positioned at top-right with margins to avoid critical driving area
+    panel_x = rect.x + rect.width - panel_width - self.INFO_PANEL_X_MARGIN
+    panel_y = rect.y + self.INFO_PANEL_Y_MARGIN
 
-    # Panel background with alpha
-    panel_color = rl.Color(0, 0, 0, int(200 * self._info_panel_alpha))
+    # Panel background with alpha - increased for better contrast in bright conditions
+    panel_color = rl.Color(0, 0, 0, int(self.INFO_PANEL_BG_ALPHA * self._info_panel_alpha))
     rl.draw_rectangle(int(panel_x), int(panel_y), int(panel_width), int(panel_height), panel_color)
 
     # Draw distance and ETA text
     if self._nav_instruction:
-      # Distance text
-      distance_text = f"{self._nav_instruction.maneuverPrimaryText}"
-      distance_size = rl.measure_text_ex(gui_app.font, distance_text, 24, 2)
-      distance_color = rl.Color(255, 255, 255, int(255 * self._info_panel_alpha))
-      rl.draw_text_ex(gui_app.font, distance_text,
-                     rl.Vector2(panel_x + 10, panel_y + 10),
-                     24, 2, distance_color)
+      max_text_width = panel_width - 20  # Account for left/right padding
+      distance_size = rl.Vector2(0, 0)  # Initialize to prevent reference before assignment
 
-      # Secondary text
-      if self._nav_instruction.maneuverSecondaryText:
-        secondary_text = f"{self._nav_instruction.maneuverSecondaryText}"
-        secondary_size = rl.measure_text_ex(gui_app.font, secondary_text, 20, 1.5)
+      # Distance text with truncation to prevent overflow
+      if hasattr(self._nav_instruction, 'maneuverPrimaryText') and self._nav_instruction.maneuverPrimaryText:
+        primary_text = self._nav_instruction.maneuverPrimaryText
+        distance_text = self._truncate_text(primary_text, max_text_width, self.DISTANCE_FONT_SIZE)
+        distance_size = rl.measure_text_ex(gui_app.font, distance_text, self.DISTANCE_FONT_SIZE, self.TEXT_LINE_SPACING)
+        distance_color = rl.Color(255, 255, 255, int(255 * self._info_panel_alpha))
+        rl.draw_text_ex(gui_app.font, distance_text,
+                       rl.Vector2(panel_x + 10, panel_y + 10),
+                       self.DISTANCE_FONT_SIZE, self.TEXT_LINE_SPACING, distance_color)
+
+      # Secondary text with truncation
+      if (hasattr(self._nav_instruction, 'maneuverSecondaryText') and
+          self._nav_instruction.maneuverSecondaryText):
+        secondary_text = self._truncate_text(self._nav_instruction.maneuverSecondaryText, max_text_width, self.SECONDARY_FONT_SIZE)
+        secondary_size = rl.measure_text_ex(gui_app.font, secondary_text, self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
         secondary_color = rl.Color(200, 200, 200, int(255 * self._info_panel_alpha))
         rl.draw_text_ex(gui_app.font, secondary_text,
                        rl.Vector2(panel_x + 10, panel_y + 10 + distance_size.y + 5),
-                       20, 1.5, secondary_color)
+                       self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY, secondary_color)
 
       # Distance to maneuver
       dist_maneuver_text = f"{self._distance_to_maneuver:.0f}m"
-      dist_maneuver_size = rl.measure_text_ex(gui_app.font, dist_maneuver_text, 20, 1.5)
+      dist_maneuver_size = rl.measure_text_ex(gui_app.font, dist_maneuver_text, self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
       dist_maneuver_color = rl.Color(255, 255, 255, int(255 * self._info_panel_alpha))
       rl.draw_text_ex(gui_app.font, dist_maneuver_text,
                      rl.Vector2(panel_x + panel_width - dist_maneuver_size.x - 10, panel_y + 10),
-                     20, 1.5, dist_maneuver_color)
+                     self.SECONDARY_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY, dist_maneuver_color)
 
     # ETA
     if self._eta_seconds != float('inf'):
-      import datetime
       eta_minutes = int(self._eta_seconds / 60)
       eta_text = f"ETA: {eta_minutes} min"
-      eta_size = rl.measure_text_ex(gui_app.font, eta_text, 20, 1.5)
+      eta_size = rl.measure_text_ex(gui_app.font, eta_text, self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY)
       eta_color = rl.Color(100, 255, 100, int(255 * self._info_panel_alpha))
       rl.draw_text_ex(gui_app.font, eta_text,
                      rl.Vector2(panel_x + panel_width - eta_size.x - 10, panel_y + 35),
-                     20, 1.5, eta_color)
+                     self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY, eta_color)
 
   def draw_route_path(self, model_points, rect, color=rl.Color(0, 255, 0, 100)):
     """
     Draw the route path on the model view.
     Note: This method is currently not used in the main render loop but available for future enhancements.
+    Reason for disabling: Currently disabled pending performance optimization of route path rendering to avoid
+    potential frame drops during navigation. Will be re-enabled once rendering performance is optimized.
     Safety: Only draws within screen bounds to prevent rendering outside visible area.
     """
     if not model_points or len(model_points.projected_points) < 2:
