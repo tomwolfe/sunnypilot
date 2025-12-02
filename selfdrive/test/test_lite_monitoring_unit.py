@@ -1,10 +1,9 @@
 import pytest
 import numpy as np
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor, LightweightSafetyChecker
-from cereal import car, log
 
 class TestLightweightSystemMonitor:
     @pytest.fixture

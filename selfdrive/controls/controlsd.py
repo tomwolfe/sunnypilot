@@ -2,7 +2,7 @@
 import math
 import threading
 import time
-from collections import deque
+
 from numbers import Number
 
 from cereal import car, log
@@ -130,7 +130,7 @@ class Controls(ControlsExt):
         # If deviceState is stale, assume high thermal stress for safety
         cloudlog.warning(f"deviceState is stale (last update {current_time - self.last_device_state_update_time:.2f}s ago). Assuming high thermal state.")
         thermal_state = 1.0 # Max thermal state for safety
-    
+
     adaptive_gains = self.gain_scheduler.get_adaptive_gains(CS.vEgo, thermal_state)
 
     # Update VehicleModel

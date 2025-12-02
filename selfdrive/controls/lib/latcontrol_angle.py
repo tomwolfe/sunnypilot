@@ -1,5 +1,4 @@
 import math
-from typing import Dict
 
 from cereal import log
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
@@ -14,7 +13,7 @@ class LatControlAngle(LatControl):
     self.sat_check_min_speed = 5.
     self.use_steer_limited_by_safety = CP.brand == "tesla"
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: Dict):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: dict):
     # adaptive_gains are passed for API consistency but are not directly used
     # in LatControlAngle as it is not a PID-based controller.
     angle_log = log.ControlsState.LateralAngleState.new_message()

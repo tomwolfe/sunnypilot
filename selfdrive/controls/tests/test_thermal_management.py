@@ -21,7 +21,7 @@ def test_thermal_compensation_longitudinal():
 
   CP_SP = MockCarParamsSP()
 
-  long_control = LongControl(CP, CP_SP)
+
 
 
 
