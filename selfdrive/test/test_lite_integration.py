@@ -120,12 +120,12 @@ class TestLiteIntegration:
         # Verify gains are reduced due to thermal state
         # Thermal factor for long: max(0.85, 1.0 - 1.0 * 0.15) = 0.85
         # Thermal factor for lat: max(0.9, 1.0 - 1.0 * 0.1) = 0.9
-        # Final kf = 0.05 * 1.428 * 0.85 = 0.06069
-        assert np.isclose(gains_thermal['longitudinal']['kf'], 0.06069, rtol=1e-6)
+        # Final kf = 0.05 * 1.428 * 0.85 = 0.06071428571428572
+        assert np.isclose(gains_thermal['longitudinal']['kf'], 0.06071428571428572, rtol=1e-6)
         # For lateral, base_lat_kp at 15m/s (0.2, 0.8, 1.5) -> interp(15, [0,10,20], [0.2,0.8,1.5]) = 1.15
         # lat_speed_factor (TOYOTA_COROLLA lat_speed_gain_factor=55): 1.0 + (15/55) = 1.2727. Capped at 1.4. So 1.2727
-        # Final lat_kp = 1.15 * 1.2727 * 0.9 = 1.317
-        assert np.isclose(gains_thermal['lateral']['kp'], 1.317, rtol=1e-6)
+        # Final lat_kp = 1.15 * 1.2727 * 0.9 = 1.3172727272727272
+        assert np.isclose(gains_thermal['lateral']['kp'], 1.3172727272727272, rtol=1e-6)
 
         # --- Scenario 3: Safety check triggers deceleration due to high accel ---
         mock_actuators.accel = 4.0 # Exceeds max_long_accel (3.0)

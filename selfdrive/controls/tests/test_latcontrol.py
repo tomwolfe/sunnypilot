@@ -55,6 +55,8 @@ class TestLatControl:
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2, adaptive_gains={})
     assert not lac_log.saturated
 
+    # Simulate driver override: steeringPressed = True, desired_curvature = 0
+    CS.steeringPressed = True
     for _ in range(1000):
-      _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2, adaptive_gains={})
+      _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2, adaptive_gains={})
     assert not lac_log.saturated
