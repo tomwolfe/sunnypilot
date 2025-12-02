@@ -72,30 +72,32 @@ class LightweightSafetyChecker:
         Lightweight validation of control outputs for safety.
         Returns a detailed report instead of just True/False.
         """
+        violations_list: list[str] = []
         safety_report = {
             'safe': True,
-            'violations': cast(list[str], []),
+            'violations': violations_list,
             'recommended_action': 'continue'  # Options: 'continue', 'decelerate', 'disengage'
         }
 
         # Quick validation checks with minimal computation
+        violations_list = cast(list[str], safety_report['violations'])
         if hasattr(actuators, 'accel'):
             if abs(actuators.accel) > self.safety_thresholds['max_long_accel']:
                 safety_report['safe'] = False
-                safety_report['violations'].append('long_accel_limit_exceeded')
+                violations_list.append('long_accel_limit_exceeded')
                 safety_report['recommended_action'] = 'decelerate'
 
         if (hasattr(actuators, 'curvature') and hasattr(car_state, 'vEgo')):
             lat_accel = abs(actuators.curvature * car_state.vEgo**2)
             if lat_accel > self.safety_thresholds['max_lat_accel']:
                 safety_report['safe'] = False
-                safety_report['violations'].append('lat_accel_limit_exceeded')
+                violations_list.append('lat_accel_limit_exceeded')
                 safety_report['recommended_action'] = 'decelerate'
 
         # Check steering angle magnitude
         if hasattr(actuators, 'steer') and abs(actuators.steer) > self.safety_thresholds['max_steering_angle']:
             safety_report['safe'] = False
-            safety_report['violations'].append('steering_angle_limit_exceeded')
+            violations_list.append('steering_angle_limit_exceeded')
             safety_report['recommended_action'] = 'disengage'
 
         # Check steering rate limit (change in steering command)
@@ -108,9 +110,11 @@ class LightweightSafetyChecker:
                 cloudlog.debug(f"SafetyChecker: Steering rate={steering_rate:.2f} rad/s, Max rate={self.safety_thresholds['max_steering_rate']:.2f} rad/s")
                 if steering_rate > self.safety_thresholds['max_steering_rate']:
                     safety_report['safe'] = False
-                    safety_report['violations'].append('steering_rate_limit_exceeded')
+                    violations_list.append('steering_rate_limit_exceeded')
                     safety_report['recommended_action'] = 'disengage'
-                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! rate={{steering_rate:.2f}}, limit={{self.safety_thresholds['max_steering_rate']:.2f}}, vEgo={{car_state.vEgo:.2f}}")
+                    # Shorten the message to fit within line limits
+                    rate_msg = f"rate={steering_rate:.2f}, limit={self.safety_thresholds['max_steering_rate']:.2f}, vEgo={car_state.vEgo:.2f}"
+                    cloudlog.warning(f"SafetyChecker: Steering rate limit exceeded! {rate_msg}")
 
 
             # Update current values immediately after calculation to prevent race condition
@@ -138,16 +142,16 @@ class LightweightSafetyChecker:
             if ttc < self.safety_thresholds['min_time_gap'] or radar_state.leadOne.dRel < min_safe_distance_calculated:
                 # This is a safety-critical situation regardless of current acceleration
                 safety_report['safe'] = False
-                safety_report['violations'].append('forward_collision_imminent')
+                violations_list.append('forward_collision_imminent')
                 safety_report['recommended_action'] = 'decelerate'
         # Determine recommended_action based on violations, with disengage having priority
         if not safety_report['safe']:
-            if 'steering_angle_limit_exceeded' in safety_report['violations'] or \
-               'steering_rate_limit_exceeded' in safety_report['violations']:
+            if 'steering_angle_limit_exceeded' in violations_list or \
+               'steering_rate_limit_exceeded' in violations_list:
                 safety_report['recommended_action'] = 'disengage'
-            elif 'long_accel_limit_exceeded' in safety_report['violations'] or \
-                 'lat_accel_limit_exceeded' in safety_report['violations'] or \
-                 'forward_collision_imminent' in safety_report['violations']:
+            elif 'long_accel_limit_exceeded' in violations_list or \
+                 'lat_accel_limit_exceeded' in violations_list or \
+                 'forward_collision_imminent' in violations_list:
                 safety_report['recommended_action'] = 'decelerate'
         return safety_report
 

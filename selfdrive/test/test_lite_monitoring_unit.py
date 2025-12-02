@@ -1,7 +1,17 @@
 import pytest
 import numpy as np
 import time
-from unittest.mock import Mock, patch
+
+# Using builtin object as a simple mock class since unittest import is banned
+class Mock:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name):
+        # Return a new Mock for any attribute that doesn't exist
+        attr = Mock()
+        setattr(self, name, attr)
+        return attr
 
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor, LightweightSafetyChecker
 
@@ -64,38 +74,38 @@ class TestLightweightSystemMonitor:
         mock_ds.canMonoTimes = canMonoTimes if canMonoTimes is not None else []
         return mock_ds
 
-    def test_check_system_health_can_bus_ok(self, monitor):
+    def test_check_system_health_can_bus_ok(self, monitor, mocker):
         mock_device_state = self._create_mock_device_state(canMonoTimes=[int(time.monotonic() * 1e9 - 1e8)]) # 0.1 seconds ago
         mock_car_state = Mock()
-        with patch('time.monotonic', return_value=time.monotonic()):
+        with mocker.patch('time.monotonic', return_value=time.monotonic()):
             report = monitor.check_system_health(mock_device_state, mock_car_state)
             assert report['can_bus_ok'] is True
 
-    def test_check_system_health_can_bus_stale(self, monitor):
+    def test_check_system_health_can_bus_stale(self, monitor, mocker):
         mock_device_state = self._create_mock_device_state(canMonoTimes=[int(time.monotonic() * 1e9 - 3e9)]) # 3 seconds ago
         mock_car_state = Mock()
-        with patch('time.monotonic', return_value=time.monotonic()):
+        with mocker.patch('time.monotonic', return_value=time.monotonic()):
             report = monitor.check_system_health(mock_device_state, mock_car_state)
             assert report['can_bus_ok'] is False
 
-    def test_check_system_health_can_bus_no_messages(self, monitor):
+    def test_check_system_health_can_bus_no_messages(self, monitor, mocker):
         mock_device_state = self._create_mock_device_state(canMonoTimes=[])
         mock_car_state = Mock()
-        with patch('time.monotonic', return_value=time.monotonic()):
+        with mocker.patch('time.monotonic', return_value=time.monotonic()):
             report = monitor.check_system_health(mock_device_state, mock_car_state)
             assert report['can_bus_ok'] is False
 
-    def test_check_system_health_disk_space_ok(self, monitor):
+    def test_check_system_health_disk_space_ok(self, monitor, mocker):
         mock_device_state = self._create_mock_device_state(freeSpacePercent=10.0) # 10% free, which is > 5%
         mock_car_state = Mock()
-        with patch('time.monotonic', return_value=time.monotonic()):
+        with mocker.patch('time.monotonic', return_value=time.monotonic()):
             report = monitor.check_system_health(mock_device_state, mock_car_state)
             assert report['disk_space_ok'] is True
 
-    def test_check_system_health_disk_space_low(self, monitor):
+    def test_check_system_health_disk_space_low(self, monitor, mocker):
         mock_device_state = self._create_mock_device_state(freeSpacePercent=3.0) # 3% free, which is < 5%
         mock_car_state = Mock()
-        with patch('time.monotonic', return_value=time.monotonic()):
+        with mocker.patch('time.monotonic', return_value=time.monotonic()):
             report = monitor.check_system_health(mock_device_state, mock_car_state)
             assert report['disk_space_ok'] is False
 
@@ -130,12 +140,12 @@ class TestLightweightSafetyChecker:
         radar_state.leadOne.status = False
         return radar_state
 
-    def test_steering_rate_no_violation(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state):
+    def test_steering_rate_no_violation(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state, mocker):
         # Initial time for the first call
         initial_monotonic_time = 100.0 # A fixed starting time
 
         # Patch time.monotonic for the initial setup
-        with patch('time.monotonic', return_value=initial_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=initial_monotonic_time):
             safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
 
         # Time for the second call, ensuring a specific time_delta
@@ -148,35 +158,35 @@ class TestLightweightSafetyChecker:
 
         # Simulate a small steering change over a short time that should NOT trigger a violation
         mock_actuators.steer = 0.04
-        with patch('time.monotonic', return_value=second_monotonic_time): # Only patch for this one call
+        with mocker.patch('time.monotonic', return_value=second_monotonic_time): # Only patch for this one call
             report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
             assert report['safe'] is True
             assert 'steering_rate_limit_exceeded' not in report['violations']
 
-    def test_steering_rate_violation(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state):
+    def test_steering_rate_violation(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state, mocker):
         initial_monotonic_time = 100.0
-        with patch('time.monotonic', return_value=initial_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=initial_monotonic_time):
             safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
 
         # Simulate a rapid steering change that SHOULD trigger a violation
         second_monotonic_time = initial_monotonic_time + 0.01 # 0.01s time delta
         mock_actuators.steer = 0.5 # A large change
-        with patch('time.monotonic', return_value=second_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=second_monotonic_time):
             report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
             assert report['safe'] is False
             assert 'steering_rate_limit_exceeded' in report['violations']
             assert report['recommended_action'] == 'disengage'
 
-    def test_steering_rate_race_condition_fix(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state):
+    def test_steering_rate_race_condition_fix(self, safety_checker, mock_actuators, mock_car_state, mock_radar_state, mocker):
         initial_monotonic_time = 100.0
-        with patch('time.monotonic', return_value=initial_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=initial_monotonic_time):
             mock_actuators.steer = 0.1
             safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
 
         # Simulate second call immediately after, with a slightly different steering that SHOULD trigger a violation
         second_monotonic_time = initial_monotonic_time + 0.001 # 1 ms later
         mock_actuators.steer = 0.105 # Changed from 0.101 to ensure rate > 0.45
-        with patch('time.monotonic', return_value=second_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=second_monotonic_time):
             report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
             # steering_rate = abs(0.105 - 0.1) / max(0.001, 0.01) = 0.005 / 0.01 = 0.5
             # max_steering_rate = 0.45
@@ -239,7 +249,7 @@ class TestLightweightSafetyChecker:
         assert 'forward_collision_imminent' in report['violations']
         assert report['recommended_action'] == 'decelerate' # Deceleration is prioritized for these
 
-    def test_multiple_violations_steering_rate_and_collision(self, safety_checker):
+    def test_multiple_violations_steering_rate_and_collision(self, safety_checker, mocker):
         mock_actuators = Mock()
         mock_actuators.accel = 0.0
         mock_actuators.steer = 0.1 # Will be changed to simulate rate
@@ -254,14 +264,14 @@ class TestLightweightSafetyChecker:
         mock_radar_state.leadOne.vRel = -5.0
 
         initial_monotonic_time = 100.0
-        with patch('time.monotonic', return_value=initial_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=initial_monotonic_time):
             # First call to set initial steer and time for rate calculation
             safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
 
         # Simulate rapid steering change AND forward collision
         second_monotonic_time = initial_monotonic_time + 0.01 # 0.01s time delta
         mock_actuators.steer = 0.5 # A large change to trigger steering rate violation
-        with patch('time.monotonic', return_value=second_monotonic_time):
+        with mocker.patch('time.monotonic', return_value=second_monotonic_time):
             report = safety_checker.validate_outputs(mock_actuators, mock_car_state, mock_radar_state)
 
             assert report['safe'] is False
