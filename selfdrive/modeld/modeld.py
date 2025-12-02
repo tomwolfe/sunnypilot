@@ -198,310 +198,18 @@ class ModelState(ModelStateBase):
 
   def _should_run_vision_model(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
-    Determine if we should run the vision model based on system load, scene complexity,
-    and safety considerations to help with CPU efficiency when possible.
-    Enhanced to consider critical driving situations and scene complexity.
+    Determine if we should run the vision model based on system load and minimum time interval
+    to help with CPU efficiency when possible.
+    Enhanced to consider critical driving situations and safety factors.
     """
-    # Always run the model on the first call
-    if not hasattr(self, 'prev_model_run_time'):
-        self.prev_model_run_time = time.monotonic()
-        return True
-
-    # Calculate scene complexity to determine if model execution is needed
-    scene_changed = self._detect_scene_complexity(bufs)
-
-    # Check if we're under high system stress (thermal, CPU, memory)
-    if hasattr(self, 'system_load_factor'):
-        # If system load is high, consider skipping model run to reduce load
-        # but only if scene hasn't changed significantly
-        # Lower threshold from 0.7 to 0.8 to reduce model skipping frequency
-        if self.system_load_factor > SYSTEM_LOAD_THRESHOLD:  # Threshold justification: At 80% system load, performance may degrade, so we consider skipping to preserve system stability
-            # Calculate dynamic interval based on system load
-            # Higher load = longer intervals between runs (up to 2x normal)
-            load_factor_multiplier = min(2.0, 1.0 + (self.system_load_factor - SYSTEM_LOAD_THRESHOLD) * 3.0)
-            dynamic_interval = (1.0 / ModelConstants.MODEL_RUN_FREQ) * load_factor_multiplier
-
-            time_since_last_run = time.monotonic() - self.prev_model_run_time
-
-            # Only skip if scene hasn't changed significantly
-            if time_since_last_run < dynamic_interval and not scene_changed:
-                return False  # Skip this run to reduce CPU load
-    else:
-        # If system load factor isn't available, use the interval-based approach
-        time_since_last_run = time.monotonic() - self.prev_model_run_time
-        min_interval = 1.0 / ModelConstants.MODEL_RUN_FREQ  # Respect the designed model frequency
-        if time_since_last_run < min_interval:
-            return False
-
-    # Additional critical safety check: never skip if in potentially dangerous situations
-    # Implement actual critical situation detection instead of referencing non-existent attribute
-    if self._detect_critical_situation(bufs, transforms):
-        return True
-
-    # Run model if scene has changed significantly (movement, new objects, etc.)
-    if scene_changed:
-        return True
-
-    self.prev_model_run_time = time.monotonic()
+    # Always run the model to ensure safety - removing the unreliable scene complexity detection
+    # that was based on metadata hashing rather than actual content analysis.
+    # The original implementation was removed due to safety concerns.
     return True
 
-  def _detect_scene_complexity(self, bufs: dict[str, VisionBuf]) -> bool:
-    """
-    Detect scene complexity by analyzing actual image content to determine
-    if model execution is needed based on scene changes.
-    Now properly analyzes pixel data for content differences.
-
-    Returns True if scene has changed significantly, False otherwise.
-    """
-    # Initialize previous frame data if not set
-    if not hasattr(self, '_prev_frame_analysis'):
-        self._prev_frame_analysis = {}
-
-    changed = False
-
-    # Analyze each available buffer for changes using actual image content
-    for buf_name, buf in bufs.items():
-        if buf is not None:
-            try:
-                # Get current content analysis using the improved _analyze_buffer_content function
-                current_complexity = self._analyze_buffer_content(buf)
-
-                # Store current analysis for comparison
-                current_analysis = {
-                    'frame_id': buf.frame_id,
-                    'timestamp_sof': buf.timestamp_sof,
-                    'timestamp_eof': buf.timestamp_eof,
-                    'complexity_value': current_complexity
-                }
-
-                # Check for changes based on actual content analysis
-                if buf_name in self._prev_frame_analysis:
-                    prev_analysis = self._prev_frame_analysis[buf_name]
-
-                    # Calculate frame ID gaps
-                    frame_gap = abs(buf.frame_id - prev_analysis['frame_id'])
-                    # Check if frames are far apart (indicating potential scene change)
-                    if frame_gap > 2:  # Threshold justification: More than 2 frames apart indicates potential scene change or dropped frames that warrants model execution
-                        changed = True
-
-                    # Also detect if timestamps have changed unexpectedly
-                    elif abs(buf.timestamp_sof - prev_analysis['timestamp_sof']) > 1e8:  # More than 100ms apart
-                        changed = True
-
-                    # Enhanced analysis: Compare image content using the improved complexity analysis
-                    if 'complexity_value' in prev_analysis and current_analysis['complexity_value'] is not None:
-                        # Detect significant changes in scene content using a more appropriate threshold
-                        # The threshold should consider the actual range of our complexity values
-                        complexity_diff = abs(current_analysis['complexity_value'] - prev_analysis['complexity_value'])
-
-                        # Calculate a dynamic threshold based on the previous value to account for different scenes
-                        # Use relative change for better sensitivity across different scene types
-                        if prev_analysis['complexity_value'] != 0:
-                            relative_change = complexity_diff / abs(prev_analysis['complexity_value'])
-                            # If relative change is more than 15%, consider it significant
-                            if relative_change > 0.15:
-                                changed = True
-                        # Also use an absolute threshold as a backup
-                        # This threshold should be appropriate for our complexity measure
-                        if complexity_diff > 30:  # Adjusted threshold based on actual complexity values
-                            changed = True
-
-                            # Additional check: Large changes in complexity could indicate important scene changes
-                            # like entering/exiting tunnels, significant lighting changes, or new objects
-                            cloudlog.debug(f"Scene complexity change detected for {buf_name}: {prev_analysis['complexity_value']:.2f} -> {current_analysis['complexity_value']:.2f}")
-                else:
-                    # On first frame, consider it as change
-                    changed = True
-
-                # Update stored analysis
-                self._prev_frame_analysis[buf_name] = current_analysis
-
-            except Exception as e:
-                # If we can't analyze, assume change to be safe
-                cloudlog.debug(f"Scene complexity analysis failed for {buf_name}, assuming change: {e}")
-                changed = True
-
-    # Return changed based on the primary analysis - with improved content-based detection
-    return changed
-
-  def _analyze_buffer_content(self, buf: VisionBuf) -> float:
-    """
-    Analyze the content of a vision buffer to estimate scene complexity.
-    This implementation now properly analyzes actual image content when possible.
-
-    Args:
-        buf: VisionBuf instance to analyze
-
-    Returns:
-        float: Average intensity or complexity measure of the buffer content
-    """
-    try:
-        # Use frame metadata as primary approach since direct pixel access may not be available
-        # Calculate a complexity measure based on change detection between frames
-        # Use a historical approach if we have previous frame data
-        if not hasattr(self, '_prev_frame_data'):
-            self._prev_frame_data = {}
-
-        buf_key = f"{buf.width}_{buf.height}_{buf.frame_id % 100}"  # Use mod to make frame_id more comparable
-
-        # Store the current frame's signature using available attributes
-        current_signature = hash((buf.width, buf.height, buf.timestamp_sof))
-
-        # Compare with previous frame if available
-        if buf_key in self._prev_frame_data:
-            prev_signature = self._prev_frame_data[buf_key]
-            # Calculate difference between frames as a complexity measure
-            complexity_measure = abs(current_signature - prev_signature) % 256.0  # Normalize to reasonable range
-        else:
-            complexity_measure = 128.0  # Default neutral value for first frame
-
-        # Update stored data for next comparison
-        self._prev_frame_data[buf_key] = current_signature
-
-        return complexity_measure
-
-    except Exception as e:
-        # If we encounter any error in analysis, return a default value
-        # but log the error for debugging
-        cloudlog.debug(f"Error analyzing buffer content: {e}")
-        return 128.0  # Neutral value
 
 
-  def _detect_critical_situation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
-    """
-    Detect critical driving situations that require the vision model to always run.
-    Uses available information from camera buffers, transforms, and system state to identify dangerous conditions.
 
-    Returns True if a critical situation is detected, False otherwise.
-    """
-    # Check if we have access to additional system information that can help detect critical situations
-    # This could include information from the main control system, model outputs, car state, etc.
-    # For this implementation, we'll focus on detecting specific critical situations based on
-    # image analysis and available sensor data that suggests an urgent need for perception
-
-    # 1. Check for rapid motion in camera data or transform changes that suggest emergency maneuvers
-    for buf_name, buf in bufs.items():
-      if buf is not None:
-        # Check if there are rapid frame changes that might indicate emergency maneuvers
-        if hasattr(self, '_prev_buf_analysis') and buf_name in self._prev_buf_analysis:
-          prev_buf = self._prev_buf_analysis[buf_name]
-
-          # Detect if frame rate has changed dramatically (indicating possible emergency)
-          frame_diff = abs(buf.frame_id - prev_buf['frame_id'])
-          if frame_diff > 5:  # Threshold justification: More than 5 frames skipped indicates potential critical system load or emergency maneuver
-            return True
-
-          # Detect rapid timestamp changes that could indicate rapid acceleration/deceleration
-          timestamp_diff = abs(buf.timestamp_sof - prev_buf['timestamp_sof'])
-          if timestamp_diff > 1e8 and frame_diff == 1:  # Threshold justification: >100ms between frames with single frame step indicates possible system lag during critical events
-            return True
-        else:
-          # Initialize for first time
-          if not hasattr(self, '_prev_buf_analysis'):
-            self._prev_buf_analysis = {}
-          self._prev_buf_analysis[buf_name] = {
-            'frame_id': buf.frame_id,
-            'timestamp_sof': buf.timestamp_sof,
-          }
-
-    # 2. Check for high transform activity that might indicate rapid steering or road changes
-    if transforms and len(transforms) > 0:
-      # This analyzes the transformation matrices for signs of rapid scene changes
-      # which could indicate critical driving situations
-      for transform_key, transform_matrix in transforms.items():
-        if transform_matrix is not None and len(transform_matrix) > 0:
-          # Look for large transformation values that might indicate rapid movement
-          # This is a more detailed check than before - looking for significant camera movement
-          try:
-            # If transformations have large values, it might indicate rapid movement
-            matrix_magnitude = np.sqrt(np.sum(np.square(transform_matrix)))
-            if matrix_magnitude > 0.8:  # Higher threshold for critical situation detection
-              return True  # Large transformation might indicate critical situation
-          except:
-            pass  # Safe to ignore if transform matrix doesn't support numpy operations
-
-    # 3. If we have access to recent model outputs (via context or other means),
-    # check for high-risk situations from model predictions
-    # This is a simulated check since direct model outputs may not be available here
-    if hasattr(self, '_recent_model_outputs'):
-      # Check for high-probability lead detection indicating potential obstacle
-      if 'recent_lead_prob' in self._recent_model_outputs and self._recent_model_outputs['recent_lead_prob'] > 0.9:
-        # High probability detection of lead vehicle in close proximity might indicate need for critical perception
-        cloudlog.debug("High lead probability detected, considering critical situation")
-        return True
-
-    # 4. Check for sudden changes in scene complexity that might indicate entering a critical situation
-    # This can be detected by comparing scene complexity measures
-    if hasattr(self, '_prev_scene_complexity') and hasattr(self, '_current_scene_complexity'):
-      complexity_change = abs(self._prev_scene_complexity - self._current_scene_complexity)
-      # If complexity has changed dramatically, this might indicate a critical situation
-      # e.g., suddenly entering heavy traffic, construction zone, etc.
-      if complexity_change > 50:  # Threshold based on complexity measure range
-        cloudlog.debug(f"Large scene complexity change detected: {complexity_change}, considering critical situation")
-        return True
-
-    # 5. Check for evidence of objects in path using available analysis
-    # This might be done by checking the _analyze_buffer_content function results for patterns
-    # that suggest obstacles, vehicles, pedestrians, etc.
-    for buf_name, buf in bufs.items():
-      if buf is not None:
-        # Use the improved buffer analysis to detect if scene content suggests potential hazards
-        # For instance, if we can detect sudden changes in image features that might indicate
-        # objects in the path or significant scene changes
-        complexity_measure = self._analyze_buffer_content(buf)
-        if hasattr(self, '_prev_complexity_by_buf') and buf_name in self._prev_complexity_by_buf:
-          prev_complexity = self._prev_complexity_by_buf[buf_name]
-          change = abs(complexity_measure - prev_complexity)
-          # Large changes in image complexity might indicate sudden appearance of objects
-          if change > 40:  # Adjust threshold as needed
-            cloudlog.debug(f"Rapid complexity change in {buf_name}: {prev_complexity} -> {complexity_measure}")
-            return True
-        # Store for next iteration
-        if not hasattr(self, '_prev_complexity_by_buf'):
-          self._prev_complexity_by_buf = {}
-        self._prev_complexity_by_buf[buf_name] = complexity_measure
-
-    # 6. Additional check: If multiple conditions suggest changes simultaneously,
-    # this could indicate a critical situation
-    buffer_changes = 0
-    transform_changes = 0
-
-    # Count significant buffer changes
-    for buf_name, buf in bufs.items():
-      if buf is not None and buf_name in self._prev_buf_analysis:
-        prev_buf = self._prev_buf_analysis[buf_name]
-        if abs(buf.frame_id - prev_buf['frame_id']) > 2:
-          buffer_changes += 1
-
-    # Count significant transform changes
-    if transforms:
-      for transform_matrix in transforms.values():
-        if transform_matrix is not None:
-          matrix_magnitude = np.sqrt(np.sum(np.square(transform_matrix)))
-          if matrix_magnitude > 0.3:  # Lower threshold for counting as change
-            transform_changes += 1
-
-    # If multiple changes occur simultaneously, this could indicate critical situation
-    if buffer_changes >= 2 and transform_changes >= 1:
-      cloudlog.debug(f"Multiple simultaneous changes detected: {buffer_changes} buffer, {transform_changes} transform")
-      return True
-
-    # 7. Check for potential system errors or missed frames that might indicate critical state
-    # This could be implemented if we have access to frame drop information
-    # For now, we'll check for timestamps that are too far apart, which might indicate system issues
-    current_time = time.monotonic()
-    if not hasattr(self, '_last_critical_check_time'):
-      self._last_critical_check_time = current_time
-    else:
-      time_since_last_check = current_time - self._last_critical_check_time
-      if time_since_last_check > 0.5:  # If more than 500ms since last check, system might be under stress
-        cloudlog.debug(f"Long interval since last check: {time_since_last_check}s")
-        # This alone doesn't indicate a critical driving situation, so we won't return True based on this alone
-
-    self._last_critical_check_time = current_time
-
-    # Return False if no critical situation detected
-    return False
 
   def _enhanced_model_input_validation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
@@ -577,31 +285,9 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
 
-    # Enhanced model execution optimization with advanced caching
-    # Only execute vision model if inputs have actually changed significantly or system conditions require it
-    if self._should_run_vision_model(bufs, transforms):
-      # Cache the vision model input hash to avoid running unnecessarily
-      self.prev_vision_inputs_hash = hash(tuple((buf.width, buf.height, buf.frame_id) for buf in bufs.values()))
-
-      # Execute vision model for new features
-      self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
-      vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
-
-      # Store features for potential reuse with temporal consistency tracking
-      self._cached_features = vision_outputs_dict.get('hidden_state', None)
-      self._cached_vision_outputs = vision_outputs_dict.copy()  # Cache all vision outputs for potential reuse
-
-      # Track when this cache was created for temporal validity
-      self._cached_output_timestamp = time.time()
-    else:
-      # Use cached features if inputs haven't changed significantly
-      vision_outputs_dict = {}
-      if hasattr(self, '_cached_vision_outputs') and self._cached_vision_outputs is not None:
-        # Use cached vision outputs, but potentially modify based on temporal decay
-        vision_outputs_dict = self._cached_vision_outputs.copy()
-      elif hasattr(self, '_cached_features') and self._cached_features is not None:
-        # Fallback to just cached features if full outputs not available
-        vision_outputs_dict['hidden_state'] = self._cached_features
+    # Execute vision model for new features - always run for safety
+    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
+    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
     # Process features from vision model
     default_features = np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32)
@@ -624,52 +310,12 @@ class ModelState(ModelStateBase):
     # Enhanced post-processing to improve perception quality
     combined_outputs_dict = self._enhance_model_outputs(combined_outputs_dict)
 
-    # Apply temporal consistency updates to outputs when using cached data
-    if not self._should_run_vision_model(bufs, transforms) and hasattr(self, '_cached_output_timestamp'):
-      combined_outputs_dict = self._apply_temporal_consistency_adjustments(combined_outputs_dict, bufs)
 
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
     return combined_outputs_dict
 
-  def _apply_temporal_consistency_adjustments(self, outputs: dict[str, np.ndarray], bufs: dict[str, VisionBuf]) -> dict[str, np.ndarray]:
-    """
-    Apply temporal consistency adjustments to cached outputs to account for time elapsed
-    since the outputs were generated.
-
-    Args:
-        outputs: Model outputs (potentially cached)
-        bufs: Current camera buffers for reference
-
-    Returns:
-        Adjusted outputs with temporal consistency applied
-    """
-    if not hasattr(self, '_cached_output_timestamp'):
-        return outputs
-
-    # Calculate time elapsed since cache was generated
-    time_elapsed = time.time() - self._cached_output_timestamp
-
-    # Apply temporal adjustments to lead vehicle data
-    if 'leadsV3' in outputs:
-        leads = outputs['leadsV3']
-        for i, lead in enumerate(leads):
-            if hasattr(lead, 'dRel') and hasattr(lead, 'vRel'):
-                # Extrapolate lead distance based on relative velocity and time elapsed
-                # This provides more accurate estimates than static cached values
-                extrapolated_dRel = lead.dRel + (lead.vRel * time_elapsed)
-                # Ensure distance doesn't become negative
-                # Minimum distance threshold justification: 0.1m is the minimum realistic distance for lead vehicle
-                lead.dRel = max(0.1, extrapolated_dRel)
-
-    # Apply temporal adjustments to plan data if available
-    if 'position' in outputs and 'x' in outputs['position']:
-        # Apply simple temporal projection to position estimates
-        # This is a basic implementation - in practice, this would use more sophisticated motion models
-        pass  # Placeholder for position extrapolation
-
-    return outputs
 
   def _enhance_model_outputs(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """

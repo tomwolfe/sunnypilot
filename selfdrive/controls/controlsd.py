@@ -510,129 +510,29 @@ class Controls(ControlsExt):
 
   def _detect_weather_conditions(self):
     """
-    Detect weather conditions based on available and reliable sensor data.
-    Enhanced to properly differentiate between rain and snow using temperature data.
+    Detect weather conditions based on simple, reliable sensor data.
+    Simplified to use only wiper status as the primary indicator of adverse weather.
 
     Returns:
-        str: Weather condition ('normal', 'rain', 'snow', 'fog')
+        str: Weather condition ('normal', 'rain')
     """
-    # Use reliable sensor data from carState and modelV2 for comprehensive weather detection
+    # Use reliable sensor data from carState for simple weather detection
     CS = self.sm['carState']
 
-    # 1. Check for windshield wiper usage as an indicator of precipitation
+    # Check for windshield wiper usage as the primary indicator of adverse weather
+    # This is more reliable than complex temperature-based heuristics
     wipers_active = False
     if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper is not None:
         wipers_active = CS.windshieldWiper > 0.0
     elif hasattr(CS, 'wiperState') and CS.wiperState is not None:
         wipers_active = CS.wiperState > 0
 
-    # 2. Get temperature data if available to differentiate between rain and snow
-    # Many vehicle systems provide ambient temperature data
-    ambient_temp = None
-    if hasattr(CS, 'ambientTemp') and CS.ambientTemp is not None:
-        ambient_temp = CS.ambientTemp
-    elif hasattr(CS, 'carParams') and hasattr(self.CP, 'carParams') and hasattr(self.CP.carParams, 'ambientTemp'):
-        # If ambient temperature is available in car params
-        ambient_temp = self.CP.carParams.ambientTemp
-
-    # If ambient temperature is not available in CarState, try to get it from other sources
-    if 'carParams' in self.sm and hasattr(self.sm['carParams'], 'ambientTemp'):
-        ambient_temp = self.sm['carParams'].ambientTemp
-
-    # 3. Check for additional indicators to differentiate between weather types
-    if 'modelV2' in self.sm and self.sm.valid['modelV2'] and self.sm.valid['radarState']:
-        model_v2 = self.sm['modelV2']
-        radar_state = self.sm['radarState']
-
-        # Analyze scene characteristics for different weather types
-        avg_lane_prob = 0.0
-        if (hasattr(model_v2, 'laneLines') and len(model_v2.laneLines) > 0 and
-            hasattr(model_v2.laneLines[0], 'prob')):
-            avg_lane_prob = sum([line.prob for line in model_v2.laneLines]) / len(model_v2.laneLines)
-
-        # Additional indicators for fog detection
-        fog_indicators = 0
-        snow_indicators = 0
-
-        # Fog: low visibility + low lane line confidence + radar-camera discrepancy
-        if (hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'lowVis') and model_v2.meta.lowVis) or \
-           (avg_lane_prob < 0.5 and radar_state.leadOne.status and radar_state.leadOne.dRel > 50.0) or \
-           (hasattr(model_v2, 'leadsV3') and
-            sum(1 for lead in model_v2.leadsV3 if lead.prob > 0.5) == 0 and
-            any(lead.status for lead in [radar_state.leadOne, radar_state.leadTwo])):
-            fog_indicators += 1
-
-        # Snow indicators: poor lane detection combined with temperature data
-        # If we have temperature data and it's below freezing, and we see poor lane detection, likely snow
-        if ambient_temp is not None and ambient_temp < WEATHER_THRESHOLD_TEMP_FREEZING:  # Below freezing point (slightly above to account for measurement errors)
-            if avg_lane_prob < 0.5:
-                snow_indicators += 1
-            # Snow often results in more cautious driving behavior
-            if CS.vEgo < 20.0 and avg_lane_prob < 0.7:  # Lower speeds with reduced lane detection confidence
-                snow_indicators += 1
-
-        # Check for headlight usage as ancillary indicator
-        headlights_on_in_daytime = (hasattr(CS, 'lowBeam') and CS.lowBeam and
-                                    hasattr(CS, 'solarRad') and CS.solarRad > 10000)
-
-        # If we have temperature data available
-        if ambient_temp is not None:
-            if ambient_temp > WEATHER_THRESHOLD_TEMP_RAIN and wipers_active and fog_indicators == 0:
-                # Above freezing, wipers on but no fog indicators - likely rain
-                return 'rain'
-            elif ambient_temp <= WEATHER_THRESHOLD_TEMP_FREEZING and wipers_active:
-                # Below freezing and wipers on - likely snow (especially if snow indicators present)
-                if snow_indicators > 0:
-                    return 'snow'
-                else:
-                    # If temperature is below freezing but no clear snow indicators,
-                    # it might be snow or a mix; default to snow when temp is low
-                    return 'snow'
-            elif ambient_temp <= WEATHER_THRESHOLD_TEMP_RAIN and ambient_temp > WEATHER_THRESHOLD_TEMP_FREEZING and wipers_active:
-                # Between freezing and rain threshold - could be either rain or snow depending on road conditions
-                # Use additional indicators to make the decision
-                if snow_indicators > fog_indicators:  # More snow indicators than fog indicators
-                    return 'snow'
-                else:
-                    return 'rain'
-            elif wipers_active and fog_indicators > 0:
-                # Wipers on and fog indicators present - likely fog regardless of temperature
-                return 'fog'
-
-        # If temperature data is not available, fall back to the original logic
-        # but improve it with additional heuristics
-        # If we have wipers + snow indicators (low temp not available, but other indicators), likely snow
-        if wipers_active and snow_indicators > 0 and fog_indicators == 0:
-            return 'snow'
-        # If we have wipers + no fog indicators, likely rain
-        elif wipers_active and fog_indicators == 0:
-            return 'rain'
-        # If we have fog indicators but no wipers, likely fog
-        elif fog_indicators > 0 and not wipers_active:
-            return 'fog'
-        # If we have wipers + fog indicators, check which is more likely based on context
-        elif wipers_active and fog_indicators > 0:
-            if CS.vEgo > 15.0 and avg_lane_prob < 0.5:  # Higher speeds with poor visibility = fog
-                return 'fog'
-            else:  # Lower speeds with wipers = rain/snow, decide based on additional logic
-                # Without temperature, assume rain is more common than snow
-                return 'rain'
-
-    # If we have temperature data but no other complex indicators
-    if ambient_temp is not None:
-        if ambient_temp <= 0.0 and wipers_active:
-            return 'snow'  # Definitely below freezing, likely snow
-        elif ambient_temp > WEATHER_THRESHOLD_TEMP_RAIN and wipers_active:
-            return 'rain'  # Definitely above freezing, likely rain
-        elif wipers_active:
-            # Between 0 and rain threshold, could be either; use default assumption
-            return 'rain'  # Rain is generally more common
-
-    # If only wipers are active and no other indicators, default to rain (most common case)
+    # Simple logic: if wipers are active, there's adverse weather (likely rain)
+    # This removes the complex temperature and sensor fusion logic that was fragile
     if wipers_active:
-        return 'rain'
+        return 'rain'  # Default to rain as the most common adverse weather condition
 
-    # If no specific indicators of poor weather, return normal
+    # If no wipers are active, return normal conditions
     return 'normal'
 
   def _calculate_contextual_adaptive_gains(self, v_ego, thermal_state, context):
