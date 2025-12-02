@@ -14,7 +14,6 @@ from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.realtime import DT_MDL
-from openpilot.common.transformations.model import ModelConstants
 
 
 class NavRoadView(Widget):

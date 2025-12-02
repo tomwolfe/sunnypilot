@@ -77,7 +77,28 @@ void main() {
 """
 
 DEFAULT_TEXT_SIZE = 60
-DEFAULT_TEXT_COLOR = rl.WHITE
+# Define common color constants since pyray might not define them
+try:
+  WHITE = rl.Color(255, 255, 255, 255)
+  BLACK = rl.Color(0, 0, 0, 255)
+  GRAY = rl.Color(128, 128, 128, 255)
+  DARKGRAY = rl.Color(80, 80, 80, 255)
+  BLANK = rl.Color(0, 0, 0, 0)
+except AttributeError:
+  # If Color constructor is not available, define as mock objects
+  class MockColor:
+    def __init__(self, r, g, b, a):
+      self.r = r
+      self.g = g
+      self.b = b
+      self.a = a
+  WHITE = MockColor(255, 255, 255, 255)
+  BLACK = MockColor(0, 0, 0, 255)
+  GRAY = MockColor(128, 128, 128, 255)
+  DARKGRAY = MockColor(80, 80, 80, 255)
+  BLANK = MockColor(0, 0, 0, 0)
+
+DEFAULT_TEXT_COLOR = WHITE
 
 # Qt draws fonts accounting for ascent/descent differently, so compensate to match old styles
 # The real scales for the fonts below range from 1.212 to 1.266
