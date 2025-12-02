@@ -107,14 +107,17 @@ class LightweightAdaptiveGainScheduler:
 
         # Calculate base gains from tuning tables (using first values as baseline)
         # For longitudinal: take the first kpV and kiV values as baseline
-        base_long_kp = self.CP.longitudinalTuning.kpV[0] if hasattr(self.CP.longitudinalTuning, 'kpV') and self.CP.longitudinalTuning.kpV else 1.0
-        base_long_ki = self.CP.longitudinalTuning.kiV[0] if hasattr(self.CP.longitudinalTuning, 'kiV') and self.CP.longitudinalTuning.kiV else 0.1
+        base_long_kp = self._get_base_gain(self.CP.longitudinalTuning.kpV, 0, 1.0, "longitudinal kpV")
+        base_long_ki = self._get_base_gain(self.CP.longitudinalTuning.kiV, 0, 0.1, "longitudinal kiV")
         base_long_kf = getattr(self.CP.longitudinalTuning, 'kf', 0.0)
 
-        # For lateral: take the first kp, ki, kd values as baseline
-        base_lat_kp = self.CP.lateralTuning.pid.kpV[0] if hasattr(self.CP.lateralTuning.pid, 'kpV') and self.CP.lateralTuning.pid.kpV else 0.5
-        base_lat_ki = self.CP.lateralTuning.pid.kiV[0] if hasattr(self.CP.lateralTuning.pid, 'kiV') and self.CP.lateralTuning.pid.kiV else 0.05
-        base_lat_kd = self.CP.lateralTuning.pid.kdV[0] if hasattr(self.CP.lateralTuning.pid, 'kdV') and self.CP.lateralTuning.pid.kdV else 0.0
+        # For lateral: take the first kp, ki values as baseline (kdV may not exist in all car models)
+        base_lat_kp = self._get_base_gain(self.CP.lateralTuning.pid.kpV, 0, 0.5, "lateral kpV")
+        base_lat_ki = self._get_base_gain(self.CP.lateralTuning.pid.kiV, 0, 0.05, "lateral kiV")
+        # Check if kdV exists, otherwise use 0 as default
+        base_lat_kd = 0.0
+        if hasattr(self.CP.lateralTuning.pid, 'kdV') and self.CP.lateralTuning.pid.kdV:
+            base_lat_kd = self._get_base_gain(self.CP.lateralTuning.pid.kdV, 0, 0.0, "lateral kdV")
         base_lat_kf = getattr(self.CP.lateralTuning.pid, 'kf', 0.0)
 
         gains = {
@@ -132,6 +135,17 @@ class LightweightAdaptiveGainScheduler:
         }
 
         return gains
+
+    def _get_base_gain(self, gain_array, index, default_gain, gain_name):
+        """
+        Helper method to safely get a base gain value with proper error reporting.
+        Returns the default only if the array is missing or empty.
+        """
+        if hasattr(gain_array, '__getitem__') and len(gain_array) > index:
+            return gain_array[index]
+        else:
+            cloudlog.error(f"Missing or invalid {gain_name} parameter, using default value: {default_gain}")
+            return default_gain
 
 
 class LightweightComfortOptimizer:
