@@ -213,31 +213,3 @@ class NavRoadView(Widget):
       rl.draw_text_ex(gui_app.font, eta_text,
                      rl.Vector2(panel_x + panel_width - eta_size.x - 10, panel_y + 35),
                      self.ETA_FONT_SIZE, self.TEXT_LINE_SPACING_SECONDARY, eta_color)
-
-  def draw_route_path(self, model_points, rect, color=rl.Color(0, 255, 0, 100)):
-    """
-    Draw the route path on the model view.
-    Note: This method is currently not used in the main render loop but available for future enhancements.
-    Reason for disabling: Currently disabled pending performance optimization of route path rendering to avoid
-    potential frame drops during navigation. Will be re-enabled once rendering performance is optimized.
-    Safety: Only draws within screen bounds to prevent rendering outside visible area.
-    """
-    if not model_points or len(model_points.projected_points) < 2:
-      return
-
-    # Draw route path on top of the model
-    points = model_points.projected_points
-    for i in range(len(points) - 1):
-      p1 = points[i]
-      p2 = points[i + 1]
-
-      # Only draw if points are within screen bounds
-      if (rect.x <= p1[0] <= rect.x + rect.width and
-          rect.y <= p1[1] <= rect.y + rect.height and
-          rect.x <= p2[0] <= rect.x + rect.width and
-          rect.y <= p2[1] <= rect.y + rect.height):
-        rl.draw_line_v(
-          rl.Vector2(p1[0], p1[1]),
-          rl.Vector2(p2[0], p2[1]),
-          color
-        )
