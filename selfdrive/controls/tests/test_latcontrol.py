@@ -46,13 +46,13 @@ class TestLatControl:
 
     # Saturate for curvature limited and controller limited
     for _ in range(1000):
-      _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, True, 0.2)
+      _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, True, 0.2, adaptive_gains={})
     assert lac_log.saturated
 
     for _ in range(1000):
-      _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2)
+      _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2, adaptive_gains={})
     assert not lac_log.saturated
 
     for _ in range(1000):
-      _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2)
+      _, _, lac_log = controller.update(True, CS, VM, params, False, 1, pose, False, 0.2, adaptive_gains={})
     assert not lac_log.saturated

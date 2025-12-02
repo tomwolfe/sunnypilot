@@ -27,6 +27,20 @@ class LatControlPID(LatControl):
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
 
+    self.params = params
+
+    def _get_param_value(key, default, converter=float):
+      if self.params and self.params.get(key) is not None:
+        try:
+          return converter(self.params.get(key).decode('utf8'))
+        except (ValueError, AttributeError):
+          pass
+      return default
+
+    self.max_angle_rate = _get_param_value("LateralMaxAngleRate", 2.0)
+    self.high_speed_threshold = _get_param_value("LateralHighSpeedThreshold", 15.0)
+    self.high_speed_ki_limit = _get_param_value("LateralHighSpeedKiLimit", 0.15)
+
 
 
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: Dict):
