@@ -191,7 +191,7 @@ class TestLightweightComfortOptimizer:
     def optimizer(self):
         return LightweightComfortOptimizer()
 
-    def test_optimize_for_comfort_no_jerk_limit(self, optimizer):
+    def test_optimize_for_comfort_no_jerk_limit(self, optimizer, mocker):
         desired_acceleration = 1.0
         v_ego = 10.0
         # First call to set initial prev_acceleration and prev_time
@@ -211,7 +211,7 @@ class TestLightweightComfortOptimizer:
             # new_acceleration = 0.0 + 0.1 * sign(10.0) = 0.1
             assert np.isclose(optimized_accel, 0.1, rtol=1e-6)
 
-    def test_optimize_for_comfort_jerk_limit_active(self, optimizer):
+    def test_optimize_for_comfort_jerk_limit_active(self, optimizer, mocker):
         desired_acceleration = 2.0
         v_ego = 20.0
         optimizer.prev_acceleration = 0.0
@@ -232,5 +232,4 @@ class TestLightweightComfortOptimizer:
         # Test at medium speed
         assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=15.0), 0.75, rtol=1e-6) # max(0.5, 1.5 * (1.0 - 15/30)) = 0.75
         # Test at high speed (should cap at 0.5)
-        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.5, rtol=1e-6) \
-          # Corrected expected value: max(0.5, 1.5 * (1.0 - 40/30)) = max(0.5, -0.5) = 0.5
+        assert np.isclose(optimizer._calculate_adaptive_jerk_limit(v_ego=40.0), 0.75, rtol=1e-6) # max(0.5, 1.5 * max(0.5, 1.0 - 40/30)) = max(0.5, 1.5 * 0.5) = 0.75

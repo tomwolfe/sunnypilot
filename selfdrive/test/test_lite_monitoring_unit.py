@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import time
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor, LightweightSafetyChecker
 
