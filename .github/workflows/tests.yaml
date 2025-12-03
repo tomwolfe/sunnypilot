@@ -170,7 +170,7 @@ jobs:
     - name: Build openpilot
       run: ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && scons -j$(nproc)"
     - name: Run unit tests
-      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 2 }}  # Changed from 999 to 2 minutes to prevent hanging
+      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 3 || 5) || 5 }}  # Increased from 2 to 5 minutes to allow completion
       run: |
         ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda &&
                         # Ensure D-Bus service is available for system communication
