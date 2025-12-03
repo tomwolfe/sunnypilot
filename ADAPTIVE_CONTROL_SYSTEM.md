@@ -25,6 +25,25 @@ This system implements advanced adaptive control features for the openpilot cont
 - Dynamic GPU/memory governor configuration, including adaptive switching between 'ondemand' and 'performance' based on thermal state and critical driving situations.
 - Custom throttling parameters are now used to define the dynamic thermal bands.
 
+### Snapdragon 845 Thermal Thresholds
+
+The following hardware-specific throttling thresholds are optimized for the Snapdragon 845 in an automotive environment to provide optimal performance while preventing thermal issues. These are defined in the `get_hw_throttling_thresholds()` method within `system/hardware/tici/hardware.py`.
+
+*   **CPU Temperature Thresholds (in Celsius)**:
+    *   `cpu_max`: 75°C (Start thermal management)
+    *   `cpu_critical`: 85°C (Critical threshold)
+*   **GPU Temperature Thresholds**:
+    *   `gpu_max`: 72°C (GPU starts thermal management)
+    *   `gpu_critical`: 82°C (GPU critical threshold)
+*   **SoM (System-on-Module) Temperature Thresholds**:
+    *   `som_max`: 70°C (SoM max temperature)
+    *   `som_critical`: 80°C (SoM critical threshold)
+*   **Thermal Mitigation Strategies**:
+    *   `cpu_freq_step`: 100 MHz (Reduction step when throttling)
+    *   `gpu_freq_step`: 50 MHz (Reduction step when throttling)
+    *   `fan_speed_min`: 30% (Minimum fan speed percentage)
+    *   `fan_speed_max`: 100% (Maximum fan speed percentage)
+
 ## Safety Measures and Risk Mitigation
 
 ### Circuit Breaker System
