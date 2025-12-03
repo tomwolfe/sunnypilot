@@ -29,29 +29,32 @@ class TestTranslations:
       return f.read()
 
   def test_missing_translation_files(self):
-    assert os.path.exists(os.path.join(str(TRANSLATIONS_DIR), f"{self.file}.ts")), \
-                    f"{self.name} has no XML translation file, run selfdrive/ui/update_translations.py"
+    assert os.path.exists(os.path.join(str(TRANSLATIONS_DIR), f"{self.file}.ts")), (
+      f"{self.name} has no XML translation file, run selfdrive/ui/update_translations.py"
+    )
 
   @pytest.mark.skip("Only test unfinished translations before going to release")
   def test_unfinished_translations(self):
     cur_translations = self._read_translation_file(TRANSLATIONS_DIR, self.file)
-    assert UNFINISHED_TRANSLATION_TAG not in cur_translations, \
-                    f"{self.file} ({self.name}) translation file has unfinished translations. Finish translations or mark them as completed in Qt Linguist"
+    assert UNFINISHED_TRANSLATION_TAG not in cur_translations, (
+      f"{self.file} ({self.name}) translation file has unfinished translations. Finish translations or mark them as completed in Qt Linguist"
+    )
 
   def test_vanished_translations(self):
     cur_translations = self._read_translation_file(TRANSLATIONS_DIR, self.file)
-    assert "<translation type=\"vanished\">" not in cur_translations, \
-                    f"{self.file} ({self.name}) translation file has obsolete translations. Run selfdrive/ui/update_translations.py --vanish to remove them"
+    assert "<translation type=\"vanished\">" not in cur_translations, (
+      f"{self.file} ({self.name}) translation file has obsolete translations. Run selfdrive/ui/update_translations.py --vanish to remove them"
+    )
 
   def test_finished_translations(self):
     """
-      Tests ran on each translation marked "finished"
-      Plural:
-      - that any numerus (plural) translations have all plural forms non-empty
-      - that the correct format specifier is used (%n)
-      Non-plural:
-      - that translation is not empty
-      - that translation format arguments are consistent
+    Tests ran on each translation marked "finished"
+    Plural:
+    - that any numerus (plural) translations have all plural forms non-empty
+    - that the correct format specifier is used (%n)
+    Non-plural:
+    - that translation is not empty
+    - that translation format arguments are consistent
     """
     tr_xml = ET.parse(os.path.join(TRANSLATIONS_DIR, f"{self.file}.ts"))
 
@@ -77,13 +80,11 @@ class TestTranslations:
 
           source_args = FORMAT_ARG.findall(source_text)
           translation_args = FORMAT_ARG.findall(translation.text)
-          assert sorted(source_args) == sorted(translation_args), \
-                           f"Ensure format arguments are consistent: `{source_text}` vs. `{translation.text}`"
+          assert sorted(source_args) == sorted(translation_args), f"Ensure format arguments are consistent: `{source_text}` vs. `{translation.text}`"
 
   def test_no_locations(self):
     for line in self._read_translation_file(TRANSLATIONS_DIR, self.file).splitlines():
-      assert not line.strip().startswith(LOCATION_TAG), \
-                       f"Line contains location tag: {line.strip()}, remove all line numbers."
+      assert not line.strip().startswith(LOCATION_TAG), f"Line contains location tag: {line.strip()}, remove all line numbers."
 
   def test_entities_error(self):
     cur_translations = self._read_translation_file(TRANSLATIONS_DIR, self.file)
@@ -97,9 +98,7 @@ class TestTranslations:
     assert match, f"{self.name} - could not parse language"
 
     try:
-      response = requests.get(
-        f"https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/{match.group(1)}"
-      )
+      response = requests.get(f"https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/{match.group(1)}")
       response.raise_for_status()
     except requests.exceptions.HTTPError as e:
       if e.response is not None and e.response.status_code == 429:

@@ -136,7 +136,6 @@ class Route:
 
     segments = []
     for segment, files in segment_files.items():
-
       try:
         log_path = next(path for path, filename in files if filename in FileName.RLOG)
       except StopIteration:
@@ -213,22 +212,27 @@ class RouteName:
     self._canonical_name = f"{self._dongle_id}|{self._time_str}"
 
   @property
-  def canonical_name(self) -> str: return self._canonical_name
+  def canonical_name(self) -> str:
+    return self._canonical_name
 
   @property
-  def dongle_id(self) -> str: return self._dongle_id
+  def dongle_id(self) -> str:
+    return self._dongle_id
 
   @property
-  def log_id(self) -> str: return self._time_str
+  def log_id(self) -> str:
+    return self._time_str
 
   @property
-  def time_str(self) -> str: return self._time_str
+  def time_str(self) -> str:
+    return self._time_str
 
   @property
   def azure_prefix(self):
     return f'{self.dongle_id}/{self.log_id}'
 
-  def __str__(self) -> str: return self._canonical_name
+  def __str__(self) -> str:
+    return self._canonical_name
 
 
 class SegmentName:
@@ -237,7 +241,7 @@ class SegmentName:
   def __init__(self, name_str: str, allow_route_name=False):
     data_dir_path_separator_index = name_str.rsplit("|", 1)[0].rfind("/")
     use_data_dir = (data_dir_path_separator_index != -1) and ("|" in name_str)
-    self._name_str = name_str[data_dir_path_separator_index + 1:] if use_data_dir else name_str
+    self._name_str = name_str[data_dir_path_separator_index + 1 :] if use_data_dir else name_str
     self._data_dir = name_str[:data_dir_path_separator_index] if use_data_dir else None
 
     seg_num_delim = "--" if self._name_str.count("--") == 2 else "/"
@@ -249,35 +253,44 @@ class SegmentName:
     self._canonical_name = f"{self._route_name._dongle_id}|{self._route_name._time_str}--{self._num}"
 
   @property
-  def canonical_name(self) -> str: return self._canonical_name
+  def canonical_name(self) -> str:
+    return self._canonical_name
 
   # TODO should only use one name
   @property
-  def data_name(self) -> str: return f"{self._route_name.canonical_name}/{self._num}"
+  def data_name(self) -> str:
+    return f"{self._route_name.canonical_name}/{self._num}"
 
   @property
   def azure_prefix(self):
     return f'{self.dongle_id}/{self.log_id}/{self._num}'
 
   @property
-  def dongle_id(self) -> str: return self._route_name.dongle_id
+  def dongle_id(self) -> str:
+    return self._route_name.dongle_id
 
   @property
-  def time_str(self) -> str: return self._route_name.time_str
+  def time_str(self) -> str:
+    return self._route_name.time_str
 
   @property
-  def log_id(self) -> str: return self._route_name.time_str
+  def log_id(self) -> str:
+    return self._route_name.time_str
 
   @property
-  def segment_num(self) -> int: return self._num
+  def segment_num(self) -> int:
+    return self._num
 
   @property
-  def route_name(self) -> RouteName: return self._route_name
+  def route_name(self) -> RouteName:
+    return self._route_name
 
   @property
-  def data_dir(self) -> str | None: return self._data_dir
+  def data_dir(self) -> str | None:
+    return self._data_dir
 
-  def __str__(self) -> str: return self._canonical_name
+  def __str__(self) -> str:
+    return self._canonical_name
 
   @staticmethod
   def from_file_name(file_name):

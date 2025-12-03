@@ -7,15 +7,13 @@ from select import select
 
 class KBHit:
   def __init__(self) -> None:
-    ''' Creates a KBHit object that you can call to do various keyboard things.
-    '''
+    '''Creates a KBHit object that you can call to do various keyboard things.'''
 
     self.stdin_fd = sys.stdin.fileno()
     self.set_kbhit_terminal()
 
   def set_kbhit_terminal(self) -> None:
-    ''' Save old terminal settings for closure, remove ICANON & ECHO flags.
-    '''
+    '''Save old terminal settings for closure, remove ICANON & ECHO flags.'''
 
     # Save the terminal settings
     self.old_term = termios.tcgetattr(self.stdin_fd)
@@ -29,21 +27,20 @@ class KBHit:
     atexit.register(self.set_normal_term)
 
   def set_normal_term(self) -> None:
-    ''' Resets to normal terminal. On Windows this is a no-op.
-    '''
+    '''Resets to normal terminal. On Windows this is a no-op.'''
 
     termios.tcsetattr(self.stdin_fd, termios.TCSAFLUSH, self.old_term)
 
   @staticmethod
   def getch() -> str:
-    ''' Returns a keyboard character after kbhit() has been called.
-      Should not be called in the same program as getarrow().
+    '''Returns a keyboard character after kbhit() has been called.
+    Should not be called in the same program as getarrow().
     '''
     return sys.stdin.read(1)
 
   @staticmethod
   def getarrow() -> int:
-    ''' Returns an arrow-key code after kbhit() has been called. Codes are
+    '''Returns an arrow-key code after kbhit() has been called. Codes are
     0 : up
     1 : right
     2 : down
@@ -58,20 +55,17 @@ class KBHit:
 
   @staticmethod
   def kbhit():
-    ''' Returns True if keyboard character was hit, False otherwise.
-    '''
+    '''Returns True if keyboard character was hit, False otherwise.'''
     return select([sys.stdin], [], [], 0)[0] != []
 
 
 # Test
 if __name__ == "__main__":
-
   kb = KBHit()
 
   print('Hit any key, or ESC to exit')
 
   while True:
-
     if kb.kbhit():
       c = kb.getch()
       if c == '\x1b':  # ESC

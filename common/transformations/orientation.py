@@ -1,18 +1,21 @@
 import numpy as np
 from collections.abc import Callable
 
-from openpilot.common.transformations.transformations import (ecef_euler_from_ned_single,
-                                                    euler2quat_single,
-                                                    euler2rot_single,
-                                                    ned_euler_from_ecef_single,
-                                                    quat2euler_single,
-                                                    quat2rot_single,
-                                                    rot2euler_single,
-                                                    rot2quat_single)
+from openpilot.common.transformations.transformations import (
+  ecef_euler_from_ned_single,
+  euler2quat_single,
+  euler2rot_single,
+  ned_euler_from_ecef_single,
+  quat2euler_single,
+  quat2rot_single,
+  rot2euler_single,
+  rot2quat_single,
+)
 
 
 def numpy_wrap(function, input_shape, output_shape) -> Callable[..., np.ndarray]:
   """Wrap a function to take either an input or list of inputs and return the correct shape"""
+
   def f(*inps):
     *args, inp = inps
     inp = np.array(inp)
@@ -25,11 +28,12 @@ def numpy_wrap(function, input_shape, output_shape) -> Callable[..., np.ndarray]
 
     # Add empty dimension if inputs is not a list
     if len(shape) == len(input_shape):
-      inp.shape = (1, ) + inp.shape
+      inp.shape = (1,) + inp.shape
 
     result = np.asarray([function(*args, i) for i in inp])
     result.shape = out_shape
     return result
+
   return f
 
 

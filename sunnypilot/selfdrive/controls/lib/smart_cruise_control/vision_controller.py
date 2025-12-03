@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import numpy as np
 
 import cereal.messaging as messaging
@@ -27,11 +28,11 @@ _TURNING_LAT_ACC_TH = 1.6  # Lat Acc threshold to trigger turning state.
 _LEAVING_LAT_ACC_TH = 1.3  # Lat Acc threshold to trigger leaving turn state.
 _FINISH_LAT_ACC_TH = 1.1  # Lat Acc threshold to trigger the end of the turn cycle.
 
-_A_LAT_REG_MAX = 2.  # Maximum lateral acceleration
+_A_LAT_REG_MAX = 2.0  # Maximum lateral acceleration
 
 TRAFFIC_LIGHT_DISTANCE_THRESHOLD = 40.0  # Distance threshold for traffic light/stop sign detection in meters
 
-_NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on a_target when not overshooting.
+_NO_OVERSHOOT_TIME_HORIZON = 4.0  # s. Time to use for velocity desired based on a_target when not overshooting.
 
 # Lookup table for the minimum smooth deceleration during the ENTERING state
 # depending on the actual maximum absolute lateral acceleration predicted on the turn ahead.
@@ -39,13 +40,13 @@ _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on 
 # These values (_ENTERING_SMOOTH_DECEL_V and _ENTERING_SMOOTH_DECEL_BP) were empirically
 # tuned through extensive testing and simulation to prioritize driver comfort and smooth
 # entry into curves, particularly for medium-radius turns where previous logic could be abrupt.
-_ENTERING_SMOOTH_DECEL_V = [-0.2, -0.6, -1.]  # min decel value allowed on ENTERING state
-_ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.]  # absolute value of lat acc ahead
+_ENTERING_SMOOTH_DECEL_V = [-0.2, -0.6, -1.0]  # min decel value allowed on ENTERING state
+_ENTERING_SMOOTH_DECEL_BP = [1.3, 2.0, 3.0]  # absolute value of lat acc ahead
 
 # Lookup table for the acceleration for the TURNING state
 # depending on the current lateral acceleration of the vehicle.
-_TURNING_ACC_V = [0.5, 0., -0.4]  # acc value
-_TURNING_ACC_BP = [1.5, 2.3, 3.]  # absolute value of current lat acc
+_TURNING_ACC_V = [0.5, 0.0, -0.4]  # acc value
+_TURNING_ACC_BP = [1.5, 2.3, 3.0]  # absolute value of current lat acc
 
 _LEAVING_ACC = 0.5  # Base acceleration to regain speed while leaving a turn.
 # This value was empirically determined to balance smooth acceleration and timely speed recovery
@@ -59,11 +60,11 @@ _SPEED_ADAPTATION_FACTOR = 1.0  # Adjusts the sensitivity of the system based on
 
 class SmartCruiseControlVision:
   v_target: float = 0
-  a_target: float = 0.
-  v_ego: float = 0.
-  a_ego: float = 0.
+  a_target: float = 0.0
+  v_ego: float = 0.0
+  a_ego: float = 0.0
   output_v_target: float = V_CRUISE_UNSET
-  output_a_target: float = 0.
+  output_a_target: float = 0.0
 
   def __init__(self):
     self.params = Params()
@@ -74,11 +75,11 @@ class SmartCruiseControlVision:
     self.is_active = False
     self._enabled = self.params.get_bool("SmartCruiseControlVision")
     self._enabled_manually_set = False  # Track if enabled was manually set (e.g., in tests)
-    self.v_cruise_setpoint = 0.
+    self.v_cruise_setpoint = 0.0
 
     self.state = VisionState.disabled
-    self.current_lat_acc = 0.
-    self.max_pred_lat_acc = 0.
+    self.current_lat_acc = 0.0
+    self.max_pred_lat_acc = 0.0
 
   @property
   def enabled(self):
@@ -111,7 +112,7 @@ class SmartCruiseControlVision:
       rate_plan = np.array(np.abs(sm['modelV2'].orientationRate.z))
       vel_plan = np.array(sm['modelV2'].velocity.x)
 
-      self.current_lat_acc = self.v_ego ** 2 * abs(sm['controlsState'].curvature)
+      self.current_lat_acc = self.v_ego**2 * abs(sm['controlsState'].curvature)
 
       # get the maximum lat accel from the model
       predicted_lat_accels = rate_plan * vel_plan
@@ -209,7 +210,7 @@ class SmartCruiseControlVision:
 
     # In enabled or entering state, calculate deceleration for a curve ahead
     if self.state in (VisionState.enabled, VisionState.entering):
-      if self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH - 1e-6: # Use the threshold for entering state
+      if self.max_pred_lat_acc >= _ENTERING_PRED_LAT_ACC_TH - 1e-6:  # Use the threshold for entering state
         base_decel = np.interp(self.max_pred_lat_acc, _ENTERING_SMOOTH_DECEL_BP, _ENTERING_SMOOTH_DECEL_V)
         speed_factor = max(1.0, self.v_ego / 20.0)
         a_target = base_decel * speed_factor
@@ -226,16 +227,14 @@ class SmartCruiseControlVision:
       # (from _LEAVING_ACC down to 0.2 m/s²) were empirically tuned to provide a gradual, human-like
       # acceleration profile. Further evaluation may be needed to ensure optimality across all speeds.
       # Apply speed-dependent scaling for better performance at different speeds
-      base_leaving_acc = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH],
-                                   [_LEAVING_ACC, 0.2])
+      base_leaving_acc = np.interp(self.current_lat_acc, [_FINISH_LAT_ACC_TH, _LEAVING_LAT_ACC_TH], [_LEAVING_ACC, 0.2])
       # Adjust leaving acceleration based on current speed to improve comfort
       speed_factor = min(1.2, self.v_ego / 15.0) if self.v_ego > 0 else 1.0  # Cap the adjustment factor
       a_target = base_leaving_acc * speed_factor
 
     return a_target
 
-  def update(self, sm: messaging.SubMaster, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float,
-             v_cruise_setpoint: float) -> None:
+  def update(self, sm: messaging.SubMaster, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_setpoint: float) -> None:
     self.long_enabled = long_enabled
     self.long_override = long_override
     self.v_ego = v_ego

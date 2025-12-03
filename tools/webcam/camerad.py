@@ -16,13 +16,12 @@ DRIVER_CAM = os.getenv("DRIVER_CAM")
 
 CameraType = namedtuple("CameraType", ["msg_name", "stream_type", "cam_id"])
 
-CAMERAS = [
-  CameraType("roadCameraState", VisionStreamType.VISION_STREAM_ROAD, ROAD_CAM)
-]
+CAMERAS = [CameraType("roadCameraState", VisionStreamType.VISION_STREAM_ROAD, ROAD_CAM)]
 if WIDE_CAM:
   CAMERAS.append(CameraType("wideRoadCameraState", VisionStreamType.VISION_STREAM_WIDE_ROAD, WIDE_CAM))
 if DRIVER_CAM:
   CAMERAS.append(CameraType("driverCameraState", VisionStreamType.VISION_STREAM_DRIVER, DRIVER_CAM))
+
 
 class Camerad:
   def __init__(self):
@@ -42,12 +41,7 @@ class Camerad:
     eof = int(frame_id * 0.05 * 1e9)
     self.vipc_server.send(yuv_type, yuv, frame_id, eof, eof)
     dat = messaging.new_message(pub_type, valid=True)
-    msg = {
-      "frameId": frame_id,
-      "transform": [1.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0,
-                    0.0, 0.0, 1.0]
-    }
+    msg = {"frameId": frame_id, "transform": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]}
     setattr(dat, pub_type, msg)
     self.pm.send(pub_type, dat)
 

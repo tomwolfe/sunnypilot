@@ -6,9 +6,8 @@ from datetime import datetime, timedelta, UTC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.version import get_version
 
-       # name : jwt signature algorithm
-KEYS = {"id_rsa" : "RS256",
-        "id_ecdsa" : "ES256"}
+# name : jwt signature algorithm
+KEYS = {"id_rsa": "RS256", "id_ecdsa": "ES256"}
 
 
 class BaseApi:
@@ -22,6 +21,7 @@ class BaseApi:
     if self.private_key is None:
       # Provide a dummy private key for CI environment
       import os
+
       if os.environ.get('CI', '0') == '1':
         self.private_key = "dummy_private_key_123"
         self.jwt_algorithm = "HS256"  # Use HS256 with dummy key for CI
@@ -37,13 +37,7 @@ class BaseApi:
 
   def _get_token(self, payload_extra=None, expiry_hours=1, **extra_payload):
     now = datetime.now(UTC).replace(tzinfo=None)
-    payload = {
-      'identity': self.dongle_id,
-      'nbf': now,
-      'iat': now,
-      'exp': now + timedelta(hours=expiry_hours),
-      **extra_payload
-    }
+    payload = {'identity': self.dongle_id, 'nbf': now, 'iat': now, 'exp': now + timedelta(hours=expiry_hours), **extra_payload}
     if payload_extra is not None:
       payload.update(payload_extra)
     token = jwt.encode(payload, self.private_key, algorithm=self.jwt_algorithm)

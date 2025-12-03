@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import math
 import numpy as np
 
@@ -120,15 +121,16 @@ class LatControlTorqueExtBase:
     self.lookahead_lateral_jerk = 0.0
 
     actual_curvature_rate = -VM.calc_curvature(math.radians(CS.steeringRateDeg), CS.vEgo, 0.0)
-    self.actual_lateral_jerk = actual_curvature_rate * CS.vEgo ** 2
+    self.actual_lateral_jerk = actual_curvature_rate * CS.vEgo**2
 
     if self.model_valid:
       # prepare "look-ahead" desired lateral jerk
       lookahead = np.interp(CS.vEgo, self.friction_look_ahead_bp, self.friction_look_ahead_v)
       friction_upper_idx = next((i for i, val in enumerate(ModelConstants.T_IDXS) if val > lookahead), 16)
       predicted_lateral_jerk = get_predicted_lateral_jerk(self.model_v2.acceleration.y, self.t_diffs)
-      desired_lateral_jerk = (np.interp(self.desired_lat_jerk_time, ModelConstants.T_IDXS,
-                              self.model_v2.acceleration.y) - desired_lateral_accel) / self.desired_lat_jerk_time
+      desired_lateral_jerk = (
+        np.interp(self.desired_lat_jerk_time, ModelConstants.T_IDXS, self.model_v2.acceleration.y) - desired_lateral_accel
+      ) / self.desired_lat_jerk_time
       self.lookahead_lateral_jerk = get_lookahead_value(predicted_lateral_jerk[LAT_PLAN_MIN_IDX:friction_upper_idx], desired_lateral_jerk)
       if self.lookahead_lateral_jerk == 0.0:
         self.actual_lateral_jerk = 0.0

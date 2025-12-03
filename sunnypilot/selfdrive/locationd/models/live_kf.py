@@ -15,7 +15,7 @@ EARTH_GM = 3.986005e14  # m^3/s^2 (gravitational constant * mass of earth)
 
 
 def numpy2eigenstring(arr):
-  assert(len(arr.shape) == 1)
+  assert len(arr.shape) == 1
   arr_str = np.array2string(arr, precision=20, separator=',')[1:-1].replace(' ', '').replace('\n', '')
   return f"(Eigen::VectorXd({len(arr)}) << {arr_str}).finished()"
 
@@ -42,22 +42,37 @@ class States:
 class LiveKalman:
   name = 'live'
 
-  initial_x = np.array([3.88e6, -3.37e6, 3.76e6,
-                        0.42254641, -0.31238054, -0.83602975, -0.15788347,  # NED [0,0,0] -> ECEF Quat
-                        0, 0, 0,
-                        0, 0, 0,
-                        0, 0, 0,
-                        0, 0, 0,
-                        0, 0, 0])
+  initial_x = np.array(
+    [
+      3.88e6,
+      -3.37e6,
+      3.76e6,
+      0.42254641,
+      -0.31238054,
+      -0.83602975,
+      -0.15788347,  # NED [0,0,0] -> ECEF Quat
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]
+  )
 
   # state covariance
-  initial_P_diag = np.array([10**2, 10**2, 10**2,
-                             0.01**2, 0.01**2, 0.01**2,
-                             10**2, 10**2, 10**2,
-                             1**2, 1**2, 1**2,
-                             1**2, 1**2, 1**2,
-                             100**2, 100**2, 100**2,
-                             0.01**2, 0.01**2, 0.01**2])
+  initial_P_diag = np.array(
+    [10**2, 10**2, 10**2, 0.01**2, 0.01**2, 0.01**2, 10**2, 10**2, 10**2, 1**2, 1**2, 1**2, 1**2, 1**2, 1**2, 100**2, 100**2, 100**2, 0.01**2, 0.01**2, 0.01**2]
+  )
 
   # state covariance when resetting midway in a segment
   reset_orientation_diag = np.array([1**2, 1**2, 1**2])
@@ -67,22 +82,42 @@ class LiveKalman:
   fake_gps_vel_cov_diag = np.array([10**2, 10**2, 10**2])
 
   # process noise
-  Q_diag = np.array([0.03**2, 0.03**2, 0.03**2,
-                     0.001**2, 0.001**2, 0.001**2,
-                     0.01**2, 0.01**2, 0.01**2,
-                     0.1**2, 0.1**2, 0.1**2,
-                     (0.005 / 100)**2, (0.005 / 100)**2, (0.005 / 100)**2,
-                     3**2, 3**2, 3**2,
-                     0.005**2, 0.005**2, 0.005**2])
+  Q_diag = np.array(
+    [
+      0.03**2,
+      0.03**2,
+      0.03**2,
+      0.001**2,
+      0.001**2,
+      0.001**2,
+      0.01**2,
+      0.01**2,
+      0.01**2,
+      0.1**2,
+      0.1**2,
+      0.1**2,
+      (0.005 / 100) ** 2,
+      (0.005 / 100) ** 2,
+      (0.005 / 100) ** 2,
+      3**2,
+      3**2,
+      3**2,
+      0.005**2,
+      0.005**2,
+      0.005**2,
+    ]
+  )
 
-  obs_noise_diag = {ObservationKind.PHONE_GYRO: np.array([0.025**2, 0.025**2, 0.025**2]),
-                    ObservationKind.PHONE_ACCEL: np.array([.5**2, .5**2, .5**2]),
-                    ObservationKind.CAMERA_ODO_ROTATION: np.array([0.05**2, 0.05**2, 0.05**2]),
-                    ObservationKind.NO_ROT: np.array([0.005**2, 0.005**2, 0.005**2]),
-                    ObservationKind.NO_ACCEL: np.array([0.05**2, 0.05**2, 0.05**2]),
-                    ObservationKind.ECEF_POS: np.array([5**2, 5**2, 5**2]),
-                    ObservationKind.ECEF_VEL: np.array([.5**2, .5**2, .5**2]),
-                    ObservationKind.ECEF_ORIENTATION_FROM_GPS: np.array([.2**2, .2**2, .2**2, .2**2])}
+  obs_noise_diag = {
+    ObservationKind.PHONE_GYRO: np.array([0.025**2, 0.025**2, 0.025**2]),
+    ObservationKind.PHONE_ACCEL: np.array([0.5**2, 0.5**2, 0.5**2]),
+    ObservationKind.CAMERA_ODO_ROTATION: np.array([0.05**2, 0.05**2, 0.05**2]),
+    ObservationKind.NO_ROT: np.array([0.005**2, 0.005**2, 0.005**2]),
+    ObservationKind.NO_ACCEL: np.array([0.05**2, 0.05**2, 0.05**2]),
+    ObservationKind.ECEF_POS: np.array([5**2, 5**2, 5**2]),
+    ObservationKind.ECEF_VEL: np.array([0.5**2, 0.5**2, 0.5**2]),
+    ObservationKind.ECEF_ORIENTATION_FROM_GPS: np.array([0.2**2, 0.2**2, 0.2**2, 0.2**2]),
+  }
 
   @staticmethod
   def generate_code(generated_dir):
@@ -111,10 +146,7 @@ class LiveKalman:
     # A New Quaternion-Based Kalman Filter for
     # Real-Time Attitude Estimation Using the Two-Step
     # Geometrically-Intuitive Correction Algorithm
-    A = 0.5 * sp.Matrix([[0, -vroll, -vpitch, -vyaw],
-                         [vroll, 0, vyaw, -vpitch],
-                         [vpitch, -vyaw, 0, vroll],
-                         [vyaw, vpitch, -vroll, 0]])
+    A = 0.5 * sp.Matrix([[0, -vroll, -vpitch, -vyaw], [vroll, 0, vyaw, -vpitch], [vpitch, -vyaw, 0, vroll], [vyaw, vpitch, -vroll, 0]])
     q_dot = A * q
 
     # Time derivative of the state as a function of state
@@ -147,7 +179,7 @@ class LiveKalman:
     H_mod_sym = sp.Matrix(np.zeros((dim_state, dim_state_err)))
     H_mod_sym[States.ECEF_POS, States.ECEF_POS_ERR] = np.eye(States.ECEF_POS.stop - States.ECEF_POS.start)
     H_mod_sym[States.ECEF_ORIENTATION, States.ECEF_ORIENTATION_ERR] = 0.5 * quat_matrix_r(state[3:7])[:, 1:]
-    H_mod_sym[States.ECEF_ORIENTATION.stop:, States.ECEF_ORIENTATION_ERR.stop:] = np.eye(dim_state - States.ECEF_ORIENTATION.stop)
+    H_mod_sym[States.ECEF_ORIENTATION.stop :, States.ECEF_ORIENTATION_ERR.stop :] = np.eye(dim_state - States.ECEF_ORIENTATION.stop)
 
     # these error functions are defined so that say there
     # is a nominal x and true x:
@@ -162,28 +194,25 @@ class LiveKalman:
     delta_quat[1:, :] = sp.Matrix(0.5 * delta_x[States.ECEF_ORIENTATION_ERR, :])
     err_function_sym[States.ECEF_POS, :] = sp.Matrix(nom_x[States.ECEF_POS, :] + delta_x[States.ECEF_POS_ERR, :])
     err_function_sym[States.ECEF_ORIENTATION, 0] = quat_matrix_r(nom_x[States.ECEF_ORIENTATION, 0]) * delta_quat
-    err_function_sym[States.ECEF_ORIENTATION.stop:, :] = sp.Matrix(nom_x[States.ECEF_ORIENTATION.stop:, :] + delta_x[States.ECEF_ORIENTATION_ERR.stop:, :])
+    err_function_sym[States.ECEF_ORIENTATION.stop :, :] = sp.Matrix(nom_x[States.ECEF_ORIENTATION.stop :, :] + delta_x[States.ECEF_ORIENTATION_ERR.stop :, :])
 
     inv_err_function_sym = sp.Matrix(np.zeros((dim_state_err, 1)))
     inv_err_function_sym[States.ECEF_POS_ERR, 0] = sp.Matrix(-nom_x[States.ECEF_POS, 0] + true_x[States.ECEF_POS, 0])
     delta_quat = quat_matrix_r(nom_x[States.ECEF_ORIENTATION, 0]).T * true_x[States.ECEF_ORIENTATION, 0]
     inv_err_function_sym[States.ECEF_ORIENTATION_ERR, 0] = sp.Matrix(2 * delta_quat[1:])
-    inv_err_function_sym[States.ECEF_ORIENTATION_ERR.stop:, 0] = sp.Matrix(-nom_x[States.ECEF_ORIENTATION.stop:, 0] + true_x[States.ECEF_ORIENTATION.stop:, 0])
+    inv_err_function_sym[States.ECEF_ORIENTATION_ERR.stop :, 0] = sp.Matrix(
+      -nom_x[States.ECEF_ORIENTATION.stop :, 0] + true_x[States.ECEF_ORIENTATION.stop :, 0]
+    )
 
-    eskf_params = [[err_function_sym, nom_x, delta_x],
-                   [inv_err_function_sym, nom_x, true_x],
-                   H_mod_sym, f_err_sym, state_err_sym]
+    eskf_params = [[err_function_sym, nom_x, delta_x], [inv_err_function_sym, nom_x, true_x], H_mod_sym, f_err_sym, state_err_sym]
     #
     # Observation functions
     #
-    h_gyro_sym = sp.Matrix([
-      vroll + roll_bias,
-      vpitch + pitch_bias,
-      vyaw + yaw_bias])
+    h_gyro_sym = sp.Matrix([vroll + roll_bias, vpitch + pitch_bias, vyaw + yaw_bias])
 
     pos = sp.Matrix([x, y, z])
-    gravity = quat_rot.T * ((EARTH_GM / ((x**2 + y**2 + z**2)**(3.0 / 2.0))) * pos)
-    h_acc_sym = (gravity + acceleration + acc_bias)
+    gravity = quat_rot.T * ((EARTH_GM / ((x**2 + y**2 + z**2) ** (3.0 / 2.0))) * pos)
+    h_acc_sym = gravity + acceleration + acc_bias
     h_acc_stationary_sym = acceleration
     h_phone_rot_sym = sp.Matrix([vroll, vpitch, vyaw])
     h_pos_sym = sp.Matrix([x, y, z])
@@ -191,15 +220,17 @@ class LiveKalman:
     h_orientation_sym = q
     h_relative_motion = sp.Matrix(quat_rot.T * v)
 
-    obs_eqs = [[h_gyro_sym, ObservationKind.PHONE_GYRO, None],
-               [h_phone_rot_sym, ObservationKind.NO_ROT, None],
-               [h_acc_sym, ObservationKind.PHONE_ACCEL, None],
-               [h_pos_sym, ObservationKind.ECEF_POS, None],
-               [h_vel_sym, ObservationKind.ECEF_VEL, None],
-               [h_orientation_sym, ObservationKind.ECEF_ORIENTATION_FROM_GPS, None],
-               [h_relative_motion, ObservationKind.CAMERA_ODO_TRANSLATION, None],
-               [h_phone_rot_sym, ObservationKind.CAMERA_ODO_ROTATION, None],
-               [h_acc_stationary_sym, ObservationKind.NO_ACCEL, None]]
+    obs_eqs = [
+      [h_gyro_sym, ObservationKind.PHONE_GYRO, None],
+      [h_phone_rot_sym, ObservationKind.NO_ROT, None],
+      [h_acc_sym, ObservationKind.PHONE_ACCEL, None],
+      [h_pos_sym, ObservationKind.ECEF_POS, None],
+      [h_vel_sym, ObservationKind.ECEF_VEL, None],
+      [h_orientation_sym, ObservationKind.ECEF_ORIENTATION_FROM_GPS, None],
+      [h_relative_motion, ObservationKind.CAMERA_ODO_TRANSLATION, None],
+      [h_phone_rot_sym, ObservationKind.CAMERA_ODO_ROTATION, None],
+      [h_acc_stationary_sym, ObservationKind.NO_ACCEL, None],
+    ]
 
     # this returns a sympy routine for the jacobian of the observation function of the local vel
     in_vec = sp.MatrixSymbol('in_vec', 6, 1)  # roll, pitch, yaw, vx, vy, vz
@@ -213,7 +244,7 @@ class LiveKalman:
     live_kf_header += "#include <unordered_map>\n"
     live_kf_header += "#include <eigen3/Eigen/Dense>\n\n"
     for state, slc in inspect.getmembers(States, lambda x: isinstance(x, slice)):
-      assert(slc.step is None)  # unsupported
+      assert slc.step is None  # unsupported
       live_kf_header += f'#define STATE_{state}_START {slc.start}\n'
       live_kf_header += f'#define STATE_{state}_END {slc.stop}\n'
       live_kf_header += f'#define STATE_{state}_LEN {slc.stop - slc.start}\n'

@@ -32,9 +32,9 @@ def can_printer(bus, max_msg, addr, ascii_decode):
       print(dd)
       lp = time.monotonic()
 
+
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="simple CAN data viewer",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="simple CAN data viewer", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   parser.add_argument("--bus", type=int, help="CAN bus to print out", default=0)
   parser.add_argument("--max_msg", type=int, help="max addr")

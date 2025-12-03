@@ -10,17 +10,23 @@ from collections import defaultdict
 import cereal.messaging as messaging
 from openpilot.tools.lib.logreader import LogReader
 
+
 def sigint_handler(signal, frame):
   exit(0)
+
+
 signal.signal(signal.SIGINT, sigint_handler)
 
+
 class SteeringAccuracyTool:
-  all_groups = {"germany":  (45, "45 - up m/s  //  162 - up km/h  //  101 - up mph"),
-                "veryfast": (35, "35 - 45 m/s  //  126 - 162 km/h  //  78 - 101 mph"),
-                "fast":     (25, "25 - 35 m/s  //  90 - 126 km/h  //  56 - 78 mph"),
-                "medium":   (15, "15 - 25 m/s  //  54 - 90 km/h  //  34 - 56 mph"),
-                "slow":     (5,  " 5 - 15 m/s  //  18 - 54 km/h  //  11 - 34 mph"),
-                "crawl":    (0,  " 0 - 5 m/s  //  0 - 18 km/h  //  0 - 11 mph")}
+  all_groups = {
+    "germany": (45, "45 - up m/s  //  162 - up km/h  //  101 - up mph"),
+    "veryfast": (35, "35 - 45 m/s  //  126 - 162 km/h  //  78 - 101 mph"),
+    "fast": (25, "25 - 35 m/s  //  90 - 126 km/h  //  56 - 78 mph"),
+    "medium": (15, "15 - 25 m/s  //  54 - 90 km/h  //  34 - 56 mph"),
+    "slow": (5, " 5 - 15 m/s  //  18 - 54 km/h  //  11 - 34 mph"),
+    "crawl": (0, " 0 - 5 m/s  //  0 - 18 km/h  //  0 - 11 mph"),
+  }
 
   def __init__(self, args):
     self.msg_cnt = 0
@@ -84,10 +90,10 @@ class SteeringAccuracyTool:
             if actual_angle == desired_angle:
               self.speed_group_stats[group][angle_abs]["="] += 1
             else:
-              if desired_angle == 0.:
+              if desired_angle == 0.0:
                 overshoot = True
               else:
-                overshoot = desired_angle < actual_angle if desired_angle > 0. else desired_angle > actual_angle
+                overshoot = desired_angle < actual_angle if desired_angle > 0.0 else desired_angle > actual_angle
               self.speed_group_stats[group][angle_abs]["+" if overshoot else "-"] += 1
             break
     else:
@@ -102,18 +108,19 @@ class SteeringAccuracyTool:
       for group in self.display_groups:
         if len(self.speed_group_stats[group]) > 0:
           print(f"speed group: {group:10s} {self.all_groups[group][1]:>96s}")
-          print(f"  {'-'*118}")
+          print(f"  {'-' * 118}")
           for k in sorted(self.speed_group_stats[group].keys()):
             v = self.speed_group_stats[group][k]
-            print(f'  {k:#2}° | actuator:{int(v["steer"] / v["cnt"] * 100):#3}% ' +
-                  f'| error: {round(v["err"] / v["cnt"], 2):2.2f}° | -:{int(v["-"] / v["cnt"] * 100):#3}% ' +
-                  f'| =:{int(v["="] / v["cnt"] * 100):#3}% | +:{int(v["+"] / v["cnt"] * 100):#3}% | lim:{v["limited"]:#5} ' +
-                  f'| sat:{v["saturated"]:#5} | path dev: {round(v["dpp"] / v["cnt"], 2):2.2f}m | total: {v["cnt"]:#5}')
+            print(
+              f'  {k:#2}° | actuator:{int(v["steer"] / v["cnt"] * 100):#3}% '
+              + f'| error: {round(v["err"] / v["cnt"], 2):2.2f}° | -:{int(v["-"] / v["cnt"] * 100):#3}% '
+              + f'| =:{int(v["="] / v["cnt"] * 100):#3}% | +:{int(v["+"] / v["cnt"] * 100):#3}% | lim:{v["limited"]:#5} '
+              + f'| sat:{v["saturated"]:#5} | path dev: {round(v["dpp"] / v["cnt"], 2):2.2f}m | total: {v["cnt"]:#5}'
+            )
           print("")
 
 
 if __name__ == "__main__":
-
   parser = argparse.ArgumentParser(description='Steering accuracy measurement tool')
   parser.add_argument('--route', help="route name")
   parser.add_argument('--addr', default='127.0.0.1', help="IP address for optional ZMQ listener, default to msgq")

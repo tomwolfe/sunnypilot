@@ -33,9 +33,7 @@ from openpilot.sunnypilot.modeld.modeld_base import ModelStateBase
 PROCESS_NAME = "selfdrive.modeld.modeld_snpe"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
-MODEL_PATHS = {
-  ModelRunner.THNEED: Path(__file__).parent / 'models/supercombo.thneed',
-  ModelRunner.ONNX: Path(__file__).parent / 'models/supercombo.onnx'}
+MODEL_PATHS = {ModelRunner.THNEED: Path(__file__).parent / 'models/supercombo.thneed', ModelRunner.ONNX: Path(__file__).parent / 'models/supercombo.onnx'}
 
 METADATA_PATH = Path(__file__).parent / 'models/supercombo_metadata.pkl'
 
@@ -48,6 +46,7 @@ class FrameMeta:
   def __init__(self, vipc=None):
     if vipc is not None:
       self.frame_id, self.timestamp_sof, self.timestamp_eof = vipc.frame_id, vipc.timestamp_sof, vipc.timestamp_eof
+
 
 class ModelState(ModelStateBase):
   frame: ModelFrame
@@ -80,21 +79,22 @@ class ModelState(ModelStateBase):
     self.model = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
     self.model.addInput("input_imgs", None)
     self.model.addInput("big_input_imgs", None)
-    for k,v in self.inputs.items():
+    for k, v in self.inputs.items():
       self.model.addInput(k, v)
 
   def slice_outputs(self, model_outputs: np.ndarray) -> dict[str, np.ndarray]:
-    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in self.output_slices.items()}
+    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k, v in self.output_slices.items()}
     if SEND_RAW_PRED:
       parsed_model_outputs['raw_pred'] = model_outputs.copy()
     return parsed_model_outputs
 
-  def run(self, buf: VisionBuf, wbuf: VisionBuf, transform: np.ndarray, transform_wide: np.ndarray,
-                inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+  def run(
+    self, buf: VisionBuf, wbuf: VisionBuf, transform: np.ndarray, transform_wide: np.ndarray, inputs: dict[str, np.ndarray], prepare_only: bool
+  ) -> dict[str, np.ndarray] | None:
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire'][0] = 0
-    self.inputs['desire'][:-ModelConstants.DESIRE_LEN] = self.inputs['desire'][ModelConstants.DESIRE_LEN:]
-    self.inputs['desire'][-ModelConstants.DESIRE_LEN:] = np.where(inputs['desire'] - self.prev_desire > .99, inputs['desire'], 0)
+    self.inputs['desire'][: -ModelConstants.DESIRE_LEN] = self.inputs['desire'][ModelConstants.DESIRE_LEN :]
+    self.inputs['desire'][-ModelConstants.DESIRE_LEN :] = np.where(inputs['desire'] - self.prev_desire > 0.99, inputs['desire'], 0)
     self.prev_desire[:] = inputs['desire']
 
     for k in self.inputs:
@@ -112,8 +112,8 @@ class ModelState(ModelStateBase):
     self.model.execute()
     outputs = self.parser.parse_outputs(self.slice_outputs(self.output))
 
-    self.inputs['features_buffer'][:-ModelConstants.FEATURE_LEN] = self.inputs['features_buffer'][ModelConstants.FEATURE_LEN:]
-    self.inputs['features_buffer'][-ModelConstants.FEATURE_LEN:] = outputs['hidden_state'][0, :]
+    self.inputs['features_buffer'][: -ModelConstants.FEATURE_LEN] = self.inputs['features_buffer'][ModelConstants.FEATURE_LEN :]
+    self.inputs['features_buffer'][-ModelConstants.FEATURE_LEN :] = outputs['hidden_state'][0, :]
 
     if "lat_planner_solution" in outputs and "lat_planner_state" in self.inputs.keys():
       self.inputs['lat_planner_state'][2] = interp(DT_MDL, ModelConstants.T_IDXS, outputs['lat_planner_solution'][0, :, 2])
@@ -129,11 +129,11 @@ class ModelState(ModelStateBase):
         self.inputs['prev_desired_curv'][-1:] = outputs['desired_curvature'][0, :]
     return outputs
 
-  def get_action_from_model(self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                            long_action_t: float) -> log.ModelDataV2.Action:
+  def get_action_from_model(self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action, long_action_t: float) -> log.ModelDataV2.Action:
     plan = model_output['plan'][0]
-    desired_accel, should_stop = get_accel_from_plan(plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], ModelConstants.T_IDXS,
-                                                     action_t=long_action_t)
+    desired_accel, should_stop = get_accel_from_plan(
+      plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], ModelConstants.T_IDXS, action_t=long_action_t
+    )
     desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, self.LONG_SMOOTH_SECONDS)
 
     return log.ModelDataV2.Action(desiredAcceleration=float(desired_accel), shouldStop=bool(should_stop))
@@ -160,7 +160,7 @@ def main(demo=False):
       use_extra_client = VisionStreamType.VISION_STREAM_WIDE_ROAD in available_streams and VisionStreamType.VISION_STREAM_ROAD in available_streams
       main_wide_camera = VisionStreamType.VISION_STREAM_ROAD not in available_streams
       break
-    time.sleep(.1)
+    time.sleep(0.1)
 
   vipc_client_main_stream = VisionStreamType.VISION_STREAM_WIDE_ROAD if main_wide_camera else VisionStreamType.VISION_STREAM_ROAD
   vipc_client_main = VisionIpcClient("camerad", vipc_client_main_stream, True, cl_context)
@@ -184,7 +184,7 @@ def main(demo=False):
   params = Params()
 
   # setup filter to track dropped frames
-  frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_FREQ)
+  frame_dropped_filter = FirstOrderFilter(0.0, 10.0, 1.0 / ModelConstants.MODEL_FREQ)
   frame_id = 0
   last_vipc_frame_id = 0
   run_count = 0
@@ -195,7 +195,6 @@ def main(demo=False):
   buf_main, buf_extra = None, None
   meta_main = FrameMeta()
   meta_extra = FrameMeta()
-
 
   if demo:
     CP = get_demo_car_params()
@@ -235,8 +234,10 @@ def main(demo=False):
         continue
 
       if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:
-        cloudlog.error(f"frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}),\
-                         extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f})")
+        cloudlog.error(
+          f"frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}),\
+                         extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f})"
+        )
 
     else:
       # Use single camera
@@ -268,9 +269,9 @@ def main(demo=False):
     # tracked dropped frames
     vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)
     frames_dropped = frame_dropped_filter.update(min(vipc_dropped_frames, 10))
-    if run_count < 10: # let frame drops warm up
-      frame_dropped_filter.x = 0.
-      frames_dropped = 0.
+    if run_count < 10:  # let frame drops warm up
+      frame_dropped_filter.x = 0.0
+      frames_dropped = 0.0
     run_count = run_count + 1
 
     frame_drop_ratio = frames_dropped / (1 + frames_dropped)
@@ -278,13 +279,13 @@ def main(demo=False):
     if prepare_only:
       cloudlog.error(f"skipping model eval. Dropped {vipc_dropped_frames} frames")
 
-    inputs:dict[str, np.ndarray] = {
+    inputs: dict[str, np.ndarray] = {
       'desire': vec_desire,
       'traffic_convention': traffic_convention,
-      }
+    }
 
     if "lateral_control_params" in model.inputs.keys():
-      inputs['lateral_control_params'] = np.array([max(v_ego, 0.), lat_delay], dtype=np.float32)
+      inputs['lateral_control_params'] = np.array([max(v_ego, 0.0), lat_delay], dtype=np.float32)
 
     if "driving_style" in model.inputs.keys():
       inputs['driving_style'] = np.array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
@@ -306,9 +307,23 @@ def main(demo=False):
       posenet_send = messaging.new_message('cameraOdometry')
       mdv2sp_send = messaging.new_message('modelDataV2SP')
       action = model.get_action_from_model(model_output, prev_action, long_delay + DT_MDL)
-      fill_model_msg(drivingdata_send, modelv2_send, model_output, action, publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
-                     frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen,
-                     v_ego, lat_delay, model.meta)
+      fill_model_msg(
+        drivingdata_send,
+        modelv2_send,
+        model_output,
+        action,
+        publish_state,
+        meta_main.frame_id,
+        meta_extra.frame_id,
+        frame_id,
+        frame_drop_ratio,
+        meta_main.timestamp_eof,
+        model_execution_time,
+        live_calib_seen,
+        v_ego,
+        lat_delay,
+        model.meta,
+      )
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]
@@ -334,6 +349,7 @@ def main(demo=False):
 if __name__ == "__main__":
   try:
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--demo', action='store_true', help='A boolean for demo mode.')
     args = parser.parse_args()

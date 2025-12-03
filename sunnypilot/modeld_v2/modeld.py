@@ -85,7 +85,7 @@ class ModelState(ModelStateBase):
     self.temporal_idxs_map = {}
 
     for key, shape in self.model_runner.input_shapes.items():
-      if key not in self.frames: # Managed by opencl
+      if key not in self.frames:  # Managed by opencl
         self.numpy_inputs[key] = np.zeros(shape, dtype=np.float32)
         # Temporal input: shape is [batch, history, features]
         if len(shape) == 3 and shape[1] > 1:
@@ -98,7 +98,7 @@ class ModelState(ModelStateBase):
             self.temporal_idxs_map[key] = np.arange(step, step * (shape[1] + 1), step)[::-1]
           elif shape[1] == 25:  # Split
             skip = buffer_history_len // shape[1]
-            self.temporal_idxs_map[key] = np.arange(buffer_history_len)[-1 - (skip * (shape[1] - 1))::skip]
+            self.temporal_idxs_map[key] = np.arange(buffer_history_len)[-1 - (skip * (shape[1] - 1)) :: skip]
           elif shape[1] >= 99:  # non20hz
             self.temporal_idxs_map[key] = np.arange(shape[1])
           self.temporal_buffers[key] = np.zeros((1, buffer_history_len, feature_len), dtype=np.float32)
@@ -111,8 +111,9 @@ class ModelState(ModelStateBase):
   def desire_key(self) -> str:
     return next(key for key in self.numpy_inputs if key.startswith('desire'))
 
-  def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
-                inputs: dict[str, np.ndarray], prepare_only: bool, throttle_factor: float) -> dict[str, np.ndarray] | None:
+  def run(
+    self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray], prepare_only: bool, throttle_factor: float
+  ) -> dict[str, np.ndarray] | None:
     self.frame_skip_counter += 1  # Increment counter for every frame received by run()
 
     # Update frame_skip_threshold only if throttle_factor has changed
@@ -126,16 +127,19 @@ class ModelState(ModelStateBase):
     # throttle_factor is not applied when prepare_only is True, as the model inference is skipped entirely.
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs[self.desire_key][0] = 0
-    new_desire = np.where(inputs[self.desire_key] - self.prev_desire > .99, inputs[self.desire_key], 0)
+    new_desire = np.where(inputs[self.desire_key] - self.prev_desire > 0.99, inputs[self.desire_key], 0)
     self.prev_desire[:] = inputs[self.desire_key]
-    self.temporal_buffers[self.desire_key][0,:-1] = self.temporal_buffers[self.desire_key][0,1:]
-    self.temporal_buffers[self.desire_key][0,-1] = new_desire
+    self.temporal_buffers[self.desire_key][0, :-1] = self.temporal_buffers[self.desire_key][0, 1:]
+    self.temporal_buffers[self.desire_key][0, -1] = new_desire
 
     # Roll buffer and assign based on desire.shape[1] value
     if self.temporal_buffers[self.desire_key].shape[1] > self.numpy_inputs[self.desire_key].shape[1]:
       skip = self.temporal_buffers[self.desire_key].shape[1] // self.numpy_inputs[self.desire_key].shape[1]
-      self.numpy_inputs[self.desire_key][:] = (self.temporal_buffers[self.desire_key][0].reshape(
-                                               self.numpy_inputs[self.desire_key].shape[0], self.numpy_inputs[self.desire_key].shape[1], skip, -1).max(axis=2))
+      self.numpy_inputs[self.desire_key][:] = (
+        self.temporal_buffers[self.desire_key][0]
+        .reshape(self.numpy_inputs[self.desire_key].shape[0], self.numpy_inputs[self.desire_key].shape[1], skip, -1)
+        .max(axis=2)
+      )
     else:
       self.numpy_inputs[self.desire_key][:] = self.temporal_buffers[self.desire_key][0, self.temporal_idxs_map[self.desire_key]]
 
@@ -151,10 +155,10 @@ class ModelState(ModelStateBase):
     # If prepare_only is True, we return None without running the model, but frame_skip_counter still increments.
     # Also, if we are throttling, and it's not a frame to run the model, return previous outputs.
     if prepare_only or (self.frame_skip_counter % self.frame_skip_threshold != 0 and self.last_vision_outputs_dict is not None):
-      if not prepare_only: # Only log if we are skipping due to throttle, not prepare_only
+      if not prepare_only:  # Only log if we are skipping due to throttle, not prepare_only
         cloudlog.debug(
-            f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, " +
-            f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}"
+          f"Throttling vision model execution. Reusing last outputs with throttle_factor: {throttle_factor:.2f}, "
+          + f"frame_skip_counter: {self.frame_skip_counter}, frame_skip_threshold: {self.frame_skip_threshold}"
         )
       return self.last_vision_outputs_dict if not prepare_only else None
 
@@ -184,27 +188,29 @@ class ModelState(ModelStateBase):
     return outputs
 
   def process_desired_curvature(self, outputs, input_name_prev):
-    self.temporal_buffers[input_name_prev][0,:-1] = self.temporal_buffers[input_name_prev][0,1:]
-    self.temporal_buffers[input_name_prev][0,-1,:] = outputs['desired_curvature'][0, :]
+    self.temporal_buffers[input_name_prev][0, :-1] = self.temporal_buffers[input_name_prev][0, 1:]
+    self.temporal_buffers[input_name_prev][0, -1, :] = outputs['desired_curvature'][0, :]
     self.numpy_inputs[input_name_prev][:] = self.temporal_buffers[input_name_prev][0, self.temporal_idxs_map[input_name_prev]]
     if self.mlsim:
-      self.numpy_inputs[input_name_prev][:] = 0*self.temporal_buffers[input_name_prev][0, self.temporal_idxs_map[input_name_prev]]
+      self.numpy_inputs[input_name_prev][:] = 0 * self.temporal_buffers[input_name_prev][0, self.temporal_idxs_map[input_name_prev]]
 
-  def get_action_from_model(self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                            lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+  def get_action_from_model(
+    self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action, lat_action_t: float, long_action_t: float, v_ego: float
+  ) -> log.ModelDataV2.Action:
     plan = model_output['plan'][0]
-    desired_accel, should_stop = get_accel_from_plan(plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], self.constants.T_IDXS,
-                                                     action_t=long_action_t)
+    desired_accel, should_stop = get_accel_from_plan(
+      plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], self.constants.T_IDXS, action_t=long_action_t
+    )
     desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, self.LONG_SMOOTH_SECONDS)
 
     desired_curvature = get_curvature_from_output(model_output, v_ego, lat_action_t, self.mlsim)
-    if self.generation is not None and self.generation >= 10: # smooth curvature for post FOF models
+    if self.generation is not None and self.generation >= 10:  # smooth curvature for post FOF models
       if v_ego > self.MIN_LAT_CONTROL_SPEED:
         desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, self.LAT_SMOOTH_SECONDS)
       else:
         desired_curvature = prev_action.desiredCurvature
 
-    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),desiredAcceleration=float(desired_accel), shouldStop=bool(should_stop))
+    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature), desiredAcceleration=float(desired_accel), shouldStop=bool(should_stop))
 
 
 def main(demo=False):
@@ -229,7 +235,7 @@ def main(demo=False):
       use_extra_client = VisionStreamType.VISION_STREAM_WIDE_ROAD in available_streams and VisionStreamType.VISION_STREAM_ROAD in available_streams
       main_wide_camera = VisionStreamType.VISION_STREAM_ROAD not in available_streams
       break
-    time.sleep(.1)
+    time.sleep(0.1)
 
   vipc_client_main_stream = VisionStreamType.VISION_STREAM_WIDE_ROAD if main_wide_camera else VisionStreamType.VISION_STREAM_ROAD
   vipc_client_main = VisionIpcClient("camerad", vipc_client_main_stream, True, cl_context)
@@ -253,7 +259,7 @@ def main(demo=False):
   params = Params()
 
   # setup filter to track dropped frames
-  frame_dropped_filter = FirstOrderFilter(0., 10., 1. / model.constants.MODEL_FREQ)
+  frame_dropped_filter = FirstOrderFilter(0.0, 10.0, 1.0 / model.constants.MODEL_FREQ)
   frame_id = 0
   last_vipc_frame_id = 0
   run_count = 0
@@ -264,7 +270,6 @@ def main(demo=False):
   buf_main, buf_extra = None, None
   meta_main = FrameMeta()
   meta_extra = FrameMeta()
-
 
   if demo:
     CP = get_demo_car_params()
@@ -303,8 +308,10 @@ def main(demo=False):
         continue
 
       if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:
-        cloudlog.error(f"frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}),\
-                       extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f})")
+        cloudlog.error(
+          f"frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}),\
+                       extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f})"
+        )
 
     else:
       # Use single camera
@@ -321,10 +328,10 @@ def main(demo=False):
 
     # Map thermal status to throttle factor directly
     thermal_status_map = {
-        log.DeviceState.ThermalStatus.green: 1.0,
-        log.DeviceState.ThermalStatus.yellow: 0.8,
-        log.DeviceState.ThermalStatus.red: 0.6,
-        log.DeviceState.ThermalStatus.danger: 0.0, # Corresponds to critical/shutdown in some contexts
+      log.DeviceState.ThermalStatus.green: 1.0,
+      log.DeviceState.ThermalStatus.yellow: 0.8,
+      log.DeviceState.ThermalStatus.red: 0.6,
+      log.DeviceState.ThermalStatus.danger: 0.0,  # Corresponds to critical/shutdown in some contexts
     }
     thermal_throttle_factor = thermal_status_map.get(thermal_status, 1.0)
     # Read ModelExecutionThrottleFactor parameter from Params
@@ -338,15 +345,14 @@ def main(demo=False):
     desire = DH.desire
     is_rhd = sm["driverMonitoringState"].isRHD
     frame_id = sm["roadCameraState"].frameId
-    v_ego = max(sm["carState"].vEgo, 0.)
+    v_ego = max(sm["carState"].vEgo, 0.0)
     if sm.frame % 60 == 0:
       model.lat_delay = get_lat_delay(params, sm["liveDelay"].lateralDelay)
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     if "liveCalibration" in sm.updated and sm.seen['roadCameraState'] and sm.seen['deviceState']:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
-      model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics,
-                                             False).astype(np.float32)
+      model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
       model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics, True).astype(np.float32)
       live_calib_seen = True
 
@@ -360,9 +366,9 @@ def main(demo=False):
     # tracked dropped frames
     vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)
     frames_dropped = frame_dropped_filter.update(min(vipc_dropped_frames, 10))
-    if run_count < 10: # let frame drops warm up
-      frame_dropped_filter.x = 0.
-      frames_dropped = 0.
+    if run_count < 10:  # let frame drops warm up
+      frame_dropped_filter.x = 0.0
+      frames_dropped = 0.0
     run_count = run_count + 1
 
     frame_drop_ratio = frames_dropped / (1 + frames_dropped)
@@ -372,7 +378,7 @@ def main(demo=False):
 
     bufs = {name: buf_extra if 'big' in name else buf_main for name in model.model_runner.vision_input_names}
     transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.model_runner.vision_input_names}
-    inputs:dict[str, np.ndarray] = {
+    inputs: dict[str, np.ndarray] = {
       model.desire_key: vec_desire,
       'traffic_convention': traffic_convention,
     }
@@ -393,9 +399,21 @@ def main(demo=False):
 
       action = model.get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego)
       prev_action = action
-      fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
-                     publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
-                     frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen, load_meta_constants())
+      fill_model_msg(
+        drivingdata_send,
+        modelv2_send,
+        model_output,
+        action,
+        publish_state,
+        meta_main.frame_id,
+        meta_extra.frame_id,
+        frame_id,
+        frame_drop_ratio,
+        meta_main.timestamp_eof,
+        model_execution_time,
+        live_calib_seen,
+        load_meta_constants(),
+      )
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]
@@ -421,6 +439,7 @@ def main(demo=False):
 if __name__ == "__main__":
   try:
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--demo', action='store_true', help='A boolean for demo mode.')
     args = parser.parse_args()

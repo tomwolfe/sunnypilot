@@ -12,7 +12,7 @@ from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control import MIN
 
 MapState = VisionState = custom.LongitudinalPlanSP.SmartCruiseControl.MapState
 
-ACTIVE_STATES = (MapState.turning, )
+ACTIVE_STATES = (MapState.turning,)
 ENABLED_STATES = (MapState.enabled, MapState.overriding, *ACTIVE_STATES)
 
 R = 6373000.0  # approximate radius of earth in meters
@@ -21,11 +21,11 @@ TO_DEGREES = 180 / math.pi
 TARGET_JERK = -0.6  # m/s^3 There's some jounce limits that are not consistent so we're fudging this some
 TARGET_ACCEL = -1.2  # m/s^2 should match up with the long planner limit
 TARGET_OFFSET = 1.0  # seconds - This controls how soon before the curve you reach the target velocity. It also helps
-                     # reach the target velocity when inaccuracies in the distance modeling logic would cause overshoot.
-                     # The value is multiplied against the target velocity to determine the additional distance. This is
-                     # done to keep the distance calculations consistent but results in the offset actually being less
-                     # time than specified depending on how much of a speed differential there is between v_ego and the
-                     # target velocity.
+# reach the target velocity when inaccuracies in the distance modeling logic would cause overshoot.
+# The value is multiplied against the target velocity to determine the additional distance. This is
+# done to keep the distance calculations consistent but results in the offset actually being less
+# time than specified depending on how much of a speed differential there is between v_ego and the
+# target velocity.
 
 
 def velocities_from_param(param: str, params: Params):
@@ -46,29 +46,29 @@ def calculate_accel(t, target_jerk, a_ego):
 
 
 def calculate_velocity(t, target_jerk, a_ego, v_ego):
-  return v_ego + a_ego * t + target_jerk/2 * (t ** 2)
+  return v_ego + a_ego * t + target_jerk / 2 * (t**2)
 
 
 def calculate_distance(t, target_jerk, a_ego, v_ego):
-  return t * v_ego + a_ego/2 * (t ** 2) + target_jerk/6 * (t ** 3)
+  return t * v_ego + a_ego / 2 * (t**2) + target_jerk / 6 * (t**3)
 
 
 # points should be in radians
 # output is meters
 def distance_to_point(ax, ay, bx, by):
-  a = math.sin((bx-ax)/2)*math.sin((bx-ax)/2) + math.cos(ax) * math.cos(bx)*math.sin((by-ay)/2)*math.sin((by-ay)/2)
-  c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+  a = math.sin((bx - ax) / 2) * math.sin((bx - ax) / 2) + math.cos(ax) * math.cos(bx) * math.sin((by - ay) / 2) * math.sin((by - ay) / 2)
+  c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
   return R * c  # in meters
 
 
 class SmartCruiseControlMap:
   v_target: float = 0
-  a_target: float = 0.
-  v_ego: float = 0.
-  a_ego: float = 0.
+  a_target: float = 0.0
+  v_ego: float = 0.0
+  a_ego: float = 0.0
   output_v_target: float = V_CRUISE_UNSET
-  output_a_target: float = 0.
+  output_a_target: float = 0.0
 
   def __init__(self):
     self.params = Params()
@@ -141,7 +141,7 @@ class SmartCruiseControlMap:
 
       d = forward_distances[i]
 
-      a_diff = (self.a_ego - TARGET_ACCEL)
+      a_diff = self.a_ego - TARGET_ACCEL
       accel_t = abs(a_diff / TARGET_JERK)
       min_accel_v = calculate_velocity(accel_t, TARGET_JERK, self.a_ego, self.v_ego)
 

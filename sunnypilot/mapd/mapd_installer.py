@@ -5,6 +5,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import logging
 import os
 import stat
@@ -131,9 +132,9 @@ class MapdInstallManager:
 
     except Exception:
       for i in range(6):
-        self._spinner.update("Failed to download OSM maps won't work until properly downloaded!" +
-                             "Try again manually rebooting. " +
-                             f"Boot will continue in {5 - i}s...")
+        self._spinner.update(
+          "Failed to download OSM maps won't work until properly downloaded!" + "Try again manually rebooting. " + f"Boot will continue in {5 - i}s..."
+        )
         time.sleep(1)
 
       sentry.init(sentry.SentryProject.SELFDRIVE)

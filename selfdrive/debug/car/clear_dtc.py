@@ -8,7 +8,7 @@ from opendbc.car.structs import CarParams
 from panda import Panda
 
 parser = argparse.ArgumentParser(description="clear DTC status")
-parser.add_argument("addr", type=lambda x: int(x,0), nargs="?", default=0x7DF) # default is functional (broadcast) address
+parser.add_argument("addr", type=lambda x: int(x, 0), nargs="?", default=0x7DF)  # default is functional (broadcast) address
 parser.add_argument("--bus", type=int, default=0)
 parser.add_argument('--debug', action='store_true')
 args = parser.parse_args()
@@ -21,7 +21,7 @@ try:
   print("pandad is running, please kill openpilot before running this script! (aborted)")
   sys.exit(1)
 except CalledProcessError as e:
-  if e.returncode != 1: # 1 == no process found (pandad not running)
+  if e.returncode != 1:  # 1 == no process found (pandad not running)
     raise e
 
 panda = Panda()

@@ -19,7 +19,12 @@ from openpilot.system.hardware.hw import Paths
 
 SEGMENT_LENGTH = 2
 FULL_SIZE = 2507572
-def hevc_size(w): return FULL_SIZE // 2 if w <= 1344 else FULL_SIZE
+
+
+def hevc_size(w):
+  return FULL_SIZE // 2 if w <= 1344 else FULL_SIZE
+
+
 CAMERAS = [
   ("fcamera.hevc", 20, hevc_size, "roadEncodeIdx"),
   ("dcamera.hevc", 20, hevc_size, "driverEncodeIdx"),
@@ -31,9 +36,8 @@ CAMERAS = [
 FILE_SIZE_TOLERANCE = 0.7
 
 
-@pytest.mark.tici # TODO: all of loggerd should work on PC
+@pytest.mark.tici  # TODO: all of loggerd should work on PC
 class TestEncoder:
-
   def setup_method(self):
     self._clear_logs()
     os.environ["LOGGERD_TEST"] = "1"
@@ -51,7 +55,7 @@ class TestEncoder:
     return os.path.join(Paths.log_root(), last_route)
 
   # TODO: this should run faster than real time
-  @parameterized.expand([(True, ), (False, )])
+  @parameterized.expand([(True,), (False,)])
   def test_log_rotation(self, record_front):
     Params().put_bool("RecordFront", record_front)
 
@@ -66,7 +70,7 @@ class TestEncoder:
 
     # wait for loggerd to make the dir for first segment
     route_prefix_path = None
-    with Timeout(int(SEGMENT_LENGTH*3)):
+    with Timeout(int(SEGMENT_LENGTH * 3)):
       while route_prefix_path is None:
         try:
           route_prefix_path = self._get_latest_segment_path().rsplit("--", 1)[0]
@@ -97,14 +101,12 @@ class TestEncoder:
         frame_width, frame_count = int(probe[0]), int(probe[1])
         counts.append(frame_count)
 
-        assert frame_count == expected_frames, \
-                         f"segment #{i}: {camera} failed frame count check: expected {expected_frames}, got {frame_count}"
+        assert frame_count == expected_frames, f"segment #{i}: {camera} failed frame count check: expected {expected_frames}, got {frame_count}"
 
         # sanity check file size
         file_size = os.path.getsize(file_path)
         target_size = size_lambda(frame_width)
-        assert math.isclose(file_size, target_size, rel_tol=FILE_SIZE_TOLERANCE), \
-                        f"{file_path} size {file_size} isn't close to target size {target_size}"
+        assert math.isclose(file_size, target_size, rel_tol=FILE_SIZE_TOLERANCE), f"{file_path} size {file_size} isn't close to target size {target_size}"
 
         # Check encodeIdx
         if encode_idx_name is not None:
@@ -141,8 +143,8 @@ class TestEncoder:
     try:
       for i in trange(num_segments):
         # poll for next segment
-        with Timeout(int(SEGMENT_LENGTH*10), error_msg=f"timed out waiting for segment {i}"):
-          while Path(f"{route_prefix_path}--{i+1}") not in Path(Paths.log_root()).iterdir():
+        with Timeout(int(SEGMENT_LENGTH * 10), error_msg=f"timed out waiting for segment {i}"):
+          while Path(f"{route_prefix_path}--{i + 1}") not in Path(Paths.log_root()).iterdir():
             time.sleep(0.1)
         check_seg(i)
     finally:

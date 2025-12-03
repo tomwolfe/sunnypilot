@@ -85,9 +85,7 @@ class HudRenderer(Widget):
     car_state = sm['carState']
 
     v_cruise_cluster = car_state.vCruiseCluster
-    self.set_speed = (
-      controls_state.vCruiseDEPRECATED if v_cruise_cluster == 0.0 else v_cruise_cluster
-    )
+    self.set_speed = controls_state.vCruiseDEPRECATED if v_cruise_cluster == 0.0 else v_cruise_cluster
     self.is_cruise_set = 0 < self.set_speed < SET_SPEED_NA
     self.is_cruise_available = self.set_speed != -1
 
@@ -127,14 +125,14 @@ class HudRenderer(Widget):
     y = rect.y + UI_CONFIG.border_size + UI_CONFIG.button_size + padding
 
     throttle_factor = ui_state.throttle_factor if ui_state.throttle_factor is not None else 0.0
-    color = COLORS.white # Default to white
+    color = COLORS.white  # Default to white
 
     if throttle_factor >= 0.9:
-      color = COLORS.engaged # Greenish
+      color = COLORS.engaged  # Greenish
     elif throttle_factor >= 0.5:
-      color = COLORS.override # Yellowish
+      color = COLORS.override  # Yellowish
     else:
-      color = COLORS.disengaged # Reddish
+      color = COLORS.disengaged  # Reddish
 
     rl.draw_circle(int(x + indicator_size // 2), int(y + indicator_size // 2), int(indicator_size // 2), color)
 

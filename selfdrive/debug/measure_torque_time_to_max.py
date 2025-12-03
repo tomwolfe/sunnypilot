@@ -11,7 +11,6 @@ from cereal import log
 import cereal.messaging as messaging
 
 if __name__ == "__main__":
-
   parser = argparse.ArgumentParser(description='Sniff a communication socket')
   parser.add_argument('--addr', default='127.0.0.1')
   args = parser.parse_args()
@@ -38,7 +37,7 @@ if __name__ == "__main__":
         evt = log_evt
 
       for item in evt.can:
-        if item.address == 0xe4 and item.src == 128:
+        if item.address == 0xE4 and item.src == 128:
           torque_req = struct.unpack('!h', item.dat[0:2])[0]
           # print(torque_req)
           active = abs(torque_req) > 0
@@ -49,11 +48,11 @@ if __name__ == "__main__":
             start_v = avg
             max_t = 0
             max_v = 0
-        if item.address == 0x1ab and item.src == 0:
+        if item.address == 0x1AB and item.src == 0:
           motor_torque = ((item.dat[0] & 0x3) << 8) + item.dat[1]
           window.append(motor_torque)
           avg = mean(window)
-          #print(f'{evt.logMonoTime}: {avg}')
+          # print(f'{evt.logMonoTime}: {avg}')
           if active and avg > max_v + 0.5:
             max_v = avg
             max_t = evt.logMonoTime / 1e9

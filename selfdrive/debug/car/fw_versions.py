@@ -40,7 +40,7 @@ if __name__ == "__main__":
     extra = {}
     # Honda
     for i in range(256):
-      extra[(Ecu.unknown, 0x18da00f1 + (i << 8), None)] = []
+      extra[(Ecu.unknown, 0x18DA00F1 + (i << 8), None)] = []
       extra[(Ecu.unknown, 0x700 + i, None)] = []
       extra[(Ecu.unknown, 0x750, i)] = []
     extra = {"any": {"debug": extra}}
@@ -65,8 +65,10 @@ if __name__ == "__main__":
   padding = max([len(fw.brand) for fw in fw_vers] or [0])
   for version in fw_vers:
     subaddr = None if version.subAddress == 0 else hex(version.subAddress)
-    print(f"  Brand: {version.brand:{padding}}, bus: {version.bus}, OBD: {version.obdMultiplexing} - " +
-          f"(Ecu.{version.ecu}, {hex(version.address)}, {subaddr}): [{version.fwVersion!r}]")
+    print(
+      f"  Brand: {version.brand:{padding}}, bus: {version.bus}, OBD: {version.obdMultiplexing} - "
+      + f"(Ecu.{version.ecu}, {hex(version.address)}, {subaddr}): [{version.fwVersion!r}]"
+    )
   print("}")
 
   print()

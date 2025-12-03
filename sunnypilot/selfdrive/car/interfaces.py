@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from typing import Any
 
 from opendbc.car import structs
@@ -35,8 +36,7 @@ def _enforce_torque_lateral_control(CP: structs.CarParams, params: Params = None
   return enabled
 
 
-def _initialize_neural_network_lateral_control(CP: structs.CarParams, CP_SP: structs.CarParamsSP,
-                                               params: Params = None, enabled: bool = False) -> bool:
+def _initialize_neural_network_lateral_control(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params: Params = None, enabled: bool = False) -> bool:
   if params is None:
     params = Params()
 
@@ -114,19 +114,21 @@ def initialize_params(params) -> list[dict[str, Any]]:
   keys: list = []
 
   # hyundai
-  keys.extend([
-    "HyundaiLongitudinalTuning"
-  ])
+  keys.extend(["HyundaiLongitudinalTuning"])
 
   # subaru
-  keys.extend([
-    "SubaruStopAndGo",
-    "SubaruStopAndGoManualParkingBrake",
-  ])
+  keys.extend(
+    [
+      "SubaruStopAndGo",
+      "SubaruStopAndGoManualParkingBrake",
+    ]
+  )
 
   # tesla
-  keys.extend([
-    "TeslaCoopSteering",
-  ])
+  keys.extend(
+    [
+      "TeslaCoopSteering",
+    ]
+  )
 
   return [{k: params.get(k, return_default=True)} for k in keys]

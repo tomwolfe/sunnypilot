@@ -36,6 +36,7 @@ class AlertEntry:
   def just_added(self, frame: int) -> bool:
     return self.active(frame) and frame == (self.added_frame + 1)
 
+
 class AlertManager:
   def __init__(self):
     self.alerts: dict[str, AlertEntry] = defaultdict(AlertEntry)

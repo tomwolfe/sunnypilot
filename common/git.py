@@ -35,8 +35,4 @@ def get_origin(cwd: str = None) -> str:
 
 @cache
 def get_normalized_origin(cwd: str = None) -> str:
-  return get_origin(cwd) \
-    .replace("git@", "", 1) \
-    .replace(".git", "", 1) \
-    .replace("https://", "", 1) \
-    .replace(":", "/", 1)
+  return get_origin(cwd).replace("git@", "", 1).replace(".git", "", 1).replace("https://", "", 1).replace(":", "/", 1)

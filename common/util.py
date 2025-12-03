@@ -1,6 +1,7 @@
 import os
 import subprocess
 
+
 def sudo_write(val: str, path: str) -> None:
   try:
     with open(path, 'w') as f:
@@ -14,11 +15,13 @@ def sudo_write(val: str, path: str) -> None:
       # fallback for debugfs files
       os.system(f"sudo su -c 'echo {val} > {path}'")
 
+
 def sudo_read(path: str) -> str:
   try:
     return subprocess.check_output(f"sudo cat {path}", shell=True, encoding='utf8').strip()
   except Exception:
     return ""
+
 
 class MovingAverage:
   def __init__(self, window_size: int):

@@ -19,6 +19,7 @@ class EdgeCaseHandler:
   """
   Handles various edge cases and unusual scenarios to improve system robustness.
   """
+
   def __init__(self):
     self.params = Params()
     # Filters for detecting unusual patterns
@@ -173,8 +174,7 @@ class EdgeCaseHandler:
 
     return False
 
-  def detect_construction_zone(self, car_state: car.CarState,
-                              radar_state, model_data) -> bool:
+  def detect_construction_zone(self, car_state: car.CarState, radar_state, model_data) -> bool:
     """
     Detect potential construction zones based on various indicators.
 
@@ -302,7 +302,7 @@ class EdgeCaseHandler:
       # Look for frequent sign changes in acceleration (indicating frequent speed changes)
       sign_changes = 0
       for i in range(1, len(accelerations)):
-        if (accelerations[i-1] > 0 and accelerations[i] < 0) or (accelerations[i-1] < 0 and accelerations[i] > 0):
+        if (accelerations[i - 1] > 0 and accelerations[i] < 0) or (accelerations[i - 1] < 0 and accelerations[i] > 0):
           sign_changes += 1
 
       # If many acceleration sign changes per time period, it might indicate poor conditions
@@ -344,8 +344,7 @@ class EdgeCaseHandler:
           weather_indicators += 1
 
     # 4. Speed reduction without obvious reason (other than traffic)
-    if (car_state.vEgo < car_state.vCruise * 0.7 and
-        (radar_state is None or (not radar_state.leadOne.status or radar_state.leadOne.dRel > 50.0))):
+    if car_state.vEgo < car_state.vCruise * 0.7 and (radar_state is None or (not radar_state.leadOne.status or radar_state.leadOne.dRel > 50.0)):
       # Driving significantly below set speed with no lead vehicle
       weather_indicators += 1
 
@@ -403,12 +402,14 @@ class EdgeCaseHandler:
       if hasattr(car_state, 'lateralAccel') and car_state.lateralAccel is not None:
         lat_accel = car_state.lateralAccel
 
-      self._acceleration_history.append({
-        'time': time.monotonic(),
-        'long_accel': car_state.aEgo,
-        'lat_accel': lat_accel,  # Include lateral acceleration for road surface detection
-        'speed': car_state.vEgo
-      })
+      self._acceleration_history.append(
+        {
+          'time': time.monotonic(),
+          'long_accel': car_state.aEgo,
+          'lat_accel': lat_accel,  # Include lateral acceleration for road surface detection
+          'speed': car_state.vEgo,
+        }
+      )
       # Keep only recent values (last 1 second at 100Hz)
       cutoff_time = time.monotonic() - 1.0
       self._acceleration_history = [a for a in self._acceleration_history if a['time'] > cutoff_time]
@@ -450,7 +451,7 @@ class EdgeCaseHandler:
     """
     # Check for sustained steering angle that indicates circular motion
     if not hasattr(car_state, 'steeringAngleDeg'):
-        return False  # No steering angle data, can't detect roundabout
+      return False  # No steering angle data, can't detect roundabout
 
     # For roundabouts, we typically see sustained steering angles
     if abs(car_state.steeringAngleDeg) > 15.0 and abs(car_state.steeringAngleDeg) < 60.0:
@@ -461,9 +462,7 @@ class EdgeCaseHandler:
         # Timer already exists, check if maintained for 2+ seconds
         if time.monotonic() - self._roundabout_steering_start_time > 2.0:
           # Check model predictions for consistent curvature in the same direction
-          if (model_data is not None and
-              hasattr(model_data, 'action') and
-              hasattr(model_data.action, 'desiredCurvature')):
+          if model_data is not None and hasattr(model_data, 'action') and hasattr(model_data.action, 'desiredCurvature'):
             desired_curvature = model_data.action.desiredCurvature
             # Check if we have consistent curvature for roundabout
             if abs(desired_curvature) > 0.02 and car_state.vEgo > 3.0:
@@ -495,16 +494,20 @@ class EdgeCaseHandler:
       # Check for vehicles in adjacent lanes that might be merging
       if hasattr(radar_state, 'leadThree') and radar_state.leadThree.status:
         # LeadThree typically represents a vehicle that might be merging
-        if (radar_state.leadThree.dRel < 60.0 and
-            radar_state.leadThree.vRel > 2.0 and  # Approaching from behind
-            abs(radar_state.leadThree.yRel) < 2.5):  # In adjacent lane
+        if (
+          radar_state.leadThree.dRel < 60.0
+          and radar_state.leadThree.vRel > 2.0  # Approaching from behind
+          and abs(radar_state.leadThree.yRel) < 2.5
+        ):  # In adjacent lane
           indicators += 1
 
       # Check for multiple vehicles at similar distances that might indicate merging patterns
-      if (radar_state.leadOne.status and
-          radar_state.leadTwo.status and
-          abs(radar_state.leadOne.yRel - radar_state.leadTwo.yRel) < 3.0 and  # In adjacent lanes
-          abs(radar_state.leadOne.dRel - radar_state.leadTwo.dRel) < 20.0):  # At similar distances
+      if (
+        radar_state.leadOne.status
+        and radar_state.leadTwo.status
+        and abs(radar_state.leadOne.yRel - radar_state.leadTwo.yRel) < 3.0  # In adjacent lanes
+        and abs(radar_state.leadOne.dRel - radar_state.leadTwo.dRel) < 20.0
+      ):  # At similar distances
         # If both vehicles are maintaining similar speeds but close together, potential merge
         if abs(radar_state.leadOne.vRel - radar_state.leadTwo.vRel) < 3.0:
           indicators += 1
@@ -571,30 +574,31 @@ class EdgeCaseHandler:
 
     try:
       # 1. Multiple vehicles at unusual distances/speeds
-      if (radar_state.leadOne.status and radar_state.leadOne.dRel < 5.0 and
-          car_state.vEgo > 15.0 and radar_state.leadOne.vRel < -5.0):  # Very close, closing fast
+      if (
+        radar_state.leadOne.status and radar_state.leadOne.dRel < 5.0 and car_state.vEgo > 15.0 and radar_state.leadOne.vRel < -5.0
+      ):  # Very close, closing fast
         indicators += 1
 
       # 2. Unusual spacing patterns - vehicles too close together for normal conditions
-      if (radar_state.leadOne.status and radar_state.leadTwo.status and
-          radar_state.leadOne.dRel < 50.0 and radar_state.leadTwo.dRel < 100.0):
+      if radar_state.leadOne.status and radar_state.leadTwo.status and radar_state.leadOne.dRel < 50.0 and radar_state.leadTwo.dRel < 100.0:
         spacing = radar_state.leadTwo.dRel - radar_state.leadOne.dRel
         if spacing < 10.0 and spacing > 0:  # Unusually close spacing
           indicators += 1
 
       # 3. Very slow traffic when it should be moving
-      if (radar_state.leadOne.status and radar_state.leadOne.vLead < 5.0 and
-          car_state.vEgo > 15.0):  # Lead moving very slowly
+      if radar_state.leadOne.status and radar_state.leadOne.vLead < 5.0 and car_state.vEgo > 15.0:  # Lead moving very slowly
         indicators += 1
 
       # 4. Frequent lead vehicle changes (could indicate weaving between construction zones)
       if not hasattr(self, '_previous_leads'):
         self._previous_leads = []
-      self._previous_leads.append({
-        'time': time.monotonic(),
-        'dRel': radar_state.leadOne.dRel if radar_state.leadOne.status else None,
-        'vRel': radar_state.leadOne.vRel if radar_state.leadOne.status else None
-      })
+      self._previous_leads.append(
+        {
+          'time': time.monotonic(),
+          'dRel': radar_state.leadOne.dRel if radar_state.leadOne.status else None,
+          'vRel': radar_state.leadOne.vRel if radar_state.leadOne.status else None,
+        }
+      )
       # Keep last 20 entries (~0.2 seconds at 100Hz)
       self._previous_leads = self._previous_leads[-20:]
 
@@ -606,7 +610,7 @@ class EdgeCaseHandler:
         # Ensure all values are non-None before calculating differences
         if len(distances) > 1 and all(d is not None for d in distances):
           typed_distances = [d for d in distances if d is not None]  # Explicitly typed list
-          distance_changes = [abs(float(typed_distances[i]) - float(typed_distances[i-1])) for i in range(1, len(typed_distances))]
+          distance_changes = [abs(float(typed_distances[i]) - float(typed_distances[i - 1])) for i in range(1, len(typed_distances))]
         else:
           distance_changes = []
         avg_distance_change = sum(distance_changes) / len(distance_changes) if distance_changes else 0
@@ -614,23 +618,18 @@ class EdgeCaseHandler:
           indicators += 1
 
       # 5. Sudden appearance of lead vehicle (could indicate cut-in or system failure detection)
-      if (radar_state.leadOne.status and
-          radar_state.leadOne.dRel < 50.0 and
-          car_state.vEgo > 10.0):
+      if radar_state.leadOne.status and radar_state.leadOne.dRel < 50.0 and car_state.vEgo > 10.0:
         # If previous frames showed no lead but now there is one close by
         recent_lead_distances = [l['dRel'] for l in valid_leads if l['dRel'] is not None]
         if recent_lead_distances and all(d > 80 for d in recent_lead_distances):  # No lead seen recently but one appeared close
           indicators += 1
 
       # 6. Lead vehicle doing unusual maneuvers (e.g., sudden lane changes)
-      if (radar_state.leadOne.status and
-          abs(radar_state.leadOne.aRel) > 3.0 and
-          radar_state.leadOne.dRel < 60.0):  # Large acceleration change close by
+      if radar_state.leadOne.status and abs(radar_state.leadOne.aRel) > 3.0 and radar_state.leadOne.dRel < 60.0:  # Large acceleration change close by
         indicators += 1
 
       # 7. Multiple vehicles with inconsistent behavior (potential traffic incident)
-      if (radar_state.leadOne.status and radar_state.leadTwo.status and
-          radar_state.leadOne.dRel < 60.0 and radar_state.leadTwo.dRel < 120.0):
+      if radar_state.leadOne.status and radar_state.leadTwo.status and radar_state.leadOne.dRel < 60.0 and radar_state.leadTwo.dRel < 120.0:
         relative_behavior_diff = abs(radar_state.leadOne.vRel - radar_state.leadTwo.vRel)
         if relative_behavior_diff > 8.0:  # Significant difference in relative speeds
           indicators += 1
@@ -659,12 +658,7 @@ class EdgeCaseHandler:
       dict: Incident detection results with confidence scores
     """
     if radar_state is None:
-      return {
-        'incident_detected': False,
-        'congestion_detected': False,
-        'confidence': 0.0,
-        'recommended_action': 'normal'
-      }
+      return {'incident_detected': False, 'congestion_detected': False, 'confidence': 0.0, 'recommended_action': 'normal'}
 
     incident_indicators = 0
     congestion_indicators = 0
@@ -673,24 +667,26 @@ class EdgeCaseHandler:
       # Check for traffic incident indicators
       if radar_state.leadOne.status:
         # Very slow lead vehicle when traffic should be flowing
-        if (radar_state.leadOne.vLead < 2.0 and
-            car_state.vEgo > 15.0 and
-            radar_state.leadOne.dRel < 80.0):
+        if radar_state.leadOne.vLead < 2.0 and car_state.vEgo > 15.0 and radar_state.leadOne.dRel < 80.0:
           incident_indicators += 1
           congestion_indicators += 1  # Could be both incident or congestion
 
         # Sudden stop of lead vehicle
-        if (radar_state.leadOne.vLead < 0.5 and
-            radar_state.leadOne.aRel < -2.0 and  # Heavy braking
-            radar_state.leadOne.dRel < 50.0):
+        if (
+          radar_state.leadOne.vLead < 0.5
+          and radar_state.leadOne.aRel < -2.0  # Heavy braking
+          and radar_state.leadOne.dRel < 50.0
+        ):
           incident_indicators += 1
 
       if radar_state.leadTwo.status:
         # Lead vehicle 2 moving much slower than lead vehicle 1 (could indicate lane closure/accident)
-        if (radar_state.leadOne.status and
-            radar_state.leadOne.vLead > 5.0 and
-            radar_state.leadTwo.vLead < 2.0 and
-            radar_state.leadTwo.dRel < radar_state.leadOne.dRel + 30.0):
+        if (
+          radar_state.leadOne.status
+          and radar_state.leadOne.vLead > 5.0
+          and radar_state.leadTwo.vLead < 2.0
+          and radar_state.leadTwo.dRel < radar_state.leadOne.dRel + 30.0
+        ):
           incident_indicators += 1
 
       # Check for congestion patterns
@@ -747,11 +743,10 @@ class EdgeCaseHandler:
       'confidence': max(incident_confidence, congestion_confidence),
       'recommended_action': recommended_action,
       'incident_confidence': incident_confidence,
-      'congestion_confidence': congestion_confidence
+      'congestion_confidence': congestion_confidence,
     }
 
-  def handle_unusual_scenarios(self, car_state: car.CarState,
-                              radar_state=None, model_data=None) -> dict:
+  def handle_unusual_scenarios(self, car_state: car.CarState, radar_state=None, model_data=None) -> dict:
     """
     Analyze current situation and identify any unusual scenarios or edge cases.
 
@@ -779,7 +774,7 @@ class EdgeCaseHandler:
       'recommended_speed': car_state.vCruise * 0.8 if car_state.vCruise > 0 else car_state.vEgo,  # Default: reduce speed by 20%
       'caution_required': False,
       'adaptive_control_needed': False,
-      'confidence_score': 0.0
+      'confidence_score': 0.0,
     }
 
     # Enhanced traffic incident and congestion detection
@@ -848,14 +843,14 @@ class EdgeCaseHandler:
       scenarios['recommended_speed'] = min(scenarios['recommended_speed'], car_state.vCruise * 0.6)  # Moderate reduction for congestion
 
     # Calculate overall confidence in the detection
-    positive_detections = sum(1 for k, v in scenarios.items()
-                             if k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score'] and v is True)
+    positive_detections = sum(
+      1 for k, v in scenarios.items() if k not in ['recommended_speed', 'caution_required', 'adaptive_control_needed', 'confidence_score'] and v is True
+    )
     scenarios['confidence_score'] = min(1.0, positive_detections * 0.2)  # 0.2 per detection, max 1.0
 
     return scenarios
 
-  def get_adaptive_control_modifications(self, car_state: car.CarState,
-                                       scenarios: dict) -> dict:
+  def get_adaptive_control_modifications(self, car_state: car.CarState, scenarios: dict) -> dict:
     """
     Get control modifications to adapt to detected edge cases and scenarios.
 
@@ -868,11 +863,11 @@ class EdgeCaseHandler:
     """
     modifications = {
       'longitudinal_factor': 1.0,  # Factor to apply to longitudinal control (0.8 = 20% more conservative)
-      'lateral_factor': 1.0,      # Factor to apply to lateral control
-      'min_gap': 2.0,             # Minimum time gap to maintain
-      'caution_mode': False,      # Whether to enable caution mode
+      'lateral_factor': 1.0,  # Factor to apply to lateral control
+      'min_gap': 2.0,  # Minimum time gap to maintain
+      'caution_mode': False,  # Whether to enable caution mode
       'speed_limit_factor': 1.0,  # Factor to reduce speed limit
-      'steering_sensitivity': 1.0  # Factor to adjust steering sensitivity
+      'steering_sensitivity': 1.0,  # Factor to adjust steering sensitivity
     }
 
     # Log detected scenarios for debugging and analysis
@@ -884,29 +879,29 @@ class EdgeCaseHandler:
     if scenarios['caution_required']:
       modifications['caution_mode'] = True
       modifications['longitudinal_factor'] = 0.8  # More conservative longitudinal control
-      modifications['lateral_factor'] = 0.9      # More conservative lateral control
-      modifications['min_gap'] = 3.0             # Increase minimum gap to 3 seconds
+      modifications['lateral_factor'] = 0.9  # More conservative lateral control
+      modifications['min_gap'] = 3.0  # Increase minimum gap to 3 seconds
 
     if scenarios['sharp_curve']:
-      modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.7)      # Extra conservative in curves
+      modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.7)  # Extra conservative in curves
       modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.7)
 
     if scenarios['construction_zone']:
-      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.6) # Extra conservative in construction zones
+      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.6)  # Extra conservative in construction zones
       modifications['lateral_factor'] = min(modifications['lateral_factor'], 0.8)
-      modifications['min_gap'] = max(modifications['min_gap'], 4.0)             # Extra distance in construction zones
+      modifications['min_gap'] = max(modifications['min_gap'], 4.0)  # Extra distance in construction zones
       modifications['speed_limit_factor'] = 0.7  # Reduce speed in construction zones
       modifications['caution_mode'] = True
 
     if scenarios['sudden_object']:
-      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.5) # Very conservative when objects detected
-      modifications['min_gap'] = max(modifications['min_gap'], 5.0)             # Maximum distance when sudden objects detected
+      modifications['longitudinal_factor'] = min(modifications['longitudinal_factor'], 0.5)  # Very conservative when objects detected
+      modifications['min_gap'] = max(modifications['min_gap'], 5.0)  # Maximum distance when sudden objects detected
       modifications['caution_mode'] = True
 
     if scenarios.get('weather_impact', False):
       modifications['longitudinal_factor'] = 0.6  # More conservative longitudinal in weather
-      modifications['lateral_factor'] = 0.8      # More conservative lateral in weather
-      modifications['min_gap'] = 4.0             # Increase gap significantly in weather
+      modifications['lateral_factor'] = 0.8  # More conservative lateral in weather
+      modifications['min_gap'] = 4.0  # Increase gap significantly in weather
       modifications['speed_limit_factor'] = 0.75  # Reduce speed in adverse weather
       modifications['steering_sensitivity'] = 0.7  # Reduce steering sensitivity in weather
       modifications['caution_mode'] = True
@@ -919,39 +914,39 @@ class EdgeCaseHandler:
 
     if scenarios.get('unusual_traffic', False):
       modifications['longitudinal_factor'] = 0.7  # More conservative in unusual traffic
-      modifications['min_gap'] = 3.5             # More distance in unusual traffic
+      modifications['min_gap'] = 3.5  # More distance in unusual traffic
       modifications['caution_mode'] = True
 
     if scenarios.get('traffic_incident', False):
       modifications['longitudinal_factor'] = 0.5  # Very conservative for traffic incidents
-      modifications['lateral_factor'] = 0.7       # More careful steering
-      modifications['min_gap'] = 5.0             # Maximum distance for safety
+      modifications['lateral_factor'] = 0.7  # More careful steering
+      modifications['min_gap'] = 5.0  # Maximum distance for safety
       modifications['speed_limit_factor'] = 0.4  # Significant speed reduction
       modifications['caution_mode'] = True
 
     if scenarios.get('traffic_congestion', False):
       modifications['longitudinal_factor'] = 0.6  # Conservative for stop-and-go
-      modifications['min_gap'] = 4.0             # More distance for buffer
+      modifications['min_gap'] = 4.0  # More distance for buffer
       modifications['speed_limit_factor'] = 0.6  # Reduced speed for congestion
       modifications['steering_sensitivity'] = 0.8  # Reduced sensitivity in dense traffic
       modifications['caution_mode'] = True
 
     if scenarios.get('roundabout', False):
       modifications['longitudinal_factor'] = 0.7  # More conservative for roundabouts
-      modifications['lateral_factor'] = 0.8      # Careful lateral control in roundabouts
+      modifications['lateral_factor'] = 0.8  # Careful lateral control in roundabouts
       modifications['speed_limit_factor'] = 0.5  # Significant speed reduction for safety
-      modifications['min_gap'] = 3.5             # Maintain good distance in roundabouts
+      modifications['min_gap'] = 3.5  # Maintain good distance in roundabouts
       modifications['caution_mode'] = True
 
     if scenarios.get('lane_merge', False):
       modifications['longitudinal_factor'] = 0.6  # Conservative to accommodate merging
-      modifications['min_gap'] = 4.0             # More distance to allow safe merging
+      modifications['min_gap'] = 4.0  # More distance to allow safe merging
       modifications['steering_sensitivity'] = 0.8  # Moderate steering sensitivity for lane changes
       modifications['caution_mode'] = True
 
     if scenarios.get('tunnel', False):
       modifications['longitudinal_factor'] = 0.8  # Slightly more conservative for lighting changes
-      modifications['lateral_factor'] = 0.9      # Careful lateral positioning in tunnels
+      modifications['lateral_factor'] = 0.9  # Careful lateral positioning in tunnels
       modifications['steering_sensitivity'] = 0.8  # Adjust steering for potential visibility changes
       modifications['caution_mode'] = True
 
@@ -964,11 +959,11 @@ class EdgeCaseHandler:
 
     if detected_scenarios:
       cloudlog.debug(
-          f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, " +
-          f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, " +
-          f"speed_limit_factor={modifications['speed_limit_factor']:.2f}, " +
-          f"steering_sensitivity={modifications['steering_sensitivity']:.2f}, " +
-          f"caution_mode={modifications['caution_mode']}"
+        f"EdgeCaseHandler: Applied modifications: longitudinal_factor={modifications['longitudinal_factor']:.2f}, "
+        + f"lateral_factor={modifications['lateral_factor']:.2f}, min_gap={modifications['min_gap']:.1f}s, "
+        + f"speed_limit_factor={modifications['speed_limit_factor']:.2f}, "
+        + f"steering_sensitivity={modifications['steering_sensitivity']:.2f}, "
+        + f"caution_mode={modifications['caution_mode']}"
       )
 
     return modifications

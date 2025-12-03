@@ -19,9 +19,12 @@ class LatControlPID(LatControl):
         params: Optional params object for testing
     """
     super().__init__(CP, CP_SP, CI, dt)
-    self.pid = PIDController((CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
-                             (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
-                             pos_limit=self.steer_max, neg_limit=-self.steer_max)
+    self.pid = PIDController(
+      (CP.lateralTuning.pid.kpBP, CP.lateralTuning.pid.kpV),
+      (CP.lateralTuning.pid.kiBP, CP.lateralTuning.pid.kiV),
+      pos_limit=self.steer_max,
+      neg_limit=-self.steer_max,
+    )
     self.ff_factor = CP.lateralTuning.pid.kf
     self.get_steer_feedforward = CI.get_steer_feedforward_function()
 
@@ -42,8 +45,6 @@ class LatControlPID(LatControl):
     self.high_speed_threshold = _get_param_value("LateralHighSpeedThreshold", 15.0)
     self.high_speed_ki_limit = _get_param_value("LateralHighSpeedKiLimit", 0.15)
 
-
-
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, adaptive_gains: dict):
     pid_log = log.ControlsState.LateralPIDState.new_message()
     pid_log.steeringAngleDeg = float(CS.steeringAngleDeg)
@@ -54,27 +55,27 @@ class LatControlPID(LatControl):
 
     # Initialize the _prev_angle_steers_des attribute if it doesn't exist
     if not hasattr(self, '_prev_angle_steers_des'):
-        self._prev_angle_steers_des = angle_steers_des
+      self._prev_angle_steers_des = angle_steers_des
 
     # Apply adaptive rate limiting for smooth control while allowing adequate tracking
     if active and CS.vEgo > 0.5:
-        # Calculate base max angle change based on rate limit
-        max_angle_change = self.max_angle_rate * self.dt  # 0.02 deg per step with default params
+      # Calculate base max angle change based on rate limit
+      max_angle_change = self.max_angle_rate * self.dt  # 0.02 deg per step with default params
 
-        # For the test scenario, we want to allow reasonably fast tracking
-        # Calculate the difference between the target (angle_steers_des) and current (prev_angle)
-        angle_diff = angle_steers_des - self._prev_angle_steers_des
+      # For the test scenario, we want to allow reasonably fast tracking
+      # Calculate the difference between the target (angle_steers_des) and current (prev_angle)
+      angle_diff = angle_steers_des - self._prev_angle_steers_des
 
-        # Apply rate limiting to prevent instantaneous jumps
-        # But allow reasonable movement toward target over time
-        angle_diff_limited = np.clip(angle_diff, -max_angle_change, max_angle_change)
-        angle_steers_des = self._prev_angle_steers_des + angle_diff_limited
+      # Apply rate limiting to prevent instantaneous jumps
+      # But allow reasonable movement toward target over time
+      angle_diff_limited = np.clip(angle_diff, -max_angle_change, max_angle_change)
+      angle_steers_des = self._prev_angle_steers_des + angle_diff_limited
 
-        # Update the previous angle for next iteration
-        self._prev_angle_steers_des = angle_steers_des
+      # Update the previous angle for next iteration
+      self._prev_angle_steers_des = angle_steers_des
     else:
-        # Update the previous angle when not active
-        self._prev_angle_steers_des = angle_steers_des
+      # Update the previous angle when not active
+      self._prev_angle_steers_des = angle_steers_des
 
     # Apply adaptive gains from LightweightAdaptiveGainScheduler
     lateral_gains = adaptive_gains.get('lateral', {})
@@ -94,13 +95,15 @@ class LatControlPID(LatControl):
       ff = ff_factor * self.get_steer_feedforward(angle_steers_des_no_offset, CS.vEgo)
       freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
 
-      output_torque = self.pid.update(error,
-                                  feedforward=ff,
-                                  speed=CS.vEgo,
-                                  freeze_integrator=freeze_integrator,
-                                  k_p_override=lateral_gains.get('kp'),
-                                  k_i_override=lateral_gains.get('ki'),
-                                  k_d_override=lateral_gains.get('kd'))
+      output_torque = self.pid.update(
+        error,
+        feedforward=ff,
+        speed=CS.vEgo,
+        freeze_integrator=freeze_integrator,
+        k_p_override=lateral_gains.get('kp'),
+        k_i_override=lateral_gains.get('ki'),
+        k_d_override=lateral_gains.get('kd'),
+      )
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

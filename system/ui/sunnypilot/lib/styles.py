@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from dataclasses import dataclass
 
 import pyray as rl
@@ -77,5 +78,6 @@ class DefaultStyleSP(Base):
   GREEN = rl.Color(0, 241, 0, 255)
   BLUE = rl.Color(0, 134, 233, 255)
   YELLOW = rl.Color(255, 213, 0, 255)
+
 
 style = DefaultStyleSP

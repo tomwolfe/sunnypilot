@@ -36,7 +36,7 @@ class TestRawgpsd:
 
   def _wait_for_output(self, t):
     dt = 0.1
-    for _ in range(t*int(1/dt)):
+    for _ in range(t * int(1 / dt)):
       self.sm.update(0)
       if self.sm.updated['qcomGnss']:
         break
@@ -75,7 +75,6 @@ class TestRawgpsd:
         loc_status = json.loads(ls)
         assert set(loc_status['modem']['location']['enabled']) <= {'3gpp-lac-ci'}
 
-
   def check_assistance(self, should_be_loaded):
     # after QGPSDEL: '+QGPSXTRADATA: 0,"1980/01/05,19:00:00"'
     # after loading: '+QGPSXTRADATA: 10080,"2023/06/24,19:00:00"'
@@ -85,10 +84,10 @@ class TestRawgpsd:
     if should_be_loaded:
       assert valid_duration == "10080"  # should be max time
       injected_time = datetime.datetime.strptime(injected_time_str.replace("\"", ""), "%Y/%m/%d,%H:%M:%S")
-      assert abs((datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - injected_time).total_seconds()) < 60*60*12
+      assert abs((datetime.datetime.now(datetime.UTC).replace(tzinfo=None) - injected_time).total_seconds()) < 60 * 60 * 12
     else:
       valid_duration, injected_time_str = out.split(",", 1)
-      injected_time_str = injected_time_str.replace('\"', '').replace('\'', '')
+      injected_time_str = injected_time_str.replace('"', '').replace('\'', '')
       assert injected_time_str[:] == '1980/01/05,19:00:00'[:]
       assert valid_duration == '0'
 

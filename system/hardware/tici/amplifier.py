@@ -8,6 +8,7 @@ from collections import namedtuple
 AmpConfig = namedtuple('AmpConfig', ['name', 'value', 'register', 'offset', 'mask'])
 EQParams = namedtuple('EQParams', ['K', 'k1', 'k2', 'c1', 'c2'])
 
+
 def configs_from_eq_params(base, eq_params):
   return [
     AmpConfig("K (high)", (eq_params.K >> 8), base, 0, 0xFF),
@@ -21,6 +22,7 @@ def configs_from_eq_params(base, eq_params):
     AmpConfig("c2 (high)", (eq_params.c2 >> 8), base + 8, 0, 0xFF),
     AmpConfig("c2 (low)", (eq_params.c2 & 0xFF), base + 9, 0, 0xFF),
   ]
+
 
 BASE_CONFIG = [
   AmpConfig("MCLK prescaler", 0b01, 0x10, 4, 0b00110000),
@@ -68,7 +70,6 @@ CONFIGS = {
     AmpConfig("Right Speaker Mixer Gain", 0b00, 0x2D, 2, 0b00001100),
     AmpConfig("Left speaker output volume", 0x17, 0x3D, 0, 0b00011111),
     AmpConfig("Right speaker output volume", 0x17, 0x3E, 0, 0b00011111),
-
     AmpConfig("DAI2 EQ enable", 0b0, 0x49, 1, 0b00000010),
     AmpConfig("DAI2: DC blocking", 0b0, 0x20, 0, 0b00000001),
     AmpConfig("ALC enable", 0b0, 0x43, 7, 0b10000000),
@@ -86,6 +87,7 @@ CONFIGS = {
     AmpConfig("Volume adjustment smoothing disabled", 0b1, 0x49, 6, 0b01000000),
   ],
 }
+
 
 class Amplifier:
   AMP_I2C_BUS = 0
@@ -113,7 +115,7 @@ class Amplifier:
   def set_configs(self, configs: list[AmpConfig]) -> bool:
     # retry in case panda is using the amp
     tries = 15
-    backoff = 0.
+    backoff = 0.0
     for i in range(tries):
       try:
         self._set_configs(configs)
@@ -125,7 +127,11 @@ class Amplifier:
     return False
 
   def set_global_shutdown(self, amp_disabled: bool) -> bool:
-    return self.set_configs([self._get_shutdown_config(amp_disabled), ])
+    return self.set_configs(
+      [
+        self._get_shutdown_config(amp_disabled),
+      ]
+    )
 
   def initialize_configuration(self, model: str) -> bool:
     cfgs = [

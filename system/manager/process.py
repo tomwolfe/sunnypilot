@@ -201,6 +201,7 @@ class PythonProcess(ManagerProcess):
 class DaemonProcess(ManagerProcess):
   """Python process that has to stay running across manager restart.
   This is used for athena so you don't lose SSH access when restarting manager."""
+
   def __init__(self, name, module, param_name, enabled=True):
     self.name = name
     self.module = module
@@ -232,11 +233,9 @@ class DaemonProcess(ManagerProcess):
         pass
 
     cloudlog.info(f"starting daemon {self.name}")
-    proc = subprocess.Popen(['python', '-m', self.module],
-                               stdin=open('/dev/null'),
-                               stdout=open('/dev/null', 'w'),
-                               stderr=open('/dev/null', 'w'),
-                               preexec_fn=os.setpgrp)
+    proc = subprocess.Popen(
+      ['python', '-m', self.module], stdin=open('/dev/null'), stdout=open('/dev/null', 'w'), stderr=open('/dev/null', 'w'), preexec_fn=os.setpgrp
+    )
 
     self.params.put(self.param_name, proc.pid)
 
@@ -244,8 +243,9 @@ class DaemonProcess(ManagerProcess):
     pass
 
 
-def ensure_running(procs: ValuesView[ManagerProcess], started: bool, params=None, CP: car.CarParams=None,
-                   not_run: list[str] | None=None) -> list[ManagerProcess]:
+def ensure_running(
+  procs: ValuesView[ManagerProcess], started: bool, params=None, CP: car.CarParams = None, not_run: list[str] | None = None
+) -> list[ManagerProcess]:
   if not_run is None:
     not_run = []
 

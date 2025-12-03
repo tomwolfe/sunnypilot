@@ -146,9 +146,7 @@ class PairingDialog(Widget):
     if not self.qr_texture:
       rl.draw_rectangle_rounded(rect, 0.1, 20, rl.Color(240, 240, 240, 255))
       error_font = gui_app.font(FontWeight.BOLD)
-      rl.draw_text_ex(
-        error_font, tr("QR Code Error"), rl.Vector2(rect.x + 20, rect.y + rect.height // 2 - 15), 30, 0.0, rl.RED
-      )
+      rl.draw_text_ex(error_font, tr("QR Code Error"), rl.Vector2(rect.x + 20, rect.y + rect.height // 2 - 15), 30, 0.0, rl.RED)
       return
 
     source = rl.Rectangle(0, 0, self.qr_texture.width, self.qr_texture.height)

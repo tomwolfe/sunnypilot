@@ -24,9 +24,9 @@ UPLOAD_ATTR_NAME = 'user.sunny.upload'
 UPLOAD_ATTR_VALUE = b'1'
 
 MAX_UPLOAD_SIZES = {
-  "qlog": 25*1e6,  # can't be too restrictive here since we use qlogs to find
+  "qlog": 25 * 1e6,  # can't be too restrictive here since we use qlogs to find
   # bugs, including ones that can cause massive log sizes
-  "qcam": 5*1e6,
+  "qcam": 5 * 1e6,
 }
 
 allow_sleep = bool(os.getenv("UPLOADER_SLEEP", "1"))
@@ -47,8 +47,17 @@ class FakeResponse:
 
 def get_directory_sort(d: str) -> list[str]:
   # ensure old format is sorted sooner
-  o = ["0", ] if d.startswith("2024-") else ["1", ]
+  o = (
+    [
+      "0",
+    ]
+    if d.startswith("2024-")
+    else [
+      "1",
+    ]
+  )
   return o + [s.rjust(10, '0') for s in d.rsplit('--', 1)]
+
 
 def listdir_by_creation(d: str) -> list[str]:
   if not os.path.isdir(d):
@@ -61,6 +70,7 @@ def listdir_by_creation(d: str) -> list[str]:
   except OSError:
     cloudlog.exception("listdir_by_creation failed")
     return []
+
 
 def clear_locks(root: str) -> None:
   for logdir in os.listdir(root):
@@ -200,13 +210,21 @@ class Uploader:
         else:
           content_length = int(stat.request.headers.get("Content-Length", 0))
           speed = (content_length / 1e6) / dt
-          cloudlog.event("upload_success", key=key, fn=fn, sz=sz, content_length=content_length,
-                         network_type=network_type, metered=metered, speed=speed)
+          cloudlog.event("upload_success", key=key, fn=fn, sz=sz, content_length=content_length, network_type=network_type, metered=metered, speed=speed)
         success = True
       elif stat is not None:  # 401, 403... Not sure why they were up to begin with
         success = False
-        cloudlog.event("upload_failed with content", stat=stat, exc=last_exc, key=key, fn=fn, sz=sz, network_type=network_type, metered=metered,
-                       error=stat.content.decode("utf-8"))
+        cloudlog.event(
+          "upload_failed with content",
+          stat=stat,
+          exc=last_exc,
+          key=key,
+          fn=fn,
+          sz=sz,
+          network_type=network_type,
+          metered=metered,
+          error=stat.content.decode("utf-8"),
+        )
       else:
         success = False
         cloudlog.event("upload_failed", stat=stat, exc=last_exc, key=key, fn=fn, sz=sz, network_type=network_type, metered=metered)
@@ -219,7 +237,6 @@ class Uploader:
         cloudlog.event("uploader_setxattr_failed", exc=last_exc, key=key, fn=fn, sz=sz)
 
     return success
-
 
   def step(self, network_type: int, metered: bool) -> bool | None:
     d = self.next_file_to_upload(metered)
@@ -273,7 +290,7 @@ def main(exit_event: threading.Event = None) -> None:
       backoff = 0.1
     else:
       cloudlog.info("upload backoff %r", backoff)
-      backoff = min(backoff*2, 120)
+      backoff = min(backoff * 2, 120)
     if allow_sleep:
       time.sleep(backoff + random.uniform(0, backoff))
 

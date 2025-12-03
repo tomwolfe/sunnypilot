@@ -22,8 +22,11 @@ else:
   LINE_HEIGHT = 25
   BUTTON_SIZE = rl.Vector2(150, 80)
 
-DEMO_TEXT = """This is a sample text that will be wrapped and scrolled if necessary.
-            The text is long enough to demonstrate scrolling and word wrapping.""" * 30
+DEMO_TEXT = (
+  """This is a sample text that will be wrapped and scrolled if necessary.
+            The text is long enough to demonstrate scrolling and word wrapping."""
+  * 30
+)
 
 
 def wrap_text(text, font_size, max_width):
@@ -38,7 +41,7 @@ def wrap_text(text, font_size, max_width):
       continue
     indent = re.match(r"^\s*", paragraph).group()
     current_line = indent
-    words = re.split(r"(\s+|-)", paragraph[len(indent):])
+    words = re.split(r"(\s+|-)", paragraph[len(indent) :])
     while len(words):
       word = words.pop(0)
       test_line = current_line + word + (words.pop(0) if words else "")

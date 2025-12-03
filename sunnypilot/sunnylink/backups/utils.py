@@ -37,9 +37,7 @@ class KeyDerivation:
         raise ValueError("Invalid RSA key format: Unable to determine if key is public or private.")
 
       der_data = private_key.private_bytes(
-        encoding=serialization.Encoding.DER,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption()
+        encoding=serialization.Encoding.DER, format=serialization.PrivateFormat.TraditionalOpenSSL, encryption_algorithm=serialization.NoEncryption()
       )
     elif "public" in key_plain.lower():
       public_key = serialization.load_pem_public_key(rsa_key_pem, backend=default_backend())

@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from collections.abc import Callable
 
 import pyray as rl
@@ -17,15 +18,20 @@ from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlS
 
 
 class ToggleActionSP(ToggleAction):
-  def __init__(self, initial_state: bool = False, width: int = style.TOGGLE_WIDTH, enabled: bool | Callable[[], bool] = True,
-               callback: Callable[[bool], None] | None = None, param: str | None = None):
+  def __init__(
+    self,
+    initial_state: bool = False,
+    width: int = style.TOGGLE_WIDTH,
+    enabled: bool | Callable[[], bool] = True,
+    callback: Callable[[bool], None] | None = None,
+    param: str | None = None,
+  ):
     ToggleAction.__init__(self, initial_state, width, enabled, callback)
     self.toggle = ToggleSP(initial_state=initial_state, callback=callback, param=param)
 
 
 class MultipleButtonActionSP(MultipleButtonAction):
-  def __init__(self, buttons: list[str | Callable[[], str]], button_width: int, selected_index: int = 0, callback: Callable = None,
-               param: str | None = None):
+  def __init__(self, buttons: list[str | Callable[[], str]], button_width: int, selected_index: int = 0, callback: Callable = None, param: str | None = None):
     MultipleButtonAction.__init__(self, buttons, button_width, selected_index, callback)
     self.param_key = param
     self.params = Params()
@@ -34,7 +40,6 @@ class MultipleButtonActionSP(MultipleButtonAction):
     self._anim_x: float | None = None
 
   def _render(self, rect: rl.Rectangle):
-
     button_y = rect.y + (rect.height - style.BUTTON_HEIGHT) / 2
 
     total_width = len(self.buttons) * self.button_width
@@ -78,14 +83,22 @@ class MultipleButtonActionSP(MultipleButtonAction):
 
 
 class ListItemSP(ListItem):
-  def __init__(self, title: str | Callable[[], str] = "", icon: str | None = None, description: str | Callable[[], str] | None = None,
-               description_visible: bool = False, callback: Callable | None = None,
-               action_item: ItemAction | None = None, inline: bool = True, title_color: rl.Color = style.ITEM_TEXT_COLOR):
+  def __init__(
+    self,
+    title: str | Callable[[], str] = "",
+    icon: str | None = None,
+    description: str | Callable[[], str] | None = None,
+    description_visible: bool = False,
+    callback: Callable | None = None,
+    action_item: ItemAction | None = None,
+    inline: bool = True,
+    title_color: rl.Color = style.ITEM_TEXT_COLOR,
+  ):
     ListItem.__init__(self, title, icon, description, description_visible, callback, action_item)
     self.title_color = title_color
     self.inline = inline
     if not self.inline:
-      self._rect.height += style.ITEM_BASE_HEIGHT/1.75
+      self._rect.height += style.ITEM_BASE_HEIGHT / 1.75
 
   def get_item_height(self, font: rl.Font, max_width: int) -> float:
     height = super().get_item_height(font, max_width)
@@ -116,7 +129,7 @@ class ListItemSP(ListItem):
       return rl.Rectangle(item_rect.x + style.ITEM_PADDING, action_y, item_rect.width - (style.ITEM_PADDING * 2), style.BUTTON_HEIGHT)
 
     right_width = self.action_item.rect.width
-    if right_width == 0:
+    if right_width == 0:  # Full width action (like DualButtonAction)
       return rl.Rectangle(item_rect.x + style.ITEM_PADDING, item_rect.y, item_rect.width - (style.ITEM_PADDING * 2), style.ITEM_BASE_HEIGHT)
 
     action_width = self.action_item.rect.width
@@ -140,12 +153,7 @@ class ListItemSP(ListItem):
     left_action_item = isinstance(self.action_item, ToggleAction)
 
     if left_action_item:
-      left_rect = rl.Rectangle(
-        content_x,
-        self._rect.y + (style.ITEM_BASE_HEIGHT - style.TOGGLE_HEIGHT) // 2,
-        style.TOGGLE_WIDTH,
-        style.TOGGLE_HEIGHT
-      )
+      left_rect = rl.Rectangle(content_x, self._rect.y + (style.ITEM_BASE_HEIGHT - style.TOGGLE_HEIGHT) // 2, style.TOGGLE_WIDTH, style.TOGGLE_HEIGHT)
       text_x = left_rect.x + left_rect.width + style.ITEM_PADDING * 1.5
 
       # Draw title
@@ -187,42 +195,74 @@ class ListItemSP(ListItem):
       self._html_renderer.render(description_rect)
 
 
-def toggle_item_sp(title: str | Callable[[], str], description: str | Callable[[], str] | None = None, initial_state: bool = False,
-                   callback: Callable | None = None, icon: str = "", enabled: bool | Callable[[], bool] = True, param: str | None = None) -> ListItemSP:
+def toggle_item_sp(
+  title: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  initial_state: bool = False,
+  callback: Callable | None = None,
+  icon: str = "",
+  enabled: bool | Callable[[], bool] = True,
+  param: str | None = None,
+) -> ListItemSP:
   action = ToggleActionSP(initial_state=initial_state, enabled=enabled, callback=callback, param=param)
   return ListItemSP(title=title, description=description, action_item=action, icon=icon, callback=callback)
 
 
-def multiple_button_item_sp(title: str | Callable[[], str], description: str | Callable[[], str], buttons: list[str | Callable[[], str]],
-                            selected_index: int = 0, button_width: int = style.BUTTON_WIDTH, callback: Callable = None,
-                            icon: str = "", param: str | None = None, inline: bool = False) -> ListItemSP:
+def multiple_button_item_sp(
+  title: str | Callable[[], str],
+  description: str | Callable[[], str],
+  buttons: list[str | Callable[[], str]],
+  selected_index: int = 0,
+  button_width: int = style.BUTTON_WIDTH,
+  callback: Callable = None,
+  icon: str = "",
+  param: str | None = None,
+  inline: bool = False,
+) -> ListItemSP:
   action = MultipleButtonActionSP(buttons, button_width, selected_index, callback=callback, param=param)
   return ListItemSP(title=title, description=description, icon=icon, action_item=action, inline=inline)
 
 
-def option_item_sp(title: str | Callable[[], str], param: str,
-                   min_value: int, max_value: int, description: str | Callable[[], str] | None = None,
-                   value_change_step: int = 1, on_value_changed: Callable[[int], None] | None = None,
-                   enabled: bool | Callable[[], bool] = True,
-                   icon: str = "", label_width: int = 350, value_map: dict[int, int] | None = None,
-                   use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None) -> ListItemSP:
-  from openpilot.system.ui.sunnypilot.widgets.option_control import OptionControlSP
-  action = OptionControlSP(
-    param, min_value, max_value, value_change_step,
-    enabled, on_value_changed, value_map, label_width, use_float_scaling, label_callback
-  )
+def option_item_sp(
+  title: str | Callable[[], str],
+  param: str,
+  min_value: int,
+  max_value: int,
+  description: str | Callable[[], str] | None = None,
+  value_change_step: int = 1,
+  on_value_changed: Callable[[int], None] | None = None,
+  enabled: bool | Callable[[], bool] = True,
+  icon: str = "",
+  label_width: int = LABEL_WIDTH,
+  value_map: dict[int, int] | None = None,
+  use_float_scaling: bool = False,
+  label_callback: Callable[[int], str] | None = None,
+) -> ListItemSP:
+  action = OptionControlSP(param, min_value, max_value, value_change_step, enabled, on_value_changed, value_map, label_width, use_float_scaling, label_callback)
   return ListItemSP(title=title, description=description, action_item=action, icon=icon)
 
 
-def button_item(title: str | Callable[[], str], description: str | Callable[[], str] | None = None,
-                value: str | Callable[[], str] | None = None, callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItemSP:
+def button_item(
+  title: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  value: str | Callable[[], str] | None = None,
+  callback: Callable | None = None,
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItemSP:
   from openpilot.system.ui.widgets.list_view import TextAction, ITEM_TEXT_VALUE_COLOR
+
   action = TextAction(text=value or "", color=ITEM_TEXT_VALUE_COLOR, enabled=enabled)
   return ListItemSP(title=title, description=description, action_item=action, callback=callback)
 
 
-def text_item_sp(title: str | Callable[[], str], value: str | Callable[[], str], description: str | Callable[[], str] | None = None,
-              callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItemSP:
+def text_item_sp(
+  title: str | Callable[[], str],
+  value: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  callback: Callable | None = None,
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItemSP:
   from openpilot.system.ui.widgets.list_view import TextAction, ITEM_TEXT_VALUE_COLOR
+
   action = TextAction(text=value, color=ITEM_TEXT_VALUE_COLOR, enabled=enabled)
   return ListItemSP(title=title, description=description, action_item=action, callback=callback)

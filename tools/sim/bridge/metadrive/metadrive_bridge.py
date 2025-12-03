@@ -11,21 +11,12 @@ from openpilot.tools.sim.lib.camerad import W, H
 
 
 def straight_block(length):
-  return {
-    "id": "S",
-    "pre_block_socket_index": 0,
-    "length": length
-  }
+  return {"id": "S", "pre_block_socket_index": 0, "length": length}
+
 
 def curve_block(length, angle=45, direction=0):
-  return {
-    "id": "C",
-    "pre_block_socket_index": 0,
-    "length": length,
-    "radius": length,
-    "angle": angle,
-    "dir": direction
-  }
+  return {"id": "C", "pre_block_socket_index": 0, "length": length, "radius": length, "angle": angle, "dir": direction}
+
 
 def create_map(track_size=60):
   curve_len = track_size * 2
@@ -43,7 +34,7 @@ def create_map(track_size=60):
       curve_block(curve_len, 90),
       straight_block(track_size),
       curve_block(curve_len, 90),
-    ]
+    ],
   )
 
 
@@ -59,7 +50,11 @@ class MetaDriveBridge(SimulatorBridge):
 
   def spawn_world(self, queue: Queue):
     sensors = {
-      "rgb_road": (RGBCameraRoad, W, H, )
+      "rgb_road": (
+        RGBCameraRoad,
+        W,
+        H,
+      )
     }
 
     if self.dual_camera:
@@ -81,13 +76,13 @@ class MetaDriveBridge(SimulatorBridge):
       crash_vehicle_done=False,
       crash_object_done=False,
       arrive_dest_done=False,
-      traffic_density=0.0, # traffic is incredibly expensive
+      traffic_density=0.0,  # traffic is incredibly expensive
       map_config=create_map(),
       decision_repeat=1,
-      physics_world_step_size=self.TICKS_PER_FRAME/100,
+      physics_world_step_size=self.TICKS_PER_FRAME / 100,
       preload_models=False,
       show_logo=False,
-      anisotropic_filtering=False
+      anisotropic_filtering=False,
     )
 
     return MetaDriveWorld(queue, config, self.test_duration, self.test_run, self.dual_camera)

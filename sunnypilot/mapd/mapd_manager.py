@@ -5,6 +5,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import json
 import platform
 import os
@@ -28,10 +29,7 @@ mem_params = Params("/dev/shm/params") if platform.system() != "Darwin" else par
 
 
 def get_files_for_cleanup() -> list[str]:
-  paths = [
-    f"{Paths.mapd_root()}/db",
-    f"{Paths.mapd_root()}/v*"
-  ]
+  paths = [f"{Paths.mapd_root()}/db", f"{Paths.mapd_root()}/v*"]
   files_to_remove = []
   for path in paths:
     if os.path.exists(path):
@@ -59,15 +57,9 @@ def request_refresh_osm_location_data(nations: list[str], states: list[str] = No
   params.put("OsmDownloadedDate", str(datetime.now().timestamp()))
   params.put_bool("OsmDbUpdatesCheck", False)
 
-  osm_download_locations = {
-    "nations": nations,
-    "states": states or []
-  }
+  osm_download_locations = {"nations": nations, "states": states or []}
 
-  osm_download_locations_dump = json.dumps({
-    "nations": nations,
-    "states": states or []
-  })
+  osm_download_locations_dump = json.dumps({"nations": nations, "states": states or []})
 
   print(f"Downloading maps for {osm_download_locations_dump}")
   mem_params.put("OSMDownloadLocations", osm_download_locations)

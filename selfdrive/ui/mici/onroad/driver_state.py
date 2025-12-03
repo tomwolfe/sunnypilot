@@ -65,8 +65,7 @@ class DriverStateRenderer(Widget):
 
   @property
   def should_draw(self):
-    return (self._should_draw and ui_state.sm["selfdriveState"].alertSize == AlertSize.none and
-            ui_state.sm.recv_frame["driverStateV2"] > ui_state.started_frame)
+    return self._should_draw and ui_state.sm["selfdriveState"].alertSize == AlertSize.none and ui_state.sm.recv_frame["driverStateV2"] > ui_state.started_frame
 
   def set_force_active(self, force_active: bool):
     """Force the dmoji to always appear active (green) regardless of actual state"""
@@ -81,13 +80,14 @@ class DriverStateRenderer(Widget):
     if DEBUG:
       rl.draw_rectangle_lines_ex(self._rect, 1, rl.RED)
 
-    rl.draw_texture(self._dm_background,
-                    int(self._rect.x + (self._rect.width - self._dm_background.width) / 2),
-                    int(self._rect.y + (self._rect.height - self._dm_background.height) / 2),
-                    rl.Color(255, 255, 255, int(255 * self._fade_filter.x)))
+    rl.draw_texture(
+      self._dm_background,
+      int(self._rect.x + (self._rect.width - self._dm_background.width) / 2),
+      int(self._rect.y + (self._rect.height - self._dm_background.height) / 2),
+      rl.Color(255, 255, 255, int(255 * self._fade_filter.x)),
+    )
 
-    rl.draw_texture(self._dm_person, int(self._rect.x), int(self._rect.y),
-                    rl.Color(255, 255, 255, int(255 * 0.9 * self._fade_filter.x)))
+    rl.draw_texture(self._dm_person, int(self._rect.x), int(self._rect.y), rl.Color(255, 255, 255, int(255 * 0.9 * self._fade_filter.x)))
 
     if self.effective_active:
       source_rect = rl.Rectangle(0, 0, self._dm_cone.width, self._dm_cone.height)
@@ -110,8 +110,7 @@ class DriverStateRenderer(Widget):
 
         rl.draw_texture_ex(
           self._dm_center,
-          (int(self._rect.x + (self._rect.width - self._dm_center.width) / 2),
-           int(self._rect.y + (self._rect.height - self._dm_center.height) / 2)),
+          (int(self._rect.x + (self._rect.width - self._dm_center.width) / 2), int(self._rect.y + (self._rect.height - self._dm_center.height) / 2)),
           0,
           1.0,
           rl.Color(255, 255, 255, int(255 * self._fade_filter.x * self._looking_center_filter.x)),

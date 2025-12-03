@@ -5,4 +5,4 @@ import tensorflow as tf
 with open(sys.argv[1], "rb") as f:
   graph_def = tf.compat.v1.GraphDef()
   graph_def.ParseFromString(f.read())
-  #tf.io.write_graph(graph_def, '', sys.argv[1]+".try")
+  # tf.io.write_graph(graph_def, '', sys.argv[1]+".try")

@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from collections.abc import Callable
 
 import pyray as rl
@@ -28,7 +29,7 @@ class ToggleSP(Toggle):
         # For UI tests or environments where the param might not be defined,
         # default to False and log a warning.
         cloudlog.warning(f"ToggleSP: Unknown parameter key '{self.param_key}'. Defaulting to False.")
-        initial_state = False # Default to false for undefined parameters
+        initial_state = False  # Default to false for undefined parameters
     Toggle.__init__(self, initial_state, callback)
 
   def _handle_mouse_release(self, mouse_pos: MousePos):

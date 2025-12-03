@@ -32,7 +32,7 @@ CPU usage budget
 TEST_DURATION = 25
 LOG_OFFSET = 8
 
-MAX_TOTAL_CPU = 350.  # total for all 8 cores
+MAX_TOTAL_CPU = 350.0  # total for all 8 cores
 PROCS = {
   # Baseline CPU usage by process
   "selfdrive.controls.controlsd": 16.0,
@@ -105,7 +105,6 @@ def cputime_total(ct):
 @pytest.mark.tici
 @pytest.mark.skip_tici_setup
 class TestOnroad:
-
   @classmethod
   def setup_class(cls):
     if "DEBUG" in os.environ:
@@ -175,7 +174,7 @@ class TestOnroad:
         continue
 
       with subtests.test(service=s):
-        assert len(msgs) >= math.floor(SERVICE_LIST[s].frequency*int(TEST_DURATION*0.8))
+        assert len(msgs) >= math.floor(SERVICE_LIST[s].frequency * int(TEST_DURATION * 0.8))
 
   def test_manager_starting_time(self):
     st = self.ts['managerState']['t'][0]
@@ -188,17 +187,17 @@ class TestOnroad:
     assert total_size < 3.5e5
 
     cnt = Counter(json.loads(m.logMessage)['filename'] for m in msgs)
-    big_logs = [f for f, n in cnt.most_common(3) if n / sum(cnt.values()) > 30.]
+    big_logs = [f for f, n in cnt.most_common(3) if n / sum(cnt.values()) > 30.0]
     assert len(big_logs) == 0, f"Log spam: {big_logs}"
 
   def test_log_sizes(self, subtests):
     # TODO: this isn't super stable between different devices
     for f, sz in self.log_sizes.items():
-      rate = LOGS_SIZE[f.name]/60.
+      rate = LOGS_SIZE[f.name] / 60.0
       minn = rate * TEST_DURATION * 0.5
       maxx = rate * TEST_DURATION * 1.5
       with subtests.test(file=f.name):
-        assert minn < sz <  maxx
+        assert minn < sz < maxx
 
   def test_ui_timings(self):
     result = "\n"
@@ -215,12 +214,12 @@ class TestOnroad:
     result += "------------------------------------------------\n"
     print(result)
 
-    assert max(ts) < 250.
-    assert np.mean(ts) < 20.  # TODO: ~6-11ms, increase consistency
-    #self.assertLess(np.std(ts), 5.)
+    assert max(ts) < 250.0
+    assert np.mean(ts) < 20.0  # TODO: ~6-11ms, increase consistency
+    # self.assertLess(np.std(ts), 5.)
 
     # some slow frames are expected since camerad/modeld can preempt ui
-    veryslow = [x for x in ts if x > 40.]
+    veryslow = [x for x in ts if x > 40.0]
     assert len(veryslow) < 5, f"Too many slow frame draw times: {veryslow}"
 
   def test_cpu_usage(self, subtests):
@@ -240,13 +239,12 @@ class TestOnroad:
     header = ['process', 'usage', 'expected', 'max allowed', 'test result']
     rows = []
     for proc_name, expected in PROCS.items():
-
       error = ""
-      usage = 0.
+      usage = 0.0
       x = plogs_by_proc[proc_name]
       if len(x) > 2:
         cpu_time = cputime_total(x[-1]) - cputime_total(x[0])
-        usage = cpu_time / dt * 100.
+        usage = cpu_time / dt * 100.0
 
         max_allowed = max(expected * 1.8, expected + 5.0)
         if usage > max_allowed:
@@ -271,7 +269,7 @@ class TestOnroad:
     with subtests.test(name="total CPU"):
       assert procs_tot < MAX_TOTAL_CPU, "Total CPU budget exceeded"
     print("------------------------------------------------")
-    print(f"Total allocated CPU usage is {procs_tot}%, budget is {MAX_TOTAL_CPU}%, {MAX_TOTAL_CPU-procs_tot:.1f}% left")
+    print(f"Total allocated CPU usage is {procs_tot}%, budget is {MAX_TOTAL_CPU}%, {MAX_TOTAL_CPU - procs_tot:.1f}% left")
     print("------------------------------------------------")
 
     assert cpu_ok
@@ -299,7 +297,7 @@ class TestOnroad:
     for name in ['roadCameraState', 'wideRoadCameraState', 'driverCameraState']:
       ts = self.ts[name]['timestampSof']
       d_ms = np.diff(ts) / 1e6
-      d50 = np.abs(d_ms-50)
+      d50 = np.abs(d_ms - 50)
       result += f"{name} sof delta vs 50ms: min  {min(d50):.2f}ms\n"
       result += f"{name} sof delta vs 50ms: max  {max(d50):.2f}ms\n"
       result += f"{name} sof delta vs 50ms: mean {d50.mean():.2f}ms\n"
@@ -316,12 +314,14 @@ class TestOnroad:
         # sanity checks within a single cam
         for cam in cams:
           with subtests.test(test="frame_skips", camera=cam):
-            assert set(np.diff(self.ts[cam]['frameId'])) == {1, }, "Frame ID skips"
+            assert set(np.diff(self.ts[cam]['frameId'])) == {
+              1,
+            }, "Frame ID skips"
 
             # EOF > SOF
             eof_sof_diff = self.ts[cam]['timestampEof'] - self.ts[cam]['timestampSof']
             assert np.all(eof_sof_diff > 0)
-            assert np.all(eof_sof_diff < 50*1e6)
+            assert np.all(eof_sof_diff < 50 * 1e6)
 
         first_fid = {min(self.ts[c]['frameId']) for c in cams}
         assert len(first_fid) == 1, "Cameras don't start on same frame ID"
@@ -335,24 +335,25 @@ class TestOnroad:
         assert max(last_fid) - min(last_fid) < 10
 
         start, end = min(first_fid), min(last_fid)
-        for i in range(end-start):
-          ts = {c: round(self.ts[c]['timestampSof'][i]/1e6, 1) for c in cams}
-          diff = (max(ts.values()) - min(ts.values()))
-          assert diff < 2, f"Cameras not synced properly: frame_id={start+i}, {diff=:.1f}ms, {ts=}"
+        for i in range(end - start):
+          ts = {c: round(self.ts[c]['timestampSof'][i] / 1e6, 1) for c in cams}
+          diff = max(ts.values()) - min(ts.values())
+          assert diff < 2, f"Cameras not synced properly: frame_id={start + i}, {diff=:.1f}ms, {ts=}"
 
   def test_camera_encoder_matches(self, subtests):
     # sanity check that the frame metadata is consistent with the encoded frames
-    pairs = [('roadCameraState', 'roadEncodeIdx'),
-             ('wideRoadCameraState', 'wideRoadEncodeIdx'),
-             ('driverCameraState', 'driverEncodeIdx')]
+    pairs = [('roadCameraState', 'roadEncodeIdx'), ('wideRoadCameraState', 'wideRoadEncodeIdx'), ('driverCameraState', 'driverEncodeIdx')]
     for cam, enc in pairs:
       with subtests.test(camera=cam, encoder=enc):
-        cam_frames = {fid: (sof, eof) for fid, sof, eof in zip(
-          self.ts[cam]['frameId'],
-          self.ts[cam]['timestampSof'],
-          self.ts[cam]['timestampEof'],
-          strict=True,
-        )}
+        cam_frames = {
+          fid: (sof, eof)
+          for fid, sof, eof in zip(
+            self.ts[cam]['frameId'],
+            self.ts[cam]['timestampSof'],
+            self.ts[cam]['timestampEof'],
+            strict=True,
+          )
+        }
         for i, fid in enumerate(self.ts[enc]['frameId']):
           cam_sof, cam_eof = cam_frames[fid]
           enc_sof, enc_eof = self.ts[enc]['timestampSof'][i], self.ts[enc]['timestampEof'][i]
@@ -365,8 +366,10 @@ class TestOnroad:
     result += "-----------------  MPC Timing ------------------\n"
     result += "------------------------------------------------\n"
 
-    cfgs = [("longitudinalPlan", 0.05, 0.05),]
-    for (s, instant_max, avg_max) in cfgs:
+    cfgs = [
+      ("longitudinalPlan", 0.05, 0.05),
+    ]
+    for s, instant_max, avg_max in cfgs:
       ts = [getattr(m, s).solverExecutionTime for m in self.msgs[s]]
       assert max(ts) < instant_max, f"high '{s}' execution time: {max(ts)}"
       assert np.mean(ts) < avg_max, f"high avg '{s}' execution time: {np.mean(ts)}"
@@ -385,11 +388,10 @@ class TestOnroad:
       # since multiple processes use the GPU and can preempt each other,
       # these numbers are not fully self-contained.
       ("modelV2", 0.06, 0.040),
-
       # can miss cycles here and there, just important the avg frequency is 20Hz
       ("driverStateV2", 0.3, 0.05),
     ]
-    for (s, instant_max, avg_max) in cfgs:
+    for s, instant_max, avg_max in cfgs:
       ts = [getattr(m, s).modelExecutionTime for m in self.msgs[s]]
       # TODO some init can happen in first iteration
       ts = ts[1:]
@@ -424,10 +426,10 @@ class TestOnroad:
         errors.append("❌ FAILED MEAN TIMING CHECK ❌")
       if not np.allclose([np.max(ts), np.min(ts)], dt, rtol=maxmin, atol=0):
         errors.append("❌ FAILED MAX/MIN TIMING CHECK ❌")
-      if (np.std(ts)/dt) > rsd:
+      if (np.std(ts) / dt) > rsd:
         errors.append("❌ FAILED RSD TIMING CHECK ❌")
       passed = not errors and passed
-      rows.append([s, *(np.array([np.max(ts), np.min(ts), np.mean(ts), dt])*1e3), np.std(ts)/dt, rsd, "\n".join(errors) or "✅"])
+      rows.append([s, *(np.array([np.max(ts), np.min(ts), np.mean(ts), dt]) * 1e3), np.std(ts) / dt, rsd, "\n".join(errors) or "✅"])
 
     print(tabulate(rows, header, tablefmt="simple_grid", stralign="center", numalign="center", floatfmt=".2f"))
     assert passed
@@ -447,5 +449,4 @@ class TestOnroad:
 
     offset = int(SERVICE_LIST['selfdriveState'].frequency * LOG_OFFSET)
     eng = [m.selfdriveState.engageable for m in self.msgs['selfdriveState'][offset:]]
-    assert all(eng), \
-           f"Not engageable for whole segment:\n- selfdriveState.engageable: {Counter(eng)}\n- No entry events: {no_entries}"
+    assert all(eng), f"Not engageable for whole segment:\n- selfdriveState.engageable: {Counter(eng)}\n- No entry events: {no_entries}"

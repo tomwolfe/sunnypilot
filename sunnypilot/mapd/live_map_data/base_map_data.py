@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from abc import abstractmethod, ABC
 
 import cereal.messaging as messaging
@@ -84,19 +85,14 @@ class BaseMapData(ABC):
     """
     # This method would be implemented to retrieve traffic sign information from OSM data
     # For now, it returns a default structure that can be expanded
-    traffic_sign_info = {
-      'has_stop_sign': False,
-      'has_traffic_light': False,
-      'has_yield_sign': False,
-      'distance_to_next_sign': float('inf'),
-      'sign_type': None
-    }
+    traffic_sign_info = {'has_stop_sign': False, 'has_traffic_light': False, 'has_yield_sign': False, 'distance_to_next_sign': float('inf'), 'sign_type': None}
 
     # Get traffic sign data from params if available
     traffic_sign_data = self.params.get("MapTrafficSigns")
     if traffic_sign_data:
       try:
         import json
+
         sign_data = json.loads(traffic_sign_data)
 
         # Process the sign data to find the closest relevant sign ahead
@@ -137,16 +133,19 @@ class BaseMapData(ABC):
             TRAFFIC_LIGHT_TYPES = {'traffic_light', 'light', 'traffic_signals', 'traffic_signal', 'signal_lights', 'lights'}
             YIELD_SIGN_TYPES = {'yield', 'yield_sign', 'give_way', 'yield_ahead', 'give_way_sign'}
 
-            traffic_sign_info.update({
-              'has_stop_sign': sign_type in STOP_SIGN_TYPES,
-              'has_traffic_light': sign_type in TRAFFIC_LIGHT_TYPES,
-              'has_yield_sign': sign_type in YIELD_SIGN_TYPES,
-              'distance_to_next_sign': min_distance,
-              'sign_type': sign_type
-            })
+            traffic_sign_info.update(
+              {
+                'has_stop_sign': sign_type in STOP_SIGN_TYPES,
+                'has_traffic_light': sign_type in TRAFFIC_LIGHT_TYPES,
+                'has_yield_sign': sign_type in YIELD_SIGN_TYPES,
+                'distance_to_next_sign': min_distance,
+                'sign_type': sign_type,
+              }
+            )
       except Exception as e:
         # If there's an error parsing the data, return default values and log the error
         import logging
+
         logging.warning(f"Error parsing MapTrafficSigns data: {e}")
         # Optionally, could set a parameter to indicate map data issues
         # Params().put_bool("MapDataError", True)

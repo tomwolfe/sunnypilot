@@ -9,6 +9,7 @@ LDW_MIN_SPEED = 31 * CV.MPH_TO_MS
 LDW_MIN_SPEED_ADAPTIVE = 15 * CV.MPH_TO_MS  # Lower threshold for adaptive detection
 LANE_DEPARTURE_THRESHOLD = 0.1
 
+
 class LaneDepartureWarning:
   def __init__(self):
     self.left = False

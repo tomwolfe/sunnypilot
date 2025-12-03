@@ -43,6 +43,7 @@ class UserRequest:
   CHECK = 1
   FETCH = 2
 
+
 class WaitTimeHelper:
   def __init__(self):
     self.ready_event = threading.Event()
@@ -63,9 +64,11 @@ class WaitTimeHelper:
   def sleep(self, t: float) -> None:
     self.ready_event.wait(timeout=t)
 
+
 def write_time_to_param(params, param) -> None:
   t = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
   params.put(param, t)
+
 
 def run(cmd: list[str], cwd: str = None) -> str:
   return subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT, encoding='utf8')
@@ -80,6 +83,7 @@ def set_consistent_flag(consistent: bool) -> None:
     consistent_file.unlink(missing_ok=True)
   os.sync()
 
+
 def parse_release_notes(basedir: str) -> bytes:
   try:
     with open(os.path.join(basedir, "CHANGELOG.md"), "rb") as f:
@@ -93,6 +97,7 @@ def parse_release_notes(basedir: str) -> bytes:
   except Exception:
     cloudlog.exception("failed to parse release notes")
   return b""
+
 
 def setup_git_options(cwd: str) -> None:
   # We sync FS object atimes (which NEOS doesn't use) and mtimes, but ctimes
@@ -124,7 +129,6 @@ def dismount_overlay() -> None:
 
 
 def init_overlay() -> None:
-
   # Re-create the overlay if BASEDIR/.git has changed since we created the overlay
   if OVERLAY_INIT.is_file() and os.path.ismount(OVERLAY_MERGED):
     git_dir_path = os.path.join(BASEDIR, ".git")
@@ -197,8 +201,15 @@ def handle_agnos_update() -> None:
   from openpilot.system.hardware.tici.agnos import flash_agnos_update, get_target_slot_number
 
   cur_version = HARDWARE.get_os_version()
-  updated_version = run(["bash", "-c", r"unset AGNOS_VERSION && source launch_env.sh && \
-                          echo -n $AGNOS_VERSION"], OVERLAY_MERGED).strip()
+  updated_version = run(
+    [
+      "bash",
+      "-c",
+      r"unset AGNOS_VERSION && source launch_env.sh && \
+                          echo -n $AGNOS_VERSION",
+    ],
+    OVERLAY_MERGED,
+  ).strip()
 
   cloudlog.info(f"AGNOS version check: {cur_version} vs {updated_version}")
   if cur_version == updated_version:
@@ -214,7 +225,6 @@ def handle_agnos_update() -> None:
   target_slot_number = get_target_slot_number()
   flash_agnos_update(manifest_path, target_slot_number, cloudlog)
   set_offroad_alert("Offroad_NeosUpdate", False)
-
 
 
 class Updater:
@@ -242,7 +252,7 @@ class Updater:
       hash_mismatch = self.get_commit_hash(BASEDIR) != self.branches[self.target_branch]
       branch_mismatch = self.get_branch(BASEDIR) != self.target_branch
       on_target_branch = self.get_branch(FINALIZED) == self.target_branch
-      return ((hash_mismatch or branch_mismatch) and on_target_branch)
+      return (hash_mismatch or branch_mismatch) and on_target_branch
     return False
 
   @property
@@ -303,6 +313,7 @@ class Updater:
       except Exception:
         cloudlog.exception("updater.get_description")
       return f"{version} / {branch} / {commit} / {commit_date}"
+
     self.params.put("UpdaterCurrentDescription", get_description(BASEDIR))
     self.params.put("UpdaterCurrentReleaseNotes", parse_release_notes(BASEDIR))
     self.params.put("UpdaterNewDescription", get_description(FINALIZED))
@@ -313,7 +324,7 @@ class Updater:
     for alert in ("Offroad_UpdateFailed", "Offroad_ConnectivityNeeded", "Offroad_ConnectivityNeededPrompt"):
       set_offroad_alert(alert, False)
 
-    dt_uptime_onroad = (self.params.get("UptimeOnroad", return_default=True) - last_uptime_onroad) / (60*60)
+    dt_uptime_onroad = (self.params.get("UptimeOnroad", return_default=True) - last_uptime_onroad) / (60 * 60)
     dt_route_count = self.params.get("RouteCount", return_default=True) - last_route_count
     build_metadata = get_build_metadata()
     if failed_count > 15 and exception is not None and self.has_internet:
@@ -426,7 +437,7 @@ def main() -> None:
       params.put("InstallDate", t)
 
     updater = Updater()
-    update_failed_count = 0 # TODO: Load from param?
+    update_failed_count = 0  # TODO: Load from param?
     wait_helper = WaitTimeHelper()
 
     # invalidate old finalized update
@@ -473,12 +484,7 @@ def main() -> None:
           write_time_to_param(params, "UpdaterLastFetchTime")
         update_failed_count = 0
       except subprocess.CalledProcessError as e:
-        cloudlog.event(
-          "update process failed",
-          cmd=e.cmd,
-          output=e.output,
-          returncode=e.returncode
-        )
+        cloudlog.event("update process failed", cmd=e.cmd, output=e.output, returncode=e.returncode)
         exception = f"command failed: {e.cmd}\n{e.output}"
         OVERLAY_INIT.unlink(missing_ok=True)
       except Exception as e:
@@ -488,14 +494,14 @@ def main() -> None:
 
       try:
         params.put("UpdaterState", "idle")
-        update_successful = (update_failed_count == 0)
+        update_successful = update_failed_count == 0
         updater.set_params(update_successful, update_failed_count, exception)
       except Exception:
         cloudlog.exception("uncaught updated exception while setting params, shouldn't happen")
 
       # infrequent attempts if we successfully updated recently
       wait_helper.user_request = UserRequest.NONE
-      wait_helper.sleep(5*60 if update_failed_count > 0 else 1.5*60*60)
+      wait_helper.sleep(5 * 60 if update_failed_count > 0 else 1.5 * 60 * 60)
 
 
 if __name__ == "__main__":

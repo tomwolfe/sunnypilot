@@ -1,7 +1,9 @@
 import signal
 
+
 class TimeoutException(Exception):
   pass
+
 
 class Timeout:
   """
@@ -10,6 +12,7 @@ class Timeout:
   with Timeout(seconds=5, error_msg="Sleep was too long"):
     time.sleep(10)
   """
+
   def __init__(self, seconds, error_msg=None):
     if error_msg is None:
       error_msg = f'Timed out after {seconds} seconds'

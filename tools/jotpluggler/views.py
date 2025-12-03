@@ -66,11 +66,7 @@ class TimeSeriesPanel(ViewPanel):
     self._total_segments = self.playback_manager.num_segments
 
   def to_dict(self) -> dict:
-    return {
-      "type": "timeseries",
-      "title": self.title,
-      "series_paths": list(self._series_data.keys())
-    }
+    return {"type": "timeseries", "title": self.title, "series_paths": list(self._series_data.keys())}
 
   @classmethod
   def load_from_dict(cls, data: dict, data_manager, playback_manager, worker_manager):
@@ -104,7 +100,7 @@ class TimeSeriesPanel(ViewPanel):
         dpg.set_axis_limits(self.x_axis_tag, min_time, max_time)
         self._last_x_limits = (min_time, max_time)
         self._fit_y_axis(min_time, max_time)
-        self._queued_reallow_x_zoom = True # must wait a frame before allowing user changes so that axis limits take effect
+        self._queued_reallow_x_zoom = True  # must wait a frame before allowing user changes so that axis limits take effect
         return
 
       if self._queued_reallow_x_zoom:
@@ -112,7 +108,7 @@ class TimeSeriesPanel(ViewPanel):
         if tuple(dpg.get_axis_limits(self.x_axis_tag)) == self._last_x_limits:
           dpg.set_axis_limits_auto(self.x_axis_tag)
         else:
-          self._queued_x_sync = self._last_x_limits # retry, likely too early
+          self._queued_x_sync = self._last_x_limits  # retry, likely too early
           return
 
       if self._new_data:  # handle new data in main thread
@@ -175,7 +171,7 @@ class TimeSeriesPanel(ViewPanel):
       start_idx, end_idx = np.searchsorted(time_array, [x_min, x_max])
       end_idx = min(end_idx, len(time_array) - 1)
       if start_idx <= end_idx:
-        y_slice = value_array[start_idx:end_idx + 1]
+        y_slice = value_array[start_idx : end_idx + 1]
         series_min, series_max = np.min(y_slice), np.max(y_slice)
         global_min = min(global_min, series_min)
         global_max = max(global_max, series_max)

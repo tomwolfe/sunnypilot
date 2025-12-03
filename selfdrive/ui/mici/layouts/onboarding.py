@@ -34,8 +34,7 @@ class DriverCameraSetupDialog(DriverCameraDialog):
     self._camera_view._render(rect)
 
     if not self._camera_view.frame:
-      gui_label(rect, tr("camera starting"), font_size=64, font_weight=FontWeight.BOLD,
-                alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
+      gui_label(rect, tr("camera starting"), font_size=64, font_weight=FontWeight.BOLD, alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
       rl.end_scissor_mode()
       return -1
 
@@ -58,9 +57,11 @@ class TrainingGuidePreDMTutorial(SetupTermsPage):
     super().__init__(continue_callback, continue_text="continue")
     self._title_header = TermsHeader("driver monitoring setup", gui_app.texture("icons_mici/setup/green_dm.png", 60, 60))
 
-    self._dm_label = UnifiedLabel("Next, we'll ensure comma four is mounted properly.\n\nIf it does not have a clear view of the driver, " +
-                                  "unplug and remount before continuing.", 42,
-                                  FontWeight.ROMAN)
+    self._dm_label = UnifiedLabel(
+      "Next, we'll ensure comma four is mounted properly.\n\nIf it does not have a clear view of the driver, " + "unplug and remount before continuing.",
+      42,
+      FontWeight.ROMAN,
+    )
 
   def show_event(self):
     super().show_event()
@@ -72,19 +73,23 @@ class TrainingGuidePreDMTutorial(SetupTermsPage):
     return self._dm_label.rect.y + self._dm_label.rect.height - self._scroll_panel.get_offset()
 
   def _render_content(self, scroll_offset):
-    self._title_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + 16 + scroll_offset,
-      self._title_header.rect.width,
-      self._title_header.rect.height,
-    ))
+    self._title_header.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._rect.y + 16 + scroll_offset,
+        self._title_header.rect.width,
+        self._title_header.rect.height,
+      )
+    )
 
-    self._dm_label.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._title_header.rect.y + self._title_header.rect.height + 16,
-      self._rect.width - 32,
-      self._dm_label.get_content_height(int(self._rect.width - 32)),
-    ))
+    self._dm_label.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._title_header.rect.y + self._title_header.rect.height + 16,
+        self._rect.width - 32,
+        self._dm_label.get_content_height(int(self._rect.width - 32)),
+      )
+    )
 
 
 class TrainingGuideDMTutorial(Widget):
@@ -126,15 +131,22 @@ class TrainingGuideDMTutorial(Widget):
   def _render(self, _):
     self._dialog.render(self._rect)
 
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y + self._rect.height - self._title_header.rect.height * 1.5 - 32),
-                                 int(self._rect.width), int(self._title_header.rect.height * 1.5 + 32),
-                                 rl.BLANK, rl.Color(0, 0, 0, 150))
-    self._title_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + self._rect.height - self._title_header.rect.height - 16,
-      self._title_header.rect.width,
-      self._title_header.rect.height,
-    ))
+    rl.draw_rectangle_gradient_v(
+      int(self._rect.x),
+      int(self._rect.y + self._rect.height - self._title_header.rect.height * 1.5 - 32),
+      int(self._rect.width),
+      int(self._title_header.rect.height * 1.5 + 32),
+      rl.BLANK,
+      rl.Color(0, 0, 0, 150),
+    )
+    self._title_header.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._rect.y + self._rect.height - self._title_header.rect.height - 16,
+        self._title_header.rect.width,
+        self._title_header.rect.height,
+      )
+    )
 
 
 class TrainingGuideRecordFront(SetupTermsPage):
@@ -150,8 +162,7 @@ class TrainingGuideRecordFront(SetupTermsPage):
     super().__init__(on_continue, back_callback=on_back, back_text="no", continue_text="yes")
     self._title_header = TermsHeader("improve driver monitoring", gui_app.texture("icons_mici/setup/green_dm.png", 60, 60))
 
-    self._dm_label = UnifiedLabel("Do you want to upload driver camera data to improve driver monitoring?", 42,
-                                  FontWeight.ROMAN)
+    self._dm_label = UnifiedLabel("Do you want to upload driver camera data to improve driver monitoring?", 42, FontWeight.ROMAN)
 
   def show_event(self):
     super().show_event()
@@ -163,49 +174,60 @@ class TrainingGuideRecordFront(SetupTermsPage):
     return self._dm_label.rect.y + self._dm_label.rect.height - self._scroll_panel.get_offset()
 
   def _render_content(self, scroll_offset):
-    self._title_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + 16 + scroll_offset,
-      self._title_header.rect.width,
-      self._title_header.rect.height,
-    ))
+    self._title_header.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._rect.y + 16 + scroll_offset,
+        self._title_header.rect.width,
+        self._title_header.rect.height,
+      )
+    )
 
-    self._dm_label.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._title_header.rect.y + self._title_header.rect.height + 16,
-      self._rect.width - 32,
-      self._dm_label.get_content_height(int(self._rect.width - 32)),
-    ))
+    self._dm_label.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._title_header.rect.y + self._title_header.rect.height + 16,
+        self._rect.width - 32,
+        self._dm_label.get_content_height(int(self._rect.width - 32)),
+      )
+    )
 
 
 class TrainingGuideAttentionNotice(SetupTermsPage):
   def __init__(self, continue_callback):
     super().__init__(continue_callback, continue_text="continue")
     self._title_header = TermsHeader("driver assistance", gui_app.texture("icons_mici/setup/warning.png", 60, 60))
-    self._warning_label = UnifiedLabel("1. sunnypilot is a driver assistance system.\n\n" +
-                                       "2. You must pay attention at all times.\n\n" +
-                                       "3. You must be ready to take over at any time.\n\n" +
-                                       "4. You are fully responsible for driving the car.", 42,
-                                       FontWeight.ROMAN)
+    self._warning_label = UnifiedLabel(
+      "1. sunnypilot is a driver assistance system.\n\n"
+      + "2. You must pay attention at all times.\n\n"
+      + "3. You must be ready to take over at any time.\n\n"
+      + "4. You are fully responsible for driving the car.",
+      42,
+      FontWeight.ROMAN,
+    )
 
   @property
   def _content_height(self):
     return self._warning_label.rect.y + self._warning_label.rect.height - self._scroll_panel.get_offset()
 
   def _render_content(self, scroll_offset):
-    self._title_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + 16 + scroll_offset,
-      self._title_header.rect.width,
-      self._title_header.rect.height,
-    ))
+    self._title_header.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._rect.y + 16 + scroll_offset,
+        self._title_header.rect.width,
+        self._title_header.rect.height,
+      )
+    )
 
-    self._warning_label.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._title_header.rect.y + self._title_header.rect.height + 16,
-      self._rect.width - 32,
-      self._warning_label.get_content_height(int(self._rect.width - 32)),
-    ))
+    self._warning_label.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._title_header.rect.y + self._title_header.rect.height + 16,
+        self._rect.width - 32,
+        self._warning_label.get_content_height(int(self._rect.width - 32)),
+      )
+    )
 
 
 class TrainingGuide(Widget):
@@ -244,35 +266,40 @@ class DeclinePage(Widget):
     self._back_button = SmallButton("back")
     self._back_button.set_click_callback(back_callback)
 
-    self._warning_header = TermsHeader("you must accept the\nterms to use sunnypilot",
-                                       gui_app.texture("icons_mici/setup/red_warning.png", 66, 60))
+    self._warning_header = TermsHeader("you must accept the\nterms to use sunnypilot", gui_app.texture("icons_mici/setup/red_warning.png", 66, 60))
 
   def _on_uninstall(self):
     ui_state.params.put_bool("DoUninstall", True)
     gui_app.request_close()
 
   def _render(self, _):
-    self._warning_header.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._rect.y + 16,
-      self._warning_header.rect.width,
-      self._warning_header.rect.height,
-    ))
+    self._warning_header.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._rect.y + 16,
+        self._warning_header.rect.width,
+        self._warning_header.rect.height,
+      )
+    )
 
     self._back_button.set_opacity(1 - self._uninstall_slider.slider_percentage)
-    self._back_button.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._rect.y + self._rect.height - self._back_button.rect.height,
-      self._back_button.rect.width,
-      self._back_button.rect.height,
-    ))
+    self._back_button.render(
+      rl.Rectangle(
+        self._rect.x + 8,
+        self._rect.y + self._rect.height - self._back_button.rect.height,
+        self._back_button.rect.width,
+        self._back_button.rect.height,
+      )
+    )
 
-    self._uninstall_slider.render(rl.Rectangle(
-      self._rect.x + self._rect.width - self._uninstall_slider.rect.width,
-      self._rect.y + self._rect.height - self._uninstall_slider.rect.height,
-      self._uninstall_slider.rect.width,
-      self._uninstall_slider.rect.height,
-    ))
+    self._uninstall_slider.render(
+      rl.Rectangle(
+        self._rect.x + self._rect.width - self._uninstall_slider.rect.width,
+        self._rect.y + self._rect.height - self._uninstall_slider.rect.height,
+        self._uninstall_slider.rect.width,
+        self._uninstall_slider.rect.height,
+      )
+    )
 
 
 class TermsPage(SetupTermsPage):
@@ -282,9 +309,11 @@ class TermsPage(SetupTermsPage):
     info_txt = gui_app.texture("icons_mici/setup/green_info.png", 60, 60)
     self._title_header = TermsHeader("terms & conditions", info_txt)
 
-    self._terms_label = UnifiedLabel("You must accept the Terms and Conditions to use sunnypilot. " +
-                                     "Read the latest terms at https://comma.ai/terms before continuing.", 36,
-                                     FontWeight.ROMAN)
+    self._terms_label = UnifiedLabel(
+      "You must accept the Terms and Conditions to use sunnypilot. " + "Read the latest terms at https://comma.ai/terms before continuing.",
+      36,
+      FontWeight.ROMAN,
+    )
 
   @property
   def _content_height(self):
@@ -294,12 +323,14 @@ class TermsPage(SetupTermsPage):
     self._title_header.set_position(self._rect.x + 16, self._rect.y + 12 + scroll_offset)
     self._title_header.render()
 
-    self._terms_label.render(rl.Rectangle(
-      self._rect.x + 16,
-      self._title_header.rect.y + self._title_header.rect.height + self.ITEM_SPACING,
-      self._rect.width - 100,
-      self._terms_label.get_content_height(int(self._rect.width - 100)),
-    ))
+    self._terms_label.render(
+      rl.Rectangle(
+        self._rect.x + 16,
+        self._title_header.rect.y + self._title_header.rect.height + self.ITEM_SPACING,
+        self._rect.width - 100,
+        self._terms_label.get_content_height(int(self._rect.width - 100)),
+      )
+    )
 
 
 class OnboardingWindow(Widget):

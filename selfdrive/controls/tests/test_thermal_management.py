@@ -7,9 +7,9 @@ def test_thermal_compensation_longitudinal():
   """Test that the longitudinal controller properly handles thermal compensation."""
   # Create mock car params
   CP = CarParams()
-  CP.longitudinalTuning.kpBP = [0., 5., 35.]
+  CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kpV = [1.0, 1.2, 0.8]
-  CP.longitudinalTuning.kiBP = [0., 5., 35.]
+  CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
@@ -18,12 +18,6 @@ def test_thermal_compensation_longitudinal():
   class MockCarParamsSP:
     enableGasInterceptor = False
     neuralNetworkLateralControl = type('obj', (object,), {'model': type('obj', (object,), {'path': ''})})()
-
-
-
-
-
-
 
   # Verify PID parameters are adjusted conservatively
   print("✓ Longitudinal thermal compensation test passed")

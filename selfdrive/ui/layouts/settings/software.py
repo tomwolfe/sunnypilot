@@ -63,14 +63,18 @@ class SoftwareLayout(Widget):
     self._branch_btn.action_item.set_value(ui_state.params.get("UpdaterTargetBranch") or "")
     self._branch_dialog: MultiOptionDialog | None = None
 
-    self._scroller = Scroller([
-      self._onroad_label,
-      self._version_item,
-      self._download_btn,
-      self._install_btn,
-      self._branch_btn,
-      button_item(lambda: tr("Uninstall"), lambda: tr("UNINSTALL"), callback=self._on_uninstall),
-    ], line_separator=True, spacing=0)
+    self._scroller = Scroller(
+      [
+        self._onroad_label,
+        self._version_item,
+        self._download_btn,
+        self._install_btn,
+        self._branch_btn,
+        button_item(lambda: tr("Uninstall"), lambda: tr("UNINSTALL"), callback=self._on_uninstall),
+      ],
+      line_separator=True,
+      spacing=0,
+    )
 
   def show_event(self):
     self._scroller.show_event()

@@ -5,6 +5,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from __future__ import annotations
 
 import base64
@@ -22,10 +23,21 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import set_core_affinity
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.hardware.hw import Paths
-from openpilot.system.athena.athenad import ws_send, jsonrpc_handler, \
-  recv_queue, UploadQueueCache, upload_queue, cur_upload_items, backoff, ws_manage, log_handler, start_local_proxy_shim, upload_handler, stat_handler
-from websocket import (ABNF, WebSocket, WebSocketException, WebSocketTimeoutException,
-                       create_connection, WebSocketConnectionClosedException)
+from openpilot.system.athena.athenad import (
+  ws_send,
+  jsonrpc_handler,
+  recv_queue,
+  UploadQueueCache,
+  upload_queue,
+  cur_upload_items,
+  backoff,
+  ws_manage,
+  log_handler,
+  start_local_proxy_shim,
+  upload_handler,
+  stat_handler,
+)
+from websocket import ABNF, WebSocket, WebSocketException, WebSocketTimeoutException, create_connection, WebSocketConnectionClosedException
 
 import cereal.messaging as messaging
 from openpilot.sunnypilot.sunnylink.api import SunnylinkApi
@@ -49,18 +61,25 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
   comma_prime_cellular_end_event = threading.Event()
 
   threads = [
-              threading.Thread(target=ws_manage, args=(ws, end_event), name='ws_manage'),
-              threading.Thread(target=ws_recv, args=(ws, end_event), name='ws_recv'),
-              threading.Thread(target=ws_send, args=(ws, end_event), name='ws_send'),
-              threading.Thread(target=ws_ping, args=(ws, end_event), name='ws_ping'),
-              threading.Thread(target=ws_queue, args=(end_event,), name='ws_queue'),
-              threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler'),
-              # threading.Thread(target=sunny_log_handler, args=(end_event, comma_prime_cellular_end_event), name='log_handler'),
-              threading.Thread(target=stat_handler, args=(end_event, Paths.stats_sp_root(), True), name='stat_handler'),
-            ] + [
-              threading.Thread(target=jsonrpc_handler, args=(end_event, partial(startLocalProxy, end_event),), name=f'worker_{x}')
-              for x in range(HANDLER_THREADS)
-            ]
+    threading.Thread(target=ws_manage, args=(ws, end_event), name='ws_manage'),
+    threading.Thread(target=ws_recv, args=(ws, end_event), name='ws_recv'),
+    threading.Thread(target=ws_send, args=(ws, end_event), name='ws_send'),
+    threading.Thread(target=ws_ping, args=(ws, end_event), name='ws_ping'),
+    threading.Thread(target=ws_queue, args=(end_event,), name='ws_queue'),
+    threading.Thread(target=upload_handler, args=(end_event,), name='upload_handler'),
+    # threading.Thread(target=sunny_log_handler, args=(end_event, comma_prime_cellular_end_event), name='log_handler'),
+    threading.Thread(target=stat_handler, args=(end_event, Paths.stats_sp_root(), True), name='stat_handler'),
+  ] + [
+    threading.Thread(
+      target=jsonrpc_handler,
+      args=(
+        end_event,
+        partial(startLocalProxy, end_event),
+      ),
+      name=f'worker_{x}',
+    )
+    for x in range(HANDLER_THREADS)
+  ]
 
   for thread in threads:
     thread.start()
@@ -86,7 +105,8 @@ def handle_long_poll(ws: WebSocket, exit_event: threading.Event | None) -> None:
         comma_prime_cellular_end_event.set()
       elif comma_prime_cellular_end_event.is_set() and not DISALLOW_LOG_UPLOAD.is_set():
         cloudlog.debug(
-          f"sunnylinkd.handle_long_poll: comma_prime_cellular_end_event is set and not PrimeType({prime_type}) > 2 or not networkMetered({metered})")
+          f"sunnylinkd.handle_long_poll: comma_prime_cellular_end_event is set and not PrimeType({prime_type}) > 2 or not networkMetered({metered})"
+        )
         comma_prime_cellular_end_event.clear()
   finally:
     end_event.set()
@@ -228,15 +248,17 @@ def getParams(params_keys: list[str], compression: bool = False) -> str | dict[s
       if value is None:
         continue
 
-      params_dict["params"].append({
-        "key": key,
-        "value": base64.b64encode(gzip.compress(value) if compression else value).decode('utf-8'),
-        "type": int(params.get_type(key).value),
-        "is_compressed": compression
-      })
+      params_dict["params"].append(
+        {
+          "key": key,
+          "value": base64.b64encode(gzip.compress(value) if compression else value).decode('utf-8'),
+          "type": int(params.get_type(key).value),
+          "is_compressed": compression,
+        }
+      )
 
     response = {str(param.get('key')): str(param.get('value')) for param in params_dict.get("params", [])}
-    response |= {"params": json.dumps(params_dict.get("params", []))} # Upcoming for settings v1
+    response |= {"params": json.dumps(params_dict.get("params", []))}  # Upcoming for settings v1
     return response
 
   except Exception as e:
@@ -295,8 +317,7 @@ def main(exit_event: threading.Event = None):
         sslopt={"cert_reqs": ssl.CERT_NONE if "localhost" in ws_uri else ssl.CERT_REQUIRED},
         timeout=SUNNYLINK_RECONNECT_TIMEOUT_S,
       )
-      cloudlog.event("sunnylinkd.main.connected_ws", ws_uri=ws_uri, retries=conn_retries,
-                     duration=time.monotonic() - conn_start)
+      cloudlog.event("sunnylinkd.main.connected_ws", ws_uri=ws_uri, retries=conn_retries, duration=time.monotonic() - conn_start)
       conn_start = None
 
       conn_retries = 0

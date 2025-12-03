@@ -21,9 +21,16 @@ from openpilot.system.ui.lib.wifi_manager import WifiManager
 from openpilot.selfdrive.ui.ui_state import device
 from openpilot.system.ui.lib.scroll_panel2 import GuiScrollPanel2
 from openpilot.system.ui.widgets import Widget, DialogResult
-from openpilot.system.ui.widgets.button import (IconButton, SmallButton, WideRoundedButton, SmallerRoundedButton,
-                                                SmallCircleIconButton, WidishRoundedButton, SmallRedPillButton,
-                                                FullRoundedButton)
+from openpilot.system.ui.widgets.button import (
+  IconButton,
+  SmallButton,
+  WideRoundedButton,
+  SmallerRoundedButton,
+  SmallCircleIconButton,
+  WidishRoundedButton,
+  SmallRedPillButton,
+  FullRoundedButton,
+)
 from openpilot.system.ui.widgets.label import UnifiedLabel
 from openpilot.system.ui.widgets.slider import LargerSlider
 from openpilot.selfdrive.ui.mici.layouts.settings.network import WifiUIMici
@@ -107,9 +114,14 @@ class StartPage(Widget):
   def __init__(self):
     super().__init__()
 
-    self._title = UnifiedLabel("start", 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                               font_weight=FontWeight.DISPLAY, alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                               alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._title = UnifiedLabel(
+      "start",
+      64,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      font_weight=FontWeight.DISPLAY,
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    )
 
     self._start_bg_txt = gui_app.texture("icons_mici/setup/green_button.png", 520, 224)
     self._start_bg_pressed_txt = gui_app.texture("icons_mici/setup/green_button_pressed.png", 520, 224)
@@ -124,8 +136,7 @@ class StartPage(Widget):
 
 
 class SoftwareSelectionPage(Widget):
-  def __init__(self, use_openpilot_callback: Callable,
-               use_custom_software_callback: Callable):
+  def __init__(self, use_openpilot_callback: Callable, use_custom_software_callback: Callable):
     super().__init__()
 
     self._openpilot_slider = LargerSlider("slide to use\nopenpilot", use_openpilot_callback)
@@ -160,9 +171,14 @@ class TermsHeader(Widget):
   def __init__(self, text: str, icon_texture: rl.Texture):
     super().__init__()
 
-    self._title = UnifiedLabel(text, 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                               font_weight=FontWeight.BOLD, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
-                               line_height=0.8)
+    self._title = UnifiedLabel(
+      text,
+      36,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      font_weight=FontWeight.BOLD,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+      line_height=0.8,
+    )
     self._icon_texture = icon_texture
 
     self.set_rect(rl.Rectangle(0, 0, gui_app.width - 16 * 2, self._icon_texture.height))
@@ -174,8 +190,7 @@ class TermsHeader(Widget):
     self._icon_texture = icon_texture
 
   def _render(self, _):
-    rl.draw_texture_ex(self._icon_texture, rl.Vector2(self._rect.x, self._rect.y),
-                       0.0, 1.0, rl.WHITE)
+    rl.draw_texture_ex(self._icon_texture, rl.Vector2(self._rect.x, self._rect.y), 0.0, 1.0, rl.WHITE)
 
     # May expand outside parent rect
     title_content_height = self._title.get_content_height(int(self._rect.width - self._icon_texture.width - 16))
@@ -191,8 +206,7 @@ class TermsHeader(Widget):
 class TermsPage(Widget):
   ITEM_SPACING = 20
 
-  def __init__(self, continue_callback: Callable, back_callback: Callable | None = None,
-               back_text: str = "back", continue_text: str = "accept"):
+  def __init__(self, continue_callback: Callable, back_callback: Callable | None = None, back_text: str = "back", continue_text: str = "accept"):
     super().__init__()
 
     # TODO: use Scroller
@@ -265,51 +279,61 @@ class TermsPage(Widget):
     self._render_content(scroll_offset)
 
     # black gradient at top and bottom for scrolling content
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y),
-                                 int(self._rect.width), 20, rl.BLACK, rl.BLANK)
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y + self._rect.height - 20),
-                                 int(self._rect.width), 20, rl.BLANK, rl.BLACK)
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y), int(self._rect.width), 20, rl.BLACK, rl.BLANK)
+    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y + self._rect.height - 20), int(self._rect.width), 20, rl.BLANK, rl.BLACK)
 
-    self._back_button.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._rect.y + self._rect.height - self._back_button.rect.height,
-      self._back_button.rect.width,
-      self._back_button.rect.height,
-    ))
+    self._back_button.render(
+      rl.Rectangle(
+        self._rect.x + 8,
+        self._rect.y + self._rect.height - self._back_button.rect.height,
+        self._back_button.rect.width,
+        self._back_button.rect.height,
+      )
+    )
 
     continue_x = self._rect.x + 8
     if self._enable_back:
       continue_x = self._rect.x + self._rect.width - self._continue_button.rect.width - 8
-    self._continue_button.render(rl.Rectangle(
-      continue_x,
-      self._rect.y + self._rect.height - self._continue_button.rect.height,
-      self._continue_button.rect.width,
-      self._continue_button.rect.height,
-    ))
+    self._continue_button.render(
+      rl.Rectangle(
+        continue_x,
+        self._rect.y + self._rect.height - self._continue_button.rect.height,
+        self._continue_button.rect.width,
+        self._continue_button.rect.height,
+      )
+    )
 
-    self._scroll_down_indicator.render(rl.Rectangle(
-      self._rect.x + self._rect.width - self._scroll_down_indicator.rect.width - 8,
-      self._rect.y + self._rect.height - self._scroll_down_indicator.rect.height - 8,
-      self._scroll_down_indicator.rect.width,
-      self._scroll_down_indicator.rect.height,
-    ))
+    self._scroll_down_indicator.render(
+      rl.Rectangle(
+        self._rect.x + self._rect.width - self._scroll_down_indicator.rect.width - 8,
+        self._rect.y + self._rect.height - self._scroll_down_indicator.rect.height - 8,
+        self._scroll_down_indicator.rect.width,
+        self._scroll_down_indicator.rect.height,
+      )
+    )
 
 
 class CustomSoftwareWarningPage(TermsPage):
   def __init__(self, continue_callback: Callable, back_callback: Callable):
     super().__init__(continue_callback, back_callback)
 
-    self._title_header = TermsHeader("use caution installing\n3rd party software",
-                                     gui_app.texture("icons_mici/setup/warning.png", 66, 60))
-    self._body = UnifiedLabel("• It has not been tested by comma.\n" +
-                              "• It may not comply with relevant safety standards.\n" +
-                              "• It may cause damage to your device and/or vehicle.\n", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                              font_weight=FontWeight.ROMAN)
+    self._title_header = TermsHeader("use caution installing\n3rd party software", gui_app.texture("icons_mici/setup/warning.png", 66, 60))
+    self._body = UnifiedLabel(
+      "• It has not been tested by comma.\n"
+      + "• It may not comply with relevant safety standards.\n"
+      + "• It may cause damage to your device and/or vehicle.\n",
+      36,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      font_weight=FontWeight.ROMAN,
+    )
 
     self._restore_header = TermsHeader("how to backup &\nrestore", gui_app.texture("icons_mici/setup/restore.png", 60, 60))
-    self._restore_body = UnifiedLabel("To restore your device to a factory state later, use https://flash.comma.ai",
-                                      36, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                      font_weight=FontWeight.ROMAN)
+    self._restore_body = UnifiedLabel(
+      "To restore your device to a factory state later, use https://flash.comma.ai",
+      36,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      font_weight=FontWeight.ROMAN,
+    )
 
   @property
   def _content_height(self):
@@ -330,22 +354,28 @@ class CustomSoftwareWarningPage(TermsPage):
     self._restore_header.set_position(self._rect.x + 16, self._body.rect.y + self._body.rect.height + self.ITEM_SPACING)
     self._restore_header.render()
 
-    self._restore_body.render(rl.Rectangle(
-      self._rect.x + 8,
-      self._restore_header.rect.y + self._restore_header.rect.height + self.ITEM_SPACING,
-      self._rect.width - 50,
-      self._restore_body.get_content_height(int(self._rect.width - 50)),
-    ))
+    self._restore_body.render(
+      rl.Rectangle(
+        self._rect.x + 8,
+        self._restore_header.rect.y + self._restore_header.rect.height + self.ITEM_SPACING,
+        self._rect.width - 50,
+        self._restore_body.get_content_height(int(self._rect.width - 50)),
+      )
+    )
 
 
 class DownloadingPage(Widget):
   def __init__(self):
     super().__init__()
 
-    self._title_label = UnifiedLabel("downloading", 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                     font_weight=FontWeight.DISPLAY)
-    self._progress_label = UnifiedLabel("", 128, text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.35)),
-                                        font_weight=FontWeight.ROMAN, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM)
+    self._title_label = UnifiedLabel("downloading", 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)), font_weight=FontWeight.DISPLAY)
+    self._progress_label = UnifiedLabel(
+      "",
+      128,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.35)),
+      font_weight=FontWeight.ROMAN,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM,
+    )
     self._progress = 0
 
   def set_progress(self, progress: int):
@@ -353,29 +383,31 @@ class DownloadingPage(Widget):
     self._progress_label.set_text(f"{progress}%")
 
   def _render(self, rect: rl.Rectangle):
-    self._title_label.render(rl.Rectangle(
-      rect.x + 20,
-      rect.y + 10,
-      rect.width,
-      64,
-    ))
+    self._title_label.render(
+      rl.Rectangle(
+        rect.x + 20,
+        rect.y + 10,
+        rect.width,
+        64,
+      )
+    )
 
-    self._progress_label.render(rl.Rectangle(
-      rect.x + 20,
-      rect.y + 20,
-      rect.width,
-      rect.height,
-    ))
+    self._progress_label.render(
+      rl.Rectangle(
+        rect.x + 20,
+        rect.y + 20,
+        rect.width,
+        rect.height,
+      )
+    )
 
 
 class FailedPage(Widget):
   def __init__(self, reboot_callback: Callable, retry_callback: Callable, title: str = "download failed"):
     super().__init__()
 
-    self._title_label = UnifiedLabel(title, 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                     font_weight=FontWeight.DISPLAY)
-    self._reason_label = UnifiedLabel("", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)),
-                                      font_weight=FontWeight.ROMAN)
+    self._title_label = UnifiedLabel(title, 64, text_color=rl.Color(255, 255, 255, int(255 * 0.9)), font_weight=FontWeight.DISPLAY)
+    self._reason_label = UnifiedLabel("", 36, text_color=rl.Color(255, 255, 255, int(255 * 0.9 * 0.65)), font_weight=FontWeight.ROMAN)
 
     self._reboot_button = SmallRedPillButton("reboot")
     self._reboot_button.set_click_callback(reboot_callback)
@@ -387,33 +419,41 @@ class FailedPage(Widget):
     self._reason_label.set_text(reason)
 
   def _render(self, rect: rl.Rectangle):
-    self._title_label.render(rl.Rectangle(
-      rect.x + 8,
-      rect.y + 10,
-      rect.width,
-      64,
-    ))
+    self._title_label.render(
+      rl.Rectangle(
+        rect.x + 8,
+        rect.y + 10,
+        rect.width,
+        64,
+      )
+    )
 
-    self._reason_label.render(rl.Rectangle(
-      rect.x + 8,
-      rect.y + 10 + 64,
-      rect.width,
-      36,
-    ))
+    self._reason_label.render(
+      rl.Rectangle(
+        rect.x + 8,
+        rect.y + 10 + 64,
+        rect.width,
+        36,
+      )
+    )
 
-    self._reboot_button.render(rl.Rectangle(
-      rect.x + 8,
-      rect.y + rect.height - self._reboot_button.rect.height,
-      self._reboot_button.rect.width,
-      self._reboot_button.rect.height,
-    ))
+    self._reboot_button.render(
+      rl.Rectangle(
+        rect.x + 8,
+        rect.y + rect.height - self._reboot_button.rect.height,
+        self._reboot_button.rect.width,
+        self._reboot_button.rect.height,
+      )
+    )
 
-    self._retry_button.render(rl.Rectangle(
-      rect.x + 8 + self._reboot_button.rect.width + 8,
-      rect.y + rect.height - self._retry_button.rect.height,
-      self._retry_button.rect.width,
-      self._retry_button.rect.height,
-    ))
+    self._retry_button.render(
+      rl.Rectangle(
+        rect.x + 8 + self._reboot_button.rect.width + 8,
+        rect.y + rect.height - self._retry_button.rect.height,
+        self._retry_button.rect.width,
+        self._retry_button.rect.height,
+      )
+    )
 
 
 class NetworkSetupState(IntEnum):
@@ -468,33 +508,41 @@ class NetworkSetupPage(Widget):
 
   def _render(self, _):
     if self._state == NetworkSetupState.MAIN:
-      self._network_header.render(rl.Rectangle(
-        self._rect.x + 16,
-        self._rect.y + 16,
-        self._rect.width - 32,
-        self._network_header.rect.height,
-      ))
+      self._network_header.render(
+        rl.Rectangle(
+          self._rect.x + 16,
+          self._rect.y + 16,
+          self._rect.width - 32,
+          self._network_header.rect.height,
+        )
+      )
 
-      self._back_button.render(rl.Rectangle(
-        self._rect.x + 8,
-        self._rect.y + self._rect.height - self._back_button.rect.height,
-        self._back_button.rect.width,
-        self._back_button.rect.height,
-      ))
+      self._back_button.render(
+        rl.Rectangle(
+          self._rect.x + 8,
+          self._rect.y + self._rect.height - self._back_button.rect.height,
+          self._back_button.rect.width,
+          self._back_button.rect.height,
+        )
+      )
 
-      self._wifi_button.render(rl.Rectangle(
-        self._rect.x + 8 + self._back_button.rect.width + 10,
-        self._rect.y + self._rect.height - self._wifi_button.rect.height,
-        self._wifi_button.rect.width,
-        self._wifi_button.rect.height,
-      ))
+      self._wifi_button.render(
+        rl.Rectangle(
+          self._rect.x + 8 + self._back_button.rect.width + 10,
+          self._rect.y + self._rect.height - self._wifi_button.rect.height,
+          self._wifi_button.rect.width,
+          self._wifi_button.rect.height,
+        )
+      )
 
-      self._continue_button.render(rl.Rectangle(
-        self._rect.x + self._rect.width - self._continue_button.rect.width - 8,
-        self._rect.y + self._rect.height - self._continue_button.rect.height,
-        self._continue_button.rect.width,
-        self._continue_button.rect.height,
-      ))
+      self._continue_button.render(
+        rl.Rectangle(
+          self._rect.x + self._rect.width - self._continue_button.rect.width - 8,
+          self._rect.y + self._rect.height - self._continue_button.rect.height,
+          self._continue_button.rect.width,
+          self._continue_button.rect.height,
+        )
+      )
     else:
       self._wifi_ui.render(self._rect)
 
@@ -510,23 +558,22 @@ class Setup(Widget):
     self.download_thread = None
     self._wifi_manager = WifiManager()
     self._wifi_manager.set_active(True)
-    self._network_monitor = NetworkConnectivityMonitor(
-      lambda: self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE)
-    )
+    self._network_monitor = NetworkConnectivityMonitor(lambda: self.state in (SetupState.NETWORK_SETUP, SetupState.NETWORK_SETUP_CUSTOM_SOFTWARE))
 
     self._start_page = StartPage()
     self._start_page.set_click_callback(self._getting_started_button_callback)
 
-    self._network_setup_page = NetworkSetupPage(self._wifi_manager, self._network_setup_continue_button_callback,
-                                                self._network_setup_back_button_callback)
+    self._network_setup_page = NetworkSetupPage(self._wifi_manager, self._network_setup_continue_button_callback, self._network_setup_back_button_callback)
 
-    self._software_selection_page = SoftwareSelectionPage(self._software_selection_continue_button_callback,
-                                                          self._software_selection_custom_software_button_callback)
+    self._software_selection_page = SoftwareSelectionPage(
+      self._software_selection_continue_button_callback, self._software_selection_custom_software_button_callback
+    )
 
     self._download_failed_page = FailedPage(HARDWARE.reboot, self._download_failed_startover_button_callback)
 
-    self._custom_software_warning_page = CustomSoftwareWarningPage(self._software_selection_custom_software_continue,
-                                                                   self._custom_software_warning_back_button_callback)
+    self._custom_software_warning_page = CustomSoftwareWarningPage(
+      self._software_selection_custom_software_continue, self._custom_software_warning_back_button_callback
+    )
 
     self._downloading_page = DownloadingPage()
 
@@ -656,9 +703,7 @@ class Setup(Widget):
 
       fd, tmpfile = tempfile.mkstemp(prefix="installer_")
 
-      headers = {"User-Agent": USER_AGENT,
-                 "X-openpilot-serial": HARDWARE.get_serial(),
-                 "X-openpilot-device-type": HARDWARE.get_device_type()}
+      headers = {"User-Agent": USER_AGENT, "X-openpilot-serial": HARDWARE.get_serial(), "X-openpilot-device-type": HARDWARE.get_device_type()}
       req = urllib.request.Request(self.download_url, headers=headers)
 
       with open(tmpfile, 'wb') as f, urllib.request.urlopen(req, timeout=30) as response:

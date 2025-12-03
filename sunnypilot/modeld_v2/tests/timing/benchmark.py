@@ -35,5 +35,5 @@ if __name__ == "__main__":
   print("\n\n")
   print(f"ran modeld {N} times for {TIME}s each")
   for _, t in enumerate(execution_times):
-    print(f"\tavg: {sum(t)/len(t):0.2f}ms, min: {min(t):0.2f}ms, max: {max(t):0.2f}ms")
+    print(f"\tavg: {sum(t) / len(t):0.2f}ms, min: {min(t):0.2f}ms, max: {max(t):0.2f}ms")
   print("\n\n")

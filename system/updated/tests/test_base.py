@@ -48,7 +48,7 @@ def get_version(path: str) -> str:
     return f.read().split('"')[1]
 
 
-@pytest.mark.slow # TODO: can we test overlayfs in GHA?
+@pytest.mark.slow  # TODO: can we test overlayfs in GHA?
 class TestBaseUpdate:
   @classmethod
   def setup_class(cls):
@@ -58,7 +58,7 @@ class TestBaseUpdate:
   def setup_method(self):
     self.tmpdir = tempfile.mkdtemp()
 
-    run(["sudo", "mount", "-t", "tmpfs", "tmpfs", self.tmpdir]) # overlayfs doesn't work inside of docker unless this is a tmpfs
+    run(["sudo", "mount", "-t", "tmpfs", "tmpfs", self.tmpdir])  # overlayfs doesn't work inside of docker unless this is a tmpfs
 
     self.mock_update_path = pathlib.Path(self.tmpdir)
 
@@ -130,6 +130,7 @@ class TestBaseUpdate:
     with open(self.staging_root / "finalized" / "test_symlink") as f:
       assert version in f.read()
 
+
 class ParamsBaseUpdateTest(TestBaseUpdate):
   def _test_finalized_update(self, branch, version, agnos_version, release_notes):
     assert self.params.get("UpdaterNewDescription").startswith(f"{version} / {branch}")
@@ -151,8 +152,7 @@ class ParamsBaseUpdateTest(TestBaseUpdate):
     self.wait_for_condition(lambda: self.params.get("UpdaterState") == "idle")
 
   def wait_for_failed(self):
-    self.wait_for_condition(lambda: self.params.get("UpdateFailedCount") is not None and \
-                                              self.params.get("UpdateFailedCount") > 0)
+    self.wait_for_condition(lambda: self.params.get("UpdateFailedCount") is not None and self.params.get("UpdateFailedCount") > 0)
 
   def wait_for_fetch_available(self):
     self.wait_for_condition(lambda: self.params.get_bool("UpdaterFetchAvailable"))

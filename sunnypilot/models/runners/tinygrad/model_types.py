@@ -19,6 +19,7 @@ class PolicyTinygrad(ModularRunner, ABC):
 
   Uses a SplitParser to handle outputs specific to the policy part of a split model setup.
   """
+
   def __init__(self):
     self._policy_parser = SplitParser()
     self.parser_method_dict[ModelType.policy] = self._parse_policy_outputs
@@ -28,12 +29,14 @@ class PolicyTinygrad(ModularRunner, ABC):
     result: NumpyDict = self._policy_parser.parse_policy_outputs(self._slice_outputs(model_outputs))
     return result
 
+
 class VisionTinygrad(ModularRunner, ABC):
   """
   A TinygradRunner specialized for vision-only models.
 
   Uses a SplitParser to handle outputs specific to the vision part of a split model setup.
   """
+
   def __init__(self):
     self._vision_parser = SplitParser()
     self.parser_method_dict[ModelType.vision] = self._parse_vision_outputs
@@ -43,12 +46,14 @@ class VisionTinygrad(ModularRunner, ABC):
     result: NumpyDict = self._vision_parser.parse_vision_outputs(self._slice_outputs(model_outputs))
     return result
 
+
 class SupercomboTinygrad(ModularRunner, ABC):
   """
   A TinygradRunner specialized for vision-only models.
 
   Uses a SplitParser to handle outputs specific to the vision part of a split model setup.
   """
+
   def __init__(self):
     self._supercombo_parser = CombinedParser()
     self.parser_method_dict[ModelType.supercombo] = self._parse_supercombo_outputs

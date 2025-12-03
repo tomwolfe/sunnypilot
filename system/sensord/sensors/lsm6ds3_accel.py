@@ -4,26 +4,27 @@ import time
 from cereal import log
 from openpilot.system.sensord.sensors.i2c_sensor import Sensor
 
+
 class LSM6DS3_Accel(Sensor):
-  LSM6DS3_ACCEL_I2C_REG_DRDY_CFG  = 0x0B
+  LSM6DS3_ACCEL_I2C_REG_DRDY_CFG = 0x0B
   LSM6DS3_ACCEL_I2C_REG_INT1_CTRL = 0x0D
-  LSM6DS3_ACCEL_I2C_REG_CTRL1_XL  = 0x10
-  LSM6DS3_ACCEL_I2C_REG_CTRL3_C   = 0x12
-  LSM6DS3_ACCEL_I2C_REG_CTRL5_C   = 0x14
-  LSM6DS3_ACCEL_I2C_REG_STAT_REG  = 0x1E
+  LSM6DS3_ACCEL_I2C_REG_CTRL1_XL = 0x10
+  LSM6DS3_ACCEL_I2C_REG_CTRL3_C = 0x12
+  LSM6DS3_ACCEL_I2C_REG_CTRL5_C = 0x14
+  LSM6DS3_ACCEL_I2C_REG_STAT_REG = 0x1E
   LSM6DS3_ACCEL_I2C_REG_OUTX_L_XL = 0x28
 
-  LSM6DS3_ACCEL_ODR_104HZ       = (0b0100 << 4)
-  LSM6DS3_ACCEL_INT1_DRDY_XL    = 0b1
-  LSM6DS3_ACCEL_DRDY_XLDA       = 0b1
-  LSM6DS3_ACCEL_DRDY_PULSE_MODE = (1 << 7)
-  LSM6DS3_ACCEL_IF_INC          = 0b00000100
+  LSM6DS3_ACCEL_ODR_104HZ = 0b0100 << 4
+  LSM6DS3_ACCEL_INT1_DRDY_XL = 0b1
+  LSM6DS3_ACCEL_DRDY_XLDA = 0b1
+  LSM6DS3_ACCEL_DRDY_PULSE_MODE = 1 << 7
+  LSM6DS3_ACCEL_IF_INC = 0b00000100
 
-  LSM6DS3_ACCEL_ODR_52HZ        = (0b0011 << 4)
-  LSM6DS3_ACCEL_FS_4G           = (0b10 << 2)
-  LSM6DS3_ACCEL_IF_INC_BDU      = 0b01000100
-  LSM6DS3_ACCEL_POSITIVE_TEST   = 0b01
-  LSM6DS3_ACCEL_NEGATIVE_TEST   = 0b10
+  LSM6DS3_ACCEL_ODR_52HZ = 0b0011 << 4
+  LSM6DS3_ACCEL_FS_4G = 0b10 << 2
+  LSM6DS3_ACCEL_IF_INC_BDU = 0b01000100
+  LSM6DS3_ACCEL_POSITIVE_TEST = 0b01
+  LSM6DS3_ACCEL_NEGATIVE_TEST = 0b10
   LSM6DS3_ACCEL_MIN_ST_LIMIT_mg = 90.0
   LSM6DS3_ACCEL_MAX_ST_LIMIT_mg = 1700.0
 
@@ -50,16 +51,18 @@ class LSM6DS3_Accel(Sensor):
     # actual init
     int1 = self.read(self.LSM6DS3_ACCEL_I2C_REG_INT1_CTRL, 1)[0]
     int1 |= self.LSM6DS3_ACCEL_INT1_DRDY_XL
-    self.writes((
-      # Enable continuous update and automatic address increment
-      (self.LSM6DS3_ACCEL_I2C_REG_CTRL3_C, self.LSM6DS3_ACCEL_IF_INC),
-      # Set ODR to 104 Hz, FS to ±2g (default)
-      (self.LSM6DS3_ACCEL_I2C_REG_CTRL1_XL, self.LSM6DS3_ACCEL_ODR_104HZ),
-      # Configure data ready signal to pulse mode
-      (self.LSM6DS3_ACCEL_I2C_REG_DRDY_CFG, self.LSM6DS3_ACCEL_DRDY_PULSE_MODE),
-      # Enable data ready interrupt on INT1 without resetting existing interrupts
-      (self.LSM6DS3_ACCEL_I2C_REG_INT1_CTRL, int1),
-    ))
+    self.writes(
+      (
+        # Enable continuous update and automatic address increment
+        (self.LSM6DS3_ACCEL_I2C_REG_CTRL3_C, self.LSM6DS3_ACCEL_IF_INC),
+        # Set ODR to 104 Hz, FS to ±2g (default)
+        (self.LSM6DS3_ACCEL_I2C_REG_CTRL1_XL, self.LSM6DS3_ACCEL_ODR_104HZ),
+        # Configure data ready signal to pulse mode
+        (self.LSM6DS3_ACCEL_I2C_REG_DRDY_CFG, self.LSM6DS3_ACCEL_DRDY_PULSE_MODE),
+        # Enable data ready interrupt on INT1 without resetting existing interrupts
+        (self.LSM6DS3_ACCEL_I2C_REG_INT1_CTRL, int1),
+      )
+    )
 
   def get_event(self, ts: int | None = None) -> log.SensorEventData:
     assert ts is not None  # must come from the IRQ event
@@ -79,7 +82,7 @@ class LSM6DS3_Accel(Sensor):
     event.timestamp = ts
     event.version = 1
     event.sensor = 1  # SENSOR_ACCELEROMETER
-    event.type = 1    # SENSOR_TYPE_ACCELEROMETER
+    event.type = 1  # SENSOR_TYPE_ACCELEROMETER
     event.source = self.source
     a = event.init('acceleration')
     a.v = [y, -x, z]
@@ -110,7 +113,7 @@ class LSM6DS3_Accel(Sensor):
       self._wait_for_data_ready()
       b = self.read(self.LSM6DS3_ACCEL_I2C_REG_OUTX_L_XL, 6)
       for j in range(3):
-        val = self.parse_16bit(b[j*2], b[j*2+1]) * scaling
+        val = self.parse_16bit(b[j * 2], b[j * 2 + 1]) * scaling
         out_buf[j] += val
     return [x / 5.0 for x in out_buf]
 
@@ -150,8 +153,10 @@ class LSM6DS3_Accel(Sensor):
       if val < self.LSM6DS3_ACCEL_MIN_ST_LIMIT_mg or val > self.LSM6DS3_ACCEL_MAX_ST_LIMIT_mg:
         raise self.SensorException(f"Accelerometer self-test failed for test type {test_type}")
 
+
 if __name__ == "__main__":
   import numpy as np
+
   s = LSM6DS3_Accel(1)
   s.init()
   time.sleep(0.2)

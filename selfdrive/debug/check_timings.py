@@ -27,10 +27,10 @@ if __name__ == "__main__":
       time.sleep(1)
   except KeyboardInterrupt:
     print("\n")
-    print("="*5, "timing summary", "="*5)
+    print("=" * 5, "timing summary", "=" * 5)
     for s, sock in socks.items():
       msgs = messaging.drain_sock(sock)
       if len(ts[s]) > 2:
         d = np.diff(ts[s])
         print(f"{s:25} {np.mean(d):7.2f} {np.std(d):7.2f} {np.max(d):7.2f} {np.min(d):7.2f}")
-    print("="*5, datetime.timedelta(seconds=time.monotonic()-st), "="*5)
+    print("=" * 5, datetime.timedelta(seconds=time.monotonic() - st), "=" * 5)

@@ -33,17 +33,20 @@ async def play_sound(sound: str):
 
   chunk = 5120
   with wave.open(os.path.join(BASEDIR, SOUNDS[sound]), "rb") as wf:
+
     def callback(in_data, frame_count, time_info, status):
       data = wf.readframes(frame_count)
       return data, pyaudio.paContinue
 
     p = pyaudio.PyAudio()
-    stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    output=True,
-                    frames_per_buffer=chunk,
-                    stream_callback=callback)
+    stream = p.open(
+      format=p.get_format_from_width(wf.getsampwidth()),
+      channels=wf.getnchannels(),
+      rate=wf.getframerate(),
+      output=True,
+      frames_per_buffer=chunk,
+      stream_callback=callback,
+    )
     stream.start_stream()
     while stream.is_active():
       await asyncio.sleep(0)
@@ -51,12 +54,16 @@ async def play_sound(sound: str):
     stream.close()
     p.terminate()
 
+
 ## SSL
 def create_ssl_cert(cert_path: str, key_path: str):
   try:
-    proc = subprocess.run(f'openssl req -x509 -newkey rsa:4096 -nodes -out {cert_path} -keyout {key_path} \
+    proc = subprocess.run(
+      f'openssl req -x509 -newkey rsa:4096 -nodes -out {cert_path} -keyout {key_path} \
                           -days 365 -subj "/C=US/ST=California/O=commaai/OU=comma body"',
-                          capture_output=True, shell=True)
+      capture_output=True,
+      shell=True,
+    )
     proc.check_returncode()
   except subprocess.CalledProcessError as ex:
     raise ValueError(f"Error creating SSL certificate:\n[stdout]\n{proc.stdout.decode()}\n[stderr]\n{proc.stderr.decode()}") from ex
@@ -74,6 +81,7 @@ def create_ssl_context():
   ssl_context.load_cert_chain(cert_path, key_path)
 
   return ssl_context
+
 
 ## ENDPOINTS
 async def index(request: 'web.Request'):

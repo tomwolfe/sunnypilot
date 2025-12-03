@@ -5,7 +5,7 @@ import cereal.messaging as messaging
 if __name__ == "__main__":
   while True:
     pm = messaging.PubMaster(['carParams', 'carState'])
-    batt = 1.
+    batt = 1.0
     while True:
       msg = messaging.new_message('carParams')
       msg.carParams.brand = "body"
@@ -15,7 +15,7 @@ if __name__ == "__main__":
       for b in range(100, 0, -1):
         msg = messaging.new_message('carState')
         msg.carState.charging = True
-        msg.carState.fuelGauge = b / 100.
+        msg.carState.fuelGauge = b / 100.0
         pm.send('carState', msg)
         time.sleep(0.1)
 

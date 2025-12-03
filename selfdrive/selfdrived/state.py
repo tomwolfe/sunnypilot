@@ -8,6 +8,7 @@ SOFT_DISABLE_TIME = 3  # seconds
 ACTIVE_STATES = (State.enabled, State.softDisabling, State.overriding)
 ENABLED_STATES = (State.preEnabled, *ACTIVE_STATES)
 
+
 class StateMachine:
   def __init__(self):
     self.current_alert_types = [ET.PERMANENT]
@@ -95,4 +96,3 @@ class StateMachine:
     if active:
       self.current_alert_types.append(ET.WARNING)
     return enabled, active
-

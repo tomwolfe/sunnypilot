@@ -1,8 +1,9 @@
 import numpy as np
 from numbers import Number
 
+
 class PIDController:
-  def __init__(self, k_p, k_i, k_d=0., pos_limit=1e308, neg_limit=-1e308, rate=100):
+  def __init__(self, k_p, k_i, k_d=0.0, pos_limit=1e308, neg_limit=-1e308, rate=100):
     self._k_p = k_p
     self._k_i = k_i
     self._k_d = k_d
@@ -43,8 +44,7 @@ class PIDController:
     self.pos_limit = pos_limit
     self.neg_limit = neg_limit
 
-  def update(self, error, error_rate=0.0, speed=0.0, feedforward=0., freeze_integrator=False,
-             k_p_override=None, k_i_override=None, k_d_override=None):
+  def update(self, error, error_rate=0.0, speed=0.0, feedforward=0.0, freeze_integrator=False, k_p_override=None, k_i_override=None, k_d_override=None):
     self.speed = speed
 
     # Use override values if provided, otherwise use interpolated values

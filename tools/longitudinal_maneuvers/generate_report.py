@@ -59,7 +59,7 @@ def report(platform, route, _description, CP, ID, maneuvers):
       maneuver_valid = all(longActive) and (not any(cs.cruiseState.standstill for cs in carState) or CP.autoResumeSng)
 
       _open = 'open' if maneuver_valid else ''
-      title = f'Run #{int(run)+1}' + (' <span style="color: red">(invalid maneuver!)</span>' if not maneuver_valid else '')
+      title = f'Run #{int(run) + 1}' + (' <span style="color: red">(invalid maneuver!)</span>' if not maneuver_valid else '')
 
       builder.append(f"<details {_open}><summary><h3 style='display: inline-block;'>{title}</h3></summary>\n")
 
@@ -98,7 +98,7 @@ def report(platform, route, _description, CP, ID, maneuvers):
       ax[0].plot(t_livePose, [m.accelerationDevice.x for m in livePose], label='livePose.accelerationDevice.x', linewidth=6)
       # TODO localizer accel
       ax[0].set_ylabel('Acceleration (m/s^2)')
-      #ax[0].set_ylim(-6.5, 6.5)
+      # ax[0].set_ylim(-6.5, 6.5)
       ax[0].legend(prop={'size': 30})
 
       if target_cross_time is not None:
@@ -139,7 +139,7 @@ def report(platform, route, _description, CP, ID, maneuvers):
   summary.append(tabulate(table, headers=cols, tablefmt='html', numalign='left') + '\n')
 
   sum_idx = builder.index('{ summary }')
-  builder[sum_idx:sum_idx + 1] = summary
+  builder[sum_idx : sum_idx + 1] = summary
 
   with open(output_fn, "w") as f:
     f.write(''.join(builder))

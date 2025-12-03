@@ -21,6 +21,7 @@ def get_expected_signature(panda: Panda) -> bytes:
     cloudlog.exception("Error computing expected signature")
     return b""
 
+
 def flash_panda(panda_serial: str) -> Panda:
   try:
     panda = Panda(panda_serial)

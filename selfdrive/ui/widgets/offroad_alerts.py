@@ -53,8 +53,7 @@ class ButtonStyle(IntEnum):
 
 
 class ActionButton(Widget):
-  def __init__(self, text: str | Callable[[], str], style: ButtonStyle = ButtonStyle.LIGHT,
-               min_width: int = AlertConstants.MIN_BUTTON_WIDTH):
+  def __init__(self, text: str | Callable[[], str], style: ButtonStyle = ButtonStyle.LIGHT, min_width: int = AlertConstants.MIN_BUTTON_WIDTH):
     super().__init__()
     self._text = text
     self._style = style
@@ -144,9 +143,7 @@ class AbstractAlert(Widget, ABC):
       rect.width - 2 * AlertConstants.MARGIN,
       content_height,
     )
-    self.scroll_panel_rect = rl.Rectangle(
-      self.content_rect.x, self.content_rect.y, self.content_rect.width, self.content_rect.height
-    )
+    self.scroll_panel_rect = rl.Rectangle(self.content_rect.x, self.content_rect.y, self.content_rect.width, self.content_rect.height)
 
     self._render_scrollable_content()
     self._render_footer(rect)

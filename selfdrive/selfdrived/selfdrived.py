@@ -55,9 +55,10 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 #   - A list of event names that will be suppressed when triggered.
 # Note: overheat is intentionally excluded from suppressible events as it's a critical safety concern.
 SUPPRESSION_GROUPS = [
-  ([EventName.fcw, EventName.steerSaturated, ET.IMMEDIATE_DISABLE],
-   [EventName.modeldLagging, EventName.cameraFrameRate, EventName.commIssue,
-    EventName.outOfSpace, EventName.lowMemory]),
+  (
+    [EventName.fcw, EventName.steerSaturated, ET.IMMEDIATE_DISABLE],
+    [EventName.modeldLagging, EventName.cameraFrameRate, EventName.commIssue, EventName.outOfSpace, EventName.lowMemory],
+  ),
   # Add other groups here as needed.
   # Example: ([EventName.anotherCriticalEvent], [EventName.minorEventA, EventName.minorEventB]),
 ]
@@ -108,14 +109,39 @@ class SelfdriveD(CruiseHelper):
     if REPLAY:
       # no vipc in replay will make them ignored anyways
       ignore += ['roadCameraState', 'wideRoadCameraState']
-    self.sm = messaging.SubMaster(['deviceState', 'pandaStates', 'peripheralState', 'modelV2', 'liveCalibration',
-                                   'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'liveDelay',
-                                   'managerState', 'liveParameters', 'radarState', 'liveTorqueParameters',
-                                   'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback',
-                                   'modelDataV2SP', 'longitudinalPlanSP'] + \
-                                   self.camera_packets + self.sensor_packets + self.gps_packets,
-                                  ignore_alive=ignore, ignore_avg_freq=ignore,
-                                  ignore_valid=ignore, frequency=int(1/DT_CTRL))
+    self.sm = messaging.SubMaster(
+      [
+        'deviceState',
+        'pandaStates',
+        'peripheralState',
+        'modelV2',
+        'liveCalibration',
+        'carOutput',
+        'driverMonitoringState',
+        'longitudinalPlan',
+        'livePose',
+        'liveDelay',
+        'managerState',
+        'liveParameters',
+        'radarState',
+        'liveTorqueParameters',
+        'controlsState',
+        'carControl',
+        'driverAssistance',
+        'alertDebug',
+        'userBookmark',
+        'audioFeedback',
+        'modelDataV2SP',
+        'longitudinalPlanSP',
+      ]
+      + self.camera_packets
+      + self.sensor_packets
+      + self.gps_packets,
+      ignore_alive=ignore,
+      ignore_avg_freq=ignore,
+      ignore_valid=ignore,
+      frequency=int(1 / DT_CTRL),
+    )
 
     # read params
     self.is_metric = self.params.get_bool("IsMetric")
@@ -150,13 +176,15 @@ class SelfdriveD(CruiseHelper):
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
       max(log.LongitudinalPersonality.schema.enumerants.values()),
-      self.params
+      self.params,
     )
     self.recalibrating_seen = False
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
-    self.ignored_processes = {'mapd', }
+    self.ignored_processes = {
+      'mapd',
+    }
 
     # Determine startup event
     is_remote = build_metadata.openpilot.comma_remote or build_metadata.openpilot.sunnypilot_remote
@@ -240,14 +268,16 @@ class SelfdriveD(CruiseHelper):
 
       if self.CP.notCar:
         # wait for everything to init first
-        if self.sm.frame > int(5. / DT_CTRL) and self.initialized:
+        if self.sm.frame > int(5.0 / DT_CTRL) and self.initialized:
           # body always wants to enable
           self.events.add(EventName.pcmEnable)
 
       # Disable on rising edge of accelerator or brake. Also disable on brake when speed > 0
-      if (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator) or \
-        (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill)) or \
-        (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill)):
+      if (
+        (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator)
+        or (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill))
+        or (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill))
+      ):
         self.events.add(EventName.pedalPressed)
 
     # Create events for temperature, disk space, and memory
@@ -313,16 +343,14 @@ class SelfdriveD(CruiseHelper):
     # Handle lane change
     if self.sm['modelV2'].meta.laneChangeState == LaneChangeState.preLaneChange:
       direction = self.sm['modelV2'].meta.laneChangeDirection
-      if (CS.leftBlindspot and direction == LaneChangeDirection.left) or \
-         (CS.rightBlindspot and direction == LaneChangeDirection.right):
+      if (CS.leftBlindspot and direction == LaneChangeDirection.left) or (CS.rightBlindspot and direction == LaneChangeDirection.right):
         self.events.add(EventName.laneChangeBlocked)
       else:
         if direction == LaneChangeDirection.left:
           self.events.add(EventName.preLaneChangeLeft)
         else:
           self.events.add(EventName.preLaneChangeRight)
-    elif self.sm['modelV2'].meta.laneChangeState in (LaneChangeState.laneChangeStarting,
-                                                    LaneChangeState.laneChangeFinishing):
+    elif self.sm['modelV2'].meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing):
       self.events.add(EventName.laneChange)
 
     # Handle lane turn
@@ -335,14 +363,16 @@ class SelfdriveD(CruiseHelper):
     for i, pandaState in enumerate(self.sm['pandaStates']):
       # All pandas must match the list of safetyConfigs, and if outside this list, must be silent or noOutput
       if i < len(self.CP.safetyConfigs):
-        safety_mismatch = pandaState.safetyModel != self.CP.safetyConfigs[i].safetyModel or \
-                          pandaState.safetyParam != self.CP.safetyConfigs[i].safetyParam or \
-                          pandaState.alternativeExperience != self.CP.alternativeExperience
+        safety_mismatch = (
+          pandaState.safetyModel != self.CP.safetyConfigs[i].safetyModel
+          or pandaState.safetyParam != self.CP.safetyConfigs[i].safetyParam
+          or pandaState.alternativeExperience != self.CP.alternativeExperience
+        )
       else:
         safety_mismatch = pandaState.safetyModel not in IGNORED_SAFETY_MODES
 
       # safety mismatch allows some time for pandad to set the safety mode and publish it back from panda
-      if (safety_mismatch and self.sm.frame*DT_CTRL > 10.) or pandaState.safetyRxChecksInvalid or self.mismatch_counter >= 200:
+      if (safety_mismatch and self.sm.frame * DT_CTRL > 10.0) or pandaState.safetyRxChecksInvalid or self.mismatch_counter >= 200:
         self.events.add(EventName.controlsMismatch)
 
       if log.PandaState.FaultType.relayMalfunction in pandaState.faults:
@@ -413,20 +443,20 @@ class SelfdriveD(CruiseHelper):
         self.events.add(EventName.paramsdTemporaryError)
 
     # conservative HW alert. if the data or frequency are off, locationd will throw an error
-    if any((self.sm.frame - self.sm.recv_frame[s])*DT_CTRL > 10. for s in self.sensor_packets):
+    if any((self.sm.frame - self.sm.recv_frame[s]) * DT_CTRL > 10.0 for s in self.sensor_packets):
       self.events.add(EventName.sensorDataInvalid)
 
     if not REPLAY:
       # Check for mismatch between openpilot and car's PCM
       cruise_mismatch = CS.cruiseState.enabled and (not self.enabled or not self.CP.pcmCruise)
       self.cruise_mismatch_counter = self.cruise_mismatch_counter + 1 if cruise_mismatch else 0
-      if self.cruise_mismatch_counter > int(6. / DT_CTRL):
+      if self.cruise_mismatch_counter > int(6.0 / DT_CTRL):
         self.events.add(EventName.cruiseMismatch)
 
     # Send a "steering required alert" if saturation count has reached the limit
     if CS.steeringPressed:
       self.last_steering_pressed_frame = self.sm.frame
-    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
+    recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame) * DT_CTRL < 2.0
     controlstate = self.sm['controlsState']
     lac = getattr(controlstate.lateralControlState, controlstate.lateralControlState.which())
     if lac.active and not recent_steer_pressed and not self.CP.notCar:
@@ -452,66 +482,65 @@ class SelfdriveD(CruiseHelper):
     multi_lead_fcw = False  # Check for additional lead vehicles
 
     if self.sm.updated['radarState'] and self.sm['radarState'].leadOne.status:
-        lead_one = self.sm['radarState'].leadOne
-        v_ego = CS.vEgo
-        if lead_one.status and lead_one.dRel > 0:
-            relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
-            if relative_speed > 0:  # Approaching lead vehicle
-                time_to_collision = lead_one.dRel / relative_speed
-            # Calculate alternative TTC with acceleration consideration
-            if hasattr(lead_one, 'aRel') and lead_one.aRel != 0:
-                # Use quadratic formula to account for acceleration: x = v*t + 0.5*a*t^2
-                # Distance to collision = dRel - (vRel*t + 0.5*aRel*t^2) = 0
-                # Solving: 0.5*aRel*t^2 + vRel*t - dRel = 0
-                a_rel = lead_one.aRel
-                v_rel = lead_one.vRel
-                d_rel = lead_one.dRel
-                discriminant = v_rel**2 + 2*a_rel*d_rel
-                if discriminant >= 0:
-                    alt_ttc = (-v_rel + math.sqrt(discriminant)) / a_rel if a_rel != 0 else d_rel / (-v_rel) if v_rel != 0 else float('inf')
-                    if alt_ttc > 0:  # Only consider positive time solutions
-                        time_to_collision_alt = min(time_to_collision, alt_ttc)
+      lead_one = self.sm['radarState'].leadOne
+      v_ego = CS.vEgo
+      if lead_one.status and lead_one.dRel > 0:
+        relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
+        if relative_speed > 0:  # Approaching lead vehicle
+          time_to_collision = lead_one.dRel / relative_speed
+        # Calculate alternative TTC with acceleration consideration
+        if hasattr(lead_one, 'aRel') and lead_one.aRel != 0:
+          # Use quadratic formula to account for acceleration: x = v*t + 0.5*a*t^2
+          # Distance to collision = dRel - (vRel*t + 0.5*aRel*t^2) = 0
+          # Solving: 0.5*aRel*t^2 + vRel*t - dRel = 0
+          a_rel = lead_one.aRel
+          v_rel = lead_one.vRel
+          d_rel = lead_one.dRel
+          discriminant = v_rel**2 + 2 * a_rel * d_rel
+          if discriminant >= 0:
+            alt_ttc = (-v_rel + math.sqrt(discriminant)) / a_rel if a_rel != 0 else d_rel / (-v_rel) if v_rel != 0 else float('inf')
+            if alt_ttc > 0:  # Only consider positive time solutions
+              time_to_collision_alt = min(time_to_collision, alt_ttc)
 
-        # Enhanced radar-based FCW with speed-adaptive thresholds
-        # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
-        relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
-        # Use the minimum TTC calculated (with or without acceleration consideration)
-        effective_ttc = min(time_to_collision, time_to_collision_alt)
-        radar_based_fcw = (effective_ttc < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50
-                          and not CS.brakePressed and self.enabled)
+      # Enhanced radar-based FCW with speed-adaptive thresholds
+      # Use lower threshold for relative speed at low speeds to improve safety in stop-and-go traffic
+      relative_speed_threshold = 1.0 if v_ego < 10.0 else 2.0  # Lower threshold at low speeds (< 36 km/h)
+      # Use the minimum TTC calculated (with or without acceleration consideration)
+      effective_ttc = min(time_to_collision, time_to_collision_alt)
+      radar_based_fcw = effective_ttc < 2.0 and relative_speed > relative_speed_threshold and lead_one.dRel < 50 and not CS.brakePressed and self.enabled
 
     # Check for multiple lead vehicles that could indicate complex traffic situations
     if self.sm.updated['radarState']:
-        radar_state = self.sm['radarState']
-        lead_vehicles = []
-        # Check for multiple lead vehicles that might not be the primary lead
-        if hasattr(radar_state, 'leadTwo') and radar_state.leadTwo.status and radar_state.leadTwo.dRel < 50:
-            lead_vehicles.append(radar_state.leadTwo)
-        if hasattr(radar_state, 'leadThree') and radar_state.leadThree.status and radar_state.leadThree.dRel < 50:
-            lead_vehicles.append(radar_state.leadThree)
+      radar_state = self.sm['radarState']
+      lead_vehicles = []
+      # Check for multiple lead vehicles that might not be the primary lead
+      if hasattr(radar_state, 'leadTwo') and radar_state.leadTwo.status and radar_state.leadTwo.dRel < 50:
+        lead_vehicles.append(radar_state.leadTwo)
+      if hasattr(radar_state, 'leadThree') and radar_state.leadThree.status and radar_state.leadThree.dRel < 50:
+        lead_vehicles.append(radar_state.leadThree)
 
-        for lead in lead_vehicles:
-            if lead.status and lead.dRel > 0:
-                rel_speed = v_ego - lead.vRel
-                if rel_speed > 0:
-                    ttc = lead.dRel / rel_speed
-                    if ttc < 2.5:  # Multiple vehicle TTC
-                        multi_lead_fcw = True
-                        break
+      for lead in lead_vehicles:
+        if lead.status and lead.dRel > 0:
+          rel_speed = v_ego - lead.vRel
+          if rel_speed > 0:
+            ttc = lead.dRel / rel_speed
+            if ttc < 2.5:  # Multiple vehicle TTC
+              multi_lead_fcw = True
+              break
 
     # Enhanced collision risk assessment combining multiple factors
-    enhanced_fcw = ((planner_fcw or model_fcw or radar_based_fcw or multi_lead_fcw) and not self.CP.notCar)
+    enhanced_fcw = (planner_fcw or model_fcw or radar_based_fcw or multi_lead_fcw) and not self.CP.notCar
 
     # Additional check: if model confidence is low but radar indicates danger, still trigger FCW
     if not enhanced_fcw and radar_based_fcw:
-        # If radar says there's danger but model doesn't, potentially indicate model uncertainty
-        if hasattr(self.sm['modelV2'], 'meta') and hasattr(self.sm['modelV2'].meta, 'validation_applied'):
-            if self.sm['modelV2'].meta.validation_applied:
-                # Model needed significant corrections, prioritize radar data
-                enhanced_fcw = True
+      # If radar says there's danger but model doesn't, potentially indicate model uncertainty
+      if hasattr(self.sm['modelV2'], 'meta') and hasattr(self.sm['modelV2'].meta, 'validation_applied'):
+        if self.sm['modelV2'].meta.validation_applied:
+          # Model needed significant corrections, prioritize radar data
+          enhanced_fcw = True
 
     if enhanced_fcw:
-        self.events.add(EventName.fcw)
+      self.events.add(EventName.fcw)
 
     # GPS checks
     gps_ok = self.sm.recv_frame[self.gps_location_service] > 0 and (self.sm.frame - self.sm.recv_frame[self.gps_location_service]) * DT_CTRL < 2.0
@@ -568,7 +597,7 @@ class SelfdriveD(CruiseHelper):
 
     if not self.initialized:
       all_valid = CS.canValid and self.sm.all_checks()
-      timed_out = self.sm.frame * DT_CTRL > 6.
+      timed_out = self.sm.frame * DT_CTRL > 6.0
       if all_valid or timed_out or (SIMULATION and not REPLAY):
         available_streams = VisionIpcClient.available_streams("camerad", block=False)
         if VisionStreamType.VISION_STREAM_ROAD not in available_streams:
@@ -584,7 +613,7 @@ class SelfdriveD(CruiseHelper):
         self.initialized = True
         cloudlog.event(
           "selfdrived.initialized",
-          dt=self.sm.frame*DT_CTRL,
+          dt=self.sm.frame * DT_CTRL,
           timeout=timed_out,
           canValid=CS.canValid,
           invalid=[s for s, valid in self.sm.valid.items() if not valid],
@@ -601,8 +630,7 @@ class SelfdriveD(CruiseHelper):
       self.mismatch_counter = 0
 
     # All pandas not in silent mode must have controlsAllowed when openpilot is enabled
-    if self.enabled and any(not ps.controlsAllowed for ps in self.sm['pandaStates']
-           if ps.safetyModel not in IGNORED_SAFETY_MODES):
+    if self.enabled and any(not ps.controlsAllowed for ps in self.sm['pandaStates'] if ps.safetyModel not in IGNORED_SAFETY_MODES):
       self.mismatch_counter += 1
 
     return CS
@@ -615,8 +643,7 @@ class SelfdriveD(CruiseHelper):
       clear_event_types.add(ET.NO_ENTRY)
 
     pers = LONGITUDINAL_PERSONALITY_MAP[self.personality]
-    callback_args = [self.CP, CS, self.sm, self.is_metric,
-                     self.state_machine.soft_disable_timer, pers]
+    callback_args = [self.CP, CS, self.sm, self.is_metric, self.state_machine.soft_disable_timer, pers]
 
     alerts = self.events.create_alerts(self.state_machine.current_alert_types, callback_args)
     alerts_sp = self.events_sp.create_alerts(self.state_machine.current_alert_types, callback_args)
@@ -647,7 +674,7 @@ class SelfdriveD(CruiseHelper):
     self.pm.send('selfdriveState', ss_msg)
 
     # onroadEvents - logged every second or on change
-    if (self.sm.frame % int(1. / DT_CTRL) == 0) or (self.events.names != self.events_prev):
+    if (self.sm.frame % int(1.0 / DT_CTRL) == 0) or (self.events.names != self.events_prev):
       ce_send = messaging.new_message('onroadEvents', len(self.events))
       ce_send.valid = True
       ce_send.onroadEvents = self.events.to_msg()
@@ -672,7 +699,7 @@ class SelfdriveD(CruiseHelper):
     self.pm.send('selfdriveStateSP', ss_sp_msg)
 
     # onroadEventsSP - logged every second or on change
-    if (self.sm.frame % int(1. / DT_CTRL) == 0) or (self.events_sp.names != self.events_sp_prev):
+    if (self.sm.frame % int(1.0 / DT_CTRL) == 0) or (self.events_sp.names != self.events_sp_prev):
       ce_send_sp = messaging.new_message('onroadEventsSP')
       ce_send_sp.valid = True
       ce_send_sp.onroadEventsSP.events = self.events_sp.to_msg()
@@ -705,7 +732,7 @@ class SelfdriveD(CruiseHelper):
 
   def run(self):
     e = threading.Event()
-    t = threading.Thread(target=self.params_thread, args=(e, ))
+    t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
       while True:
@@ -720,6 +747,7 @@ def main():
   config_realtime_process(4, Priority.CTRL_HIGH)
   s = SelfdriveD()
   s.run()
+
 
 if __name__ == "__main__":
   main()

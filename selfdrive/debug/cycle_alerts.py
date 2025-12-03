@@ -12,23 +12,23 @@ from openpilot.system.manager.process_config import managed_processes
 
 EventName = log.OnroadEvent.EventName
 
+
 def randperc() -> float:
-  return 100. * random.random()
+  return 100.0 * random.random()
+
 
 def cycle_alerts(duration=200, is_metric=False):
   # all alerts
-  #alerts = list(EVENTS.keys())
+  # alerts = list(EVENTS.keys())
 
   # this plays each type of audible alert
   alerts = [
     (EventName.buttonEnable, ET.ENABLE),
     (EventName.buttonCancel, ET.USER_DISABLE),
     (EventName.wrongGear, ET.NO_ENTRY),
-
     (EventName.locationdTemporaryError, ET.SOFT_DISABLE),
     (EventName.paramsdTemporaryError, ET.SOFT_DISABLE),
     (EventName.accFaulted, ET.IMMEDIATE_DISABLE),
-
     # DM sequence
     (EventName.preDriverDistracted, ET.WARNING),
     (EventName.promptDriverDistracted, ET.WARNING),
@@ -37,14 +37,14 @@ def cycle_alerts(duration=200, is_metric=False):
 
   # debug alerts
   alerts = [
-    #(EventName.highCpuUsage, ET.NO_ENTRY),
-    #(EventName.lowMemory, ET.PERMANENT),
-    #(EventName.overheat, ET.PERMANENT),
-    #(EventName.outOfSpace, ET.PERMANENT),
-    #(EventName.modeldLagging, ET.PERMANENT),
-    #(EventName.processNotRunning, ET.NO_ENTRY),
-    #(EventName.commIssue, ET.NO_ENTRY),
-    #(EventName.calibrationInvalid, ET.PERMANENT),
+    # (EventName.highCpuUsage, ET.NO_ENTRY),
+    # (EventName.lowMemory, ET.PERMANENT),
+    # (EventName.overheat, ET.PERMANENT),
+    # (EventName.outOfSpace, ET.PERMANENT),
+    # (EventName.modeldLagging, ET.PERMANENT),
+    # (EventName.processNotRunning, ET.NO_ENTRY),
+    # (EventName.commIssue, ET.NO_ENTRY),
+    # (EventName.calibrationInvalid, ET.PERMANENT),
     (EventName.cameraMalfunction, ET.PERMANENT),
     (EventName.cameraFrameRate, ET.PERMANENT),
   ]
@@ -53,9 +53,10 @@ def cycle_alerts(duration=200, is_metric=False):
 
   CS = car.CarState.new_message()
   CP = CarInterface.get_non_essential_params("HONDA_CIVIC")
-  sm = messaging.SubMaster(['deviceState', 'pandaStates', 'roadCameraState', 'modelV2', 'liveCalibration',
-                            'driverMonitoringState', 'longitudinalPlan', 'livePose',
-                            'managerState'] + cameras)
+  sm = messaging.SubMaster(
+    ['deviceState', 'pandaStates', 'roadCameraState', 'modelV2', 'liveCalibration', 'driverMonitoringState', 'longitudinalPlan', 'livePose', 'managerState']
+    + cameras
+  )
 
   pm = messaging.PubMaster(['selfdriveState', 'pandaStates', 'deviceState'])
 
@@ -76,7 +77,9 @@ def cycle_alerts(duration=200, is_metric=False):
       sm['modelV2'].frameDropPerc = randperc()
 
       if random.random() > 0.25:
-        sm['modelV2'].velocity.x = [random.random(), ]
+        sm['modelV2'].velocity.x = [
+          random.random(),
+        ]
       if random.random() > 0.25:
         CS.vEgo = random.random()
 
@@ -94,7 +97,12 @@ def cycle_alerts(duration=200, is_metric=False):
         sm.valid[s] = random.random() > prob
         sm.freq_ok[s] = random.random() > prob
 
-      a = events.create_alerts([et, ], [CP, CS, sm, is_metric, 0])
+      a = events.create_alerts(
+        [
+          et,
+        ],
+        [CP, CS, sm, is_metric, 0],
+      )
       AM.add_many(frame, a)
       alert = AM.process_alerts(frame, [])
       print(alert)
@@ -124,6 +132,7 @@ def cycle_alerts(duration=200, is_metric=False):
 
         frame += 1
         time.sleep(DT_CTRL)
+
 
 if __name__ == '__main__':
   cycle_alerts()

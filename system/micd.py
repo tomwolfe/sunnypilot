@@ -9,7 +9,7 @@ from openpilot.common.utils import retry
 from openpilot.common.swaglog import cloudlog
 
 RATE = 10
-FFT_SAMPLES = 1600 # 100ms
+FFT_SAMPLES = 1600  # 100ms
 REFERENCE_SPL = 2e-5  # newtons/m^2
 SAMPLE_RATE = 16000
 SAMPLE_BUFFER = 800  # 50ms
@@ -20,13 +20,13 @@ def get_a_weighting_filter():
   # Calculate the A-weighting filter
   # https://en.wikipedia.org/wiki/A-weighting
   freqs = np.fft.fftfreq(FFT_SAMPLES, d=1 / SAMPLE_RATE)
-  A = 12194 ** 2 * freqs ** 4 / ((freqs ** 2 + 20.6 ** 2) * (freqs ** 2 + 12194 ** 2) * np.sqrt((freqs ** 2 + 107.7 ** 2) * (freqs ** 2 + 737.9 ** 2)))
+  A = 12194**2 * freqs**4 / ((freqs**2 + 20.6**2) * (freqs**2 + 12194**2) * np.sqrt((freqs**2 + 107.7**2) * (freqs**2 + 737.9**2)))
   return A / np.max(A)
 
 
 def calculate_spl(measurements):
   # https://www.engineeringtoolbox.com/sound-pressure-d_711.html
-  sound_pressure = np.sqrt(np.mean(measurements ** 2))  # RMS of amplitudes
+  sound_pressure = np.sqrt(np.mean(measurements**2))  # RMS of amplitudes
   if sound_pressure > 0:
     sound_pressure_level = 20 * np.log10(sound_pressure / REFERENCE_SPL)  # dB
   else:

@@ -9,15 +9,12 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
 
-def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
-                             should_stop, brake_pressed, cruise_standstill):
+def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego, should_stop, brake_pressed, cruise_standstill):
   # Gas Interceptor
   cruise_standstill = cruise_standstill and not CP_SP.enableGasInterceptor
 
   stopping_condition = should_stop
-  starting_condition = (not should_stop and
-                        not cruise_standstill and
-                        not brake_pressed)
+  starting_condition = not should_stop and not cruise_standstill and not brake_pressed
   started_condition = v_ego > CP.vEgoStarting
 
   if not active:
@@ -46,14 +43,13 @@ def long_control_state_trans(CP, CP_SP, active, long_control_state, v_ego,
         long_control_state = LongCtrlState.pid
   return long_control_state
 
+
 class LongControl:
   def __init__(self, CP, CP_SP, params=None):
     self.CP = CP
     self.CP_SP = CP_SP
     self.long_control_state = LongCtrlState.off
-    self.pid = PIDController((CP.longitudinalTuning.kpBP, CP.longitudinalTuning.kpV),
-                             (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
-                             rate=1 / DT_CTRL)
+    self.pid = PIDController((CP.longitudinalTuning.kpBP, CP.longitudinalTuning.kpV), (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV), rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
 
     self.params = params
@@ -75,7 +71,6 @@ class LongControl:
     self.adaptive_error_threshold = _get_param_value("LongitudinalAdaptiveErrorThreshold", 0.6)
     self.adaptive_speed_threshold = _get_param_value("LongitudinalAdaptiveSpeedThreshold", 5.0)
 
-
   def reset(self):
     self.pid.reset()
 
@@ -87,12 +82,12 @@ class LongControl:
     # Apply adaptive gains from LightweightAdaptiveGainScheduler
     long_gains = adaptive_gains.get('longitudinal', {})
 
-    self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
-                                                       should_stop, CS.brakePressed,
-                                                       CS.cruiseState.standstill)
+    self.long_control_state = long_control_state_trans(
+      self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo, should_stop, CS.brakePressed, CS.cruiseState.standstill
+    )
     if self.long_control_state == LongCtrlState.off:
       self.reset()
-      output_accel = 0.
+      output_accel = 0.0
       self.last_output_accel = output_accel
       return output_accel
 
@@ -126,12 +121,9 @@ class LongControl:
       # error is the difference between target and current acceleration
       error = a_target - CS.aEgo
       # Apply kf from adaptive gains to feedforward
-      kf_factor = long_gains.get('kf', 1.0) # Default to 1.0 if not found
+      kf_factor = long_gains.get('kf', 1.0)  # Default to 1.0 if not found
       feedforward_accel = a_target * kf_factor
-      output_accel = self.pid.update(error, speed=CS.vEgo,
-                                     feedforward=feedforward_accel,
-                                     k_p_override=long_gains.get('kp'),
-                                     k_i_override=long_gains.get('ki'))
+      output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=feedforward_accel, k_p_override=long_gains.get('kp'), k_i_override=long_gains.get('ki'))
 
       self.last_output_accel = output_accel
       return output_accel
@@ -160,37 +152,35 @@ class LongControl:
     # Adjust based on difference between target and current acceleration
     accel_error = abs(a_target_limited - current_output_accel)
     if accel_error > 2.0:  # Large error - allow more aggressive correction
-        base_output_jerk_limit *= 1.2
+      base_output_jerk_limit *= 1.2
     elif accel_error < 0.5:  # Small error - be more conservative
-        base_output_jerk_limit *= 0.8
+      base_output_jerk_limit *= 0.8
 
     # Reduce jerk when following lead vehicle closely
     if hasattr(CS, 'radarState') and CS.radarState is not None:
-        try:
-            if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
-                lead_one = CS.radarState.leadOne
-                dRel = getattr(lead_one, 'dRel', None)
+      try:
+        if hasattr(CS.radarState, 'leadOne') and CS.radarState.leadOne.status:
+          lead_one = CS.radarState.leadOne
+          dRel = getattr(lead_one, 'dRel', None)
 
-                # Only proceed if dRel is an actual number
-                if isinstance(dRel, (int, float)):
-                    if dRel < 30.0:
-                        base_output_jerk_limit *= 0.85  # More conservative when close to lead
-                        if dRel < 15.0:  # Very close
-                            base_output_jerk_limit *= 0.7  # Much more conservative
-        except (AttributeError, TypeError):
-            pass
+          # Only proceed if dRel is an actual number
+          if isinstance(dRel, (int, float)):
+            if dRel < 30.0:
+              base_output_jerk_limit *= 0.85  # More conservative when close to lead
+              if dRel < 15.0:  # Very close
+                base_output_jerk_limit *= 0.7  # Much more conservative
+      except (AttributeError, TypeError):
+        pass
 
     # Reduce jerk at higher speeds for stability
     if CS.vEgo > 25.0:  # Above ~90 km/h
-        base_output_jerk_limit *= 0.9
+      base_output_jerk_limit *= 0.9
 
     # Further reduce jerk if vehicle is already accelerating rapidly
     if abs(current_output_accel) > 2.0:
-        base_output_jerk_limit *= 0.85  # Be more conservative when already accelerating hard
+      base_output_jerk_limit *= 0.85  # Be more conservative when already accelerating hard
 
     # Apply limits to ensure safety
     base_output_jerk_limit = max(0.5, min(8.0, base_output_jerk_limit))  # Reasonable bounds
 
     return base_output_jerk_limit
-
-

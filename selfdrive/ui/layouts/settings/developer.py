@@ -15,19 +15,19 @@ if gui_app.sunnypilot_ui():
 # Description constants
 DESCRIPTIONS = {
   'enable_adb': tr_noop(
-    "ADB (Android Debug Bridge) allows connecting to your device over USB or over the network. " +
-    "See https://docs.comma.ai/how-to/connect-to-comma for more info."
+    "ADB (Android Debug Bridge) allows connecting to your device over USB or over the network. "
+    + "See https://docs.comma.ai/how-to/connect-to-comma for more info."
   ),
   'ssh_key': tr_noop(
-    "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username " +
-    "other than your own. A comma employee will NEVER ask you to add their GitHub username."
+    "Warning: This grants SSH access to all public keys in your GitHub settings. Never enter a GitHub username "
+    + "other than your own. A comma employee will NEVER ask you to add their GitHub username."
   ),
   'alpha_longitudinal': tr_noop(
-    "<b>WARNING: sunnypilot longitudinal control is in alpha for this car and will disable Automatic Emergency Braking (AEB).</b><br><br>" +
-    "On this car, sunnypilot defaults to the car's built-in ACC instead of sunnypilot's longitudinal control. " +
-    "Enable this to switch to sunnypilot longitudinal control. " +
-    "Enabling Experimental mode is recommended when enabling sunnypilot longitudinal control alpha. " +
-    "Changing this setting will restart sunnypilot if the car is powered on."
+    "<b>WARNING: sunnypilot longitudinal control is in alpha for this car and will disable Automatic Emergency Braking (AEB).</b><br><br>"
+    + "On this car, sunnypilot defaults to the car's built-in ACC instead of sunnypilot's longitudinal control. "
+    + "Enable this to switch to sunnypilot longitudinal control. "
+    + "Enabling Experimental mode is recommended when enabling sunnypilot longitudinal control alpha. "
+    + "Changing this setting will restart sunnypilot if the car is powered on."
   ),
 }
 
@@ -87,15 +87,19 @@ class DeveloperLayout(Widget):
     )
     self._on_enable_ui_debug(self._params.get_bool("ShowDebugInfo"))
 
-    self._scroller = Scroller([
-      self._adb_toggle,
-      self._ssh_toggle,
-      self._ssh_keys,
-      self._joystick_toggle,
-      self._long_maneuver_toggle,
-      self._alpha_long_toggle,
-      self._ui_debug_toggle,
-    ], line_separator=True, spacing=0)
+    self._scroller = Scroller(
+      [
+        self._adb_toggle,
+        self._ssh_toggle,
+        self._ssh_keys,
+        self._joystick_toggle,
+        self._long_maneuver_toggle,
+        self._alpha_long_toggle,
+        self._ui_debug_toggle,
+      ],
+      line_separator=True,
+      spacing=0,
+    )
 
     # Toggles should be not available to change in onroad state
     ui_state.add_offroad_transition_callback(self._update_toggles)
@@ -169,6 +173,7 @@ class DeveloperLayout(Widget):
 
   def _on_alpha_long_enabled(self, state: bool):
     if state:
+
       def confirm_callback(result: int):
         if result == DialogResult.CONFIRM:
           self._params.put_bool("AlphaLongitudinalEnabled", True)
@@ -178,8 +183,7 @@ class DeveloperLayout(Widget):
           self._alpha_long_toggle.action_item.set_state(False)
 
       # show confirmation dialog
-      content = (f"<h1>{self._alpha_long_toggle.title}</h1><br>" +
-                 f"<p>{self._alpha_long_toggle.description}</p>")
+      content = f"<h1>{self._alpha_long_toggle.title}</h1><br>" + f"<p>{self._alpha_long_toggle.description}</p>"
 
       dlg = ConfirmDialog(content, tr("Enable"), rich=True)
       gui_app.set_modal_overlay(dlg, callback=confirm_callback)

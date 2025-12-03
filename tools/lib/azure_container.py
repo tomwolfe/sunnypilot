@@ -7,6 +7,7 @@ from typing import IO
 
 TOKEN_PATH = Path("/data/azure_token")
 
+
 @lru_cache
 def get_azure_credential():
   if "AZURE_TOKEN" in os.environ:
@@ -15,11 +16,14 @@ def get_azure_credential():
     return TOKEN_PATH.read_text().strip()
   else:
     from azure.identity import AzureCliCredential
+
     return AzureCliCredential()
+
 
 @lru_cache
 def get_container_sas(account_name: str, container_name: str):
   from azure.storage.blob import BlobServiceClient, ContainerSasPermissions, generate_container_sas
+
   start_time = datetime.now(UTC).replace(tzinfo=None)
   expiry_time = start_time + timedelta(hours=1)
   blob_service = BlobServiceClient(
@@ -33,6 +37,7 @@ def get_container_sas(account_name: str, container_name: str):
     permission=ContainerSasPermissions(read=True, write=True, list=True),
     expiry=expiry_time,
   )
+
 
 class AzureContainer:
   def __init__(self, account, container):
@@ -49,6 +54,7 @@ class AzureContainer:
 
   def get_client_and_key(self):
     from azure.storage.blob import ContainerClient
+
     client = ContainerClient(self.ACCOUNT_URL, self.CONTAINER, credential=get_azure_credential())
     key = get_container_sas(self.ACCOUNT, self.CONTAINER)
     return client, key
@@ -58,6 +64,7 @@ class AzureContainer:
 
   def upload_bytes(self, data: bytes | IO, blob_name: str, overwrite=False) -> str:
     from azure.storage.blob import BlobClient
+
     blob = BlobClient(
       account_url=self.ACCOUNT_URL,
       container_name=self.CONTAINER,

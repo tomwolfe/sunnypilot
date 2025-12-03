@@ -62,8 +62,7 @@ class SunnylinkApi(BaseApi):
     return imei1, imei2
 
   def _resolve_serial(self):
-    return (self.params.get("HardwareSerial")
-            or HARDWARE.get_serial())
+    return self.params.get("HardwareSerial") or HARDWARE.get_serial()
 
   def register_device(self, spinner=None, timeout=60, verbose=False):
     self.spinner = spinner
@@ -99,8 +98,17 @@ class SunnylinkApi(BaseApi):
           elif time.monotonic() - start_time >= timeout / 2:
             self._status_update("Still registering device to sunnylink...")
 
-          resp = self.api_get("v2/pilotauth/", method='POST', timeout=15, imei=imei1, imei2=imei2, serial=serial,
-                              comma_dongle_id=comma_dongle_id, public_key=public_key, register_token=register_token)
+          resp = self.api_get(
+            "v2/pilotauth/",
+            method='POST',
+            timeout=15,
+            imei=imei1,
+            imei2=imei2,
+            serial=serial,
+            comma_dongle_id=comma_dongle_id,
+            public_key=public_key,
+            register_token=register_token,
+          )
 
           if resp is None:
             raise Exception("Unable to register device, request was None")

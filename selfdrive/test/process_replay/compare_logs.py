@@ -39,17 +39,20 @@ def remove_ignored_fields(msg, ignore):
   return msg
 
 
-def compare_logs(log1, log2, ignore_fields=None, ignore_msgs=None, tolerance=None,):
+def compare_logs(
+  log1,
+  log2,
+  ignore_fields=None,
+  ignore_msgs=None,
+  tolerance=None,
+):
   if ignore_fields is None:
     ignore_fields = []
   if ignore_msgs is None:
     ignore_msgs = []
   tolerance = EPSILON if tolerance is None else tolerance
 
-  log1, log2 = (
-    [m for m in log if m.which() not in ignore_msgs]
-    for log in (log1, log2)
-  )
+  log1, log2 = ([m for m in log if m.which() not in ignore_msgs] for log in (log1, log2))
 
   if len(log1) != len(log2):
     cnt1 = Counter(m.which() for m in log1)

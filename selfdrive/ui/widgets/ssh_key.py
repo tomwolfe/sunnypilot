@@ -42,8 +42,9 @@ class SshKeyAction(ItemAction):
     self._params = Params()
     self._error_message: str = ""
     self._text_font = gui_app.font(FontWeight.NORMAL)
-    self._button = Button("", click_callback=self._handle_button_click, button_style=ButtonStyle.LIST_ACTION,
-                          border_radius=BUTTON_BORDER_RADIUS, font_size=BUTTON_FONT_SIZE)
+    self._button = Button(
+      "", click_callback=self._handle_button_click, button_style=ButtonStyle.LIST_ACTION, border_radius=BUTTON_BORDER_RADIUS, font_size=BUTTON_FONT_SIZE
+    )
 
     self._refresh_state()
 

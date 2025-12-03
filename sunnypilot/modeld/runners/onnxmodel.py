@@ -9,10 +9,12 @@ from openpilot.sunnypilot.modeld.runners.runmodel_pyx import RunModel
 
 ORT_TYPES_TO_NP_TYPES = {'tensor(float16)': np.float16, 'tensor(float)': np.float32, 'tensor(uint8)': np.uint8}
 
+
 def attributeproto_fp16_to_fp32(attr):
   float32_list = np.frombuffer(attr.raw_data, dtype=np.float16)
   attr.data_type = 1
   attr.raw_data = float32_list.astype(np.float32).tobytes()
+
 
 def convert_fp16_to_fp32(onnx_path_or_bytes):
   if isinstance(onnx_path_or_bytes, bytes):
@@ -35,11 +37,13 @@ def convert_fp16_to_fp32(onnx_path_or_bytes):
           attributeproto_fp16_to_fp32(a.t)
   return model.SerializeToString()
 
+
 def create_ort_session(path, fp16_to_fp32):
   os.environ["OMP_NUM_THREADS"] = "4"
   os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
 
   import onnxruntime as ort
+
   print("Onnx available providers: ", ort.get_available_providers(), file=sys.stderr)
   options = ort.SessionOptions()
   options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
@@ -90,8 +94,8 @@ class ONNXModel(RunModel):
     return None
 
   def execute(self):
-    inputs = {k: v.view(self.input_dtypes[k]) for k,v in self.inputs.items()}
-    inputs = {k: v.reshape(self.input_shapes[k]).astype(self.input_dtypes[k]) for k,v in inputs.items()}
+    inputs = {k: v.view(self.input_dtypes[k]) for k, v in self.inputs.items()}
+    inputs = {k: v.reshape(self.input_shapes[k]).astype(self.input_dtypes[k]) for k, v in inputs.items()}
     outputs = self.session.run(None, inputs)
     assert len(outputs) == 1, "Only single model outputs are supported"
     self.output[:] = outputs[0]

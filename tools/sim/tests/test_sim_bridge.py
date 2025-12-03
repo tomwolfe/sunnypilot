@@ -11,6 +11,7 @@ from openpilot.tools.sim.bridge.common import QueueMessageType
 
 SIM_DIR = os.path.join(BASEDIR, "tools/sim")
 
+
 class TestSimBridgeBase:
   @classmethod
   def setup_class(cls):
@@ -53,8 +54,7 @@ class TestSimBridgeBase:
         no_car_events_issues_once = True
         break
 
-    assert no_car_events_issues_once, \
-                    f"Failed because no messages received, or CarEvents '{car_event_issues}' or processes not running '{not_running}'"
+    assert no_car_events_issues_once, f"Failed because no messages received, or CarEvents '{car_event_issues}' or processes not running '{not_running}'"
 
     start_time = time.monotonic()
     min_counts_control_active = 100

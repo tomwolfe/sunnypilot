@@ -14,7 +14,7 @@ NetworkType = log.DeviceState.NetworkType
 def main():
   """The main method is expected to be called by the manager when the device boots up."""
   try:
-    rk = Ratekeeper(.5)
+    rk = Ratekeeper(0.5)
     sm = messaging.SubMaster(['deviceState'], poll='deviceState')
     while True:
       sm.update(1000)

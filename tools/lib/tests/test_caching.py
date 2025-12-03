@@ -33,15 +33,17 @@ def host():
   with http_server_context(handler=CachingTestRequestHandler) as (host, port):
     yield f"http://{host}:{port}"
 
-class TestFileDownload:
 
+class TestFileDownload:
   def test_pipeline_defaults(self, host):
     # TODO: parameterize the defaults so we don't rely on hard-coded values in xx
 
-    assert URLFile.pool_manager().pools._maxsize == 10# PoolManager num_pools param
+    assert URLFile.pool_manager().pools._maxsize == 10  # PoolManager num_pools param
     pool_manager_defaults = {
       "maxsize": 100,
-      "socket_options": [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),],
+      "socket_options": [
+        (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+      ],
     }
     for k, v in pool_manager_defaults.items():
       assert URLFile.pool_manager().connection_pool_kw.get(k) == v

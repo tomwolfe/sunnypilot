@@ -68,8 +68,7 @@ class Updater(Widget):
   def _run_update_process(self):
     # TODO: just import it and run in a thread without a subprocess
     cmd = [self.updater, "--swap", self.manifest]
-    self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, bufsize=1, universal_newlines=True)
+    self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True)
 
     for line in self.process.stdout:
       parts = line.strip().split(":")
@@ -93,8 +92,9 @@ class Updater(Widget):
     gui_label(title_rect, "Update Required", TITLE_FONT_SIZE, font_weight=FontWeight.BOLD)
 
     # Description
-    desc_text = ("An operating system update is required. Connect your device to Wi-Fi for the fastest update experience. " +
-                 "The download size is approximately 1GB.")
+    desc_text = (
+      "An operating system update is required. Connect your device to Wi-Fi for the fastest update experience. " + "The download size is approximately 1GB."
+    )
 
     desc_rect = rl.Rectangle(MARGIN + 50, 250 + TITLE_FONT_SIZE * FONT_SCALE + 75, rect.width - MARGIN * 2 - 100, BODY_FONT_SIZE * FONT_SCALE * 4)
     gui_text_box(desc_rect, desc_text, BODY_FONT_SIZE)
@@ -113,8 +113,7 @@ class Updater(Widget):
 
   def render_wifi_screen(self, rect: rl.Rectangle):
     # Draw the Wi-Fi manager UI
-    wifi_rect = rl.Rectangle(rect.x + MARGIN, rect.y + MARGIN, rect.width - MARGIN * 2,
-                             rect.height - BUTTON_HEIGHT - MARGIN * 3)
+    wifi_rect = rl.Rectangle(rect.x + MARGIN, rect.y + MARGIN, rect.width - MARGIN * 2, rect.height - BUTTON_HEIGHT - MARGIN * 3)
     rl.draw_rectangle_rounded(wifi_rect, 0.035, 10, rl.Color(51, 51, 51, 255))
     wifi_content_rect = rl.Rectangle(wifi_rect.x + 50, wifi_rect.y, wifi_rect.width - 100, wifi_rect.height)
     self.wifi_manager_ui.render(wifi_content_rect)

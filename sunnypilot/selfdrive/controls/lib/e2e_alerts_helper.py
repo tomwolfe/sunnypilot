@@ -187,17 +187,11 @@ class E2EAlertsHelper:
     self.prev_lead_depart_state = self.lead_depart_state
 
     self.green_light_state, self.green_light_alert = self.update_state_machine(
-      self.green_light_state,
-      self.green_light_alert_enabled,
-      self.allowed and not self.has_lead,
-      green_light_trigger
+      self.green_light_state, self.green_light_alert_enabled, self.allowed and not self.has_lead, green_light_trigger
     )
 
     self.lead_depart_state, self.lead_depart_alert = self.update_state_machine(
-      self.lead_depart_state,
-      self.lead_depart_alert_enabled,
-      self.allowed and self.lead_depart_armed,
-      lead_depart_trigger
+      self.lead_depart_state, self.lead_depart_alert_enabled, self.allowed and self.lead_depart_armed, lead_depart_trigger
     )
 
     if self.green_light_alert or self.lead_depart_alert:

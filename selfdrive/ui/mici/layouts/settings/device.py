@@ -53,6 +53,7 @@ class MiciFccModal(NavWidget):
 
 def _engaged_confirmation_callback(callback: Callable, action_text: str):
   if not ui_state.engaged:
+
     def confirm_callback():
       # Check engaged again in case it changed while the dialog was open
       if not ui_state.engaged:
@@ -72,9 +73,9 @@ def _engaged_confirmation_callback(callback: Callable, action_text: str):
       # TODO: check
       icon = "icons_mici/settings/comma_icon.png"
 
-    dlg: BigConfirmationDialogV2 | BigDialog = BigConfirmationDialogV2(f"slide to\n{action_text.lower()}", icon, red=red,
-                                                                       exit_on_confirm=action_text == "reset",
-                                                                       confirm_callback=confirm_callback)
+    dlg: BigConfirmationDialogV2 | BigDialog = BigConfirmationDialogV2(
+      f"slide to\n{action_text.lower()}", icon, red=red, exit_on_confirm=action_text == "reset", confirm_callback=confirm_callback
+    )
     gui_app.set_modal_overlay(dlg)
   else:
     dlg = BigDialog(f"Disengage to {action_text}", "")
@@ -330,19 +331,22 @@ class DeviceLayoutMici(NavWidget):
     review_training_guide_btn.set_click_callback(self._on_review_training_guide)
     review_training_guide_btn.set_enabled(lambda: ui_state.is_offroad())
 
-    self._scroller = Scroller([
-      DeviceInfoLayoutMici(),
-      UpdateOpenpilotBigButton(),
-      PairBigButton(),
-      review_training_guide_btn,
-      driver_cam_btn,
-      # lang_button,
-      reset_calibration_btn,
-      uninstall_openpilot_btn,
-      regulatory_btn,
-      reboot_btn,
-      self._power_off_btn,
-    ], snap_items=False)
+    self._scroller = Scroller(
+      [
+        DeviceInfoLayoutMici(),
+        UpdateOpenpilotBigButton(),
+        PairBigButton(),
+        review_training_guide_btn,
+        driver_cam_btn,
+        # lang_button,
+        reset_calibration_btn,
+        uninstall_openpilot_btn,
+        regulatory_btn,
+        reboot_btn,
+        self._power_off_btn,
+      ],
+      snap_items=False,
+    )
 
     # Set up back navigation
     self.set_back_callback(back_callback)
@@ -365,6 +369,7 @@ class DeviceLayoutMici(NavWidget):
 
   def _on_review_training_guide(self):
     if not self._training_guide:
+
       def completed_callback():
         gui_app.set_modal_overlay(None)
 

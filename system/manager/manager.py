@@ -75,22 +75,24 @@ def manager_init() -> None:
   else:
     raise Exception(f"Registration failed for device {serial}")
   os.environ['DONGLE_ID'] = dongle_id  # Needed for swaglog
-  os.environ['GIT_ORIGIN'] = build_metadata.openpilot.git_normalized_origin # Needed for swaglog
-  os.environ['GIT_BRANCH'] = build_metadata.channel # Needed for swaglog
-  os.environ['GIT_COMMIT'] = build_metadata.openpilot.git_commit # Needed for swaglog
+  os.environ['GIT_ORIGIN'] = build_metadata.openpilot.git_normalized_origin  # Needed for swaglog
+  os.environ['GIT_BRANCH'] = build_metadata.channel  # Needed for swaglog
+  os.environ['GIT_COMMIT'] = build_metadata.openpilot.git_commit  # Needed for swaglog
 
   if not build_metadata.openpilot.is_dirty:
     os.environ['CLEAN'] = '1'
 
   # init logging
   sentry.init(sentry.SentryProject.SELFDRIVE)
-  cloudlog.bind_global(dongle_id=dongle_id,
-                       version=build_metadata.openpilot.version,
-                       origin=build_metadata.openpilot.git_normalized_origin,
-                       branch=build_metadata.channel,
-                       commit=build_metadata.openpilot.git_commit,
-                       dirty=build_metadata.openpilot.is_dirty,
-                       device=HARDWARE.get_device_type())
+  cloudlog.bind_global(
+    dongle_id=dongle_id,
+    version=build_metadata.openpilot.version,
+    origin=build_metadata.openpilot.git_normalized_origin,
+    branch=build_metadata.channel,
+    commit=build_metadata.openpilot.git_commit,
+    dirty=build_metadata.openpilot.is_dirty,
+    device=HARDWARE.get_device_type(),
+  )
 
   # preimport all processes
   for p in managed_processes.values():
@@ -155,8 +157,7 @@ def manager_thread() -> None:
 
     ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore)
 
-    running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
-                       for p in managed_processes.values() if p.proc)
+    running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name) for p in managed_processes.values() if p.proc)
     print(running)
     cloudlog.debug(running)
 

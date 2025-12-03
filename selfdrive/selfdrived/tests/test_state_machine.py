@@ -6,8 +6,13 @@ from openpilot.selfdrive.selfdrived.events import Events, ET, EVENTS, NormalPerm
 State = log.SelfdriveState.OpenpilotState
 
 # The event types that maintain the current state
-MAINTAIN_STATES = {State.enabled: (None,), State.disabled: (None,), State.softDisabling: (ET.SOFT_DISABLE,),
-                   State.preEnabled: (ET.PRE_ENABLE,), State.overriding: (ET.OVERRIDE_LATERAL, ET.OVERRIDE_LONGITUDINAL)}
+MAINTAIN_STATES = {
+  State.enabled: (None,),
+  State.disabled: (None,),
+  State.softDisabling: (ET.SOFT_DISABLE,),
+  State.preEnabled: (ET.PRE_ENABLE,),
+  State.overriding: (ET.OVERRIDE_LATERAL, ET.OVERRIDE_LONGITUDINAL),
+}
 ALL_STATES = tuple(State.schema.enumerants.values())
 # The event types checked in DISABLED section of state machine
 ENABLE_EVENT_TYPES = (ET.ENABLE, ET.PRE_ENABLE, ET.OVERRIDE_LATERAL, ET.OVERRIDE_LONGITUDINAL)

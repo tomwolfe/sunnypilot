@@ -25,9 +25,10 @@ from openpilot.common.realtime import Ratekeeper
 
 STATSLOGSP = StatLogSP(intercept=False)
 
+
 def sp_stats(end_event):
   """Collect sunnypilot-specific statistics and send as raw metrics."""
-  rk = Ratekeeper(.1, print_delay_threshold=None)
+  rk = Ratekeeper(0.1, print_delay_threshold=None)
   statlogsp = STATSLOGSP
   params = Params()
 
@@ -76,7 +77,6 @@ def sp_stats(end_event):
   while not end_event.is_set():
     try:
       for key in param_keys:
-
         try:
           value = params.get(key)
         except Exception as e:

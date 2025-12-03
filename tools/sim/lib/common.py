@@ -10,6 +10,7 @@ W, H = 1928, 1208
 
 vec3 = namedtuple("vec3", ["x", "y", "z"])
 
+
 class GPSState:
   def __init__(self):
     self.latitude = 0
@@ -29,8 +30,8 @@ class GPSState:
 
 class IMUState:
   def __init__(self):
-    self.accelerometer: vec3 = vec3(0,0,0)
-    self.gyroscope: vec3 = vec3(0,0,0)
+    self.accelerometer: vec3 = vec3(0, 0, 0)
+    self.gyroscope: vec3 = vec3(0, 0, 0)
     self.bearing: float = 0
 
 
@@ -58,7 +59,7 @@ class SimulatorState:
 
   @property
   def speed(self):
-    return math.sqrt(self.velocity.x ** 2 + self.velocity.y ** 2 + self.velocity.z ** 2)
+    return math.sqrt(self.velocity.x**2 + self.velocity.y**2 + self.velocity.z**2)
 
 
 class World(ABC):

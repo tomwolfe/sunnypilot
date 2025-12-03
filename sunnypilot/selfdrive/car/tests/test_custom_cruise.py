@@ -116,8 +116,8 @@ class TestCustomAccIncrements(TestVCruiseHelper):
   def test_rounding_behavior(self):
     """Test rounding behavior for 5 and 10 increments"""
     test_cases = [
-      (47, 5, 50),   # 47 -> 50 (round up to next 5)
-      (45, 5, 50),   # 45 -> 50 (already at 5, increment by 5)
+      (47, 5, 50),  # 47 -> 50 (round up to next 5)
+      (45, 5, 50),  # 45 -> 50 (already at 5, increment by 5)
       (43, 10, 50),  # 43 -> 50 (round up to next 10)
       (40, 10, 50),  # 40 -> 50 (already at 10, increment by 10)
     ]

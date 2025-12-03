@@ -38,10 +38,10 @@ def send_thread(j: PandaJungle, flock):
   while True:
     # handle cycling
     if ENABLE_PWR:
-      i = (rk.frame*DT_CTRL) % (PWR_ON + PWR_OFF) < PWR_ON
+      i = (rk.frame * DT_CTRL) % (PWR_ON + PWR_OFF) < PWR_ON
       j.set_panda_power(i)
     if ENABLE_IGN:
-      i = (rk.frame*DT_CTRL) % (IGN_ON + IGN_OFF) < IGN_ON
+      i = (rk.frame * DT_CTRL) % (IGN_ON + IGN_OFF) < IGN_ON
       j.set_ignition(i)
 
     send = CAN_MSGS[rk.frame % len(CAN_MSGS)]
@@ -73,7 +73,7 @@ def connect():
     # try to join all send threads
     cur_serials = serials.copy()
     for s, t in cur_serials.items():
-      if t is  not None:
+      if t is not None:
         t.join(0.01)
         if not t.is_alive():
           del serials[s]
@@ -91,8 +91,9 @@ def load_route(route_or_segment_name):
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="Replay CAN messages from a route to all connected pandas and jungles in a loop.",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(
+    description="Replay CAN messages from a route to all connected pandas and jungles in a loop.", formatter_class=argparse.ArgumentDefaultsHelpFormatter
+  )
   parser.add_argument("route_or_segment_name", nargs='?', help="The route or segment name to replay. If not specified, a default public route will be used.")
   args = parser.parse_args()
 

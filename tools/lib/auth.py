@@ -71,27 +71,33 @@ def auth_redirect_link(method):
   }
 
   if method == 'google':
-    params.update({
-      'type': 'web_server',
-      'client_id': '45471411055-ornt4svd2miog6dnopve7qtmh5mnu6id.apps.googleusercontent.com',
-      'response_type': 'code',
-      'scope': 'https://www.googleapis.com/auth/userinfo.email',
-      'prompt': 'select_account',
-    })
+    params.update(
+      {
+        'type': 'web_server',
+        'client_id': '45471411055-ornt4svd2miog6dnopve7qtmh5mnu6id.apps.googleusercontent.com',
+        'response_type': 'code',
+        'scope': 'https://www.googleapis.com/auth/userinfo.email',
+        'prompt': 'select_account',
+      }
+    )
     return 'https://accounts.google.com/o/oauth2/auth?' + urlencode(params)
   elif method == 'github':
-    params.update({
-      'client_id': '28c4ecb54bb7272cb5a4',
-      'scope': 'read:user',
-    })
+    params.update(
+      {
+        'client_id': '28c4ecb54bb7272cb5a4',
+        'scope': 'read:user',
+      }
+    )
     return 'https://github.com/login/oauth/authorize?' + urlencode(params)
   elif method == 'apple':
-    params.update({
-      'client_id': 'ai.comma.login',
-      'response_type': 'code',
-      'response_mode': 'form_post',
-      'scope': 'name email',
-    })
+    params.update(
+      {
+        'client_id': 'ai.comma.login',
+        'response_type': 'code',
+        'response_mode': 'form_post',
+        'scope': 'name email',
+      }
+    )
     return 'https://appleid.apple.com/auth/authorize?' + urlencode(params)
   else:
     raise NotImplementedError(f"no redirect implemented for method {method}")
@@ -109,9 +115,10 @@ def login(method):
     if 'code' in web_server.query_params:
       break
     elif 'error' in web_server.query_params:
-      print('Authentication Error: "{}". Description: "{}" '.format(
-        web_server.query_params['error'],
-        web_server.query_params.get('error_description')), file=sys.stderr)
+      print(
+        'Authentication Error: "{}". Description: "{}" '.format(web_server.query_params['error'], web_server.query_params.get('error_description')),
+        file=sys.stderr,
+      )
       break
 
   try:

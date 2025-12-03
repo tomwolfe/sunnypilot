@@ -72,10 +72,21 @@ def extract_field_types(schema, prefix, field_types_dict):
 
 def _convert_to_optimal_dtype(values_list, capnp_type):
   dtype_mapping = {
-    'bool': np.bool_, 'int8': np.int8, 'int16': np.int16, 'int32': np.int32, 'int64': np.int64,
-    'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32, 'uint64': np.uint64,
-    'float32': np.float32, 'float64': np.float64, 'text': object, 'data': object,
-    'enum': object, 'anyPointer': object,
+    'bool': np.bool_,
+    'int8': np.int8,
+    'int16': np.int16,
+    'int32': np.int32,
+    'int64': np.int64,
+    'uint8': np.uint8,
+    'uint16': np.uint16,
+    'uint32': np.uint32,
+    'uint64': np.uint64,
+    'float32': np.float32,
+    'float64': np.float64,
+    'text': object,
+    'data': object,
+    'enum': object,
+    'anyPointer': object,
   }
 
   target_dtype = dtype_mapping.get(capnp_type, object)
@@ -181,7 +192,7 @@ def msgs_to_time_series(msgs):
             non_none_indices.append(i)
             non_none_values.append(value)
 
-        if non_none_values: # check if indices > uint16 max, currently would require a 1000+ Hz signal since indices are within segments
+        if non_none_values:  # check if indices > uint16 max, currently would require a 1000+ Hz signal since indices are within segments
           assert max(non_none_indices) <= 65535, f"Sparse field {typ}/{field_name} has timestamp indices exceeding uint16 max. Max: {max(non_none_indices)}"
 
         typ_result[field_name] = {

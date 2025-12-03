@@ -10,7 +10,7 @@ class FirstOrderFilter:
 
   def update(self, x):
     if self.initialized:
-      self.x = (1. - self.alpha) * self.x + self.alpha * x
+      self.x = (1.0 - self.alpha) * self.x + self.alpha * x
     else:
       self.initialized = True
       self.x = x

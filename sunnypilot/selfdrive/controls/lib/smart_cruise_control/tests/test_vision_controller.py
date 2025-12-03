@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import numpy as np
 
 import cereal.messaging as messaging
@@ -62,7 +63,6 @@ def generate_controlsState():
 
 
 class TestSmartCruiseControlVision:
-
   def setup_method(self):
     self.params = Params()
     self.reset_params()
@@ -80,25 +80,25 @@ class TestSmartCruiseControlVision:
     assert self.scc_v.state == VisionState.disabled
     assert not self.scc_v.is_active
     assert self.scc_v.output_v_target == V_CRUISE_UNSET
-    assert self.scc_v.output_a_target == 0.
+    assert self.scc_v.output_a_target == 0.0
 
   def test_system_disabled(self):
     self.params.put_bool("SmartCruiseControlVision", False)
     self.scc_v.enabled = self.params.get_bool("SmartCruiseControlVision")
 
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_v.update(self.sm, True, False, 0., 0., 0.)
+    for _ in range(int(10.0 / DT_MDL)):
+      self.scc_v.update(self.sm, True, False, 0.0, 0.0, 0.0)
     assert self.scc_v.state == VisionState.disabled
     assert not self.scc_v.is_active
 
   def test_disabled(self):
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_v.update(self.sm, False, False, 0., 0., 0.)
+    for _ in range(int(10.0 / DT_MDL)):
+      self.scc_v.update(self.sm, False, False, 0.0, 0.0, 0.0)
     assert self.scc_v.state == VisionState.disabled
 
   def test_transition_disabled_to_enabled(self):
-    for _ in range(int(10. / DT_MDL)):
-      self.scc_v.update(self.sm, True, False, 0., 0., 0.)
+    for _ in range(int(10.0 / DT_MDL)):
+      self.scc_v.update(self.sm, True, False, 0.0, 0.0, 0.0)
     assert self.scc_v.state == VisionState.enabled
 
   # TODO-SP: mock modelV2 data to test other states

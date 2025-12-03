@@ -32,9 +32,9 @@ SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
 
 # Constants
 ALERT_COLORS = {
-  AlertStatus.normal: rl.Color(0x15, 0x15, 0x15, 0xF1),      # #151515 with alpha 0xF1
+  AlertStatus.normal: rl.Color(0x15, 0x15, 0x15, 0xF1),  # #151515 with alpha 0xF1
   AlertStatus.userPrompt: rl.Color(0xDA, 0x6F, 0x25, 0xF1),  # #DA6F25 with alpha 0xF1
-  AlertStatus.critical: rl.Color(0xC9, 0x22, 0x31, 0xF1),    # #C92231 with alpha 0xF1
+  AlertStatus.critical: rl.Color(0xC9, 0x22, 0x31, 0xF1),  # #C92231 with alpha 0xF1
 }
 
 
@@ -76,10 +76,16 @@ class AlertRenderer(Widget):
     self.font_bold: rl.Font = gui_app.font(FontWeight.BOLD)
 
     # font size is set dynamically
-    self._full_text1_label = Label("", font_size=0, font_weight=FontWeight.BOLD, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                                   text_alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP)
-    self._full_text2_label = Label("", font_size=ALERT_FONT_BIG, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                                   text_alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP)
+    self._full_text1_label = Label(
+      "",
+      font_size=0,
+      font_weight=FontWeight.BOLD,
+      text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+      text_alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
+    )
+    self._full_text2_label = Label(
+      "", font_size=ALERT_FONT_BIG, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER, text_alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP
+    )
 
   def get_alert(self, sm: messaging.SubMaster) -> Alert | None:
     """Generate the current alert based on selfdrive state."""
@@ -123,10 +129,7 @@ class AlertRenderer(Widget):
     self._draw_background(alert_rect, alert)
 
     text_rect = rl.Rectangle(
-      alert_rect.x + ALERT_PADDING,
-      alert_rect.y + ALERT_PADDING,
-      alert_rect.width - 2 * ALERT_PADDING,
-      alert_rect.height - 2 * ALERT_PADDING
+      alert_rect.x + ALERT_PADDING, alert_rect.y + ALERT_PADDING, alert_rect.width - 2 * ALERT_PADDING, alert_rect.height - 2 * ALERT_PADDING
     )
     self._draw_text(text_rect, alert)
 
@@ -135,8 +138,7 @@ class AlertRenderer(Widget):
       return rect
 
     h = ALERT_HEIGHTS.get(size, rect.height)
-    return rl.Rectangle(rect.x + ALERT_MARGIN, rect.y + rect.height - h + ALERT_MARGIN,
-                        rect.width - ALERT_MARGIN * 2, h - ALERT_MARGIN * 2)
+    return rl.Rectangle(rect.x + ALERT_MARGIN, rect.y + rect.height - h + ALERT_MARGIN, rect.width - ALERT_MARGIN * 2, h - ALERT_MARGIN * 2)
 
   def _draw_background(self, rect: rl.Rectangle, alert: Alert) -> None:
     color = ALERT_COLORS.get(alert.status, ALERT_COLORS[AlertStatus.normal])

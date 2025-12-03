@@ -104,7 +104,7 @@ class _LogFileReader:
 
     if ext == ".bz2" or dat.startswith(b'BZh9'):
       dat = bz2.decompress(dat)
-    elif ext == ".zst" or dat.startswith(b'\x28\xB5\x2F\xFD'):
+    elif ext == ".zst" or dat.startswith(b'\x28\xb5\x2f\xfd'):
       # https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#zstandard-frames
       dat = decompress_stream(dat)
 
@@ -194,9 +194,12 @@ def auto_source(identifier: str, sources: list[Source], default_mode: ReadMode) 
           break
 
   missing_logs = len(needed_seg_idxs)
-  raise LogsUnavailable(f"{missing_logs}/{len(sr.seg_idxs)} logs were not found, please ensure all logs " +
-                        "are uploaded. You can fall back to qlogs with '/a' selector at the end of the route name.\n\n" +
-                        "Exceptions for sources:\n  - " + "\n  - ".join([f"{k}: {repr(v)}" for k, v in exceptions.items()]))
+  raise LogsUnavailable(
+    f"{missing_logs}/{len(sr.seg_idxs)} logs were not found, please ensure all logs "
+    + "are uploaded. You can fall back to qlogs with '/a' selector at the end of the route name.\n\n"
+    + "Exceptions for sources:\n  - "
+    + "\n  - ".join([f"{k}: {repr(v)}" for k, v in exceptions.items()])
+  )
 
 
 def parse_indirect(identifier: str) -> str:
@@ -242,8 +245,9 @@ class LogReader:
     identifiers = auto_source(identifier, self.sources, self.default_mode)
     return identifiers
 
-  def __init__(self, identifier: str | list[str], default_mode: ReadMode = ReadMode.RLOG,
-               sources: list[Source] = None, sort_by_time=False, only_union_types=False):
+  def __init__(
+    self, identifier: str | list[str], default_mode: ReadMode = ReadMode.RLOG, sources: list[Source] = None, sort_by_time=False, only_union_types=False
+  ):
     if sources is None:
       sources = [internal_source, comma_api_source, openpilotci_source, comma_car_segments_source]
 

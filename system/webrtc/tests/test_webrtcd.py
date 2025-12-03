@@ -1,10 +1,12 @@
 import pytest
 import asyncio
 import json
+
 # for aiortc and its dependencies
 import warnings
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning) # TODO: remove this when google-crc32c publish a python3.12 wheel
+warnings.filterwarnings("ignore", category=RuntimeWarning)  # TODO: remove this when google-crc32c publish a python3.12 wheel
 
 from openpilot.system.webrtc.webrtcd import get_stream
 
@@ -13,12 +15,15 @@ from teleoprtc import WebRTCOfferBuilder
 from parameterized import parameterized_class
 
 
-@parameterized_class(("in_services", "out_services"), [
-  (["testJoystick"], ["carState"]),
-  ([], ["carState"]),
-  (["testJoystick"], []),
-  ([], []),
-])
+@parameterized_class(
+  ("in_services", "out_services"),
+  [
+    (["testJoystick"], ["carState"]),
+    ([], ["carState"]),
+    (["testJoystick"], []),
+    ([], []),
+  ],
+)
 @pytest.mark.asyncio
 class TestWebrtcdProc:
   async def assertCompletesWithTimeout(self, awaitable, timeout=1):
@@ -30,6 +35,7 @@ class TestWebrtcdProc:
 
   async def test_webrtcd(self, mocker):
     mock_request = mocker.MagicMock()
+
     async def connect(offer):
       body = {'sdp': offer.sdp, 'cameras': offer.video, 'bridge_services_in': self.in_services, 'bridge_services_out': self.out_services}
       mock_request.json.side_effect = mocker.AsyncMock(return_value=body)
@@ -62,4 +68,3 @@ class TestWebrtcdProc:
     assert mock_request.app["streams"].__setitem__.called, "Implementation changed, please update this test"
     _, session = mock_request.app["streams"].__setitem__.call_args.args
     await self.assertCompletesWithTimeout(session.post_run_cleanup())
-

@@ -13,10 +13,8 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 
 
 class TestNNTorqueModel:
-
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN])
   def test_load_model(self, car_name):
-
     # Create mock params object similar to the conftest.py fixture
     mock_params = MagicMock()
     param_defaults = {
@@ -31,7 +29,7 @@ class TestNNTorqueModel:
       "LateralMaxJerk": "5.0",
       "LateralHighSpeedThreshold": "15.0",
       "LateralHighSpeedKiLimit": "0.15",
-      "LateralCurvatureKiScaler": "0.2"
+      "LateralCurvatureKiScaler": "0.2",
     }
 
     def mock_get(key, block=False):

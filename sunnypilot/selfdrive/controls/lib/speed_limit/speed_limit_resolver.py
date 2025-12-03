@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import time
 
 import cereal.messaging as messaging
@@ -42,12 +43,7 @@ class SpeedLimitResolver:
     self.distance_solutions = {}  # Store for distance to current speed limit start for different sources
 
     self.policy = self.params.get("SpeedLimitPolicy", return_default=True)
-    self.policy = get_sanitize_int_param(
-      "SpeedLimitPolicy",
-      Policy.min().value,
-      Policy.max().value,
-      self.params
-    )
+    self.policy = get_sanitize_int_param("SpeedLimitPolicy", Policy.min().value, Policy.max().value, self.params)
     self._policy_to_sources_map = {
       Policy.car_state_only: [SpeedLimitSource.car],
       Policy.map_data_only: [SpeedLimitSource.map],
@@ -60,34 +56,29 @@ class SpeedLimitResolver:
       self._reset_limit_sources(source)
 
     self.is_metric = self.params.get_bool("IsMetric")
-    self.offset_type = get_sanitize_int_param(
-      "SpeedLimitOffsetType",
-      OffsetType.min().value,
-      OffsetType.max().value,
-      self.params
-    )
+    self.offset_type = get_sanitize_int_param("SpeedLimitOffsetType", OffsetType.min().value, OffsetType.max().value, self.params)
     self.offset_value = self.params.get("SpeedLimitValueOffset", return_default=True)
 
-    self.speed_limit = 0.
-    self.speed_limit_last = 0.
-    self.speed_limit_final = 0.
-    self.speed_limit_final_last = 0.
-    self.speed_limit_offset = 0.
+    self.speed_limit = 0.0
+    self.speed_limit_last = 0.0
+    self.speed_limit_final = 0.0
+    self.speed_limit_final_last = 0.0
+    self.speed_limit_offset = 0.0
 
   def update_speed_limit_states(self) -> None:
     self.speed_limit_final = self.speed_limit + self.speed_limit_offset
 
-    if self.speed_limit > 0.:
+    if self.speed_limit > 0.0:
       self.speed_limit_last = self.speed_limit
       self.speed_limit_final_last = self.speed_limit_final
 
   @property
   def speed_limit_valid(self) -> bool:
-    return self.speed_limit > 0.
+    return self.speed_limit > 0.0
 
   @property
   def speed_limit_last_valid(self) -> bool:
-    return self.speed_limit_last > 0.
+    return self.speed_limit_last > 0.0
 
   def update_params(self):
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
@@ -107,13 +98,13 @@ class SpeedLimitResolver:
       raise NotImplementedError("Offset not supported")
 
   def _reset_limit_sources(self, source: custom.LongitudinalPlanSP.SpeedLimit.Source) -> None:
-    self.limit_solutions[source] = 0.
-    self.distance_solutions[source] = 0.
+    self.limit_solutions[source] = 0.0
+    self.distance_solutions[source] = 0.0
 
   def _get_from_car_state(self, sm: messaging.SubMaster) -> None:
     self._reset_limit_sources(SpeedLimitSource.car)
     self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit
-    self.distance_solutions[SpeedLimitSource.car] = 0.
+    self.distance_solutions[SpeedLimitSource.car] = 0.0
 
   def _get_from_map_data(self, sm: messaging.SubMaster) -> None:
     self._reset_limit_sources(SpeedLimitSource.map)
@@ -127,8 +118,8 @@ class SpeedLimitResolver:
     if gps_fix_age > LIMIT_MAX_MAP_DATA_AGE:
       return
 
-    speed_limit = map_data.speedLimit if map_data.speedLimitValid else 0.
-    next_speed_limit = map_data.speedLimitAhead if map_data.speedLimitAheadValid else 0.
+    speed_limit = map_data.speedLimit if map_data.speedLimitValid else 0.0
+    next_speed_limit = map_data.speedLimitAhead if map_data.speedLimitAheadValid else 0.0
 
     self._calculate_map_data_limits(sm, speed_limit, next_speed_limit)
 
@@ -137,14 +128,14 @@ class SpeedLimitResolver:
     map_data = sm['liveMapDataSP']
 
     distance_since_fix = self.v_ego * (time.monotonic() - gps_data.unixTimestampMillis * 1e-3)
-    distance_to_speed_limit_ahead = max(0., map_data.speedLimitAheadDistance - distance_since_fix)
+    distance_to_speed_limit_ahead = max(0.0, map_data.speedLimitAheadDistance - distance_since_fix)
 
     self.limit_solutions[SpeedLimitSource.map] = speed_limit
-    self.distance_solutions[SpeedLimitSource.map] = 0.
+    self.distance_solutions[SpeedLimitSource.map] = 0.0
 
     # Enhanced logic for handling upcoming speed limit changes
     # Consider both the current and next speed limit with smooth transitions
-    if 0. < next_speed_limit < self.v_ego:
+    if 0.0 < next_speed_limit < self.v_ego:
       # Calculate required distance to safely decelerate to next speed limit
       required_decel_distance = self._calculate_safe_deceleration_distance(self.v_ego, next_speed_limit)
 
@@ -179,11 +170,11 @@ class SpeedLimitResolver:
     if self.policy != Policy.combined:
       # They are ordered in the order of preference, so we pick the first that's non-zero
       for source in sources_for_policy:
-        if self.limit_solutions[source] > 0.:
+        if self.limit_solutions[source] > 0.0:
           return source
       return SpeedLimitSource.none
 
-    sources_with_limits = [(s, limit) for s, limit in [(s, self.limit_solutions[s]) for s in sources_for_policy] if limit > 0.]
+    sources_with_limits = [(s, limit) for s, limit in [(s, self.limit_solutions[s]) for s in sources_for_policy] if limit > 0.0]
     if sources_with_limits:
       return min(sources_with_limits, key=lambda x: x[1])[0]
 
@@ -195,8 +186,8 @@ class SpeedLimitResolver:
     self._get_from_map_data(sm)
 
     source = self._get_source_solution_according_to_policy()
-    speed_limit = self.limit_solutions[source] if source else 0.
-    distance = self.distance_solutions[source] if source else 0.
+    speed_limit = self.limit_solutions[source] if source else 0.0
+    distance = self.distance_solutions[source] if source else 0.0
 
     return speed_limit, distance, source
 

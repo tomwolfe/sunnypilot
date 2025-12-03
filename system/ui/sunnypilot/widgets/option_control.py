@@ -17,13 +17,19 @@ CONTAINER_PADDING = 20
 
 
 class OptionControlSP(ItemAction):
-  def __init__(self, param: str, min_value: int, max_value: int,
-               value_change_step: int = 1, enabled: bool | Callable[[], bool] = True,
-               on_value_changed: Callable[[int], None] | None = None,
-               value_map: dict[int, int] | None = None,
-               label_width: int = LABEL_WIDTH,
-               use_float_scaling: bool = False, label_callback: Callable[[int], str] | None = None):
-
+  def __init__(
+    self,
+    param: str,
+    min_value: int,
+    max_value: int,
+    value_change_step: int = 1,
+    enabled: bool | Callable[[], bool] = True,
+    on_value_changed: Callable[[int], None] | None = None,
+    value_map: dict[int, int] | None = None,
+    label_width: int = LABEL_WIDTH,
+    use_float_scaling: bool = False,
+    label_callback: Callable[[int], str] | None = None,
+  ):
     super().__init__(enabled=enabled)
     self.params = Params()
     self.param_key = param
@@ -108,8 +114,7 @@ class OptionControlSP(ItemAction):
     rl.draw_rectangle_rounded(self.container_rect, 0.2, 20, style.OPTION_CONTROL_CONTAINER_BG)
 
     # minus button
-    self.minus_btn_rect = rl.Rectangle(self.container_rect.x, component_y, BUTTON_WIDTH + CONTAINER_PADDING,
-                                       BUTTON_HEIGHT)
+    self.minus_btn_rect = rl.Rectangle(self.container_rect.x, component_y, BUTTON_WIDTH + CONTAINER_PADDING, BUTTON_HEIGHT)
 
     # label
     label_x = self.container_rect.x + CONTAINER_PADDING + BUTTON_WIDTH + BUTTON_SPACING
@@ -128,8 +133,7 @@ class OptionControlSP(ItemAction):
 
   def _render_button(self, rect: rl.Rectangle, text: str, enabled: bool):
     mouse_pos = rl.get_mouse_position()
-    is_pressed = (rl.check_collision_point_rec(mouse_pos, rect) and
-                  self._touch_valid() and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT))
+    is_pressed = rl.check_collision_point_rec(mouse_pos, rect) and self._touch_valid() and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)
 
     text_color = style.ITEM_TEXT_COLOR if enabled else style.ITEM_DISABLED_TEXT_COLOR
 

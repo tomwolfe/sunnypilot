@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import numpy as np
 
 from cereal import car, custom
@@ -17,9 +18,14 @@ from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.helpers import comp
 ButtonType = car.CarState.ButtonEvent.Type
 SpeedLimitAssistState = custom.LongitudinalPlanSP.SpeedLimit.AssistState
 
-CRUISE_BUTTON_TIMER = {ButtonType.decelCruise: 0, ButtonType.accelCruise: 0,
-                       ButtonType.setCruise: 0, ButtonType.resumeCruise: 0,
-                       ButtonType.cancel: 0, ButtonType.mainCruise: 0}
+CRUISE_BUTTON_TIMER = {
+  ButtonType.decelCruise: 0,
+  ButtonType.accelCruise: 0,
+  ButtonType.setCruise: 0,
+  ButtonType.resumeCruise: 0,
+  ButtonType.cancel: 0,
+  ButtonType.mainCruise: 0,
+}
 
 V_CRUISE_MIN = 8
 V_CRUISE_MAX = 145
@@ -58,9 +64,9 @@ class VCruiseHelperSP:
     self.sla_state = SpeedLimitAssistState.disabled
     self.prev_sla_state = SpeedLimitAssistState.disabled
     self.has_speed_limit = False
-    self.speed_limit_final_last = 0.
-    self.speed_limit_final_last_kph = 0.
-    self.prev_speed_limit_final_last_kph = 0.
+    self.speed_limit_final_last = 0.0
+    self.speed_limit_final_last_kph = 0.0
+    self.prev_speed_limit_final_last_kph = 0.0
     self.req_plus = False
     self.req_minus = False
 
@@ -113,8 +119,7 @@ class VCruiseHelperSP:
     self.speed_limit_final_last = LP_SP.speedLimit.resolver.speedLimitFinalLast
     self.speed_limit_final_last_kph = self.speed_limit_final_last * CV.MS_TO_KPH
     self.sla_state = LP_SP.speedLimit.assist.state
-    self.req_plus, self.req_minus = compare_cluster_target(self.v_cruise_cluster_kph * CV.KPH_TO_MS,
-                                                           self.speed_limit_final_last, is_metric)
+    self.req_plus, self.req_minus = compare_cluster_target(self.v_cruise_cluster_kph * CV.KPH_TO_MS, self.speed_limit_final_last, is_metric)
 
   @property
   def update_speed_limit_final_last_changed(self) -> bool:
@@ -130,8 +135,7 @@ class VCruiseHelperSP:
     return False
 
   def update_speed_limit_assist_v_cruise_non_pcm(self) -> None:
-    if self.sla_state in SLA_ACTIVE_STATES and (self.prev_sla_state not in SLA_ACTIVE_STATES or
-                                                self.update_speed_limit_final_last_changed):
+    if self.sla_state in SLA_ACTIVE_STATES and (self.prev_sla_state not in SLA_ACTIVE_STATES or self.update_speed_limit_final_last_changed):
       self.v_cruise_kph = np.clip(round(self.speed_limit_final_last_kph, 1), self.v_cruise_min, V_CRUISE_MAX)
 
     self.prev_sla_state = self.sla_state

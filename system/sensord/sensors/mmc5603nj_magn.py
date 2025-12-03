@@ -11,10 +11,11 @@ REG_INTERNAL_0 = 0x1B
 REG_INTERNAL_1 = 0x1C
 
 # Control register settings
-CMM_FREQ_EN = (1 << 7)
-AUTO_SR_EN  = (1 << 5)
-SET         = (1 << 3)
-RESET       = (1 << 4)
+CMM_FREQ_EN = 1 << 7
+AUTO_SR_EN = 1 << 5
+SET = 1 << 3
+RESET = 1 << 4
+
 
 class MMC5603NJ_Magn(Sensor):
   @property
@@ -22,13 +23,19 @@ class MMC5603NJ_Magn(Sensor):
     return 0x30
 
   def init(self):
-    self.verify_chip_id(0x39, [0x10, ])
-    self.writes((
-      (REG_ODR, 0),
-
-      # Set BW to 0b01 for 1-150 Hz operation
-      (REG_INTERNAL_1, 0b01),
-    ))
+    self.verify_chip_id(
+      0x39,
+      [
+        0x10,
+      ],
+    )
+    self.writes(
+      (
+        (REG_ODR, 0),
+        # Set BW to 0b01 for 1-150 Hz operation
+        (REG_INTERNAL_1, 0b01),
+      )
+    )
 
   def _read_data(self, cycle) -> list[float]:
     # start measurement
@@ -55,7 +62,7 @@ class MMC5603NJ_Magn(Sensor):
     event = log.SensorEventData.new_message()
     event.timestamp = ts
     event.version = 1
-    event.sensor = 3 # SENSOR_MAGNETOMETER_UNCALIBRATED
+    event.sensor = 3  # SENSOR_MAGNETOMETER_UNCALIBRATED
     event.type = 14  # SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED
     event.source = log.SensorEventData.SensorSource.mmc5603nj
 
@@ -67,10 +74,11 @@ class MMC5603NJ_Magn(Sensor):
 
   def shutdown(self) -> None:
     v = self.read(REG_INTERNAL_0, 1)[0]
-    self.writes((
-      # disable auto-reset of measurements
-      (REG_INTERNAL_0, (v & (~(CMM_FREQ_EN | AUTO_SR_EN)))),
-
-      # disable continuous mode
-      (REG_ODR, 0),
-    ))
+    self.writes(
+      (
+        # disable auto-reset of measurements
+        (REG_INTERNAL_0, (v & (~(CMM_FREQ_EN | AUTO_SR_EN)))),
+        # disable continuous mode
+        (REG_ODR, 0),
+      )
+    )

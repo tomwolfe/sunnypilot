@@ -1,4 +1,5 @@
 """Install exception handler for process crash."""
+
 import os
 import traceback
 from datetime import datetime
@@ -54,10 +55,7 @@ def save_exception(content: str) -> None:
     if not os.path.exists(CRASHES_DIR):
       os.makedirs(CRASHES_DIR)
 
-    files = [
-      os.path.join(CRASHES_DIR, datetime.now().strftime("%Y-%m-%d--%H-%M-%S.log")),
-      os.path.join(CRASHES_DIR, "error.log")
-    ]
+    files = [os.path.join(CRASHES_DIR, datetime.now().strftime("%Y-%m-%d--%H-%M-%S.log")), os.path.join(CRASHES_DIR, "error.log")]
 
     for fn in files:
       with open(fn, 'w') as f:
@@ -124,13 +122,9 @@ def init(project: SentryProject) -> bool:
   if project == SentryProject.SELFDRIVE:
     integrations.append(ThreadingIntegration(propagate_hub=True))
 
-  sentry_sdk.init(project.value,
-                  default_integrations=False,
-                  release=get_version(),
-                  integrations=integrations,
-                  traces_sample_rate=1.0,
-                  max_value_length=8192,
-                  environment=env)
+  sentry_sdk.init(
+    project.value, default_integrations=False, release=get_version(), integrations=integrations, traces_sample_rate=1.0, max_value_length=8192, environment=env
+  )
 
   sentry_sdk.set_user({"id": dongle_id, "name": git_username})
   sentry_sdk.set_tag("dirty", build_metadata.openpilot.is_dirty)

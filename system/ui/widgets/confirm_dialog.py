@@ -62,13 +62,13 @@ class ConfirmDialog(Widget):
 
     rl.draw_rectangle_rec(dialog_rect, BACKGROUND_COLOR)
 
-    text_rect = rl.Rectangle(dialog_rect.x + MARGIN, dialog_rect.y + TEXT_PADDING,
-                             dialog_rect.width - 2 * MARGIN, dialog_rect.height - BUTTON_HEIGHT - MARGIN - TEXT_PADDING * 2)
+    text_rect = rl.Rectangle(
+      dialog_rect.x + MARGIN, dialog_rect.y + TEXT_PADDING, dialog_rect.width - 2 * MARGIN, dialog_rect.height - BUTTON_HEIGHT - MARGIN - TEXT_PADDING * 2
+    )
     if not self._rich:
       self._label.render(text_rect)
     else:
-      html_rect = rl.Rectangle(text_rect.x, text_rect.y, text_rect.width,
-                               self._html_renderer.get_total_height(int(text_rect.width)))
+      html_rect = rl.Rectangle(text_rect.x, text_rect.y, text_rect.width, self._html_renderer.get_total_height(int(text_rect.width)))
       self._html_renderer.set_rect(html_rect)
       self._scroller.render(text_rect)
 

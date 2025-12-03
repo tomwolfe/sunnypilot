@@ -15,6 +15,7 @@ LOG_COMPRESSION_LEVEL = 10  # little benefit up to level 15. level ~17 is a smal
 class CallbackReader:
   """Wraps a file, but overrides the read method to also
   call a callback function with the number of bytes read so far."""
+
   def __init__(self, f, callback, *args):
     self.f = f
     self.callback = callback
@@ -32,8 +33,7 @@ class CallbackReader:
 
 
 @contextlib.contextmanager
-def atomic_write_in_dir(path: str, mode: str = 'w', buffering: int = -1, encoding: str | None = None, newline: str | None = None,
-                        overwrite: bool = False):
+def atomic_write_in_dir(path: str, mode: str = 'w', buffering: int = -1, encoding: str | None = None, newline: str | None = None, overwrite: bool = False):
   """Write to a file atomically using a temporary file in the same directory as the destination file."""
   dir_name = os.path.dirname(path)
 
@@ -114,5 +114,7 @@ def retry(attempts=3, delay=1.0, ignore_failure=False):
         cloudlog.error(f"{func.__name__} failed after retry")
       else:
         raise Exception(f"{func.__name__} failed after retry")
+
     return wrapper
+
   return decorator

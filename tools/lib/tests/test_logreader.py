@@ -48,44 +48,48 @@ def setup_source_scenario(mocker, is_internal=False):
 
 
 class TestLogReader:
-  @parameterized.expand([
-    (f"{TEST_ROUTE}", ALL_SEGS),
-    (f"{TEST_ROUTE.replace('/', '|')}", ALL_SEGS),
-    (f"{TEST_ROUTE}--0", [0]),
-    (f"{TEST_ROUTE}--5", [5]),
-    (f"{TEST_ROUTE}/0", [0]),
-    (f"{TEST_ROUTE}/5", [5]),
-    (f"{TEST_ROUTE}/0:10", ALL_SEGS[0:10]),
-    (f"{TEST_ROUTE}/0:0", []),
-    (f"{TEST_ROUTE}/4:6", ALL_SEGS[4:6]),
-    (f"{TEST_ROUTE}/0:-1", ALL_SEGS[0:-1]),
-    (f"{TEST_ROUTE}/:5", ALL_SEGS[:5]),
-    (f"{TEST_ROUTE}/2:", ALL_SEGS[2:]),
-    (f"{TEST_ROUTE}/2:-1", ALL_SEGS[2:-1]),
-    (f"{TEST_ROUTE}/-1", [ALL_SEGS[-1]]),
-    (f"{TEST_ROUTE}/-2", [ALL_SEGS[-2]]),
-    (f"{TEST_ROUTE}/-2:-1", ALL_SEGS[-2:-1]),
-    (f"{TEST_ROUTE}/-4:-2", ALL_SEGS[-4:-2]),
-    (f"{TEST_ROUTE}/:10:2", ALL_SEGS[:10:2]),
-    (f"{TEST_ROUTE}/5::2", ALL_SEGS[5::2]),
-    (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE}", ALL_SEGS),
-    (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE.replace('/', '|')}", ALL_SEGS),
-    (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE.replace('/', '%7C')}", ALL_SEGS),
-  ])
+  @parameterized.expand(
+    [
+      (f"{TEST_ROUTE}", ALL_SEGS),
+      (f"{TEST_ROUTE.replace('/', '|')}", ALL_SEGS),
+      (f"{TEST_ROUTE}--0", [0]),
+      (f"{TEST_ROUTE}--5", [5]),
+      (f"{TEST_ROUTE}/0", [0]),
+      (f"{TEST_ROUTE}/5", [5]),
+      (f"{TEST_ROUTE}/0:10", ALL_SEGS[0:10]),
+      (f"{TEST_ROUTE}/0:0", []),
+      (f"{TEST_ROUTE}/4:6", ALL_SEGS[4:6]),
+      (f"{TEST_ROUTE}/0:-1", ALL_SEGS[0:-1]),
+      (f"{TEST_ROUTE}/:5", ALL_SEGS[:5]),
+      (f"{TEST_ROUTE}/2:", ALL_SEGS[2:]),
+      (f"{TEST_ROUTE}/2:-1", ALL_SEGS[2:-1]),
+      (f"{TEST_ROUTE}/-1", [ALL_SEGS[-1]]),
+      (f"{TEST_ROUTE}/-2", [ALL_SEGS[-2]]),
+      (f"{TEST_ROUTE}/-2:-1", ALL_SEGS[-2:-1]),
+      (f"{TEST_ROUTE}/-4:-2", ALL_SEGS[-4:-2]),
+      (f"{TEST_ROUTE}/:10:2", ALL_SEGS[:10:2]),
+      (f"{TEST_ROUTE}/5::2", ALL_SEGS[5::2]),
+      (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE}", ALL_SEGS),
+      (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE.replace('/', '|')}", ALL_SEGS),
+      (f"https://useradmin.comma.ai/?onebox={TEST_ROUTE.replace('/', '%7C')}", ALL_SEGS),
+    ]
+  )
   @pytest.mark.skip("this got flaky. internet tests are stupid.")
   def test_indirect_parsing(self, identifier, expected):
     parsed = parse_indirect(identifier)
     sr = SegmentRange(parsed)
     assert list(sr.seg_idxs) == expected, identifier
 
-  @parameterized.expand([
-    (f"{TEST_ROUTE}", f"{TEST_ROUTE}"),
-    (f"{TEST_ROUTE.replace('/', '|')}", f"{TEST_ROUTE}"),
-    (f"{TEST_ROUTE}--5", f"{TEST_ROUTE}/5"),
-    (f"{TEST_ROUTE}/0/q", f"{TEST_ROUTE}/0/q"),
-    (f"{TEST_ROUTE}/5:6/r", f"{TEST_ROUTE}/5:6/r"),
-    (f"{TEST_ROUTE}/5", f"{TEST_ROUTE}/5"),
-  ])
+  @parameterized.expand(
+    [
+      (f"{TEST_ROUTE}", f"{TEST_ROUTE}"),
+      (f"{TEST_ROUTE.replace('/', '|')}", f"{TEST_ROUTE}"),
+      (f"{TEST_ROUTE}--5", f"{TEST_ROUTE}/5"),
+      (f"{TEST_ROUTE}/0/q", f"{TEST_ROUTE}/0/q"),
+      (f"{TEST_ROUTE}/5:6/r", f"{TEST_ROUTE}/5:6/r"),
+      (f"{TEST_ROUTE}/5", f"{TEST_ROUTE}/5"),
+    ]
+  )
   def test_canonical_name(self, identifier, expected):
     sr = SegmentRange(identifier)
     assert str(sr) == expected
@@ -110,29 +114,34 @@ class TestLogReader:
     # file_exists should not be called for direct files
     assert file_exists_mock.call_count == 0
 
-  @parameterized.expand([
-    (f"{TEST_ROUTE}///",),
-    (f"{TEST_ROUTE}---",),
-    (f"{TEST_ROUTE}/-4:--2",),
-    (f"{TEST_ROUTE}/-a",),
-    (f"{TEST_ROUTE}/j",),
-    (f"{TEST_ROUTE}/0:1:2:3",),
-    (f"{TEST_ROUTE}/:::3",),
-    (f"{TEST_ROUTE}3",),
-    (f"{TEST_ROUTE}-3",),
-    (f"{TEST_ROUTE}--3a",),
-  ])
+  @parameterized.expand(
+    [
+      (f"{TEST_ROUTE}///",),
+      (f"{TEST_ROUTE}---",),
+      (f"{TEST_ROUTE}/-4:--2",),
+      (f"{TEST_ROUTE}/-a",),
+      (f"{TEST_ROUTE}/j",),
+      (f"{TEST_ROUTE}/0:1:2:3",),
+      (f"{TEST_ROUTE}/:::3",),
+      (f"{TEST_ROUTE}3",),
+      (f"{TEST_ROUTE}-3",),
+      (f"{TEST_ROUTE}--3a",),
+    ]
+  )
   def test_bad_ranges(self, segment_range):
     with pytest.raises(AssertionError):
       _ = SegmentRange(segment_range).seg_idxs
 
-  @pytest.mark.parametrize("segment_range, api_call", [
-    (f"{TEST_ROUTE}/0", False),
-    (f"{TEST_ROUTE}/:2", False),
-    (f"{TEST_ROUTE}/0:", True),
-    (f"{TEST_ROUTE}/-1", True),
-    (f"{TEST_ROUTE}", True),
-  ])
+  @pytest.mark.parametrize(
+    "segment_range, api_call",
+    [
+      (f"{TEST_ROUTE}/0", False),
+      (f"{TEST_ROUTE}/:2", False),
+      (f"{TEST_ROUTE}/0:", True),
+      (f"{TEST_ROUTE}/-1", True),
+      (f"{TEST_ROUTE}", True),
+    ],
+  )
   def test_slicing_api_call(self, mocker, segment_range, api_call):
     max_seg_mock = mocker.patch("openpilot.tools.lib.route.get_max_seg_number_cached")
     max_seg_mock.return_value = NUM_SEGS
@@ -241,7 +250,7 @@ class TestLogReader:
       # append non-union Event message
       event_msg = capnp_log.Event.new_message()
       non_union_bytes = bytearray(event_msg.to_bytes())
-      non_union_bytes[event_msg.total_size.word_count * 8] = 0xff  # set discriminant value out of range using Event word offset
+      non_union_bytes[event_msg.total_size.word_count * 8] = 0xFF  # set discriminant value out of range using Event word offset
       with open(qlog.name, "ab") as f:
         f.write(non_union_bytes)
 

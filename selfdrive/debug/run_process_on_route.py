@@ -8,8 +8,7 @@ from openpilot.tools.lib.logreader import LogReader, save_log
 ALLOW_PROCS = {c.proc_name for c in CONFIGS}
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="Run process on route and create new logs",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="Run process on route and create new logs", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("route", help="The route name to use")
   parser.add_argument("--fingerprint", help="The fingerprint to use")
   parser.add_argument("--whitelist-procs", nargs='*', default=ALLOW_PROCS, help="Whitelist given processes (e.g. controlsd)")

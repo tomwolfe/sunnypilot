@@ -6,6 +6,7 @@ from openpilot.system.hardware import PC
 
 DEFAULT_DOWNLOAD_CACHE_ROOT = "/tmp/comma_download_cache"
 
+
 class Paths:
   @staticmethod
   def comma_home() -> str:

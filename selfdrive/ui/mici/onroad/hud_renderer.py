@@ -68,8 +68,7 @@ class TurnIntent(Widget):
     if self._turn_intent_alpha_filter.x > 1e-2:
       turn_intent_texture = self._txt_turn_intent_right if self._turn_intent_direction == 1 else self._txt_turn_intent_left
       src_rect = rl.Rectangle(0, 0, turn_intent_texture.width, turn_intent_texture.height)
-      dest_rect = rl.Rectangle(self._rect.x + self._rect.width / 2, self._rect.y + self._rect.height / 2,
-                               turn_intent_texture.width, turn_intent_texture.height)
+      dest_rect = rl.Rectangle(self._rect.x + self._rect.width / 2, self._rect.y + self._rect.height / 2, turn_intent_texture.width, turn_intent_texture.height)
 
       origin = (turn_intent_texture.width / 2, self._rect.height / 2)
       color = rl.Color(255, 255, 255, int(255 * self._turn_intent_alpha_filter.x))
@@ -164,9 +163,7 @@ class HudRenderer(Widget):
     car_state = sm['carState']
 
     v_cruise_cluster = car_state.vCruiseCluster
-    set_speed = (
-      controls_state.vCruiseDEPRECATED if v_cruise_cluster == 0.0 else v_cruise_cluster
-    )
+    set_speed = controls_state.vCruiseDEPRECATED if v_cruise_cluster == 0.0 else v_cruise_cluster
     engaged = sm['selfdriveState'].enabled
     if (set_speed != self.set_speed and engaged) or (engaged and not self._engaged):
       self._set_speed_changed_time = rl.get_time()
@@ -212,12 +209,14 @@ class HudRenderer(Widget):
     rotation = -ui_state.sm['carState'].steeringAngleDeg
 
     turn_intent_margin = 25
-    self._turn_intent.render(rl.Rectangle(
-      pos_x - wheel_txt.width / 2 - turn_intent_margin,
-      pos_y - wheel_txt.height / 2 - turn_intent_margin,
-      wheel_txt.width + turn_intent_margin * 2,
-      wheel_txt.height + turn_intent_margin * 2,
-    ))
+    self._turn_intent.render(
+      rl.Rectangle(
+        pos_x - wheel_txt.width / 2 - turn_intent_margin,
+        pos_y - wheel_txt.height / 2 - turn_intent_margin,
+        wheel_txt.width + turn_intent_margin * 2,
+        wheel_txt.height + turn_intent_margin * 2,
+      )
+    )
 
     src_rect = rl.Rectangle(0, 0, wheel_txt.width, wheel_txt.height)
     dest_rect = rl.Rectangle(pos_x, pos_y, wheel_txt.width, wheel_txt.height)
@@ -239,13 +238,13 @@ class HudRenderer(Widget):
     x = rect.x
     y = rect.y
 
-    alpha = self._set_speed_alpha_filter.update(0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and
-                                                self._can_draw_top_icons and self._engaged)
+    alpha = self._set_speed_alpha_filter.update(
+      0 < rl.get_time() - self._set_speed_changed_time < SET_SPEED_PERSISTENCE and self._can_draw_top_icons and self._engaged
+    )
 
     # draw drop shadow
     circle_radius = 162 // 2
-    rl.draw_circle_gradient(int(x + circle_radius), int(y + circle_radius), circle_radius,
-                            rl.Color(0, 0, 0, int(255 / 2 * alpha)), rl.Color(0, 0, 0, 0))
+    rl.draw_circle_gradient(int(x + circle_radius), int(y + circle_radius), circle_radius, rl.Color(0, 0, 0, int(255 / 2 * alpha)), rl.Color(0, 0, 0, 0))
 
     set_speed_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))
     max_color = rl.Color(255, 255, 255, int(255 * 0.9 * alpha))

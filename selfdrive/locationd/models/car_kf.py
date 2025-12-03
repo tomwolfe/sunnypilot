@@ -20,6 +20,7 @@ else:
 
 i = 0
 
+
 def _slice(n):
   global i
   s = slice(i, i + n)
@@ -44,36 +45,28 @@ class States:
 class CarKalman(KalmanFilter):
   name = 'car'
 
-  initial_x = np.array([
-    1.0,
-    15.0,
-    0.0,
-    0.0,
-
-    10.0, 0.0,
-    0.0,
-    0.0,
-    0.0
-  ])
+  initial_x = np.array([1.0, 15.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0])
 
   # process noise
-  Q = np.diag([
-    (.05 / 100)**2,
-    .01**2,
-    math.radians(0.02)**2,
-    math.radians(0.25)**2,
-
-    .1**2, .01**2,
-    math.radians(0.1)**2,
-    math.radians(0.1)**2,
-    math.radians(1)**2,
-  ])
+  Q = np.diag(
+    [
+      (0.05 / 100) ** 2,
+      0.01**2,
+      math.radians(0.02) ** 2,
+      math.radians(0.25) ** 2,
+      0.1**2,
+      0.01**2,
+      math.radians(0.1) ** 2,
+      math.radians(0.1) ** 2,
+      math.radians(1) ** 2,
+    ]
+  )
   P_initial = Q.copy()
 
   obs_noise: dict[int, Any] = {
-    ObservationKind.STEER_ANGLE: np.atleast_2d(math.radians(0.05)**2),
-    ObservationKind.ANGLE_OFFSET_FAST: np.atleast_2d(math.radians(10.0)**2),
-    ObservationKind.ROAD_ROLL: np.atleast_2d(math.radians(1.0)**2),
+    ObservationKind.STEER_ANGLE: np.atleast_2d(math.radians(0.05) ** 2),
+    ObservationKind.ANGLE_OFFSET_FAST: np.atleast_2d(math.radians(10.0) ** 2),
+    ObservationKind.ROAD_ROLL: np.atleast_2d(math.radians(1.0) ** 2),
     ObservationKind.STEER_RATIO: np.atleast_2d(5.0**2),
     ObservationKind.STIFFNESS: np.atleast_2d(0.5**2),
     ObservationKind.ROAD_FRAME_X_SPEED: np.atleast_2d(0.1**2),
@@ -163,8 +156,17 @@ class CarKalman(KalmanFilter):
 
   def __init__(self, generated_dir):
     dim_state, dim_state_err = CarKalman.initial_x.shape[0], CarKalman.P_initial.shape[0]
-    self.filter = EKF_sym_pyx(generated_dir, CarKalman.name, CarKalman.Q, CarKalman.initial_x, CarKalman.P_initial,
-                              dim_state, dim_state_err, global_vars=CarKalman.global_vars, logger=cloudlog)
+    self.filter = EKF_sym_pyx(
+      generated_dir,
+      CarKalman.name,
+      CarKalman.Q,
+      CarKalman.initial_x,
+      CarKalman.P_initial,
+      dim_state,
+      dim_state_err,
+      global_vars=CarKalman.global_vars,
+      logger=cloudlog,
+    )
 
   def set_globals(self, mass, rotational_inertia, center_to_front, center_to_rear, stiffness_front, stiffness_rear):
     self.filter.set_global("mass", mass)

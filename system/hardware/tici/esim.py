@@ -6,6 +6,7 @@ from typing import Literal
 
 from openpilot.system.hardware.base import LPABase, LPAError, LPAProfileNotFoundError, Profile
 
+
 class TiciLPA(LPABase):
   def __init__(self, interface: Literal['qmi', 'at'] = 'qmi'):
     self.env = os.environ.copy()
@@ -21,12 +22,10 @@ class TiciLPA(LPABase):
   def list_profiles(self) -> list[Profile]:
     msgs = self._invoke('profile', 'list')
     self._validate_successful(msgs)
-    return [Profile(
-      iccid=p['iccid'],
-      nickname=p['profileNickname'],
-      enabled=p['profileState'] == 'enabled',
-      provider=p['serviceProviderName']
-    ) for p in msgs[-1]['payload']['data']]
+    return [
+      Profile(iccid=p['iccid'], nickname=p['profileNickname'], enabled=p['profileState'] == 'enabled', provider=p['serviceProviderName'])
+      for p in msgs[-1]['payload']['data']
+    ]
 
   def get_active_profile(self) -> Profile | None:
     return next((p for p in self.list_profiles() if p.enabled), None)
@@ -87,7 +86,7 @@ class TiciLPA(LPABase):
     assert self._is_bootstrapped(), 'eUICC is not bootstrapped, please bootstrap before performing this operation'
 
   def _is_bootstrapped(self) -> bool:
-    """ check if any comma provisioned profiles are on the eUICC """
+    """check if any comma provisioned profiles are on the eUICC"""
     return not any(self.is_comma_profile(iccid) for iccid in (p.iccid for p in self.list_profiles()))
 
   def _invoke(self, *cmd: str):

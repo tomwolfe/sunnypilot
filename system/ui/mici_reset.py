@@ -15,13 +15,13 @@ from openpilot.system.ui.widgets.button import SmallButton, FullRoundedButton
 from openpilot.system.ui.widgets.label import gui_label, gui_text_box
 
 USERDATA = "/dev/disk/by-partlabel/userdata"
-TIMEOUT = 3*60
+TIMEOUT = 3 * 60
 
 
 class ResetMode(IntEnum):
   USER_RESET = 0  # user initiated a factory reset from openpilot
-  RECOVER = 1     # userdata is corrupt for some reason, give a chance to recover
-  FORMAT = 2      # finish up a factory reset from a tool that doesn't flash an empty partition to userdata
+  RECOVER = 1  # userdata is corrupt for some reason, give a chance to recover
+  FORMAT = 2  # finish up a factory reset from a tool that doesn't flash an empty partition to userdata
 
 
 class ResetState(IntEnum):
@@ -83,8 +83,7 @@ class Reset(Widget):
 
   def _render(self, rect: rl.Rectangle):
     label_rect = rl.Rectangle(rect.x + 8, rect.y + 8, rect.width, 50)
-    gui_label(label_rect, "factory reset", 48, font_weight=FontWeight.BOLD,
-              color=rl.Color(255, 255, 255, int(255 * 0.9)))
+    gui_label(label_rect, "factory reset", 48, font_weight=FontWeight.BOLD, color=rl.Color(255, 255, 255, int(255 * 0.9)))
 
     text_rect = rl.Rectangle(rect.x + 8, rect.y + 56, rect.width - 8 * 2, rect.height - 80)
     gui_text_box(text_rect, self._get_body_text(), 36, font_weight=FontWeight.ROMAN, line_scale=0.9)
@@ -96,30 +95,27 @@ class Reset(Widget):
 
       if self._mode == ResetMode.RECOVER:
         self._cancel_button.set_text("reboot")
-        self._cancel_button.render(rl.Rectangle(
-          rect.x + 8,
-          rect.y + rect.height - self._cancel_button.rect.height,
-          self._cancel_button.rect.width,
-          self._cancel_button.rect.height))
+        self._cancel_button.render(
+          rl.Rectangle(rect.x + 8, rect.y + rect.height - self._cancel_button.rect.height, self._cancel_button.rect.width, self._cancel_button.rect.height)
+        )
       elif self._mode == ResetMode.USER_RESET and self._reset_state != ResetState.FAILED:
-        self._cancel_button.render(rl.Rectangle(
-          rect.x + 8,
-          rect.y + rect.height - self._cancel_button.rect.height,
-          self._cancel_button.rect.width,
-          self._cancel_button.rect.height))
+        self._cancel_button.render(
+          rl.Rectangle(rect.x + 8, rect.y + rect.height - self._cancel_button.rect.height, self._cancel_button.rect.width, self._cancel_button.rect.height)
+        )
 
       if self._reset_state != ResetState.FAILED:
-        self._confirm_slider.render(rl.Rectangle(
-          rect.x + rect.width - self._confirm_slider.rect.width,
-          rect.y + rect.height - self._confirm_slider.rect.height,
-          self._confirm_slider.rect.width,
-          self._confirm_slider.rect.height))
+        self._confirm_slider.render(
+          rl.Rectangle(
+            rect.x + rect.width - self._confirm_slider.rect.width,
+            rect.y + rect.height - self._confirm_slider.rect.height,
+            self._confirm_slider.rect.width,
+            self._confirm_slider.rect.height,
+          )
+        )
       else:
-        self._reboot_button.render(rl.Rectangle(
-          rect.x + 8,
-          rect.y + rect.height - self._reboot_button.rect.height,
-          self._reboot_button.rect.width,
-          self._reboot_button.rect.height))
+        self._reboot_button.render(
+          rl.Rectangle(rect.x + 8, rect.y + rect.height - self._reboot_button.rect.height, self._reboot_button.rect.width, self._reboot_button.rect.height)
+        )
 
     return self._render_status
 

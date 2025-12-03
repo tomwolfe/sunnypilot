@@ -133,16 +133,25 @@ def create_egl_image(width: int, height: int, stride: int, fd: int, uv_offset: i
 
   # Create image attributes for EGL
   img_attrs = [
-    EGL_WIDTH, width,
-    EGL_HEIGHT, height,
-    EGL_LINUX_DRM_FOURCC_EXT, DRM_FORMAT_NV12,
-    EGL_DMA_BUF_PLANE0_FD_EXT, dup_fd,
-    EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0,
-    EGL_DMA_BUF_PLANE0_PITCH_EXT, stride,
-    EGL_DMA_BUF_PLANE1_FD_EXT, dup_fd,
-    EGL_DMA_BUF_PLANE1_OFFSET_EXT, uv_offset,
-    EGL_DMA_BUF_PLANE1_PITCH_EXT, stride,
-    EGL_NONE
+    EGL_WIDTH,
+    width,
+    EGL_HEIGHT,
+    height,
+    EGL_LINUX_DRM_FOURCC_EXT,
+    DRM_FORMAT_NV12,
+    EGL_DMA_BUF_PLANE0_FD_EXT,
+    dup_fd,
+    EGL_DMA_BUF_PLANE0_OFFSET_EXT,
+    0,
+    EGL_DMA_BUF_PLANE0_PITCH_EXT,
+    stride,
+    EGL_DMA_BUF_PLANE1_FD_EXT,
+    dup_fd,
+    EGL_DMA_BUF_PLANE1_OFFSET_EXT,
+    uv_offset,
+    EGL_DMA_BUF_PLANE1_PITCH_EXT,
+    stride,
+    EGL_NONE,
   ]
 
   attr_array = _egl.ffi.new("int[]", img_attrs)

@@ -3,6 +3,7 @@ HTML_REPLACEMENTS = [
   (r'"', r'&quot;'),
 ]
 
+
 def parse_markdown(text: str, tab_length: int = 2) -> str:
   lines = text.split("\n")
   output: list[str] = []
@@ -39,7 +40,7 @@ def parse_markdown(text: str, tab_length: int = 2) -> str:
   end_outstanding_lists(list_level, 0)
   output_str = "\n".join(output) + "\n"
 
-  for (fr, to) in HTML_REPLACEMENTS:
+  for fr, to in HTML_REPLACEMENTS:
     output_str = output_str.replace(fr, to)
 
   return output_str

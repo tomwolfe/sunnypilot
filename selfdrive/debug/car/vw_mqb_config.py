@@ -4,32 +4,38 @@ import argparse
 import struct
 from enum import IntEnum
 from opendbc.car.carlog import carlog
-from opendbc.car.uds import UdsClient, MessageTimeoutError, NegativeResponseError, SESSION_TYPE,\
-  DATA_IDENTIFIER_TYPE, ACCESS_TYPE
+from opendbc.car.uds import UdsClient, MessageTimeoutError, NegativeResponseError, SESSION_TYPE, DATA_IDENTIFIER_TYPE, ACCESS_TYPE
 from opendbc.car.structs import CarParams
 from panda import Panda
 from datetime import date
 
+
 # TODO: extend UDS library to allow custom/vendor-defined data identifiers without ignoring type checks
 class VOLKSWAGEN_DATA_IDENTIFIER_TYPE(IntEnum):
   CODING = 0x0600
+
 
 # TODO: extend UDS library security_access() to take an access level offset per ISO 14229-1:2020 10.4 and remove this
 class ACCESS_TYPE_LEVEL_1(IntEnum):
   REQUEST_SEED = ACCESS_TYPE.REQUEST_SEED + 2
   SEND_KEY = ACCESS_TYPE.SEND_KEY + 2
 
+
 MQB_EPS_CAN_ADDR = 0x712
-RX_OFFSET = 0x6a
+RX_OFFSET = 0x6A
 
 if __name__ == "__main__":
-  desc_text =   "Shows Volkswagen EPS software and coding info, and enables or disables Heading Control Assist " + \
-                "(Lane Assist). Useful for enabling HCA on cars without factory Lane Assist that want to use " + \
-                "openpilot integrated at the CAN gateway (J533)."
-  epilog_text = "This tool is meant to run directly on a vehicle-installed comma three, with the " + \
-                "openpilot/tmux processes stopped. It should also work on a separate PC with a USB-attached comma " + \
-                "panda. Vehicle ignition must be on. Recommend engine not be running when making changes. Must " + \
-                "turn ignition off and on again for any changes to take effect."
+  desc_text = (
+    "Shows Volkswagen EPS software and coding info, and enables or disables Heading Control Assist "
+    + "(Lane Assist). Useful for enabling HCA on cars without factory Lane Assist that want to use "
+    + "openpilot integrated at the CAN gateway (J533)."
+  )
+  epilog_text = (
+    "This tool is meant to run directly on a vehicle-installed comma three, with the "
+    + "openpilot/tmux processes stopped. It should also work on a separate PC with a USB-attached comma "
+    + "panda. Vehicle ignition must be on. Recommend engine not be running when making changes. Must "
+    + "turn ignition off and on again for any changes to take effect."
+  )
   parser = argparse.ArgumentParser(description=desc_text, epilog=epilog_text)
   parser.add_argument("--debug", action="store_true", help="enable ISO-TP/UDS stack debugging output")
   parser.add_argument("action", choices={"show", "enable", "disable"}, help="show or modify current EPS HCA config")
@@ -92,7 +98,7 @@ if __name__ == "__main__":
     quit()
 
   current_coding_array = struct.unpack(f"!{coding_length}B", current_coding)
-  hca_enabled = (current_coding_array[coding_byte] & (1 << coding_bit) != 0)
+  hca_enabled = current_coding_array[coding_byte] & (1 << coding_bit) != 0
   hca_text = ("DISABLED", "ENABLED")[hca_enabled]
   print(f"   Lane Assist:  {hca_text}")
 
@@ -116,14 +122,14 @@ if __name__ == "__main__":
   if args.action in ["enable", "disable"]:
     print("\nAttempting configuration update")
 
-    assert(coding_variant in ("ZFLS", "APA"))
+    assert coding_variant in ("ZFLS", "APA")
     # ZFLS EPS config coding length can be anywhere from 1 to 4 bytes, but the
     # bit we care about is always in the same place in the first byte
     if args.action == "enable":
       new_byte = current_coding_array[coding_byte] | (1 << coding_bit)
     else:
       new_byte = current_coding_array[coding_byte] & ~(1 << coding_bit)
-    new_coding = current_coding[0:coding_byte] + new_byte.to_bytes(1, "little") + current_coding[coding_byte+1:]
+    new_coding = current_coding[0:coding_byte] + new_byte.to_bytes(1, "little") + current_coding[coding_byte + 1 :]
 
     try:
       seed = uds_client.security_access(ACCESS_TYPE_LEVEL_1.REQUEST_SEED)  # type: ignore

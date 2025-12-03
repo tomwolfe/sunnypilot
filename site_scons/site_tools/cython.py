@@ -10,6 +10,7 @@ cdef_import_re = re.compile(r'^cdef extern from\s+.(\S+).:', re.M)
 
 np_version = SCons.Script.Value(np.__version__)
 
+
 def pyx_scan(node, env, path, arg=None):
   contents = node.get_text_contents()
   env.Depends(str(node).split('.')[0] + env['CYTHONCFILESUFFIX'], np_version)
@@ -43,18 +44,15 @@ def create_builder(env):
   try:
     cython = env['BUILDERS']['Cython']
   except KeyError:
-    cython = SCons.Builder.Builder(
-      action=cythonAction,
-      emitter={},
-      suffix=cython_suffix_emitter,
-      single_source=1
-    )
+    cython = SCons.Builder.Builder(action=cythonAction, emitter={}, suffix=cython_suffix_emitter, single_source=1)
     env.Append(SCANNERS=pyxscanner)
     env['BUILDERS']['Cython'] = cython
   return cython
 
+
 def cython_suffix_emitter(env, source):
   return "$CYTHONCFILESUFFIX"
+
 
 def generate(env):
   env["CYTHON"] = "cythonize"
@@ -70,6 +68,7 @@ def generate(env):
   c_file.add_action('.py', cythonAction)
 
   create_builder(env)
+
 
 def exists(env):
   return True

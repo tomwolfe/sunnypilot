@@ -43,10 +43,7 @@ def register_sunnylink():
     exit(0)
 
   if not is_prebuilt():
-    extra_args = {
-      "verbose": True,
-      "timeout": 60
-    }
+    extra_args = {"verbose": True, "timeout": 60}
 
   try:
     sunnylink_id = SunnylinkApi(None).register_device(None, **extra_args)

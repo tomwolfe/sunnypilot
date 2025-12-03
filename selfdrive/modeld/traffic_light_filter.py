@@ -13,12 +13,14 @@ The confidence calculation varies by state to handle different semantic meanings
 This approach is necessary because different traffic light colors produce different
 raw score patterns in the model output, so a unified approach would not be appropriate.
 """
+
 from collections import deque
 from enum import IntEnum
 
 
 class TrafficLightState(IntEnum):
   """Traffic light states"""
+
   RED = 0
   YELLOW = 1
   GREEN = 2
@@ -37,8 +39,13 @@ DEFAULT_MAX_POSSIBLE_SCORE = 1.0  # Default assumption for model score range
 class TrafficLightTemporalFilter:
   """Temporal filter for traffic light states with hysteresis and confidence tracking"""
 
-  def __init__(self, buffer_size=DEFAULT_BUFFER_SIZE, hysteresis_factor=HYSTERESIS_FACTOR,
-               min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE, max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE):
+  def __init__(
+    self,
+    buffer_size=DEFAULT_BUFFER_SIZE,
+    hysteresis_factor=HYSTERESIS_FACTOR,
+    min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE,
+    max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE,
+  ):
     """
     Initialize the traffic light temporal filter
 
@@ -236,18 +243,21 @@ class TrafficLightTemporalFilter:
 
       # Only use majority vote if it matches current state or confidence is low
       # Also consider the proportion of majority votes to prevent flipping due to small majorities
-      if ((majority_state == final_state or smoothed_confidence < MAJORITY_CONFIDENCE_THRESHOLD)
-          and majority_proportion > 0.5):  # Ensure true majority (more than half)
+      if (
+        majority_state == final_state or smoothed_confidence < MAJORITY_CONFIDENCE_THRESHOLD
+      ) and majority_proportion > 0.5:  # Ensure true majority (more than half)
         final_state = majority_state
 
     return final_state, smoothed_confidence
 
 
 # Global instance for use in the model pipeline
-_traffic_light_filter = TrafficLightTemporalFilter(buffer_size=DEFAULT_BUFFER_SIZE,
-                                                  hysteresis_factor=HYSTERESIS_FACTOR,
-                                                  min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE,
-                                                  max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE)
+_traffic_light_filter = TrafficLightTemporalFilter(
+  buffer_size=DEFAULT_BUFFER_SIZE,
+  hysteresis_factor=HYSTERESIS_FACTOR,
+  min_confidence_for_change=MIN_CONFIDENCE_FOR_CHANGE,
+  max_possible_score=DEFAULT_MAX_POSSIBLE_SCORE,
+)
 
 
 def get_traffic_light_filter():

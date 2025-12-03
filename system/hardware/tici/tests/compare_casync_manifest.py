@@ -22,7 +22,6 @@ def get_chunk_download_size(chunk):
 
 
 if __name__ == "__main__":
-
   parser = argparse.ArgumentParser(description='Compute overlap between two casync manifests')
   parser.add_argument('frm')
   parser.add_argument('to')

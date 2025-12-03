@@ -15,7 +15,6 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 
 @pytest.mark.tici
 class TestPandad:
-
   def setup_method(self):
     # ensure panda is up
     if len(Panda.list()) == 0:
@@ -92,7 +91,7 @@ class TestPandad:
     # - 0.2s pandad -> pandad
     # - plus some buffer
     print("startup times", ts, sum(ts) / len(ts))
-    assert 0.1 < (sum(ts)/len(ts)) < 0.7
+    assert 0.1 < (sum(ts) / len(ts)) < 0.7
 
   def test_old_spi_protocol(self):
     # flash firmware with old SPI protocol
@@ -106,7 +105,7 @@ class TestPandad:
   def test_recover_from_bad_bootstub(self):
     self._go_to_dfu()
     with PandaDFU(None) as pd:
-      pd.program_bootstub(b"\x00"*1024)
+      pd.program_bootstub(b"\x00" * 1024)
       pd.reset()
     HARDWARE.reset_internal_panda()
     self._assert_no_panda()

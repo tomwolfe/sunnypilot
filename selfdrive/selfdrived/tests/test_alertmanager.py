@@ -7,10 +7,9 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events_base import EmptyAlert
 
 
 class TestAlertManager:
-
   def test_duration(self):
     """
-      Enforce that an alert lasts for max(alert duration, duration the alert is added)
+    Enforce that an alert lasts for max(alert duration, duration the alert is added)
     """
     for duration in range(1, 100):
       alert = None
@@ -31,9 +30,14 @@ class TestAlertManager:
         show_duration = max(duration, add_duration)
 
         AM = AlertManager()
-        for frame in range(duration+10):
+        for frame in range(duration + 10):
           if frame < add_duration:
-            AM.add_many(frame, [alert, ])
+            AM.add_many(
+              frame,
+              [
+                alert,
+              ],
+            )
           AM.process_alerts(frame, set())
 
           shown = AM.current_alert != EmptyAlert
@@ -47,12 +51,22 @@ class TestAlertManager:
         show_duration = duration * 2
         for frame in range(duration * 2 + 10):
           if frame == 0:
-            AM.add_many(frame, [alert, ])
+            AM.add_many(
+              frame,
+              [
+                alert,
+              ],
+            )
 
           if frame == duration:
             # add alert one frame before it ends
             assert AM.current_alert == alert
-            AM.add_many(frame, [alert, ])
+            AM.add_many(
+              frame,
+              [
+                alert,
+              ],
+            )
           AM.process_alerts(frame, set())
 
           shown = AM.current_alert != EmptyAlert

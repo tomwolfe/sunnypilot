@@ -65,30 +65,34 @@ class TestDeleter(UploaderTestCase):
     assert deleted_order == f_paths, "Files not deleted in expected order"
 
   def test_delete_order(self):
-    self.assertDeleteOrder([
-      self.make_file_with_data(self.seg_format.format(0), self.f_type),
-      self.make_file_with_data(self.seg_format.format(1), self.f_type),
-      self.make_file_with_data(self.seg_format2.format(0), self.f_type),
-    ])
+    self.assertDeleteOrder(
+      [
+        self.make_file_with_data(self.seg_format.format(0), self.f_type),
+        self.make_file_with_data(self.seg_format.format(1), self.f_type),
+        self.make_file_with_data(self.seg_format2.format(0), self.f_type),
+      ]
+    )
 
   def test_delete_many_preserved(self):
-    self.assertDeleteOrder([
-      self.make_file_with_data(self.seg_format.format(0), self.f_type),
-      self.make_file_with_data(self.seg_format.format(1), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE),
-      self.make_file_with_data(self.seg_format.format(2), self.f_type),
-    ] + [
-      self.make_file_with_data(self.seg_format2.format(i), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE)
-      for i in range(5)
-    ])
+    self.assertDeleteOrder(
+      [
+        self.make_file_with_data(self.seg_format.format(0), self.f_type),
+        self.make_file_with_data(self.seg_format.format(1), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE),
+        self.make_file_with_data(self.seg_format.format(2), self.f_type),
+      ]
+      + [self.make_file_with_data(self.seg_format2.format(i), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE) for i in range(5)]
+    )
 
   def test_delete_last(self):
-    self.assertDeleteOrder([
-      self.make_file_with_data(self.seg_format.format(1), self.f_type),
-      self.make_file_with_data(self.seg_format2.format(0), self.f_type),
-      self.make_file_with_data(self.seg_format.format(0), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE),
-      self.make_file_with_data("boot", self.seg_format[:-4]),
-      self.make_file_with_data("crash", self.seg_format2[:-4]),
-    ])
+    self.assertDeleteOrder(
+      [
+        self.make_file_with_data(self.seg_format.format(1), self.f_type),
+        self.make_file_with_data(self.seg_format2.format(0), self.f_type),
+        self.make_file_with_data(self.seg_format.format(0), self.f_type, preserve_xattr=deleter.PRESERVE_ATTR_VALUE),
+        self.make_file_with_data("boot", self.seg_format[:-4]),
+        self.make_file_with_data("crash", self.seg_format2[:-4]),
+      ]
+    )
 
   def test_no_delete_when_available_space(self):
     f_path = self.make_file_with_data(self.seg_dir, self.f_type)

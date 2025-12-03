@@ -21,7 +21,7 @@ def get_message_dict(message, typ):
   message = message._get(typ)
   if not hasattr(message, 'to_dict') or typ in ('qcomGnss', 'ubloxGnss'):
     # TODO: support these
-    #print("skipping", typ)
+    # print("skipping", typ)
     return
 
   msg_dict = message.to_dict(verbose=True)
@@ -52,11 +52,12 @@ def potentially_ragged_array(arr, dtype=None, **kwargs):
   except ValueError:
     return np.array(arr, dtype=object, **kwargs)
 
+
 def msgs_to_time_series(msgs):
   """
-    Convert an iterable of canonical capnp messages into a dictionary of time series.
-    Each time series has a value with key "t" which consists of monotonically increasing timestamps
-    in seconds.
+  Convert an iterable of canonical capnp messages into a dictionary of time series.
+  Each time series has a value with key "t" which consists of monotonically increasing timestamps
+  in seconds.
   """
   values = {}
   for msg in msgs:
@@ -79,6 +80,7 @@ def msgs_to_time_series(msgs):
 if __name__ == "__main__":
   import sys
   from openpilot.tools.lib.logreader import LogReader
+
   m = msgs_to_time_series(LogReader(sys.argv[1]))
   print(m['driverCameraState']['t'])
   print(np.diff(m['driverCameraState']['timestampSof']))

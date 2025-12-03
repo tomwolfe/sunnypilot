@@ -6,11 +6,13 @@ import atexit
 from cereal import messaging
 from openpilot.system.manager.process_config import managed_processes
 
-TIMEOUT = 10*60
+TIMEOUT = 10 * 60
+
 
 def kill():
   for proc in ['ubloxd', 'pigeond']:
     managed_processes[proc].stop(retry=True, block=True)
+
 
 if __name__ == "__main__":
   # start ubloxd

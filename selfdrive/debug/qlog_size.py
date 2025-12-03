@@ -30,7 +30,7 @@ def make_pie(msgs, typ):
   sizes = sorted(compressed_length_by_type.items(), key=lambda kv: kv[1])
 
   print("name - comp. size (uncomp. size)")
-  for (name, sz) in sizes:
+  for name, sz in sizes:
     print(f"{name:<22} - {sz / 1024:.2f} kB ({length_by_type[name] / 1024:.2f} kB)")
   print()
   print(f"{typ} - Real total {total / 1024:.2f} kB")

@@ -6,8 +6,8 @@ from openpilot.sunnypilot.modeld.constants import ModelConstants
 
 def get_lag_adjusted_curvature(steer_delay, v_ego, psis, curvatures):
   if len(psis) != CONTROL_N:
-    psis = [0.0]*CONTROL_N
-    curvatures = [0.0]*CONTROL_N
+    psis = [0.0] * CONTROL_N
+    curvatures = [0.0] * CONTROL_N
   v_ego = max(MIN_SPEED, v_ego)
 
   # MPC can plan to turn the wheel and turn back before t_delay. This means
@@ -19,9 +19,9 @@ def get_lag_adjusted_curvature(steer_delay, v_ego, psis, curvatures):
   desired_curvature = 2 * average_curvature_desired - current_curvature_desired
 
   # This is the "desired rate of the setpoint" not an actual desired rate
-  max_curvature_rate = MAX_LATERAL_JERK / (v_ego**2) # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
-  safe_desired_curvature = clip(desired_curvature,
-                                current_curvature_desired - max_curvature_rate * DT_MDL,
-                                current_curvature_desired + max_curvature_rate * DT_MDL)
+  max_curvature_rate = MAX_LATERAL_JERK / (v_ego**2)  # inexact calculation, check https://github.com/commaai/openpilot/pull/24755
+  safe_desired_curvature = clip(
+    desired_curvature, current_curvature_desired - max_curvature_rate * DT_MDL, current_curvature_desired + max_curvature_rate * DT_MDL
+  )
 
   return float(safe_desired_curvature)

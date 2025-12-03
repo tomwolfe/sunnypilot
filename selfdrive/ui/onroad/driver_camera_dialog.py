@@ -88,11 +88,7 @@ class DriverCameraDialog(CameraView):
     yscale = stream_height * driver_view_ratio / stream_width
     xscale = yscale * rect.height / rect.width * stream_width / stream_height
 
-    return np.array([
-      [xscale, 0.0, 0.0],
-      [0.0, yscale, 0.0],
-      [0.0, 0.0, 1.0]
-    ])
+    return np.array([[xscale, 0.0, 0.0], [0.0, yscale, 0.0], [0.0, 0.0, 1.0]])
 
 
 if __name__ == "__main__":

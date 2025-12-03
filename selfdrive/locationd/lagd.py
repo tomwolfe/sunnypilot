@@ -67,14 +67,14 @@ def masked_normalized_cross_correlation(expected_sig: np.ndarray, actual_sig: np
   numerator = np.fft.ifft(rotated_expected_sig_fft * actual_sig_fft).real
   numerator -= masked_correlated_actual_fft * masked_correlated_expected_fft / number_overlap_masked_samples
 
-  actual_squared_fft = fft(actual_sig ** 2)
+  actual_squared_fft = fft(actual_sig**2)
   actual_sig_denom = np.fft.ifft(rotated_mask_fft * actual_squared_fft).real
-  actual_sig_denom -= masked_correlated_actual_fft ** 2 / number_overlap_masked_samples
+  actual_sig_denom -= masked_correlated_actual_fft**2 / number_overlap_masked_samples
   actual_sig_denom[:] = np.fmax(actual_sig_denom, 0.0)
 
-  rotated_expected_squared_fft = fft(rotated_expected_sig ** 2)
+  rotated_expected_squared_fft = fft(rotated_expected_sig**2)
   expected_sig_denom = np.fft.ifft(actual_mask_fft * rotated_expected_squared_fft).real
-  expected_sig_denom -= masked_correlated_expected_fft ** 2 / number_overlap_masked_samples
+  expected_sig_denom -= masked_correlated_expected_fft**2 / number_overlap_masked_samples
   expected_sig_denom[:] = np.fmax(expected_sig_denom, 0.0)
 
   denom = np.sqrt(actual_sig_denom * expected_sig_denom)
@@ -154,11 +154,23 @@ class BlockAverage:
 class LateralLagEstimator:
   inputs = {"carControl", "carState", "controlsState", "liveCalibration", "livePose"}
 
-  def __init__(self, CP: car.CarParams, dt: float,
-               block_count: int = BLOCK_NUM, min_valid_block_count: int = BLOCK_NUM_NEEDED, block_size: int = BLOCK_SIZE,
-               window_sec: float = MOVING_WINDOW_SEC, okay_window_sec: float = MIN_OKAY_WINDOW_SEC, min_recovery_buffer_sec: float = MIN_RECOVERY_BUFFER_SEC,
-               min_vego: float = MIN_VEGO, min_yr: float = MIN_ABS_YAW_RATE, min_ncc: float = MIN_NCC,
-               max_lat_accel: float = MAX_LAT_ACCEL, max_lat_accel_diff: float = MAX_LAT_ACCEL_DIFF, min_confidence: float = MIN_CONFIDENCE):
+  def __init__(
+    self,
+    CP: car.CarParams,
+    dt: float,
+    block_count: int = BLOCK_NUM,
+    min_valid_block_count: int = BLOCK_NUM_NEEDED,
+    block_size: int = BLOCK_SIZE,
+    window_sec: float = MOVING_WINDOW_SEC,
+    okay_window_sec: float = MIN_OKAY_WINDOW_SEC,
+    min_recovery_buffer_sec: float = MIN_RECOVERY_BUFFER_SEC,
+    min_vego: float = MIN_VEGO,
+    min_yr: float = MIN_ABS_YAW_RATE,
+    min_ncc: float = MIN_NCC,
+    max_lat_accel: float = MAX_LAT_ACCEL,
+    max_lat_accel_diff: float = MAX_LAT_ACCEL_DIFF,
+    min_confidence: float = MIN_CONFIDENCE,
+  ):
     self.dt = dt
     self.window_sec = window_sec
     self.okay_window_sec = okay_window_sec
@@ -228,8 +240,7 @@ class LateralLagEstimator:
       liveDelay.lateralDelayEstimateStd = 0.0
 
     liveDelay.validBlocks = self.block_avg.valid_blocks
-    liveDelay.calPerc = min(100 * (self.block_avg.valid_blocks * self.block_size + self.block_avg.idx) //
-                            (self.min_valid_block_count * self.block_size), 100)
+    liveDelay.calPerc = min(100 * (self.block_avg.valid_blocks * self.block_size + self.block_avg.idx) // (self.min_valid_block_count * self.block_size), 100)
     if debug:
       liveDelay.points = self.block_avg.values.flatten().tolist()
 
@@ -279,12 +290,21 @@ class LateralLagEstimator:
     if not sensors_valid or not la_valid:
       self.last_pose_invalid_t = self.t
 
-    has_recovered = all( # wait for recovery after !lat_active, steering_pressed, steering_saturated, !sensors/la_valid
+    has_recovered = all(  # wait for recovery after !lat_active, steering_pressed, steering_saturated, !sensors/la_valid
       self.t - last_t >= self.min_recovery_buffer_sec
       for last_t in [self.last_lat_inactive_t, self.last_steering_pressed_t, self.last_steering_saturated_t, self.last_pose_invalid_t]
     )
-    okay = self.lat_active and not self.steering_pressed and not self.steering_saturated and \
-           fast and turning and has_recovered and calib_valid and sensors_valid and la_valid
+    okay = (
+      self.lat_active
+      and not self.steering_pressed
+      and not self.steering_saturated
+      and fast
+      and turning
+      and has_recovered
+      and calib_valid
+      and sensors_valid
+      and la_valid
+    )
 
     self.points.update(self.t, la_desired, la_actual_pose, okay)
 
@@ -315,8 +335,8 @@ class LateralLagEstimator:
     ncc = masked_normalized_cross_correlation(expected_sig, actual_sig, mask, padded_size)
 
     # only consider lags from 0 to max_lag
-    roi = np.s_[len(expected_sig) - 1: len(expected_sig) - 1 + max_lag_samples]
-    extended_roi = np.s_[roi.start - CORR_BORDER_OFFSET: roi.stop + CORR_BORDER_OFFSET]
+    roi = np.s_[len(expected_sig) - 1 : len(expected_sig) - 1 + max_lag_samples]
+    extended_roi = np.s_[roi.start - CORR_BORDER_OFFSET : roi.stop + CORR_BORDER_OFFSET]
     roi_ncc = ncc[roi]
     extended_roi_ncc = ncc[extended_roi]
 
@@ -370,7 +390,7 @@ def main():
   params = Params()
   CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
 
-  lag_learner = LateralLagEstimator(CP, 1. / SERVICE_LIST['livePose'].frequency)
+  lag_learner = LateralLagEstimator(CP, 1.0 / SERVICE_LIST['livePose'].frequency)
   if (initial_lag_params := retrieve_initial_lag(params, CP)) is not None:
     lag, valid_blocks = initial_lag_params
     lag_learner.reset(lag, valid_blocks)
@@ -393,7 +413,7 @@ def main():
       lag_msg_dat = lag_msg.to_bytes()
       pm.send('liveDelay', lag_msg_dat)
 
-      if sm.frame % 1200 == 0: # cache every 60 seconds
+      if sm.frame % 1200 == 0:  # cache every 60 seconds
         params.put_nonblocking("LiveDelay", lag_msg_dat)
 
       if sm.frame % 60 == 0:  # read from and write to params every 3 seconds

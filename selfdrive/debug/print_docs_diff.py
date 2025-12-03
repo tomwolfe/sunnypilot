@@ -8,10 +8,13 @@ from opendbc.car.docs import get_all_car_docs
 from opendbc.car.docs_definitions import Column
 
 FOOTNOTE_TAG = "<sup>{}</sup>"
-STAR_ICON = '<a href="##"><img valign="top" ' + \
-            'src="https://media.githubusercontent.com/media/commaai/openpilot/master/docs/assets/icon-star-{}.svg" width="22" /></a>'
-VIDEO_ICON = '<a href="{}" target="_blank">' + \
-             '<img height="18px" src="https://media.githubusercontent.com/media/commaai/openpilot/master/docs/assets/icon-youtube.svg"></img></a>'
+STAR_ICON = (
+  '<a href="##"><img valign="top" ' + 'src="https://media.githubusercontent.com/media/commaai/openpilot/master/docs/assets/icon-star-{}.svg" width="22" /></a>'
+)
+VIDEO_ICON = (
+  '<a href="{}" target="_blank">'
+  + '<img height="18px" src="https://media.githubusercontent.com/media/commaai/openpilot/master/docs/assets/icon-youtube.svg"></img></a>'
+)
 COLUMNS = "|" + "|".join([column.value for column in Column]) + "|"
 COLUMN_HEADER = "|---|---|---|{}|".format("|".join([":---:"] * (len(Column) - 3)))
 ARROW_SYMBOL = "➡️"
@@ -28,7 +31,7 @@ def match_cars(base_cars, new_cars):
   for new in new_cars:
     # Addition if no close matches or close match already used
     # Change if close match and not already used
-    matches = difflib.get_close_matches(new.name, [b.name for b in base_cars], cutoff=0.)
+    matches = difflib.get_close_matches(new.name, [b.name for b in base_cars], cutoff=0.0)
     if not len(matches) or matches[0] in [c[1].name for c in changes]:
       additions.append(new)
     else:
@@ -91,18 +94,20 @@ def print_car_docs_diff(path):
 
       # Detail sentence changes
       if base_car.detail_sentence != new_car.detail_sentence:
-        changes["detail"].append(f"- Sentence for {base_car.name} changed!\n" +
-                                 "  ```diff\n" +
-                                 f"  - {base_car.detail_sentence}\n" +
-                                 f"  + {new_car.detail_sentence}\n" +
-                                 "  ```")
+        changes["detail"].append(
+          f"- Sentence for {base_car.name} changed!\n" + "  ```diff\n" + f"  - {base_car.detail_sentence}\n" + f"  + {new_car.detail_sentence}\n" + "  ```"
+        )
 
   # Print diff
   if any(len(c) for c in changes.values()):
     markdown_builder = ["### ⚠️ This PR makes changes to [CARS.md](../blob/master/docs/CARS.md) ⚠️"]
 
-    for title, category in (("## 🔀 Column Changes", "column"), ("## ❌ Removed", "removals"),
-                            ("## ➕ Added", "additions"), ("## 📖 Detail Sentence Changes", "detail")):
+    for title, category in (
+      ("## 🔀 Column Changes", "column"),
+      ("## ❌ Removed", "removals"),
+      ("## ➕ Added", "additions"),
+      ("## 📖 Detail Sentence Changes", "detail"),
+    ):
       if len(changes[category]):
         markdown_builder.append(title)
         if category not in ("detail",):

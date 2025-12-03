@@ -30,6 +30,7 @@ class BigDialogBase(NavWidget, abc.ABC):
 
     self._right_btn = None
     if right_btn:
+
       def right_btn_callback_wrapper():
         gui_app.set_modal_overlay(None)
         if right_btn_callback:
@@ -53,11 +54,7 @@ class BigDialogBase(NavWidget, abc.ABC):
 
 
 class BigDialog(BigDialogBase):
-  def __init__(self,
-               title: str,
-               description: str,
-               right_btn: str | None = None,
-               right_btn_callback: Callable | None = None):
+  def __init__(self, title: str, description: str, right_btn: str | None = None, right_btn_callback: Callable | None = None):
     super().__init__(right_btn, right_btn_callback)
     self._title = title
     self._description = description
@@ -76,31 +73,21 @@ class BigDialog(BigDialogBase):
     title_wrapped = '\n'.join(wrap_text(gui_app.font(FontWeight.BOLD), self._title, 50, int(max_width)))
     title_size = measure_text_cached(gui_app.font(FontWeight.BOLD), title_wrapped, 50)
     text_x_offset = 0
-    title_rect = rl.Rectangle(int(self._rect.x + text_x_offset + PADDING),
-                              int(self._rect.y + PADDING),
-                              int(max_width),
-                              int(title_size.y))
-    gui_label(title_rect, title_wrapped, 50, font_weight=FontWeight.BOLD,
-              alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
+    title_rect = rl.Rectangle(int(self._rect.x + text_x_offset + PADDING), int(self._rect.y + PADDING), int(max_width), int(title_size.y))
+    gui_label(title_rect, title_wrapped, 50, font_weight=FontWeight.BOLD, alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
 
     # draw description
     desc_wrapped = '\n'.join(wrap_text(gui_app.font(FontWeight.MEDIUM), self._description, 30, int(max_width)))
     desc_size = measure_text_cached(gui_app.font(FontWeight.MEDIUM), desc_wrapped, 30)
-    desc_rect = rl.Rectangle(int(self._rect.x + text_x_offset + PADDING),
-                             int(self._rect.y + self._rect.height / 3),
-                             int(max_width),
-                             int(desc_size.y))
+    desc_rect = rl.Rectangle(int(self._rect.x + text_x_offset + PADDING), int(self._rect.y + self._rect.height / 3), int(max_width), int(desc_size.y))
     # TODO: text align doesn't seem to work properly with newlines
-    gui_label(desc_rect, desc_wrapped, 30, font_weight=FontWeight.MEDIUM,
-              alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
+    gui_label(desc_rect, desc_wrapped, 30, font_weight=FontWeight.MEDIUM, alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER)
 
     return self._ret
 
 
 class BigConfirmationDialogV2(BigDialogBase):
-  def __init__(self, title: str, icon: str, red: bool = False,
-               exit_on_confirm: bool = True,
-               confirm_callback: Callable | None = None):
+  def __init__(self, title: str, icon: str, red: bool = False, exit_on_confirm: bool = True, confirm_callback: Callable | None = None):
     super().__init__()
     self._confirm_callback = confirm_callback
     self._exit_on_confirm = exit_on_confirm
@@ -133,14 +120,9 @@ class BigInputDialog(BigDialogBase):
   BACK_TOUCH_AREA_PERCENTAGE = 0.2
   BACKSPACE_RATE = 25  # hz
 
-  def __init__(self,
-               hint: str,
-               default_text: str = "",
-               minimum_length: int = 1,
-               confirm_callback: Callable[[str], None] = None):
+  def __init__(self, hint: str, default_text: str = "", minimum_length: int = 1, confirm_callback: Callable[[str], None] = None):
     super().__init__(None, None)
-    self._hint_label = UnifiedLabel(hint, font_size=35, text_color=rl.Color(255, 255, 255, int(255 * 0.35)),
-                                    font_weight=FontWeight.MEDIUM)
+    self._hint_label = UnifiedLabel(hint, font_size=35, text_color=rl.Color(255, 255, 255, int(255 * 0.35)), font_weight=FontWeight.MEDIUM)
     self._keyboard = MiciKeyboard()
     self._keyboard.set_text(default_text)
     self._minimum_length = minimum_length
@@ -161,6 +143,7 @@ class BigInputDialog(BigDialogBase):
       self._ret = DialogResult.CONFIRM
       if confirm_callback:
         confirm_callback(self._keyboard.text())
+
     self._confirm_callback = confirm_callback_wrapper
 
   def _update_state(self):
@@ -188,16 +171,19 @@ class BigInputDialog(BigDialogBase):
     text_x = PADDING * 2 + self._enter_img.width
 
     # text needs to move left if we're at the end where right button is
-    text_rect = rl.Rectangle(text_x,
-                             int(self._rect.y + PADDING),
-                             # clip width to right button when in view
-                             int(self._rect.width - text_x - PADDING * 2 - self._enter_img.width + 5),  # TODO: why 5?
-                             int(text_size.y))
+    text_rect = rl.Rectangle(
+      text_x,
+      int(self._rect.y + PADDING),
+      # clip width to right button when in view
+      int(self._rect.width - text_x - PADDING * 2 - self._enter_img.width + 5),  # TODO: why 5?
+      int(text_size.y),
+    )
 
     # draw rounded background for text input
     bg_block_margin = 5
-    text_field_rect = rl.Rectangle(text_rect.x - bg_block_margin, text_rect.y - bg_block_margin,
-                                   text_rect.width + bg_block_margin * 2, text_input_size + bg_block_margin * 2)
+    text_field_rect = rl.Rectangle(
+      text_rect.x - bg_block_margin, text_rect.y - bg_block_margin, text_rect.width + bg_block_margin * 2, text_input_size + bg_block_margin * 2
+    )
 
     # draw text input
     # push text left with a gradient on left side if too long
@@ -210,23 +196,26 @@ class BigInputDialog(BigDialogBase):
     # draw grayed out character user is hovering over
     if candidate_char:
       candidate_char_size = measure_text_cached(gui_app.font(FontWeight.ROMAN), candidate_char, text_input_size)
-      rl.draw_text_ex(gui_app.font(FontWeight.ROMAN), candidate_char,
-                      rl.Vector2(min(text_x + text_size.x, text_rect.x + text_rect.width) - candidate_char_size.x, text_rect.y),
-                      text_input_size, 0, rl.Color(255, 255, 255, 128))
+      rl.draw_text_ex(
+        gui_app.font(FontWeight.ROMAN),
+        candidate_char,
+        rl.Vector2(min(text_x + text_size.x, text_rect.x + text_rect.width) - candidate_char_size.x, text_rect.y),
+        text_input_size,
+        0,
+        rl.Color(255, 255, 255, 128),
+      )
 
     rl.end_scissor_mode()
 
     # draw gradient on left side to indicate more text
     if text_size.x > text_rect.width:
-      rl.draw_rectangle_gradient_h(int(text_rect.x), int(text_rect.y), 80, int(text_rect.height),
-                                   rl.BLACK, rl.BLANK)
+      rl.draw_rectangle_gradient_h(int(text_rect.x), int(text_rect.y), 80, int(text_rect.height), rl.BLACK, rl.BLANK)
 
     # draw cursor
     if text:
       blink_alpha = (math.sin(rl.get_time() * 6) + 1) / 2
       cursor_x = min(text_x + text_size.x + 3, text_rect.x + text_rect.width)
-      rl.draw_rectangle_rounded(rl.Rectangle(int(cursor_x), int(text_rect.y), 4, int(text_size.y)),
-                                1, 4, rl.Color(255, 255, 255, int(255 * blink_alpha)))
+      rl.draw_rectangle_rounded(rl.Rectangle(int(cursor_x), int(text_rect.y), 4, int(text_size.y)), 1, 4, rl.Color(255, 255, 255, int(255 * blink_alpha)))
 
     # draw backspace icon with nice fade
     self._backspace_img_alpha.update(255 * bool(text))
@@ -241,8 +230,9 @@ class BigInputDialog(BigDialogBase):
     # TODO: move to update state
     # make rect take up entire area so it's easier to click
     self._top_left_button_rect = rl.Rectangle(self._rect.x, self._rect.y, text_field_rect.x, self._rect.height - self._keyboard.get_keyboard_height())
-    self._top_right_button_rect = rl.Rectangle(text_field_rect.x + text_field_rect.width, self._rect.y,
-                                               self._rect.width - (text_field_rect.x + text_field_rect.width), self._top_left_button_rect.height)
+    self._top_right_button_rect = rl.Rectangle(
+      text_field_rect.x + text_field_rect.width, self._rect.y, self._rect.width - (text_field_rect.x + text_field_rect.width), self._top_left_button_rect.height
+    )
 
     self._enter_img_alpha.update(255 if (len(text) >= self._minimum_length) else 255 * 0.35)
     if self._enter_img_alpha.x > 1:
@@ -281,8 +271,13 @@ class BigDialogOptionButton(Widget):
 
     self._selected = False
 
-    self._label = UnifiedLabel(option, font_size=70, text_color=rl.Color(255, 255, 255, int(255 * 0.58)),
-                               font_weight=FontWeight.DISPLAY_REGULAR, alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP)
+    self._label = UnifiedLabel(
+      option,
+      font_size=70,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.58)),
+      font_weight=FontWeight.DISPLAY_REGULAR,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
+    )
 
   def set_selected(self, selected: bool):
     self._selected = selected
@@ -307,8 +302,7 @@ class BigDialogOptionButton(Widget):
 class BigMultiOptionDialog(BigDialogBase):
   BACK_TOUCH_AREA_PERCENTAGE = 0.1
 
-  def __init__(self, options: list[str], default: str | None,
-               right_btn: str | None = 'check', right_btn_callback: Callable[[], None] = None):
+  def __init__(self, options: list[str], default: str | None, right_btn: str | None = 'check', right_btn_callback: Callable[[], None] = None):
     super().__init__(right_btn, right_btn_callback=right_btn_callback)
     self._options = options
     if default is not None:

@@ -9,8 +9,10 @@ from cereal import messaging
 from openpilot.common.basedir import BASEDIR
 from openpilot.tools.sim.lib.common import W, H
 
+
 class Camerad:
   """Simulates the camerad daemon"""
+
   def __init__(self, dual_camera):
     self.pm = messaging.PubMaster(['roadCameraState', 'wideRoadCameraState'])
 
@@ -60,11 +62,6 @@ class Camerad:
     self.vipc_server.send(yuv_type, yuv, frame_id, eof, eof)
 
     dat = messaging.new_message(pub_type, valid=True)
-    msg = {
-      "frameId": frame_id,
-      "transform": [1.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0,
-                    0.0, 0.0, 1.0]
-    }
+    msg = {"frameId": frame_id, "transform": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]}
     setattr(dat, pub_type, msg)
     self.pm.send(pub_type, dat)

@@ -1,9 +1,11 @@
 import os
 import requests
 from requests.adapters import HTTPAdapter, Retry
+
 API_HOST = os.getenv('API_HOST', 'https://api.commadotai.com')
 
 # TODO: this should be merged into common.api
+
 
 class CommaApi:
   def __init__(self, token=None):
@@ -33,8 +35,10 @@ class CommaApi:
   def post(self, endpoint, **kwargs):
     return self.request('POST', endpoint, **kwargs)
 
+
 class APIError(Exception):
   pass
+
 
 class UnauthorizedError(Exception):
   pass

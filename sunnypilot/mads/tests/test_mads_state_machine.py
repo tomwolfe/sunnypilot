@@ -18,9 +18,14 @@ State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
 EventNameSP = custom.OnroadEventSP.EventName
 
 # The event types that maintain the current state
-MAINTAIN_STATES = {State.enabled: (None,), State.disabled: (None,), State.softDisabling: (ET.SOFT_DISABLE,),
-                   State.paused: (None,), State.overriding: (ET.OVERRIDE_LATERAL,)}
-ALL_STATES = (State.schema.enumerants.values())
+MAINTAIN_STATES = {
+  State.enabled: (None,),
+  State.disabled: (None,),
+  State.softDisabling: (ET.SOFT_DISABLE,),
+  State.paused: (None,),
+  State.overriding: (ET.OVERRIDE_LATERAL,),
+}
+ALL_STATES = State.schema.enumerants.values()
 # The event types checked in DISABLED section of state machine
 ENABLE_EVENT_TYPES = (ET.ENABLE, ET.OVERRIDE_LATERAL)
 
@@ -73,7 +78,7 @@ class TestMADSStateMachine:
         self.clear_events()
 
   def test_user_disable_to_paused(self):
-    paused_events = (EventNameSP.silentLkasDisable, )
+    paused_events = (EventNameSP.silentLkasDisable,)
     for state in ALL_STATES:
       for et in MAINTAIN_STATES[state]:
         self.events_sp.add(make_event([et, ET.USER_DISABLE]))

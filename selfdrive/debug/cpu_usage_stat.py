@@ -15,6 +15,7 @@ System tools like top/htop can only show current cpu usage values, so I write th
     pandad: 1.96%, min: 1.96%, max: 1.96%, acc: 1.96%
     ubloxd.py: 0.39%, min: 0.39%, max: 0.39%, acc: 0.39%
 '''
+
 import psutil
 import time
 import os
@@ -32,7 +33,8 @@ SLEEP_INTERVAL = 0.2
 
 monitored_proc_names = [
   # android procs
-  'SurfaceFlinger', 'sensors.qcom'
+  'SurfaceFlinger',
+  'sensors.qcom',
 ] + list(managed_processes.keys())
 
 cpu_time_names = ['user', 'system', 'children_user', 'children_system']
@@ -41,12 +43,9 @@ cpu_time_names = ['user', 'system', 'children_user', 'children_system']
 def get_arg_parser():
   parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-  parser.add_argument("proc_names", nargs="?", default='',
-                      help="Process names to be monitored, comma separated")
-  parser.add_argument("--list_all", action='store_true',
-                      help="Show all running processes' cmdline")
-  parser.add_argument("--detailed_times", action='store_true',
-                      help="show cpu time details (split by user, system, child user, child system)")
+  parser.add_argument("proc_names", nargs="?", default='', help="Process names to be monitored, comma separated")
+  parser.add_argument("--list_all", action='store_true', help="Show all running processes' cmdline")
+  parser.add_argument("--detailed_times", action='store_true', help="show cpu time details (split by user, system, child user, child system)")
   return parser
 
 
@@ -64,12 +63,18 @@ if __name__ == "__main__":
   for p in psutil.process_iter():
     if p == psutil.Process():
       continue
-    matched = any(l for l in p.cmdline() if any(pn for pn in monitored_proc_names if re.match(fr'.*{pn}.*', l, re.M | re.I)))
+    matched = any(l for l in p.cmdline() if any(pn for pn in monitored_proc_names if re.match(rf'.*{pn}.*', l, re.M | re.I)))
     if matched:
       k = ' '.join(p.cmdline())
       print('Add monitored proc:', k)
-      stats[k] = {'cpu_samples': defaultdict(list), 'min': defaultdict(lambda: None), 'max': defaultdict(lambda: None),
-                  'avg': defaultdict(float), 'last_cpu_times': None, 'last_sys_time': None}
+      stats[k] = {
+        'cpu_samples': defaultdict(list),
+        'min': defaultdict(lambda: None),
+        'max': defaultdict(lambda: None),
+        'avg': defaultdict(float),
+        'last_cpu_times': None,
+        'last_sys_time': None,
+      }
       stats[k]['last_sys_time'] = time.monotonic()
       stats[k]['last_cpu_times'] = p.cpu_times()
       monitored_procs.append(p)
@@ -116,6 +121,4 @@ if __name__ == "__main__":
       l.sort(key=lambda x: -x[1])
       for x in l:
         print(x[2])
-      print('avg sum: {:.2%} over {} samples {} seconds\n'.format(
-        sum(stat['avg']['total'] for k, stat in stats.items()), i, i * SLEEP_INTERVAL
-      ))
+      print('avg sum: {:.2%} over {} samples {} seconds\n'.format(sum(stat['avg']['total'] for k, stat in stats.items()), i, i * SLEEP_INTERVAL))

@@ -3,6 +3,7 @@ import urllib.parse
 
 DEFAULT_CACHE_DIR = os.getenv("CACHE_ROOT", os.path.expanduser("~/.commacache"))
 
+
 def cache_path_for_file_path(fn, cache_dir=DEFAULT_CACHE_DIR):
   dir_ = os.path.join(cache_dir, "local")
   os.makedirs(dir_, exist_ok=True)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import TICI
+
 os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
 USBGPU = "USBGPU" in os.environ
 if USBGPU:
@@ -57,28 +58,25 @@ LONG_SMOOTH_SECONDS = 0.3
 MIN_LAT_CONTROL_SPEED = 0.3
 
 
-def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                          lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
-    plan = model_output['plan'][0]
-    desired_accel, should_stop = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
-                                                     plan[:,Plan.ACCELERATION][:,0],
-                                                     ModelConstants.T_IDXS,
-                                                     action_t=long_action_t)
-    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+def get_action_from_model(
+  model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action, lat_action_t: float, long_action_t: float, v_ego: float
+) -> log.ModelDataV2.Action:
+  plan = model_output['plan'][0]
+  desired_accel, should_stop = get_accel_from_plan(
+    plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], ModelConstants.T_IDXS, action_t=long_action_t
+  )
+  desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
 
-    desired_curvature = get_curvature_from_plan(plan[:,Plan.T_FROM_CURRENT_EULER][:,2],
-                                                plan[:,Plan.ORIENTATION_RATE][:,2],
-                                                ModelConstants.T_IDXS,
-                                                v_ego,
-                                                lat_action_t)
-    if v_ego > MIN_LAT_CONTROL_SPEED:
-      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
-    else:
-      desired_curvature = prev_action.desiredCurvature
+  desired_curvature = get_curvature_from_plan(
+    plan[:, Plan.T_FROM_CURRENT_EULER][:, 2], plan[:, Plan.ORIENTATION_RATE][:, 2], ModelConstants.T_IDXS, v_ego, lat_action_t
+  )
+  if v_ego > MIN_LAT_CONTROL_SPEED:
+    desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+  else:
+    desired_curvature = prev_action.desiredCurvature
 
-    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
-                                  desiredAcceleration=float(desired_accel),
-                                  shouldStop=bool(should_stop))
+  return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature), desiredAcceleration=float(desired_accel), shouldStop=bool(should_stop))
+
 
 class FrameMeta:
   frame_id: int = 0
@@ -89,8 +87,9 @@ class FrameMeta:
     if vipc is not None:
       self.frame_id, self.timestamp_sof, self.timestamp_eof = vipc.frame_id, vipc.timestamp_sof, vipc.timestamp_eof
 
+
 class InputQueues:
-  def __init__ (self, model_fps, env_fps, n_frames_input):
+  def __init__(self, model_fps, env_fps, n_frames_input):
     assert env_fps % model_fps == 0
     assert env_fps >= model_fps
     self.model_fps = model_fps
@@ -118,7 +117,7 @@ class InputQueues:
   def reset(self) -> None:
     self.q = {k: np.zeros(self.shapes[k], dtype=self.dtypes[k]) for k in self.dtypes.keys()}
 
-  def enqueue(self, inputs:dict[str, np.ndarray]) -> None:
+  def enqueue(self, inputs: dict[str, np.ndarray]) -> None:
     for k in inputs.keys():
       if inputs[k].dtype != self.dtypes[k]:
         raise ValueError(f'supplied input <{k}({inputs[k].dtype})> has wrong dtype, expected {self.dtypes[k]}')
@@ -126,8 +125,8 @@ class InputQueues:
       input_shape[1] = -1
       single_input = inputs[k].reshape(tuple(input_shape))
       sz = single_input.shape[1]
-      self.q[k][:,:-sz] = self.q[k][:,sz:]
-      self.q[k][:,-sz:] = single_input
+      self.q[k][:, :-sz] = self.q[k][:, sz:]
+      self.q[k][:, -sz:] = single_input
 
   def get(self, *names) -> dict[str, np.ndarray]:
     if self.env_fps == self.model_fps:
@@ -138,7 +137,7 @@ class InputQueues:
         shape = self.shapes[k]
         if 'img' in k:
           n_channels = shape[1] // (self.env_fps // self.model_fps + (self.n_frames_input - 1))
-          out[k] = np.concatenate([self.q[k][:, s:s+n_channels] for s in np.linspace(0, shape[1] - n_channels, self.n_frames_input, dtype=int)], axis=1)
+          out[k] = np.concatenate([self.q[k][:, s : s + n_channels] for s in np.linspace(0, shape[1] - n_channels, self.n_frames_input, dtype=int)], axis=1)
         elif 'pulse' in k:
           # any pulse within interval counts
           out[k] = self.q[k].reshape((shape[0], shape[1] * self.model_fps // self.env_fps, self.env_fps // self.model_fps, -1)).max(axis=2)
@@ -146,6 +145,7 @@ class InputQueues:
           idxs = np.arange(-1, -shape[1], -self.env_fps // self.model_fps)[::-1]
           out[k] = self.q[k][:, idxs]
       return out
+
 
 class ModelState(ModelStateBase):
   frames: dict[str, DrivingModelFrame]
@@ -158,18 +158,18 @@ class ModelState(ModelStateBase):
     self.LAT_SMOOTH_SECONDS = LAT_SMOOTH_SECONDS
     with open(VISION_METADATA_PATH, 'rb') as f:
       vision_metadata = pickle.load(f)
-      self.vision_input_shapes =  vision_metadata['input_shapes']
+      self.vision_input_shapes = vision_metadata['input_shapes']
       self.vision_input_names = list(self.vision_input_shapes.keys())
       self.vision_output_slices = vision_metadata['output_slices']
       vision_output_size = vision_metadata['output_shapes']['outputs'][1]
 
     with open(POLICY_METADATA_PATH, 'rb') as f:
       policy_metadata = pickle.load(f)
-      self.policy_input_shapes =  policy_metadata['input_shapes']
+      self.policy_input_shapes = policy_metadata['input_shapes']
       self.policy_output_slices = policy_metadata['output_slices']
       policy_output_size = policy_metadata['output_shapes']['outputs'][1]
 
-    self.frames = {name: DrivingModelFrame(context, ModelConstants.MODEL_RUN_FREQ//ModelConstants.MODEL_CONTEXT_FREQ) for name in self.vision_input_names}
+    self.frames = {name: DrivingModelFrame(context, ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ) for name in self.vision_input_names}
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
 
     # policy inputs
@@ -182,7 +182,7 @@ class ModelState(ModelStateBase):
     # img buffers are managed in openCL transform code
     self.vision_inputs: dict[str, Tensor] = {}
     self.vision_output = np.zeros(vision_output_size, dtype=np.float32)
-    self.policy_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
+    self.policy_inputs = {k: Tensor(v, device='NPY').realize() for k, v in self.numpy_inputs.items()}
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
 
@@ -193,7 +193,7 @@ class ModelState(ModelStateBase):
       self.policy_run = pickle.load(f)
 
   def slice_outputs(self, model_outputs: np.ndarray, output_slices: dict[str, slice]) -> dict[str, np.ndarray]:
-    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in output_slices.items()}
+    parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k, v in output_slices.items()}
     return parsed_model_outputs
 
   def _should_run_vision_model(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
@@ -206,10 +206,6 @@ class ModelState(ModelStateBase):
     # that was based on metadata hashing rather than actual content analysis.
     # The original implementation was removed due to safety concerns.
     return True
-
-
-
-
 
   def _enhanced_model_input_validation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
@@ -230,45 +226,46 @@ class ModelState(ModelStateBase):
     # Check that we have all required buffers
     required_buffers = ['roadCamera', 'wideRoadCamera']  # Based on the vision_input_names that would be used
     for buf_name in required_buffers:
-        if buf_name in bufs and bufs[buf_name] is not None:
-            # Check for valid buffer properties
-            if bufs[buf_name].width <= 0 or bufs[buf_name].height <= 0:
-                cloudlog.warning(f"Invalid buffer dimensions for {buf_name}: {bufs[buf_name].width}x{bufs[buf_name].height}")
-                return False
+      if buf_name in bufs and bufs[buf_name] is not None:
+        # Check for valid buffer properties
+        if bufs[buf_name].width <= 0 or bufs[buf_name].height <= 0:
+          cloudlog.warning(f"Invalid buffer dimensions for {buf_name}: {bufs[buf_name].width}x{bufs[buf_name].height}")
+          return False
 
-            # Check for frame age - don't use very old frames
-            if hasattr(bufs[buf_name], 'timestamp_sof'):
-                frame_age = time.monotonic() - bufs[buf_name].timestamp_sof / 1e9
-                if frame_age > 0.2:  # More than 200ms old
-                    cloudlog.warning(f"Frame too old for {buf_name}: {frame_age:.3f}s old")
-                    return False
-        elif buf_name in bufs:  # If the buffer is expected but not available
-            cloudlog.warning(f"Required buffer {buf_name} is None")
+        # Check for frame age - don't use very old frames
+        if hasattr(bufs[buf_name], 'timestamp_sof'):
+          frame_age = time.monotonic() - bufs[buf_name].timestamp_sof / 1e9
+          if frame_age > 0.2:  # More than 200ms old
+            cloudlog.warning(f"Frame too old for {buf_name}: {frame_age:.3f}s old")
             return False
+      elif buf_name in bufs:  # If the buffer is expected but not available
+        cloudlog.warning(f"Required buffer {buf_name} is None")
+        return False
 
     # Check transform validity
     for transform_name, transform in transforms.items():
-        if transform is None or transform.size == 0:
-            cloudlog.warning(f"Invalid transform for {transform_name}")
-            return False
-        # Check for NaN or inf values in transform
-        if not np.all(np.isfinite(transform)):
-            cloudlog.warning(f"Transform {transform_name} contains non-finite values")
-            return False
+      if transform is None or transform.size == 0:
+        cloudlog.warning(f"Invalid transform for {transform_name}")
+        return False
+      # Check for NaN or inf values in transform
+      if not np.all(np.isfinite(transform)):
+        cloudlog.warning(f"Transform {transform_name} contains non-finite values")
+        return False
 
     return True
 
-  def run(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray],
-                inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+  def run(
+    self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray], prepare_only: bool
+  ) -> dict[str, np.ndarray] | None:
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire_pulse'][0] = 0
-    new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > .99, inputs['desire_pulse'], 0)
+    new_desire = np.where(inputs['desire_pulse'] - self.prev_desire > 0.99, inputs['desire_pulse'], 0)
     self.prev_desire[:] = inputs['desire_pulse']
 
     # Enhanced input validation to ensure data quality before processing
     if not self._enhanced_model_input_validation(bufs, transforms):
-        cloudlog.warning("Model input validation failed, skipping this cycle")
-        return None
+      cloudlog.warning("Model input validation failed, skipping this cycle")
+      return None
 
     imgs_cl = {name: self.frames[name].prepare(bufs[name], transforms[name].flatten()) for name in self.vision_input_names}
 
@@ -310,12 +307,10 @@ class ModelState(ModelStateBase):
     # Enhanced post-processing to improve perception quality
     combined_outputs_dict = self._enhance_model_outputs(combined_outputs_dict)
 
-
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
     return combined_outputs_dict
-
 
   def _enhance_model_outputs(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """
@@ -416,6 +411,7 @@ class ModelState(ModelStateBase):
     # Apply road model validation to ensure physical reasonableness
     # This catches physically impossible predictions that could cause safety issues
     from openpilot.selfdrive.controls.lib.road_model_validator import road_model_validator
+
     v_ego = getattr(self, '_v_ego_for_validation', 0.0)  # Use stored vEgo if available
 
     # Apply validation with enhanced safety checks
@@ -427,7 +423,7 @@ class ModelState(ModelStateBase):
     # Enhanced safety validation for action outputs (desiredCurvature, desiredAcceleration)
     if 'action' in corrected_outputs and hasattr(corrected_outputs['action'], 'desiredCurvature'):
       # Validate and limit desired curvature based on vehicle speed for safety
-      max_safe_curvature = 3.0 / (max(v_ego, 5.0)**2)  # Based on max lateral acceleration of 3m/s²
+      max_safe_curvature = 3.0 / (max(v_ego, 5.0) ** 2)  # Based on max lateral acceleration of 3m/s²
       if abs(corrected_outputs['action'].desiredCurvature) > max_safe_curvature:
         cloudlog.warning(f"Limiting curvature from {corrected_outputs['action'].desiredCurvature:.4f} to {max_safe_curvature:.4f}")
         corrected_outputs['action'].desiredCurvature = max(-max_safe_curvature, min(max_safe_curvature, corrected_outputs['action'].desiredCurvature))
@@ -464,7 +460,7 @@ def main(demo=False):
       use_extra_client = VisionStreamType.VISION_STREAM_WIDE_ROAD in available_streams and VisionStreamType.VISION_STREAM_ROAD in available_streams
       main_wide_camera = VisionStreamType.VISION_STREAM_ROAD not in available_streams
       break
-    time.sleep(.1)
+    time.sleep(0.1)
 
   vipc_client_main_stream = VisionStreamType.VISION_STREAM_WIDE_ROAD if main_wide_camera else VisionStreamType.VISION_STREAM_ROAD
   vipc_client_main = VisionIpcClient("camerad", vipc_client_main_stream, True, cl_context)
@@ -488,7 +484,7 @@ def main(demo=False):
   params = Params()
 
   # setup filter to track dropped frames
-  frame_dropped_filter = FirstOrderFilter(0., 10., 1. / ModelConstants.MODEL_RUN_FREQ)
+  frame_dropped_filter = FirstOrderFilter(0.0, 10.0, 1.0 / ModelConstants.MODEL_RUN_FREQ)
   frame_id = 0
   last_vipc_frame_id = 0
   run_count = 0
@@ -499,7 +495,6 @@ def main(demo=False):
   buf_main, buf_extra = None, None
   meta_main = FrameMeta()
   meta_extra = FrameMeta()
-
 
   if demo:
     CP = get_demo_car_params()
@@ -535,13 +530,13 @@ def main(demo=False):
       base_tolerance_ns = 25000000  # 25ms base tolerance
       # Use a more granular, non-linear scaling based on system load for better performance
       if system_load_factor < 0.5:
-          dynamic_tolerance_ns = int(base_tolerance_ns * 0.6)  # 15ms when system is very cool
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.6)  # 15ms when system is very cool
       elif system_load_factor < 0.7:
-          dynamic_tolerance_ns = int(base_tolerance_ns * 0.7)  # 17.5ms when system is moderately cool
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.7)  # 17.5ms when system is moderately cool
       elif system_load_factor < 0.85:
-          dynamic_tolerance_ns = int(base_tolerance_ns * 0.9)  # 22.5ms when system is warm
+        dynamic_tolerance_ns = int(base_tolerance_ns * 0.9)  # 22.5ms when system is warm
       else:
-          dynamic_tolerance_ns = int(base_tolerance_ns * 1.2)  # 30ms when system is stressed
+        dynamic_tolerance_ns = int(base_tolerance_ns * 1.2)  # 30ms when system is stressed
       # Critical Analysis Note: This dynamic adjustment of `dynamic_tolerance_ns` based on
       # system load is a well-executed optimization. Logging the actual `dynamic_tolerance_ns`
       # and the corresponding `system_load_factor` is crucial for understanding its impact
@@ -622,15 +617,15 @@ def main(demo=False):
         # Check sync quality and log if frames are significantly out of sync
         if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
           cloudlog.error(
-              f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), " +
-              f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), " +
-              f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms"
+            f"Frames out of sync! main: {meta_main.frame_id} ({meta_main.timestamp_sof / 1e9:.5f}), "
+            + f"extra: {meta_extra.frame_id} ({meta_extra.timestamp_sof / 1e9:.5f}), "
+            + f"delta: {abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms"
           )
         elif abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 5000000:  # 5ms threshold
           # Log when frames are moderately out of sync
           cloudlog.debug(
-              f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, " +
-              f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}"
+            f"Moderate frame sync issue: delta={abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) / 1e6:.1f}ms, "
+            + f"thermal_factor={thermal_factor:.2f}, cpu_usage={cpu_usage:.2f}"
           )
 
       else:
@@ -642,7 +637,7 @@ def main(demo=False):
       desire = DH.desire
       is_rhd = sm["driverMonitoringState"].isRHD
       frame_id = sm["roadCameraState"].frameId
-      v_ego = max(sm["carState"].vEgo, 0.)
+      v_ego = max(sm["carState"].vEgo, 0.0)
       if sm.frame % 60 == 0:
         model.lat_delay = get_lat_delay(params, sm["liveDelay"].lateralDelay)
       lat_delay = model.lat_delay + LAT_SMOOTH_SECONDS
@@ -664,9 +659,9 @@ def main(demo=False):
       # tracked dropped frames
       vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)
       frames_dropped = frame_dropped_filter.update(min(vipc_dropped_frames, 10))
-      if run_count < 10: # let frame drops warm up
-        frame_dropped_filter.x = 0.
-        frames_dropped = 0.
+      if run_count < 10:  # let frame drops warm up
+        frame_dropped_filter.x = 0.0
+        frames_dropped = 0.0
       run_count = run_count + 1
 
       frame_drop_ratio = frames_dropped / (1 + frames_dropped)
@@ -676,7 +671,7 @@ def main(demo=False):
 
       bufs = {name: buf_extra if 'big' in name else buf_main for name in model.vision_input_names}
       transforms = {name: model_transform_extra if 'big' in name else model_transform_main for name in model.vision_input_names}
-      inputs:dict[str, np.ndarray] = {
+      inputs: dict[str, np.ndarray] = {
         'desire_pulse': vec_desire,
         'traffic_convention': traffic_convention,
       }
@@ -704,10 +699,10 @@ def main(demo=False):
       # Log performance metrics when system load is high or execution time is excessive
       if system_load > 0.8 or model_execution_time > 0.05:  # High system load or slow execution (>50ms)
         cloudlog.debug(
-            f"Performance metrics - System load: {system_load:.2f}, " +
-            f"Model execution time: {model_execution_time*1000:.1f}ms, " +
-            f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, " +
-            f"CPU: {cpu_usage_raw:.1f}%"
+          f"Performance metrics - System load: {system_load:.2f}, "
+          + f"Model execution time: {model_execution_time * 1000:.1f}ms, "
+          + f"Thermal: {thermal_status}, Memory: {memory_usage_raw:.1f}%, "
+          + f"CPU: {cpu_usage_raw:.1f}%"
         )
 
       if model_output is not None:
@@ -721,9 +716,20 @@ def main(demo=False):
 
         action = get_action_from_model(model_output, prev_action, lat_delay + DT_MDL, long_delay + DT_MDL, v_ego)
         prev_action = action
-        fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
-                       publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
-                       frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
+        fill_model_msg(
+          drivingdata_send,
+          modelv2_send,
+          model_output,
+          action,
+          publish_state,
+          meta_main.frame_id,
+          meta_extra.frame_id,
+          frame_id,
+          frame_drop_ratio,
+          meta_main.timestamp_eof,
+          model_execution_time,
+          live_calib_seen,
+        )
 
         desire_state = modelv2_send.modelV2.meta.desireState
         l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]
@@ -749,6 +755,7 @@ def main(demo=False):
       # Don't exit on runtime errors to maintain system operation
       time.sleep(0.1)  # Brief pause before continuing
       continue
+
 
 def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> dict[str, Any]:
   """
@@ -783,7 +790,7 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
         # Speed-dependent acceleration limits for realistic driving
         # At higher speeds, acceleration changes should be more conservative
         max_braking = max(-5.0, -2.0 - (v_ego * 0.05))  # More conservative braking at high speed
-        max_accel = min(3.0, 2.5 - (v_ego * 0.02))      # More conservative acceleration at high speed
+        max_accel = min(3.0, 2.5 - (v_ego * 0.02))  # More conservative acceleration at high speed
 
         plan[:, 6] = np.clip(plan[:, 6], max_braking, max_accel)
 
@@ -849,7 +856,7 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
             if len(left_lines[i]) > 0 and np.mean(left_lines[i][left_lines[i] != 0]) < -0.5:  # All left lane coeffs are negative
               modifications_made.append(f"Left lane {i} has unexpected negative values")
           for i in range(min(2, right_lines.shape[0])):
-            if len(right_lines[i]) > 0 and np.mean(right_lines[i][right_lines[i] != 0]) > 0.5:   # All right lane coeffs are positive
+            if len(right_lines[i]) > 0 and np.mean(right_lines[i][right_lines[i] != 0]) > 0.5:  # All right lane coeffs are positive
               modifications_made.append(f"Right lane {i} has unexpected positive values")
         except IndexError:
           # Skip consistency validation if indexing fails
@@ -873,7 +880,6 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
         # Store original values for validation
         original_dRel = getattr(lead, 'dRel', None) if hasattr(lead, 'dRel') else None
         original_vRel = getattr(lead, 'vRel', None) if hasattr(lead, 'vRel') else None
-
 
         if hasattr(lead, 'dRel'):
           if lead.dRel < 0 or lead.dRel > 200:  # Invalid distance
@@ -938,7 +944,7 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
     # Calculate maximum safe curvature based on speed to prevent excessive lateral acceleration
     if v_ego > 1.0:  # Only apply speed-dependent limits when moving
       max_lat_accel = 2.5  # Max lateral acceleration in m/s^2
-      max_curvature = max_lat_accel / (v_ego ** 2)
+      max_curvature = max_lat_accel / (v_ego**2)
     else:
       max_curvature = 0.2  # Higher limit at low speed
 
@@ -991,6 +997,7 @@ def _validate_model_output(model_output: dict[str, Any], v_ego: float = 0.0) -> 
 if __name__ == "__main__":
   try:
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--demo', action='store_true', help='A boolean for demo mode.')
     args = parser.parse_args()

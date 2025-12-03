@@ -37,6 +37,7 @@ def get_select_fields_data(logs):
     for key in keys:
       val = getattr(msg if val is None else val, key) if isinstance(key, str) else val[key]
     return val
+
   lp = [x.livePose for x in logs if x.which() == 'livePose']
   data = defaultdict(list)
   for msg in lp:
@@ -50,7 +51,7 @@ def get_select_fields_data(logs):
 def modify_logs_midway(logs, which, count, fn):
   non_which = [x for x in logs if x.which() != which]
   which = [x for x in logs if x.which() == which]
-  temps = which[len(which) // 2:len(which) // 2 + count]
+  temps = which[len(which) // 2 : len(which) // 2 + count]
   for i, temp in enumerate(temps):
     temp = temp.as_builder()
     fn(temp)
@@ -66,8 +67,10 @@ def run_scenarios(scenario, logs):
     logs = sorted([x for x in logs if x.which() != 'gyroscope'], key=lambda x: x.logMonoTime)
 
   elif scenario == Scenario.GYRO_SPIKE_MIDWAY or scenario == Scenario.GYRO_CONSISTENT_SPIKES:
+
     def gyro_spike(msg):
       msg.gyroscope.gyroUncalibrated.v[0] += 3.0
+
     count = 1 if scenario == Scenario.GYRO_SPIKE_MIDWAY else CONSISTENT_SPIKES_COUNT
     logs = modify_logs_midway(logs, 'gyroscope', count, gyro_spike)
 
@@ -75,14 +78,18 @@ def run_scenarios(scenario, logs):
     logs = sorted([x for x in logs if x.which() != 'accelerometer'], key=lambda x: x.logMonoTime)
 
   elif scenario == Scenario.ACCEL_SPIKE_MIDWAY or scenario == Scenario.ACCEL_CONSISTENT_SPIKES:
+
     def acc_spike(msg):
       msg.accelerometer.acceleration.v[0] += 100.0
+
     count = 1 if scenario == Scenario.ACCEL_SPIKE_MIDWAY else CONSISTENT_SPIKES_COUNT
     logs = modify_logs_midway(logs, 'accelerometer', count, acc_spike)
 
   elif scenario == Scenario.SENSOR_TIMING_SPIKE_MIDWAY or scenario == Scenario.SENSOR_TIMING_CONSISTENT_SPIKES:
+
     def timing_spike(msg):
       msg.accelerometer.timestamp -= int(0.150 * 1e9)
+
     count = 1 if scenario == Scenario.SENSOR_TIMING_SPIKE_MIDWAY else CONSISTENT_SPIKES_COUNT
     logs = modify_logs_midway(logs, 'accelerometer', count, timing_spike)
 

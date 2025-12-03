@@ -39,17 +39,18 @@ class ET:
 
 
 class Alert:
-  def __init__(self,
-               alert_text_1: str,
-               alert_text_2: str,
-               alert_status: log.SelfdriveState.AlertStatus,
-               alert_size: log.SelfdriveState.AlertSize,
-               priority: Priority,
-               visual_alert: car.CarControl.HUDControl.VisualAlert,
-               audible_alert: car.CarControl.HUDControl.AudibleAlert,
-               duration: float,
-               creation_delay: float = 0.):
-
+  def __init__(
+    self,
+    alert_text_1: str,
+    alert_text_2: str,
+    alert_status: log.SelfdriveState.AlertStatus,
+    alert_size: log.SelfdriveState.AlertSize,
+    priority: Priority,
+    visual_alert: car.CarControl.HUDControl.VisualAlert,
+    audible_alert: car.CarControl.HUDControl.AudibleAlert,
+    duration: float,
+    creation_delay: float = 0.0,
+  ):
     self.alert_text_1 = alert_text_1
     self.alert_text_2 = alert_text_2
     self.alert_status = alert_status
@@ -73,11 +74,19 @@ class Alert:
       return False
     return self.priority > alert2.priority
 
+
 class AlertBase(Alert):
-  def __init__(self, alert_text_1: str, alert_text_2: str, alert_status: log.SelfdriveState.AlertStatus,
-               alert_size: log.SelfdriveState.AlertSize, priority: Priority,
-               visual_alert: car.CarControl.HUDControl.VisualAlert,
-               audible_alert: car.CarControl.HUDControl.AudibleAlert, duration: float):
+  def __init__(
+    self,
+    alert_text_1: str,
+    alert_text_2: str,
+    alert_status: log.SelfdriveState.AlertStatus,
+    alert_size: log.SelfdriveState.AlertSize,
+    priority: Priority,
+    visual_alert: car.CarControl.HUDControl.VisualAlert,
+    audible_alert: car.CarControl.HUDControl.AudibleAlert,
+    duration: float,
+  ):
     super().__init__(alert_text_1, alert_text_2, alert_status, alert_size, priority, visual_alert, audible_alert, duration)
 
 
@@ -179,56 +188,68 @@ class EventsBase:
     raise NotImplementedError
 
 
-EmptyAlert = Alert("" , "", AlertStatus.normal, AlertSize.none, Priority.LOWEST,
-                   VisualAlert.none, AudibleAlert.none, 0)
+EmptyAlert = Alert("", "", AlertStatus.normal, AlertSize.none, Priority.LOWEST, VisualAlert.none, AudibleAlert.none, 0)
+
 
 class NoEntryAlert(Alert):
-  def __init__(self, alert_text_2: str,
-               alert_text_1: str = "openpilot Unavailable",
-               visual_alert: car.CarControl.HUDControl.VisualAlert=VisualAlert.none):
+  def __init__(self, alert_text_2: str, alert_text_1: str = "openpilot Unavailable", visual_alert: car.CarControl.HUDControl.VisualAlert = VisualAlert.none):
     if HARDWARE.get_device_type() == 'mici':
       alert_text_1, alert_text_2 = alert_text_2, alert_text_1
-    super().__init__(alert_text_1, alert_text_2, AlertStatus.normal,
-                     AlertSize.mid, Priority.LOW, visual_alert,
-                     AudibleAlert.refuse, 3.)
+    super().__init__(alert_text_1, alert_text_2, AlertStatus.normal, AlertSize.mid, Priority.LOW, visual_alert, AudibleAlert.refuse, 3.0)
 
 
 class SoftDisableAlert(Alert):
   def __init__(self, alert_text_2: str):
-    super().__init__("TAKE CONTROL IMMEDIATELY", alert_text_2,
-                     AlertStatus.userPrompt, AlertSize.full,
-                     Priority.MID, VisualAlert.steerRequired,
-                     AudibleAlert.warningSoft, 2.),
+    (
+      super().__init__(
+        "TAKE CONTROL IMMEDIATELY", alert_text_2, AlertStatus.userPrompt, AlertSize.full, Priority.MID, VisualAlert.steerRequired, AudibleAlert.warningSoft, 2.0
+      ),
+    )
 
 
 # less harsh version of SoftDisable, where the condition is user-triggered
 class UserSoftDisableAlert(SoftDisableAlert):
   def __init__(self, alert_text_2: str):
-    super().__init__(alert_text_2),
+    (super().__init__(alert_text_2),)
     self.alert_text_1 = "openpilot will disengage"
 
 
 class ImmediateDisableAlert(Alert):
   def __init__(self, alert_text_2: str):
-    super().__init__("TAKE CONTROL IMMEDIATELY", alert_text_2,
-                     AlertStatus.critical, AlertSize.full,
-                     Priority.HIGHEST, VisualAlert.steerRequired,
-                     AudibleAlert.warningImmediate, 4.),
+    (
+      super().__init__(
+        "TAKE CONTROL IMMEDIATELY",
+        alert_text_2,
+        AlertStatus.critical,
+        AlertSize.full,
+        Priority.HIGHEST,
+        VisualAlert.steerRequired,
+        AudibleAlert.warningImmediate,
+        4.0,
+      ),
+    )
 
 
 class EngagementAlert(Alert):
   def __init__(self, audible_alert: car.CarControl.HUDControl.AudibleAlert):
-    super().__init__("", "",
-                     AlertStatus.normal, AlertSize.none,
-                     Priority.MID, VisualAlert.none,
-                     audible_alert, .2),
+    (super().__init__("", "", AlertStatus.normal, AlertSize.none, Priority.MID, VisualAlert.none, audible_alert, 0.2),)
 
 
 class NormalPermanentAlert(Alert):
-  def __init__(self, alert_text_1: str, alert_text_2: str = "", duration: float = 0.2, priority: Priority = Priority.LOWER, creation_delay: float = 0.):
-    super().__init__(alert_text_1, alert_text_2,
-                     AlertStatus.normal, AlertSize.mid if len(alert_text_2) else AlertSize.small,
-                     priority, VisualAlert.none, AudibleAlert.none, duration, creation_delay=creation_delay),
+  def __init__(self, alert_text_1: str, alert_text_2: str = "", duration: float = 0.2, priority: Priority = Priority.LOWER, creation_delay: float = 0.0):
+    (
+      super().__init__(
+        alert_text_1,
+        alert_text_2,
+        AlertStatus.normal,
+        AlertSize.mid if len(alert_text_2) else AlertSize.small,
+        priority,
+        VisualAlert.none,
+        AudibleAlert.none,
+        duration,
+        creation_delay=creation_delay,
+      ),
+    )
 
 
 class StartupAlert(Alert):
@@ -238,6 +259,4 @@ class StartupAlert(Alert):
       if alert_text_2 == "Always keep hands on wheel and eyes on road":
         alert_text_2 = ""
       alert_size = AlertSize.small
-    super().__init__(alert_text_1, alert_text_2,
-                     alert_status, alert_size,
-                     Priority.LOWER, VisualAlert.none, AudibleAlert.none, 5.),
+    (super().__init__(alert_text_1, alert_text_2, alert_status, alert_size, Priority.LOWER, VisualAlert.none, AudibleAlert.none, 5.0),)

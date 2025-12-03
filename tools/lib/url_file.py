@@ -112,7 +112,7 @@ class URLFile:
         with open(full_path, "rb") as cached_file:
           data = cached_file.read()
 
-      response += data[max(0, file_begin - position): min(CHUNK_SIZE, file_end - position)]
+      response += data[max(0, file_begin - position) : min(CHUNK_SIZE, file_end - position)]
 
       position += CHUNK_SIZE
       if position >= file_end:

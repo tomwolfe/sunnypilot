@@ -15,13 +15,27 @@ from openpilot.system.version import terms_version, training_version
 
 DEBUG = False
 
-STEP_RECTS = [rl.Rectangle(104, 800, 633, 175), rl.Rectangle(1835, 0, 2159, 1080), rl.Rectangle(1835, 0, 2156, 1080),
-              rl.Rectangle(1526, 473, 427, 472), rl.Rectangle(1643, 441, 217, 223), rl.Rectangle(1835, 0, 2155, 1080),
-              rl.Rectangle(1786, 591, 267, 236), rl.Rectangle(1353, 0, 804, 1080), rl.Rectangle(1458, 485, 633, 211),
-              rl.Rectangle(95, 794, 1158, 187), rl.Rectangle(1560, 170, 392, 397), rl.Rectangle(1835, 0, 2159, 1080),
-              rl.Rectangle(1351, 0, 807, 1080), rl.Rectangle(1835, 0, 2158, 1080), rl.Rectangle(1531, 82, 441, 920),
-              rl.Rectangle(1336, 438, 490, 393), rl.Rectangle(1835, 0, 2159, 1080), rl.Rectangle(1835, 0, 2159, 1080),
-              rl.Rectangle(87, 795, 1187, 186)]
+STEP_RECTS = [
+  rl.Rectangle(104, 800, 633, 175),
+  rl.Rectangle(1835, 0, 2159, 1080),
+  rl.Rectangle(1835, 0, 2156, 1080),
+  rl.Rectangle(1526, 473, 427, 472),
+  rl.Rectangle(1643, 441, 217, 223),
+  rl.Rectangle(1835, 0, 2155, 1080),
+  rl.Rectangle(1786, 591, 267, 236),
+  rl.Rectangle(1353, 0, 804, 1080),
+  rl.Rectangle(1458, 485, 633, 211),
+  rl.Rectangle(95, 794, 1158, 187),
+  rl.Rectangle(1560, 170, 392, 397),
+  rl.Rectangle(1835, 0, 2159, 1080),
+  rl.Rectangle(1351, 0, 807, 1080),
+  rl.Rectangle(1835, 0, 2158, 1080),
+  rl.Rectangle(1531, 82, 441, 920),
+  rl.Rectangle(1336, 438, 490, 393),
+  rl.Rectangle(1835, 0, 2159, 1080),
+  rl.Rectangle(1835, 0, 2159, 1080),
+  rl.Rectangle(87, 795, 1187, 186),
+]
 
 DM_RECORD_STEP = 9
 DM_RECORD_YES_RECT = rl.Rectangle(695, 794, 558, 187)
@@ -94,8 +108,7 @@ class TrainingGuide(Widget):
     if 0 < step < len(STEP_RECTS) - 1:
       h = 20
       w = int((step / (len(STEP_RECTS) - 1)) * self._rect.width)
-      rl.draw_rectangle(int(self._rect.x), int(self._rect.y + self._rect.height - h),
-                        w, h, rl.Color(70, 91, 234, 255))
+      rl.draw_rectangle(int(self._rect.x), int(self._rect.y + self._rect.height - h), w, h, rl.Color(70, 91, 234, 255))
 
     if DEBUG:
       rl.draw_rectangle_lines_ex(STEP_RECTS[step], 3, rl.RED)
@@ -110,8 +123,12 @@ class TermsPage(Widget):
     self._on_decline = on_decline
 
     self._title = Label(tr("Welcome to sunnypilot"), font_size=90, font_weight=FontWeight.BOLD, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
-    self._desc = Label(tr("You must accept the Terms and Conditions to use sunnypilot. Read the latest terms at https://comma.ai/terms before continuing."),
-                       font_size=90, font_weight=FontWeight.MEDIUM, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
+    self._desc = Label(
+      tr("You must accept the Terms and Conditions to use sunnypilot. Read the latest terms at https://comma.ai/terms before continuing."),
+      font_size=90,
+      font_weight=FontWeight.MEDIUM,
+      text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+    )
 
     self._decline_btn = Button(tr("Decline"), click_callback=on_decline)
     self._accept_btn = Button(tr("Agree"), button_style=ButtonStyle.PRIMARY, click_callback=on_accept)
@@ -143,11 +160,14 @@ class TermsPage(Widget):
 class DeclinePage(Widget):
   def __init__(self, back_callback=None):
     super().__init__()
-    self._text = Label(tr("You must accept the Terms and Conditions in order to use sunnypilot."),
-                       font_size=90, font_weight=FontWeight.MEDIUM, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT)
+    self._text = Label(
+      tr("You must accept the Terms and Conditions in order to use sunnypilot."),
+      font_size=90,
+      font_weight=FontWeight.MEDIUM,
+      text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+    )
     self._back_btn = Button(tr("Back"), click_callback=back_callback)
-    self._uninstall_btn = Button(tr("Decline, uninstall sunnypilot"), button_style=ButtonStyle.DANGER,
-                                 click_callback=self._on_uninstall_clicked)
+    self._uninstall_btn = Button(tr("Decline, uninstall sunnypilot"), button_style=ButtonStyle.DANGER, click_callback=self._on_uninstall_clicked)
 
   def _on_uninstall_clicked(self):
     ui_state.params.put_bool("DoUninstall", True)

@@ -6,10 +6,7 @@ from openpilot.common.basedir import BASEDIR
 class Spinner:
   def __init__(self):
     try:
-      self.spinner_proc = subprocess.Popen(["./spinner.py"],
-                                           stdin=subprocess.PIPE,
-                                           cwd=os.path.join(BASEDIR, "system", "ui"),
-                                           close_fds=True)
+      self.spinner_proc = subprocess.Popen(["./spinner.py"], stdin=subprocess.PIPE, cwd=os.path.join(BASEDIR, "system", "ui"), close_fds=True)
     except OSError:
       self.spinner_proc = None
 
@@ -31,7 +28,7 @@ class Spinner:
     if self.spinner_proc is not None:
       self.spinner_proc.kill()
       try:
-        self.spinner_proc.communicate(timeout=2.)
+        self.spinner_proc.communicate(timeout=2.0)
       except subprocess.TimeoutExpired:
         print("WARNING: failed to kill spinner")
       self.spinner_proc = None
@@ -45,6 +42,7 @@ class Spinner:
 
 if __name__ == "__main__":
   import time
+
   with Spinner() as s:
     s.update("Spinner text")
     time.sleep(5.0)

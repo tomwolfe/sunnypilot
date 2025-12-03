@@ -29,11 +29,11 @@ MAX_HEIGHT_STD = np.exp(-3.5)
 # This is at model frequency, blocks needed for efficiency
 SMOOTH_CYCLES = 10
 BLOCK_SIZE = 100
-INPUTS_NEEDED = 5   # Minimum blocks needed for valid calibration
-INPUTS_WANTED = 50   # We want a little bit more than we need for stability
+INPUTS_NEEDED = 5  # Minimum blocks needed for valid calibration
+INPUTS_WANTED = 50  # We want a little bit more than we need for stability
 MAX_ALLOWED_YAW_SPREAD = np.radians(2)
 MAX_ALLOWED_PITCH_SPREAD = np.radians(4)
-RPY_INIT = np.array([0.0,0.0,0.0])
+RPY_INIT = np.array([0.0, 0.0, 0.0])
 WIDE_FROM_DEVICE_EULER_INIT = np.array([0.0, 0.0, 0.0])
 HEIGHT_INIT = np.array([1.22])
 
@@ -53,12 +53,12 @@ def is_calibration_valid(rpy: np.ndarray) -> bool:
 def sanity_clip(rpy: np.ndarray) -> np.ndarray:
   if np.isnan(rpy).any():
     rpy = RPY_INIT
-  return np.array([rpy[0],
-                   np.clip(rpy[1], PITCH_LIMITS[0] - .005, PITCH_LIMITS[1] + .005),
-                   np.clip(rpy[2], YAW_LIMITS[0] - .005, YAW_LIMITS[1] + .005)])
+  return np.array([rpy[0], np.clip(rpy[1], PITCH_LIMITS[0] - 0.005, PITCH_LIMITS[1] + 0.005), np.clip(rpy[2], YAW_LIMITS[0] - 0.005, YAW_LIMITS[1] + 0.005)])
+
 
 def moving_avg_with_linear_decay(prev_mean: np.ndarray, new_val: np.ndarray, idx: int, block_size: float) -> np.ndarray:
-  return (idx*prev_mean + (block_size - idx) * new_val) / block_size
+  return (idx * prev_mean + (block_size - idx) * new_val) / block_size
+
 
 class Calibrator:
   def __init__(self, param_put: bool = False):
@@ -88,11 +88,14 @@ class Calibrator:
     self.reset(rpy_init, valid_blocks, wide_from_device_euler, height)
     self.update_status()
 
-  def reset(self, rpy_init: np.ndarray = RPY_INIT,
-                  valid_blocks: int = 0,
-                  wide_from_device_euler_init: np.ndarray = WIDE_FROM_DEVICE_EULER_INIT,
-                  height_init: np.ndarray = HEIGHT_INIT,
-                  smooth_from: np.ndarray = None) -> None:
+  def reset(
+    self,
+    rpy_init: np.ndarray = RPY_INIT,
+    valid_blocks: int = 0,
+    wide_from_device_euler_init: np.ndarray = WIDE_FROM_DEVICE_EULER_INIT,
+    height_init: np.ndarray = HEIGHT_INIT,
+    smooth_from: np.ndarray = None,
+  ) -> None:
     if not np.isfinite(rpy_init).all():
       self.rpy = RPY_INIT.copy()
     else:
@@ -165,7 +168,7 @@ class Calibrator:
       self.reset(self.rpys[self.block_idx - 1], valid_blocks=1, smooth_from=self.rpy)
       self.cal_status = log.LiveCalibrationData.Status.recalibrating
 
-    write_this_cycle = (self.idx == 0) and (self.block_idx % (INPUTS_WANTED//5) == 5)
+    write_this_cycle = (self.idx == 0) and (self.block_idx % (INPUTS_WANTED // 5) == 5)
     if self.param_put and write_this_cycle:
       self.params.put_nonblocking("CalibrationParams", self.get_msg(True).to_bytes())
 
@@ -178,15 +181,18 @@ class Calibrator:
     else:
       return self.rpy
 
-  def handle_cam_odom(self, trans: list[float],
-                            rot: list[float],
-                            wide_from_device_euler: list[float],
-                            trans_std: list[float],
-                            road_transform_trans: list[float],
-                            road_transform_trans_std: list[float]) -> np.ndarray | None:
-    self.old_rpy_weight = max(0.0, self.old_rpy_weight - 1/SMOOTH_CYCLES)
+  def handle_cam_odom(
+    self,
+    trans: list[float],
+    rot: list[float],
+    wide_from_device_euler: list[float],
+    trans_std: list[float],
+    road_transform_trans: list[float],
+    road_transform_trans_std: list[float],
+  ) -> np.ndarray | None:
+    self.old_rpy_weight = max(0.0, self.old_rpy_weight - 1 / SMOOTH_CYCLES)
 
-    straight_and_fast = ((self.v_ego > MIN_SPEED_FILTER) and (trans[0] > MIN_SPEED_FILTER) and (abs(rot[2]) < MAX_YAW_RATE_FILTER))
+    straight_and_fast = (self.v_ego > MIN_SPEED_FILTER) and (trans[0] > MIN_SPEED_FILTER) and (abs(rot[2]) < MAX_YAW_RATE_FILTER)
     angle_std_threshold = MAX_VEL_ANGLE_STD
     height_std_threshold = MAX_HEIGHT_STD
     rpy_certain = np.arctan2(trans_std[1], trans[0]) < angle_std_threshold
@@ -199,9 +205,7 @@ class Calibrator:
     if not (straight_and_fast and certain_if_calib):
       return None
 
-    observed_rpy = np.array([0,
-                             -np.arctan2(trans[2], trans[0]),
-                             np.arctan2(trans[1], trans[0])])
+    observed_rpy = np.array([0, -np.arctan2(trans[2], trans[0]), np.arctan2(trans[1], trans[0])])
     new_rpy = euler_from_rot(rot_from_euler(self.get_smooth_rpy()).dot(rot_from_euler(observed_rpy)))
     new_rpy = sanity_clip(new_rpy)
 
@@ -210,14 +214,15 @@ class Calibrator:
     else:
       new_wide_from_device_euler = WIDE_FROM_DEVICE_EULER_INIT
 
-    if (len(road_transform_trans) == 3):
+    if len(road_transform_trans) == 3:
       new_height = np.array([road_transform_trans[2]])
     else:
       new_height = HEIGHT_INIT
 
     self.rpys[self.block_idx] = moving_avg_with_linear_decay(self.rpys[self.block_idx], new_rpy, self.idx, float(BLOCK_SIZE))
-    self.wide_from_device_eulers[self.block_idx] = moving_avg_with_linear_decay(self.wide_from_device_eulers[self.block_idx],
-                                                                                new_wide_from_device_euler, self.idx, float(BLOCK_SIZE))
+    self.wide_from_device_eulers[self.block_idx] = moving_avg_with_linear_decay(
+      self.wide_from_device_eulers[self.block_idx], new_wide_from_device_euler, self.idx, float(BLOCK_SIZE)
+    )
     self.heights[self.block_idx] = moving_avg_with_linear_decay(self.heights[self.block_idx], new_height, self.idx, float(BLOCK_SIZE))
 
     self.idx = (self.idx + 1) % BLOCK_SIZE
@@ -248,7 +253,7 @@ class Calibrator:
     if self.not_car:
       liveCalibration.validBlocks = INPUTS_NEEDED
       liveCalibration.calStatus = log.LiveCalibrationData.Status.calibrated
-      liveCalibration.calPerc = 100.
+      liveCalibration.calPerc = 100.0
       liveCalibration.rpyCalib = [0, 0, 0]
       liveCalibration.rpyCalibSpread = self.calib_spread.tolist()
 
@@ -276,12 +281,14 @@ def main() -> NoReturn:
 
     if sm.updated['cameraOdometry']:
       calibrator.handle_v_ego(sm['carState'].vEgo)
-      new_rpy = calibrator.handle_cam_odom(sm['cameraOdometry'].trans,
-                                           sm['cameraOdometry'].rot,
-                                           sm['cameraOdometry'].wideFromDeviceEuler,
-                                           sm['cameraOdometry'].transStd,
-                                           sm['cameraOdometry'].roadTransformTrans,
-                                           sm['cameraOdometry'].roadTransformTransStd)
+      new_rpy = calibrator.handle_cam_odom(
+        sm['cameraOdometry'].trans,
+        sm['cameraOdometry'].rot,
+        sm['cameraOdometry'].wideFromDeviceEuler,
+        sm['cameraOdometry'].transStd,
+        sm['cameraOdometry'].roadTransformTrans,
+        sm['cameraOdometry'].roadTransformTransStd,
+      )
 
       if DEBUG and new_rpy is not None:
         print('got new rpy', new_rpy)

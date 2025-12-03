@@ -27,8 +27,8 @@ class SafetyManager:
 
     # System state monitoring
     self.steering_torque_history = deque(maxlen=20)  # 0.2 seconds at 100Hz
-    self.acceleration_history = deque(maxlen=20)      # 0.2 seconds at 100Hz
-    self.steering_angle_history = deque(maxlen=10)    # 0.1 seconds at 100Hz
+    self.acceleration_history = deque(maxlen=20)  # 0.2 seconds at 100Hz
+    self.steering_angle_history = deque(maxlen=10)  # 0.1 seconds at 100Hz
 
     # Safety thresholds (configurable)
     self.max_unexpected_torque = self.params.get_float("SafetyMaxUnexpectedTorque", 200.0)
@@ -38,10 +38,10 @@ class SafetyManager:
 
     # Risk assessment levels for graduated response
     self.risk_assessment_levels = {
-        'low': {'score_range': (0.0, 0.3), 'response': 'normal'},
-        'moderate': {'score_range': (0.3, 0.6), 'response': 'caution'},
-        'high': {'score_range': (0.6, 0.85), 'response': 'warning'},
-        'critical': {'score_range': (0.85, 1.0), 'response': 'disengage'}
+      'low': {'score_range': (0.0, 0.3), 'response': 'normal'},
+      'moderate': {'score_range': (0.3, 0.6), 'response': 'caution'},
+      'high': {'score_range': (0.6, 0.85), 'response': 'warning'},
+      'critical': {'score_range': (0.85, 1.0), 'response': 'disengage'},
     }
     self.risk_history = deque(maxlen=50)  # Track risk over time
     self.degradation_counter = 0  # Track degradation over time
@@ -82,7 +82,7 @@ class SafetyManager:
       car_state: Current car state
                 control_output: Control system output
               Returns:
-                True if steering is safe, False otherwise    """
+                True if steering is safe, False otherwise"""
     # Check for excessive steering torque
     if abs(car_state.steeringTorque) > self.max_unexpected_torque:
       # Check if the high torque is expected based on our control request
@@ -179,21 +179,21 @@ class SafetyManager:
     metrics = {}
 
     try:
-        # Extract from model metadata if available
-        if hasattr(model_data, 'meta') and hasattr(model_data.meta, 'featureStats'):
-            for i, feature in enumerate(model_data.meta.featureStats):
-                metrics[f'feature_{i}_confidence'] = feature.confidence
+      # Extract from model metadata if available
+      if hasattr(model_data, 'meta') and hasattr(model_data.meta, 'featureStats'):
+        for i, feature in enumerate(model_data.meta.featureStats):
+          metrics[f'feature_{i}_confidence'] = feature.confidence
 
-        # Extract from plan confidence if available
-        if hasattr(model_data, 'plan'):
-            metrics['plan_confidence'] = self._calculate_plan_confidence(model_data.plan)
+      # Extract from plan confidence if available
+      if hasattr(model_data, 'plan'):
+        metrics['plan_confidence'] = self._calculate_plan_confidence(model_data.plan)
 
-        # Extract from lane line detection confidence
-        if hasattr(model_data, 'lateralPlannerOutput'):
-            metrics['lane_confidence'] = self._calculate_lane_confidence(model_data.lateralPlannerOutput)
+      # Extract from lane line detection confidence
+      if hasattr(model_data, 'lateralPlannerOutput'):
+        metrics['lane_confidence'] = self._calculate_lane_confidence(model_data.lateralPlannerOutput)
 
     except Exception as e:
-        cloudlog.error(f"Error extracting confidence metrics: {e}")
+      cloudlog.error(f"Error extracting confidence metrics: {e}")
 
     return metrics
 
@@ -201,13 +201,7 @@ class SafetyManager:
     """
     Calculate overall prediction confidence score
     """
-    weights = {
-        'engage_prob': 0.3,
-        'plan_consistency': 0.25,
-        'feature_confidence': 0.2,
-        'lane_confidence': 0.15,
-        'physical_feasibility': 0.1
-    }
+    weights = {'engage_prob': 0.3, 'plan_consistency': 0.25, 'feature_confidence': 0.2, 'lane_confidence': 0.15, 'physical_feasibility': 0.1}
 
     score = 0.0
 
@@ -217,17 +211,17 @@ class SafetyManager:
 
     # Plan consistency (smoothness of planned trajectory)
     if 'plan_confidence' in confidence_metrics:
-        score += weights.get('plan_consistency', 0.0) * confidence_metrics['plan_confidence']
+      score += weights.get('plan_consistency', 0.0) * confidence_metrics['plan_confidence']
 
     # Feature detection confidence
     feature_scores = [v for k, v in confidence_metrics.items() if 'feature' in k]
     if feature_scores:
-        avg_feature_conf = sum(feature_scores) / len(feature_scores)
-        score += weights.get('feature_confidence', 0.0) * avg_feature_conf
+      avg_feature_conf = sum(feature_scores) / len(feature_scores)
+      score += weights.get('feature_confidence', 0.0) * avg_feature_conf
 
     # Lane detection confidence
     if 'lane_confidence' in confidence_metrics:
-        score += weights.get('lane_confidence', 0.0) * confidence_metrics['lane_confidence']
+      score += weights.get('lane_confidence', 0.0) * confidence_metrics['lane_confidence']
 
     return min(1.0, max(0.0, score))
 
@@ -237,17 +231,17 @@ class SafetyManager:
     """
     # A smooth plan with gradual changes is more confident
     if hasattr(plan, 'position') and hasattr(plan.position, 'x') and len(plan.position.x) > 1:
-        # Calculate smoothness by looking at change in trajectory
-        x_positions = plan.position.x
-        if len(x_positions) > 2:
-            # Calculate changes and look for abrupt changes
-            changes = [abs(x_positions[i+1] - x_positions[i]) for i in range(len(x_positions)-1)]
-            avg_change = sum(changes) / len(changes)
-            # More consistent changes = higher confidence
-            if avg_change > 0:
-                variance = sum((c - avg_change)**2 for c in changes) / len(changes)
-                # Lower variance = higher confidence (inverted)
-                return max(0.1, 1.0 - min(0.9, variance / avg_change if avg_change > 0 else 1.0))
+      # Calculate smoothness by looking at change in trajectory
+      x_positions = plan.position.x
+      if len(x_positions) > 2:
+        # Calculate changes and look for abrupt changes
+        changes = [abs(x_positions[i + 1] - x_positions[i]) for i in range(len(x_positions) - 1)]
+        avg_change = sum(changes) / len(changes)
+        # More consistent changes = higher confidence
+        if avg_change > 0:
+          variance = sum((c - avg_change) ** 2 for c in changes) / len(changes)
+          # Lower variance = higher confidence (inverted)
+          return max(0.1, 1.0 - min(0.9, variance / avg_change if avg_change > 0 else 1.0))
 
     return 0.5  # Default if cannot calculate
 
@@ -256,9 +250,9 @@ class SafetyManager:
     Calculate confidence based on lane line detection
     """
     if hasattr(lateral_planner_output, 'laneLines'):
-        high_confidence_lines = sum(1 for line in lateral_planner_output.laneLines if line.prob > 0.5)
-        total_lines = len(lateral_planner_output.laneLines)
-        return high_confidence_lines / total_lines if total_lines > 0 else 0.0
+      high_confidence_lines = sum(1 for line in lateral_planner_output.laneLines if line.prob > 0.5)
+      total_lines = len(lateral_planner_output.laneLines)
+      return high_confidence_lines / total_lines if total_lines > 0 else 0.0
 
     return 0.5  # Default if no lane line data
 
@@ -268,13 +262,13 @@ class SafetyManager:
     """
     # Store recent predictions for consistency checking
     if not hasattr(self, '_recent_predictions'):
-        self._recent_predictions = []
+      self._recent_predictions = []
 
     # Add current prediction
     current_prediction = {
-        'curvature': getattr(model_data.action, 'desiredCurvature', 0),
-        'acceleration': getattr(model_data.action, 'desiredAcceleration', 0),
-        'timestamp': time.monotonic()  # Need to import time
+      'curvature': getattr(model_data.action, 'desiredCurvature', 0),
+      'acceleration': getattr(model_data.action, 'desiredAcceleration', 0),
+      'timestamp': time.monotonic(),  # Need to import time
     }
 
     self._recent_predictions.append(current_prediction)
@@ -284,7 +278,7 @@ class SafetyManager:
     self._recent_predictions = [p for p in self._recent_predictions if p['timestamp'] > cutoff_time]
 
     if len(self._recent_predictions) < 3:
-        return True  # Not enough data to check consistency
+      return True  # Not enough data to check consistency
 
     # Check for excessive variation in predictions
     curvatures = [p['curvature'] for p in self._recent_predictions]
@@ -298,10 +292,8 @@ class SafetyManager:
     max_acceleration_variance = 0.5 * (1.0 / max(0.1, confidence))
 
     if curvature_variance > max_curvature_variance or acceleration_variance > max_acceleration_variance:
-        cloudlog.debug(
-            f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, accel_var={acceleration_variance:.4f}, conf={confidence:.2f}"
-        )
-        return False
+      cloudlog.debug(f"Prediction inconsistency detected: curvature_var={curvature_variance:.4f}, accel_var={acceleration_variance:.4f}, conf={confidence:.2f}")
+      return False
 
     return True
 
@@ -310,34 +302,32 @@ class SafetyManager:
     Check if model predictions are physically feasible
     """
     try:
-        if (hasattr(model_data, 'action') and
-            hasattr(model_data.action, 'desiredCurvature') and
-            hasattr(model_data, 'carState')):
-            v_ego = model_data.carState.vEgo if hasattr(model_data.carState, 'vEgo') else 0
-            desired_curvature = model_data.action.desiredCurvature
+      if hasattr(model_data, 'action') and hasattr(model_data.action, 'desiredCurvature') and hasattr(model_data, 'carState'):
+        v_ego = model_data.carState.vEgo if hasattr(model_data.carState, 'vEgo') else 0
+        desired_curvature = model_data.action.desiredCurvature
 
-            # Calculate required lateral acceleration for the desired curvature
-            required_lat_accel = desired_curvature * v_ego ** 2
+        # Calculate required lateral acceleration for the desired curvature
+        required_lat_accel = desired_curvature * v_ego**2
 
-            # Check against reasonable limits (typically 3-4 m/s^2 for production vehicles)
-            max_lat_accel = 3.5
-            if abs(required_lat_accel) > max_lat_accel:
-                # Check if this is reasonable given current speed
-                max_reasonable_curvature = max_lat_accel / (v_ego ** 2)
-                if abs(desired_curvature) > max_reasonable_curvature * 2.0:  # Allow some margin
-                    return False
+        # Check against reasonable limits (typically 3-4 m/s^2 for production vehicles)
+        max_lat_accel = 3.5
+        if abs(required_lat_accel) > max_lat_accel:
+          # Check if this is reasonable given current speed
+          max_reasonable_curvature = max_lat_accel / (v_ego**2)
+          if abs(desired_curvature) > max_reasonable_curvature * 2.0:  # Allow some margin
+            return False
 
-        # Check acceleration feasibility
-        if hasattr(model_data, 'action') and hasattr(model_data.action, 'desiredAcceleration'):
-            desired_accel = model_data.action.desiredAcceleration
-            max_decel = -4.0  # Reasonable maximum deceleration
-            max_accel = 3.0   # Reasonable maximum acceleration
+      # Check acceleration feasibility
+      if hasattr(model_data, 'action') and hasattr(model_data.action, 'desiredAcceleration'):
+        desired_accel = model_data.action.desiredAcceleration
+        max_decel = -4.0  # Reasonable maximum deceleration
+        max_accel = 3.0  # Reasonable maximum acceleration
 
-            if desired_accel < max_decel or desired_accel > max_accel:
-                return False
+        if desired_accel < max_decel or desired_accel > max_accel:
+          return False
 
     except (AttributeError, TypeError):
-        pass
+      pass
 
     return True
 
@@ -413,8 +403,9 @@ class SafetyManager:
     """
     return self.safety_violation_count >= self.max_safety_violations
 
-  def assess_comprehensive_risk(self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None,
-                                radar_data=None, environment_data=None) -> float:
+  def assess_comprehensive_risk(
+    self, car_state: car.CarState, control_output: car.CarControl.Actuators, model_data=None, radar_data=None, environment_data=None
+  ) -> float:
     """
     Comprehensive risk assessment combining multiple factors
 
@@ -436,12 +427,7 @@ class SafetyManager:
     }
 
     # Weighted risk calculation
-    weights = {
-      'control_stability': 0.25,
-      'model_confidence': 0.25,
-      'environmental': 0.25,
-      'vehicle_health': 0.25
-    }
+    weights = {'control_stability': 0.25, 'model_confidence': 0.25, 'environmental': 0.25, 'vehicle_health': 0.25}
 
     total_risk = 0.0
     for factor, value in risk_factors.items():
@@ -496,19 +482,21 @@ class SafetyManager:
       max_risk = max(max_risk, 0.9)  # System not allowed to control vehicle
 
     # Check for dangerous vehicle dynamics
-    if (hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo') and
-        car_state.vEgo > 5.0 and abs(car_state.aEgo) > 5.0):
+    if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo') and car_state.vEgo > 5.0 and abs(car_state.aEgo) > 5.0:
       # Excessive acceleration/deceleration at speed
       max_risk = max(max_risk, 0.7)
 
     # Check for brake and gas pedal conflict
-    if (hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and
-        car_state.brakePressed and car_state.gasPressed):
+    if hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and car_state.brakePressed and car_state.gasPressed:
       max_risk = max(max_risk, 0.75)  # Dangerous situation
 
     # Check for dangerous steering angle or rate
-    if (hasattr(car_state, 'steeringAngleDeg') and hasattr(car_state, 'steeringRateDeg') and
-        abs(car_state.steeringAngleDeg) > 45 and abs(car_state.steeringRateDeg) > 100):
+    if (
+      hasattr(car_state, 'steeringAngleDeg')
+      and hasattr(car_state, 'steeringRateDeg')
+      and abs(car_state.steeringAngleDeg) > 45
+      and abs(car_state.steeringRateDeg) > 100
+    ):
       # Extreme angle with high rate of change - dangerous
       max_risk = max(max_risk, 0.8)
 
@@ -544,8 +532,8 @@ class SafetyManager:
 
     # 3. Saturation frequency - how often we're hitting actuator limits
     if hasattr(control_output, 'saturation'):
-        saturation_score = 0.1 if control_output.saturation else 0.0
-        stability_metrics.append(saturation_score)
+      saturation_score = 0.1 if control_output.saturation else 0.0
+      stability_metrics.append(saturation_score)
 
     return sum(stability_metrics) / len(stability_metrics) if stability_metrics else 0.0
 
@@ -570,7 +558,7 @@ class SafetyManager:
 
         # Check curvature vs speed for physical feasibility
         if v_ego > 1.0 and abs(action.desiredCurvature) > 0.1:
-          required_lat_accel = action.desiredCurvature * v_ego ** 2
+          required_lat_accel = action.desiredCurvature * v_ego**2
           if abs(required_lat_accel) > 4.0:  # Beyond reasonable lateral acceleration
             prediction_confidence = min(prediction_confidence, 0.3)
 
@@ -587,7 +575,7 @@ class SafetyManager:
       current_action = {
         'curvature': getattr(model_data.action, 'desiredCurvature', 0),
         'acceleration': getattr(model_data.action, 'desiredAcceleration', 0),
-        'should_stop': getattr(model_data.action, 'shouldStop', False)
+        'should_stop': getattr(model_data.action, 'shouldStop', False),
       }
 
       if '_prev_action' in self._prev_model_outputs:
@@ -713,9 +701,11 @@ class SafetyManager:
         risk = max(risk, 0.6)  # High risk traffic pattern
 
       # Check for potential cut-in situations
-      if (distance_diff < 15.0 and
-          radar_data.leadOne.vRel > radar_data.leadTwo.vRel + 5.0 and  # First lead is pulling away from second
-          radar_data.leadTwo.dRel < 50.0):  # Both leads are close
+      if (
+        distance_diff < 15.0
+        and radar_data.leadOne.vRel > radar_data.leadTwo.vRel + 5.0  # First lead is pulling away from second
+        and radar_data.leadTwo.dRel < 50.0
+      ):  # Both leads are close
         risk = max(risk, 0.5)  # Potential lane change/cut-in risk
 
     return risk
@@ -761,15 +751,17 @@ class SafetyManager:
 
   def _check_sensor_inconsistencies(self, car_state: car.CarState) -> float:
     risk = 0.0
-    if (hasattr(car_state, 'vEgo') and hasattr(car_state, 'vCruise') and
-        car_state.vEgo > car_state.vCruise + 15.0):  # Significant difference between ego and cruise speed
+    if (
+      hasattr(car_state, 'vEgo') and hasattr(car_state, 'vCruise') and car_state.vEgo > car_state.vCruise + 15.0
+    ):  # Significant difference between ego and cruise speed
       risk = max(risk, 0.5)
     return risk
 
   def _check_pedal_inconsistencies(self, car_state: car.CarState) -> float:
     risk = 0.0
-    if (hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and
-        car_state.brakePressed and car_state.gasPressed):  # Both pressed simultaneously
+    if (
+      hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and car_state.brakePressed and car_state.gasPressed
+    ):  # Both pressed simultaneously
       risk = max(risk, 0.6)
     return risk
 
@@ -800,8 +792,12 @@ class SafetyManager:
 
   def _check_steering_rate_inconsistencies(self, car_state: car.CarState) -> float:
     risk = 0.0
-    if (hasattr(car_state, 'steeringRateDeg') and hasattr(car_state, 'steeringTorque') and
-        abs(car_state.steeringRateDeg) > 100 and abs(car_state.steeringTorque) < 10):  # High rate, low torque
+    if (
+      hasattr(car_state, 'steeringRateDeg')
+      and hasattr(car_state, 'steeringTorque')
+      and abs(car_state.steeringRateDeg) > 100
+      and abs(car_state.steeringTorque) < 10
+    ):  # High rate, low torque
       risk = max(risk, 0.3)
     return risk
 
@@ -839,7 +835,7 @@ class SafetyManager:
     # Calculate slope using simple method
     n = len(x)
     if n > 1:
-      slope = (n * sum(x[i] * y[i] for i in range(n)) - sum(x) * sum(y)) / (n * sum(xi**2 for xi in x) - sum(x)**2)
+      slope = (n * sum(x[i] * y[i] for i in range(n)) - sum(x) * sum(y)) / (n * sum(xi**2 for xi in x) - sum(x) ** 2)
       return float(slope)
     return 0.0
 
@@ -866,7 +862,7 @@ class SafetyManager:
           'increase_monitoring': response_type in ['moderate', 'high', 'critical'],
           'alert_user': response_type in ['moderate', 'warning', 'disengage'],
           'reduce_speed': response_type in ['high', 'critical'],
-          'increase_gap': response_type in ['warning', 'critical']
+          'increase_gap': response_type in ['warning', 'critical'],
         }
         return response
 
@@ -879,7 +875,7 @@ class SafetyManager:
       'increase_monitoring': True,
       'alert_user': True,
       'reduce_speed': True,
-      'increase_gap': True
+      'increase_gap': True,
     }
 
   def reset_safety_state(self):

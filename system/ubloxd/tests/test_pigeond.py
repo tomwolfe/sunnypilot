@@ -12,7 +12,6 @@ from openpilot.system.hardware.tici.pins import GPIO
 # TODO: test TTFF when we have good A-GNSS
 @pytest.mark.tici
 class TestPigeond:
-
   def teardown_method(self):
     managed_processes['pigeond'].stop()
 

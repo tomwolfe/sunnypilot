@@ -29,20 +29,22 @@ MM_MODEM = MM + ".Modem"
 MM_MODEM_SIMPLE = MM + ".Modem.Simple"
 MM_SIM = MM + ".Sim"
 
+
 class MM_MODEM_STATE(IntEnum):
-  FAILED        = -1
-  UNKNOWN       = 0
-  INITIALIZING  = 1
-  LOCKED        = 2
-  DISABLED      = 3
-  DISABLING     = 4
-  ENABLING      = 5
-  ENABLED       = 6
-  SEARCHING     = 7
-  REGISTERED    = 8
+  FAILED = -1
+  UNKNOWN = 0
+  INITIALIZING = 1
+  LOCKED = 2
+  DISABLED = 3
+  DISABLING = 4
+  ENABLING = 5
+  ENABLED = 6
+  SEARCHING = 7
+  REGISTERED = 8
   DISCONNECTING = 9
-  CONNECTING    = 10
-  CONNECTED     = 11
+  CONNECTING = 10
+  CONNECTED = 11
+
 
 class NMMetered(IntEnum):
   NM_METERED_UNKNOWN = 0
@@ -50,6 +52,7 @@ class NMMetered(IntEnum):
   NM_METERED_NO = 2
   NM_METERED_GUESS_YES = 3
   NM_METERED_GUESS_NO = 4
+
 
 TIMEOUT = 0.1
 REFRESH_RATE_MS = 1000
@@ -71,6 +74,7 @@ def affine_irq(val, action):
   for i in irqs:
     sudo_write(str(val), f"/proc/irq/{i}/smp_affinity_list")
 
+
 @lru_cache
 def get_device_type():
   # lru_cache and cache can cause memory leaks when used in classes
@@ -78,17 +82,19 @@ def get_device_type():
     model = f.read().strip('\x00')
   return model.split('comma ')[-1]
 
+
 class Tici(HardwareBase):
   @cached_property
   def bus(self):
     import dbus
+
     return dbus.SystemBus()
 
   @cached_property
   def nm(self):
     return self.bus.get_object(NM, '/org/freedesktop/NetworkManager')
 
-  @property # this should not be cached, in case the modemmanager restarts
+  @property  # this should not be cached, in case the modemmanager restarts
   def mm(self):
     return self.bus.get_object(MM, '/org/freedesktop/ModemManager1')
 
@@ -183,13 +189,7 @@ class Tici(HardwareBase):
     sim_path = modem.Get(MM_MODEM, 'Sim', dbus_interface=DBUS_PROPS, timeout=TIMEOUT)
 
     if sim_path == "/":
-      return {
-        'sim_id': '',
-        'mcc_mnc': None,
-        'network_type': ["Unknown"],
-        'sim_state': ["ABSENT"],
-        'data_connected': False
-      }
+      return {'sim_id': '', 'mcc_mnc': None, 'network_type': ["Unknown"], 'sim_state': ["ABSENT"], 'data_connected': False}
     else:
       sim = self.bus.get_object(MM, sim_path)
       return {
@@ -230,14 +230,14 @@ class Tici(HardwareBase):
 
       technology, operator, band, channel = info
 
-      return({
+      return {
         'technology': technology,
         'operator': operator,
         'band': band,
         'channel': int(channel),
         'extra': extra,
         'state': state,
-      })
+      }
     else:
       return None
 
@@ -310,13 +310,11 @@ class Tici(HardwareBase):
     except Exception:
       return []
 
-
   def get_current_power_draw(self):
-    return (self.read_param_file("/sys/class/hwmon/hwmon1/power1_input", int) / 1e6)
+    return self.read_param_file("/sys/class/hwmon/hwmon1/power1_input", int) / 1e6
 
   def get_som_power_draw(self):
-    return (self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12)
-
+    return self.read_param_file("/sys/class/power_supply/bms/voltage_now", int) * self.read_param_file("/sys/class/power_supply/bms/current_now", int) / 1e12
 
   def shutdown(self):
     os.system("sudo poweroff")
@@ -328,22 +326,23 @@ class Tici(HardwareBase):
       intake = ThermalZone("intake")
       exhaust = ThermalZone("exhaust")
 
-    thermal_config = ThermalConfig(cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] +
-                                   [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
-                                 gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
-                                 dsp=ThermalZone("compute-hvx-usr"),
-                                 memory=ThermalZone("ddr-usr"),
-                                 pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
-                                 intake=intake,
-                                 exhaust=exhaust,
-                                 case=case)
+    thermal_config = ThermalConfig(
+      cpu=[ThermalZone(f"cpu{i}-silver-usr") for i in range(4)] + [ThermalZone(f"cpu{i}-gold-usr") for i in range(4)],
+      gpu=[ThermalZone("gpu0-usr"), ThermalZone("gpu1-usr")],
+      dsp=ThermalZone("compute-hvx-usr"),
+      memory=ThermalZone("ddr-usr"),
+      pmic=[ThermalZone("pm8998_tz"), ThermalZone("pm8005_tz")],
+      intake=intake,
+      exhaust=exhaust,
+      case=case,
+    )
 
     # Add custom throttling thresholds for Snapdragon 845 if available
     try:
-        thermal_config.thresholds = self.get_hw_throttling_thresholds()
+      thermal_config.thresholds = self.get_hw_throttling_thresholds()
     except Exception:
-        # If getting custom thresholds fails, proceed with default configuration
-        pass
+      # If getting custom thresholds fails, proceed with default configuration
+      pass
 
     return thermal_config
 
@@ -355,26 +354,22 @@ class Tici(HardwareBase):
     # Enhanced thermal thresholds optimized for Snapdragon 845 in automotive environment
     return {
       # CPU temperature thresholds (in Celsius)
-      "cpu_max": 75,      # Start thermal management at 75°C instead of default
-      "cpu_critical": 85, # Critical threshold at 85°C
-
+      "cpu_max": 75,  # Start thermal management at 75°C instead of default
+      "cpu_critical": 85,  # Critical threshold at 85°C
       # GPU temperature thresholds
-      "gpu_max": 72,      # GPU starts thermal management at 72°C
-      "gpu_critical": 82, # GPU critical at 82°C
-
+      "gpu_max": 72,  # GPU starts thermal management at 72°C
+      "gpu_critical": 82,  # GPU critical at 82°C
       # SoM (System-on-Module) temperature thresholds
-      "som_max": 70,      # SoM max temp at 70°C
-      "som_critical": 80, # SoM critical at 80°C
-
+      "som_max": 70,  # SoM max temp at 70°C
+      "som_critical": 80,  # SoM critical at 80°C
       # Thermal mitigation strategies
       "mitigation": {
         "cpu_freq_step": 100,  # MHz to reduce by when throttling
-        "gpu_freq_step": 50,   # MHz to reduce by when throttling
-        "fan_speed_min": 30,   # Minimum fan speed percentage
+        "gpu_freq_step": 50,  # MHz to reduce by when throttling
+        "fan_speed_min": 30,  # Minimum fan speed percentage
         "fan_speed_max": 100,  # Maximum fan speed percentage
-      }
+      },
     }
-
 
   def set_display_power(self, on):
     try:
@@ -388,7 +383,7 @@ class Tici(HardwareBase):
       with open("/sys/class/backlight/panel0-backlight/max_brightness") as f:
         max_brightness = float(f.read().strip())
 
-      val = int(percentage * (max_brightness / 100.))
+      val = int(percentage * (max_brightness / 100.0))
       with open("/sys/class/backlight/panel0-backlight/brightness", "w") as f:
         f.write(str(val))
     except Exception:
@@ -400,7 +395,7 @@ class Tici(HardwareBase):
         max_brightness = float(f.read().strip())
 
       with open("/sys/class/backlight/panel0-backlight/brightness") as f:
-        return int(float(f.read()) / (max_brightness / 100.))
+        return int(float(f.read()) / (max_brightness / 100.0))
     except Exception:
       return 0
 
@@ -468,17 +463,17 @@ class Tici(HardwareBase):
     # *** GPU config ***
     # Enhanced GPU configuration for Snapdragon 845 Adreno 630
     # https://github.com/commaai/agnos-kernel-sdm845/blob/master/arch/arm64/boot/dts/qcom/sdm845-gpu.dtsi#L216
-    affine_irq(5, "fts_ts")    # touch
-    affine_irq(5, "msm_drm")   # display
+    affine_irq(5, "fts_ts")  # touch
+    affine_irq(5, "msm_drm")  # display
 
     # Implement thermal-aware GPU configuration with adaptive settings
     # Use ondemand by default for thermal management, but allow for temporary performance increases when needed
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/min_pwrlevel")  # Medium performance level
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/max_pwrlevel")  # Don't limit to highest performance
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")   # Keep bus active
-    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")   # Keep clock active
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_bus_on")  # Keep bus active
+    sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_clk_on")  # Keep clock active
     sudo_write("1", "/sys/class/kgsl/kgsl-3d0/force_rail_on")  # Keep voltage rail active
-    sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")   # Moderate idle timeout
+    sudo_write("500", "/sys/class/kgsl/kgsl-3d0/idle_timer")  # Moderate idle timeout
     sudo_write("ondemand", "/sys/class/kgsl/kgsl-3d0/devfreq/governor")  # Adaptive governor for thermal management
     # Set GPU clock to moderate level that can be adjusted per thermal conditions
     sudo_write("600", "/sys/class/kgsl/kgsl-3d0/max_clock_mhz")  # Moderate clock speed
@@ -502,7 +497,7 @@ class Tici(HardwareBase):
     sudo_write("Y", "/sys/kernel/debug/msm_vidc/disable_thermal_mitigation")
 
     # pandad core
-    affine_irq(3, "spi_geni")         # SPI
+    affine_irq(3, "spi_geni")  # SPI
     try:
       pid = subprocess.check_output(["pgrep", "-f", "spi0"], encoding='utf8').strip()
       subprocess.call(["sudo", "chrt", "-f", "-p", "1", pid])
@@ -521,7 +516,7 @@ class Tici(HardwareBase):
 
     cmds = []
 
-    if self.get_device_type() in ("tizi", ):
+    if self.get_device_type() in ("tizi",):
       # clear out old blue prime initial APN
       os.system('mmcli -m any --3gpp-set-initial-eps-bearer-settings="apn="')
 
@@ -529,7 +524,6 @@ class Tici(HardwareBase):
         # SIM hot swap
         'AT+QSIMDET=1,0',
         'AT+QSIMSTAT=1',
-
         # configure modem as data-centric
         'AT+QNVW=5280,0,"0102000000000000"',
         'AT+QNVFW="/nv/item_files/ims/IMS_enable",00',
@@ -537,10 +531,9 @@ class Tici(HardwareBase):
       ]
     elif manufacturer == 'Cavli Inc.':
       cmds += [
-        'AT^SIMSWAP=1',     # use SIM slot, instead of internal eSIM
+        'AT^SIMSWAP=1',  # use SIM slot, instead of internal eSIM
         'AT$QCSIMSLEEP=0',  # disable SIM sleep
         'AT$QCSIMCFG=SimPowerSave,0',  # more sleep disable
-
         # ethernet config
         'AT$QCPCFG=usbNet,0',
         'AT$QCNETDEVCTL=3,1',
@@ -552,7 +545,6 @@ class Tici(HardwareBase):
           # SIM sleep disable
           'AT$QCSIMSLEEP=0',
           'AT$QCSIMCFG=SimPowerSave,0',
-
           # ethernet config
           'AT$QCPCFG=usbNet,1',
         ]
@@ -566,7 +558,7 @@ class Tici(HardwareBase):
     # eSIM prime
     dest = "/etc/NetworkManager/system-connections/esim.nmconnection"
     if self.get_sim_lpa().is_comma_profile(sim_id) and not os.path.exists(dest):
-      with open(Path(__file__).parent/'esim.nmconnection') as f, tempfile.NamedTemporaryFile(mode='w') as tf:
+      with open(Path(__file__).parent / 'esim.nmconnection') as f, tempfile.NamedTemporaryFile(mode='w') as tf:
         dat = f.read()
         dat = dat.replace("sim-id=", f"sim-id={sim_id}")
         tf.write(dat)
@@ -600,12 +592,14 @@ class Tici(HardwareBase):
       if 'LTE' in extra:
         extra = extra.split(',')
         try:
-          r['lte'] = [{
-            "mcc": int(extra[3]),
-            "mnc": int(extra[4]),
-            "cid": int(extra[5], 16),
-            "nmr": [{"pci": int(extra[6]), "earfcn": int(extra[7])}],
-          }]
+          r['lte'] = [
+            {
+              "mcc": int(extra[3]),
+              "mnc": int(extra[4]),
+              "cid": int(extra[5], 16),
+              "nmr": [{"pci": int(extra[6]), "earfcn": int(extra[7])}],
+            }
+          ]
         except (ValueError, IndexError):
           pass
 
@@ -653,9 +647,10 @@ class Tici(HardwareBase):
   def booted(self):
     # this normally boots within 8s, but on rare occasions takes 30+s
     encoder_state = sudo_read("/sys/kernel/debug/msm_vidc/core0/info")
-    if "Core state: 0" in encoder_state and (time.monotonic() < 60*2):
+    if "Core state: 0" in encoder_state and (time.monotonic() < 60 * 2):
       return False
     return True
+
 
 if __name__ == "__main__":
   t = Tici()

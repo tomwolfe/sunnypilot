@@ -42,7 +42,7 @@ class TestLogmessaged:
 
   def test_big_log(self):
     n = 10
-    msg = "a"*3*1024*1024
+    msg = "a" * 3 * 1024 * 1024
     for _ in range(n):
       cloudlog.info(msg)
     time.sleep(0.5)
@@ -51,5 +51,4 @@ class TestLogmessaged:
     assert len(msgs) == 0
 
     logsize = sum([os.path.getsize(f) for f in self._get_log_files()])
-    assert (n*len(msg)) < logsize < (n*(len(msg)+1024))
-
+    assert (n * len(msg)) < logsize < (n * (len(msg) + 1024))

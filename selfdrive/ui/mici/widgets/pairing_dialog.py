@@ -25,8 +25,9 @@ class PairingDialog(NavWidget):
     self._last_qr_generation = float("-inf")
 
     self._txt_pair = gui_app.texture("icons_mici/settings/device/pair.png", 84, 64)
-    self._pair_label = MiciLabel("pair with comma connect", 48, font_weight=FontWeight.BOLD,
-                                 color=rl.Color(255, 255, 255, int(255 * 0.9)), line_height=40, wrap_text=True)
+    self._pair_label = MiciLabel(
+      "pair with comma connect", 48, font_weight=FontWeight.BOLD, color=rl.Color(255, 255, 255, int(255 * 0.9)), line_height=40, wrap_text=True
+    )
 
   def _get_pairing_url(self) -> str:
     try:
@@ -82,17 +83,16 @@ class PairingDialog(NavWidget):
     self._pair_label.set_position(label_x, self._rect.y + 16)
     self._pair_label.render()
 
-    rl.draw_texture_ex(self._txt_pair, rl.Vector2(label_x, self._rect.y + self._rect.height - self._txt_pair.height - 16),
-                       0.0, 1.0, rl.Color(255, 255, 255, int(255 * 0.35)))
+    rl.draw_texture_ex(
+      self._txt_pair, rl.Vector2(label_x, self._rect.y + self._rect.height - self._txt_pair.height - 16), 0.0, 1.0, rl.Color(255, 255, 255, int(255 * 0.35))
+    )
 
     return -1
 
   def _render_qr_code(self) -> None:
     if not self._qr_texture:
       error_font = gui_app.font(FontWeight.BOLD)
-      rl.draw_text_ex(
-        error_font, "QR Code Error", rl.Vector2(self._rect.x + 20, self._rect.y + self._rect.height // 2 - 15), 30, 0.0, rl.RED
-      )
+      rl.draw_text_ex(error_font, "QR Code Error", rl.Vector2(self._rect.x + 20, self._rect.y + self._rect.height // 2 - 15), 30, 0.0, rl.RED)
       return
 
     scale = self._rect.height / self._qr_texture.height

@@ -1,4 +1,5 @@
 """Utilities for reading real time clocks and keeping soft real time constraints."""
+
 import gc
 import os
 import sys
@@ -21,7 +22,7 @@ class Priority:
   # CORE 2
   # - modeld = 55
   # - camerad = 54
-  CTRL_LOW = 51 # plannerd & radard
+  CTRL_LOW = 51  # plannerd & radard
 
   # CORE 3
   # - pandad = 55
@@ -37,20 +38,26 @@ def config_realtime_process(cores: int | list[int], priority: int) -> None:
   gc.disable()
   if sys.platform == 'linux' and not PC:
     os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(priority))
-  c = cores if isinstance(cores, list) else [cores, ]
+  c = (
+    cores
+    if isinstance(cores, list)
+    else [
+      cores,
+    ]
+  )
   set_core_affinity(c)
 
 
 class Ratekeeper:
   def __init__(self, rate: float, print_delay_threshold: float | None = 0.0) -> None:
     """Rate in Hz for ratekeeping. print_delay_threshold must be nonnegative."""
-    self._interval = 1. / rate
+    self._interval = 1.0 / rate
     self._print_delay_threshold = print_delay_threshold
     self._frame = 0
     self._remaining = 0.0
     self._process_name = getproctitle()
-    self._last_monitor_time = -1.
-    self._next_frame_time = -1.
+    self._last_monitor_time = -1.0
+    self._next_frame_time = -1.0
 
     self.avg_dt = MovingAverage(100)
     self.avg_dt.add_value(self._interval)

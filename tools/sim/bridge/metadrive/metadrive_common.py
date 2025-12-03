@@ -6,6 +6,7 @@ from panda3d.core import Texture, GraphicsOutput
 
 class CopyRamRGBCamera(RGBCamera):
   """Camera which copies its content into RAM during the render process, for faster image grabbing."""
+
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.cpu_texture = Texture()
@@ -15,9 +16,9 @@ class CopyRamRGBCamera(RGBCamera):
     origin_img = self.cpu_texture
     img = np.frombuffer(origin_img.getRamImage().getData(), dtype=np.uint8)
     img = img.reshape((origin_img.getYSize(), origin_img.getXSize(), -1))
-    img = img[:,:,:3] # RGBA to RGB
+    img = img[:, :, :3]  # RGBA to RGB
     # img = np.swapaxes(img, 1, 0)
-    img = img[::-1] # Flip on vertical axis
+    img = img[::-1]  # Flip on vertical axis
     return img
 
 

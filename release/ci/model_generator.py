@@ -22,10 +22,7 @@ def create_short_name(full_name):
   result = ""
   for word in words:
     # Version or number patterns
-    if (re.match(r'^\d+[a-zA-Z]+$', word) or
-        re.match(r'^\d+[vVbB]\d+$', word) or
-        re.match(r'^[vVbB]\d+$', word) or
-        re.match(r'^\d{4}$', word)):
+    if re.match(r'^\d+[a-zA-Z]+$', word) or re.match(r'^\d+[vVbB]\d+$', word) or re.match(r'^[vVbB]\d+$', word) or re.match(r'^\d{4}$', word):
       result += word.upper()
     # All uppercase abbreviations (2-3 letters)
     elif re.match(r'^[A-Z]{2,3}$', word):
@@ -72,18 +69,12 @@ def generate_metadata(model_path: Path, output_dir: Path, short_name: str):
     "type": base.split("_")[-1] if "dmonitoring" not in base else "dmonitoring",
     "artifact": {
       "file_name": tinygrad_file.name,
-      "download_uri": {
-        "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai/-/raw/main/",
-        "sha256": tinygrad_hash
-      }
+      "download_uri": {"url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai/-/raw/main/", "sha256": tinygrad_hash},
     },
     "metadata": {
       "file_name": metadata_file.name,
-      "download_uri": {
-        "url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai/-/raw/main/",
-        "sha256": metadata_hash
-      }
-    }
+      "download_uri": {"url": "https://gitlab.com/sunnypilot/public/docs.sunnypilot.ai/-/raw/main/", "sha256": metadata_hash},
+    },
   }
 
   # Return model metadata

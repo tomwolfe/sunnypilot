@@ -17,11 +17,12 @@ def get_file_handler():
   handler = SwaglogRotatingFileHandler(base_filename)
   return handler
 
+
 class SwaglogRotatingFileHandler(BaseRotatingHandler):
-  def __init__(self, base_filename, interval=60, max_bytes=1024*256, backup_count=2500, encoding=None):
+  def __init__(self, base_filename, interval=60, max_bytes=1024 * 256, backup_count=2500, encoding=None):
     super().__init__(base_filename, mode="a", encoding=encoding, delay=True)
     self.base_filename = base_filename
-    self.interval = interval # seconds
+    self.interval = interval  # seconds
     self.max_bytes = max_bytes
     self.backup_count = backup_count
     self.log_files = self.get_existing_logfiles()
@@ -60,8 +61,9 @@ class SwaglogRotatingFileHandler(BaseRotatingHandler):
     if self.backup_count > 0:
       while len(self.log_files) > self.backup_count:
         to_delete = self.log_files.pop()
-        if os.path.exists(to_delete): # just being safe, should always exist
+        if os.path.exists(to_delete):  # just being safe, should always exist
           os.remove(to_delete)
+
 
 class UnixDomainSocketHandler(logging.Handler):
   def __init__(self, formatter):
@@ -97,7 +99,7 @@ class UnixDomainSocketHandler(logging.Handler):
     msg = self.format(record).rstrip('\n')
     # print("SEND".format(repr(msg)))
     try:
-      s = chr(record.levelno)+msg
+      s = chr(record.levelno) + msg
       self.sock.send(s.encode('utf8'), zmq.NOBLOCK)
     except zmq.error.Again:
       # drop :/

@@ -150,7 +150,7 @@ def main() -> NoReturn:
   while True:
     now_tombstones = set(get_tombstones())
 
-    for fn, _ in (now_tombstones - initial_tombstones):
+    for fn, _ in now_tombstones - initial_tombstones:
       # clear logs if we're not interested in them
       if not should_report:
         try:

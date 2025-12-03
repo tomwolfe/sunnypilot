@@ -5,23 +5,24 @@ import time
 from cereal import log
 from openpilot.system.sensord.sensors.i2c_sensor import Sensor
 
+
 class LSM6DS3_Gyro(Sensor):
-  LSM6DS3_GYRO_I2C_REG_DRDY_CFG  = 0x0B
+  LSM6DS3_GYRO_I2C_REG_DRDY_CFG = 0x0B
   LSM6DS3_GYRO_I2C_REG_INT1_CTRL = 0x0D
-  LSM6DS3_GYRO_I2C_REG_CTRL2_G   = 0x11
-  LSM6DS3_GYRO_I2C_REG_CTRL5_C   = 0x14
-  LSM6DS3_GYRO_I2C_REG_STAT_REG  = 0x1E
-  LSM6DS3_GYRO_I2C_REG_OUTX_L_G  = 0x22
+  LSM6DS3_GYRO_I2C_REG_CTRL2_G = 0x11
+  LSM6DS3_GYRO_I2C_REG_CTRL5_C = 0x14
+  LSM6DS3_GYRO_I2C_REG_STAT_REG = 0x1E
+  LSM6DS3_GYRO_I2C_REG_OUTX_L_G = 0x22
 
-  LSM6DS3_GYRO_ODR_104HZ       = (0b0100 << 4)
-  LSM6DS3_GYRO_INT1_DRDY_G     = 0b10
-  LSM6DS3_GYRO_DRDY_GDA        = 0b10
-  LSM6DS3_GYRO_DRDY_PULSE_MODE = (1 << 7)
+  LSM6DS3_GYRO_ODR_104HZ = 0b0100 << 4
+  LSM6DS3_GYRO_INT1_DRDY_G = 0b10
+  LSM6DS3_GYRO_DRDY_GDA = 0b10
+  LSM6DS3_GYRO_DRDY_PULSE_MODE = 1 << 7
 
-  LSM6DS3_GYRO_ODR_208HZ       = (0b0101 << 4)
-  LSM6DS3_GYRO_FS_2000dps      = (0b11 << 2)
-  LSM6DS3_GYRO_POSITIVE_TEST   = (0b01 << 2)
-  LSM6DS3_GYRO_NEGATIVE_TEST   = (0b11 << 2)
+  LSM6DS3_GYRO_ODR_208HZ = 0b0101 << 4
+  LSM6DS3_GYRO_FS_2000dps = 0b11 << 2
+  LSM6DS3_GYRO_POSITIVE_TEST = 0b01 << 2
+  LSM6DS3_GYRO_NEGATIVE_TEST = 0b11 << 2
   LSM6DS3_GYRO_MIN_ST_LIMIT_mdps = 150000.0
   LSM6DS3_GYRO_MAX_ST_LIMIT_mdps = 700000.0
 
@@ -46,12 +47,14 @@ class LSM6DS3_Gyro(Sensor):
       self.self_test(self.LSM6DS3_GYRO_NEGATIVE_TEST)
 
     # actual init
-    self.writes((
-      # TODO: set scale. Default is +- 250 deg/s
-      (self.LSM6DS3_GYRO_I2C_REG_CTRL2_G, self.LSM6DS3_GYRO_ODR_104HZ),
-      # Configure data ready signal to pulse mode
-      (self.LSM6DS3_GYRO_I2C_REG_DRDY_CFG, self.LSM6DS3_GYRO_DRDY_PULSE_MODE),
-    ))
+    self.writes(
+      (
+        # TODO: set scale. Default is +- 250 deg/s
+        (self.LSM6DS3_GYRO_I2C_REG_CTRL2_G, self.LSM6DS3_GYRO_ODR_104HZ),
+        # Configure data ready signal to pulse mode
+        (self.LSM6DS3_GYRO_I2C_REG_DRDY_CFG, self.LSM6DS3_GYRO_DRDY_PULSE_MODE),
+      )
+    )
     value = self.read(self.LSM6DS3_GYRO_I2C_REG_INT1_CTRL, 1)[0]
     value |= self.LSM6DS3_GYRO_INT1_DRDY_G
     self.write(self.LSM6DS3_GYRO_I2C_REG_INT1_CTRL, value)
@@ -75,7 +78,7 @@ class LSM6DS3_Gyro(Sensor):
     event.timestamp = ts
     event.version = 2
     event.sensor = 5  # SENSOR_GYRO_UNCALIBRATED
-    event.type = 16   # SENSOR_TYPE_GYROSCOPE_UNCALIBRATED
+    event.type = 16  # SENSOR_TYPE_GYROSCOPE_UNCALIBRATED
     event.source = self.source
     g = event.init('gyroUncalibrated')
     g.v = xyz
@@ -106,7 +109,7 @@ class LSM6DS3_Gyro(Sensor):
       self._wait_for_data_ready()
       b = self.read(self.LSM6DS3_GYRO_I2C_REG_OUTX_L_G, 6)
       for j in range(3):
-        val = self.parse_16bit(b[j*2], b[j*2+1]) * 70.0  # mdps/LSB for 2000 dps
+        val = self.parse_16bit(b[j * 2], b[j * 2 + 1]) * 70.0  # mdps/LSB for 2000 dps
         out_buf[j] += val
     return [x / 5.0 for x in out_buf]
 
@@ -136,6 +139,7 @@ class LSM6DS3_Gyro(Sensor):
     for val in test_val:
       if val < self.LSM6DS3_GYRO_MIN_ST_LIMIT_mdps or val > self.LSM6DS3_GYRO_MAX_ST_LIMIT_mdps:
         raise Exception(f"Gyroscope self-test failed for test type {test_type}")
+
 
 if __name__ == "__main__":
   s = LSM6DS3_Gyro(1)

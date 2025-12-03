@@ -14,13 +14,13 @@ from openpilot.system.ui.widgets.button import Button, ButtonStyle
 from openpilot.system.ui.widgets.label import gui_label, gui_text_box
 
 USERDATA = "/dev/disk/by-partlabel/userdata"
-TIMEOUT = 3*60
+TIMEOUT = 3 * 60
 
 
 class ResetMode(IntEnum):
   USER_RESET = 0  # user initiated a factory reset from openpilot
-  RECOVER = 1     # userdata is corrupt for some reason, give a chance to recover
-  FORMAT = 2      # finish up a factory reset from a tool that doesn't flash an empty partition to userdata
+  RECOVER = 1  # userdata is corrupt for some reason, give a chance to recover
+  FORMAT = 2  # finish up a factory reset from a tool that doesn't flash an empty partition to userdata
 
 
 class ResetState(IntEnum):

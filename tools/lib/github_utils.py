@@ -2,6 +2,7 @@ import base64
 import requests
 from http import HTTPMethod
 
+
 class GithubUtils:
   def __init__(self, api_token, data_token, owner='commaai', api_repo='openpilot', data_repo='ci-artifacts'):
     self.OWNER = owner
@@ -21,8 +22,7 @@ class GithubUtils:
   def api_call(self, path, data="", method=HTTPMethod.GET, accept="", data_call=False, raise_on_failure=True):
     token = self.DATA_TOKEN if data_call else self.API_TOKEN
     if token:
-      headers = {"Authorization": f"Bearer {self.DATA_TOKEN if data_call else self.API_TOKEN}", \
-                 "Accept": f"application/vnd.github{accept}+json"}
+      headers = {"Authorization": f"Bearer {self.DATA_TOKEN if data_call else self.API_TOKEN}", "Accept": f"application/vnd.github{accept}+json"}
     else:
       headers = {}
     path = f'{self.DATA_ROUTE if data_call else self.API_ROUTE}/{path}'
@@ -50,7 +50,7 @@ class GithubUtils:
 
   def upload_files(self, bucket, files):
     self.create_bucket(bucket)
-    for file_name,path in files:
+    for file_name, path in files:
       self.upload_file(bucket, path, file_name)
 
   def create_bucket(self, bucket):
@@ -102,11 +102,11 @@ class GithubUtils:
   def comment_images_on_pr(self, title, commenter, pr_branch, bucket, images):
     self.upload_files(bucket, images)
     table = [f'<details><summary>{title}</summary><table>']
-    for i,f in enumerate(images):
+    for i, f in enumerate(images):
       if not (i % 2):
         table.append('<tr>')
       table.append(f'<td><img src=\\"https://raw.githubusercontent.com/{self.OWNER}/{self.DATA_REPO}/{bucket}/{f[0]}\\"></td>')
-      if (i % 2):
+      if i % 2:
         table.append('</tr>')
     table.append('</table></details>')
     table = ''.join(table)

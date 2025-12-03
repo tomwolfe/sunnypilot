@@ -54,7 +54,7 @@ class TestManager:
   @pytest.mark.skip("this test is flaky the way it's currently written, should be moved to test_onroad")
   def test_clean_exit(self, subtests):
     """
-      Ensure all processes exit cleanly when stopped.
+    Ensure all processes exit cleanly when stopped.
     """
     HARDWARE.set_power_save(False)
     manager.manager_init()

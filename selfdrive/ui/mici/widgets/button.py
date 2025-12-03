@@ -15,10 +15,10 @@ except ImportError:
   Params = None
 
 SCROLLING_SPEED_PX_S = 50
-COMPLICATION_SIZE    = 36
-LABEL_COLOR          = rl.WHITE
+COMPLICATION_SIZE = 36
+LABEL_COLOR = rl.WHITE
 LABEL_HORIZONTAL_PADDING = 40
-COMPLICATION_GREY    = rl.Color(0xAA, 0xAA, 0xAA, 255)
+COMPLICATION_GREY = rl.Color(0xAA, 0xAA, 0xAA, 255)
 PRESSED_SCALE = 1.15 if DO_ZOOM else 1.07
 
 
@@ -66,8 +66,12 @@ class BigCircleButton(Widget):
 
     # draw icon
     icon_color = rl.WHITE if self.enabled else rl.Color(255, 255, 255, int(255 * 0.35))
-    rl.draw_texture(self._txt_icon, int(self._rect.x + (self._rect.width - self._txt_icon.width) / 2),
-                    int(self._rect.y + (self._rect.height - self._txt_icon.height) / 2), icon_color)
+    rl.draw_texture(
+      self._txt_icon,
+      int(self._rect.x + (self._rect.width - self._txt_icon.width) / 2),
+      int(self._rect.y + (self._rect.height - self._txt_icon.height) / 2),
+      icon_color,
+    )
 
 
 class BigCircleToggle(BigCircleButton):
@@ -96,9 +100,12 @@ class BigCircleToggle(BigCircleButton):
     super()._render(_)
 
     # draw status icon
-    rl.draw_texture(self._txt_toggle_enabled if self._checked else self._txt_toggle_disabled,
-                    int(self._rect.x + (self._rect.width - self._txt_toggle_enabled.width) / 2),
-                    int(self._rect.y + 5), rl.WHITE)
+    rl.draw_texture(
+      self._txt_toggle_enabled if self._checked else self._txt_toggle_disabled,
+      int(self._rect.x + (self._rect.width - self._txt_toggle_enabled.width) / 2),
+      int(self._rect.y + 5),
+      rl.WHITE,
+    )
 
 
 class BigButton(Widget):
@@ -118,17 +125,29 @@ class BigButton(Widget):
     self._label_font = gui_app.font(FontWeight.DISPLAY)
     self._value_font = gui_app.font(FontWeight.ROMAN)
 
-    self._label = MiciLabel(text, font_size=self._get_label_font_size(), width=int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2),
-                            font_weight=FontWeight.DISPLAY, color=LABEL_COLOR,
-                            alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM, wrap_text=True)
-    self._sub_label = MiciLabel(value, font_size=COMPLICATION_SIZE, width=int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2),
-                                font_weight=FontWeight.ROMAN, color=COMPLICATION_GREY,
-                                alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM, wrap_text=True)
+    self._label = MiciLabel(
+      text,
+      font_size=self._get_label_font_size(),
+      width=int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2),
+      font_weight=FontWeight.DISPLAY,
+      color=LABEL_COLOR,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM,
+      wrap_text=True,
+    )
+    self._sub_label = MiciLabel(
+      value,
+      font_size=COMPLICATION_SIZE,
+      width=int(self._rect.width - LABEL_HORIZONTAL_PADDING * 2),
+      font_weight=FontWeight.ROMAN,
+      color=COMPLICATION_GREY,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM,
+      wrap_text=True,
+    )
 
     self._load_images()
 
     # internal state
-    self._scroll_offset = 0       # in pixels
+    self._scroll_offset = 0  # in pixels
     self._needs_scroll = measure_text_cached(self._label_font, text, self._get_label_font_size()).x + 25 > self._rect.width
     self._scroll_timer = 0
     self._scroll_state = ScrollState.PRE_SCROLL
@@ -288,8 +307,7 @@ class BigToggle(BigButton):
 
 
 class BigMultiToggle(BigToggle):
-  def __init__(self, text: str, options: list[str], toggle_callback: Callable = None,
-               select_callback: Callable = None):
+  def __init__(self, text: str, options: list[str], toggle_callback: Callable = None, select_callback: Callable = None):
     super().__init__(text, "", toggle_callback=toggle_callback)
     assert len(options) > 0
     self._options = options
@@ -327,8 +345,7 @@ class BigMultiToggle(BigToggle):
 
 
 class BigMultiParamToggle(BigMultiToggle):
-  def __init__(self, text: str, param: str, options: list[str], toggle_callback: Callable = None,
-               select_callback: Callable = None):
+  def __init__(self, text: str, param: str, options: list[str], toggle_callback: Callable = None, select_callback: Callable = None):
     super().__init__(text, options, toggle_callback, select_callback)
     self._param = param
 

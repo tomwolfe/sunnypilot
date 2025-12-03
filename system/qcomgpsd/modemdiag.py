@@ -3,6 +3,7 @@ from serial import Serial
 from crcmod import mkCrcFun
 from struct import pack, unpack_from, calcsize
 
+
 class ModemDiag:
   def __init__(self):
     self.serial = self.open_serial()
@@ -15,7 +16,7 @@ class ModemDiag:
     serial.reset_output_buffer()
     return serial
 
-  ccitt_crc16 = mkCrcFun(0x11021, initCrc=0, xorOut=0xffff)
+  ccitt_crc16 = mkCrcFun(0x11021, initCrc=0, xorOut=0xFFFF)
   ESCAPE_CHAR = b'\x7d'
   TRAILER_CHAR = b'\x7e'
 
@@ -51,6 +52,7 @@ class ModemDiag:
   def send(self, packet_type, packet_payload):
     self.serial.write(self.hdlc_encapsulate(bytes([packet_type]) + packet_payload))
 
+
 # *** end class ***
 
 DIAG_LOG_F = 16
@@ -59,6 +61,7 @@ LOG_CONFIG_RETRIEVE_ID_RANGES_OP = 1
 LOG_CONFIG_SET_MASK_OP = 3
 LOG_CONFIG_SUCCESS_S = 0
 
+
 def send_recv(diag, packet_type, packet_payload):
   diag.send(packet_type, packet_payload)
   while 1:
@@ -66,6 +69,7 @@ def send_recv(diag, packet_type, packet_payload):
     if opcode != DIAG_LOG_F:
       break
   return opcode, payload
+
 
 def setup_logs(diag, types_to_log):
   opcode, payload = send_recv(diag, DIAG_LOG_CONFIG_F, pack('<3xI', LOG_CONFIG_RETRIEVE_ID_RANGES_OP))
@@ -79,15 +83,11 @@ def setup_logs(diag, types_to_log):
 
   for log_type, log_mask_bitsize in enumerate(log_masks):
     if log_mask_bitsize:
-      log_mask = [0] * ((log_mask_bitsize+7)//8)
+      log_mask = [0] * ((log_mask_bitsize + 7) // 8)
       for i in range(log_mask_bitsize):
-        if ((log_type<<12)|i) in types_to_log:
-          log_mask[i//8] |= 1 << (i%8)
-      opcode, payload = send_recv(diag, DIAG_LOG_CONFIG_F, pack('<3xIII',
-          LOG_CONFIG_SET_MASK_OP,
-          log_type,
-          log_mask_bitsize
-      ) + bytes(log_mask))
+        if ((log_type << 12) | i) in types_to_log:
+          log_mask[i // 8] |= 1 << (i % 8)
+      opcode, payload = send_recv(diag, DIAG_LOG_CONFIG_F, pack('<3xIII', LOG_CONFIG_SET_MASK_OP, log_type, log_mask_bitsize) + bytes(log_mask))
       assert opcode == DIAG_LOG_CONFIG_F
       operation, status = unpack_from(header_spec, payload)
       assert operation == LOG_CONFIG_SET_MASK_OP

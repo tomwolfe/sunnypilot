@@ -11,6 +11,7 @@ from openpilot.tools.sim.lib.common import SimulatorState
 
 class SimulatedCar:
   """Simulates a honda civic 2022 (panda state + can messages) to OpenPilot"""
+
   packer = CANPacker("honda_bosch_radarless_generated")
 
   def __init__(self):
@@ -35,14 +36,11 @@ class SimulatedCar:
 
     # *** powertrain bus ***
 
-    speed = simulator_state.speed * 3.6 # convert m/s to kph
+    speed = simulator_state.speed * 3.6  # convert m/s to kph
     msg.append(self.packer.make_can_msg("ENGINE_DATA", 0, {"XMISSION_SPEED": speed}))
-    msg.append(self.packer.make_can_msg("WHEEL_SPEEDS", 0, {
-      "WHEEL_SPEED_FL": speed,
-      "WHEEL_SPEED_FR": speed,
-      "WHEEL_SPEED_RL": speed,
-      "WHEEL_SPEED_RR": speed
-    }))
+    msg.append(
+      self.packer.make_can_msg("WHEEL_SPEEDS", 0, {"WHEEL_SPEED_FL": speed, "WHEEL_SPEED_FR": speed, "WHEEL_SPEED_RL": speed, "WHEEL_SPEED_RR": speed})
+    )
 
     msg.append(self.packer.make_can_msg("SCM_BUTTONS", 0, {"CRUISE_BUTTONS": simulator_state.cruise_button}))
 
@@ -58,18 +56,16 @@ class SimulatedCar:
     msg.append(self.packer.make_can_msg("DOORS_STATUS", 0, {}))
     msg.append(self.packer.make_can_msg("CRUISE", 0, {}))
     msg.append(self.packer.make_can_msg("CRUISE_FAULT_STATUS", 0, {}))
-    msg.append(self.packer.make_can_msg("SCM_FEEDBACK", 0,
-                                    {
-                                      "MAIN_ON": 1,
-                                      "LEFT_BLINKER": simulator_state.left_blinker,
-                                      "RIGHT_BLINKER": simulator_state.right_blinker
-                                    }))
-    msg.append(self.packer.make_can_msg("POWERTRAIN_DATA", 0,
-                                    {
-                                    "ACC_STATUS": int(simulator_state.is_engaged),
-                                    "PEDAL_GAS": simulator_state.user_gas,
-                                    "BRAKE_PRESSED": simulator_state.user_brake > 0
-                                    }))
+    msg.append(
+      self.packer.make_can_msg("SCM_FEEDBACK", 0, {"MAIN_ON": 1, "LEFT_BLINKER": simulator_state.left_blinker, "RIGHT_BLINKER": simulator_state.right_blinker})
+    )
+    msg.append(
+      self.packer.make_can_msg(
+        "POWERTRAIN_DATA",
+        0,
+        {"ACC_STATUS": int(simulator_state.is_engaged), "PEDAL_GAS": simulator_state.user_gas, "BRAKE_PRESSED": simulator_state.user_brake > 0},
+      )
+    )
     msg.append(self.packer.make_can_msg("CAR_SPEED", 0, {}))
 
     # *** cam bus ***
@@ -102,7 +98,7 @@ class SimulatedCar:
     try:
       self.send_can_messages(simulator_state)
 
-      if self.idx % 50 == 0: # only send panda states at 2hz
+      if self.idx % 50 == 0:  # only send panda states at 2hz
         self.send_panda_state(simulator_state)
 
       self.idx += 1

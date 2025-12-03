@@ -39,21 +39,24 @@ ALL_REQUESTS = {tuple(r.request) for config in FW_QUERY_CONFIGS.values() for r i
 
 def get_fuzzy_car_interface(car_name: str, draw: DrawType) -> CarInterfaceBase:
   # Fuzzy CAN fingerprints and FW versions to test more states of the CarInterface
-  fingerprint_strategy = st.fixed_dictionaries({0: st.dictionaries(st.integers(min_value=0, max_value=0x800),
-                                                                   st.sampled_from(DLC_TO_LEN))})
+  fingerprint_strategy = st.fixed_dictionaries({0: st.dictionaries(st.integers(min_value=0, max_value=0x800), st.sampled_from(DLC_TO_LEN))})
 
   # only pick from possible ecus to reduce search space
-  car_fw_strategy = st.lists(st.builds(
-    lambda fw, req: structs.CarParams.CarFw(ecu=fw[0], address=fw[1], subAddress=fw[2] or 0, request=req),
-    st.sampled_from(sorted(ALL_ECUS)),
-    st.sampled_from(sorted(ALL_REQUESTS)),
-  ))
+  car_fw_strategy = st.lists(
+    st.builds(
+      lambda fw, req: structs.CarParams.CarFw(ecu=fw[0], address=fw[1], subAddress=fw[2] or 0, request=req),
+      st.sampled_from(sorted(ALL_ECUS)),
+      st.sampled_from(sorted(ALL_REQUESTS)),
+    )
+  )
 
-  params_strategy = st.fixed_dictionaries({
-    'fingerprints': fingerprint_strategy,
-    'car_fw': car_fw_strategy,
-    'alpha_long': st.booleans(),
-  })
+  params_strategy = st.fixed_dictionaries(
+    {
+      'fingerprints': fingerprint_strategy,
+      'car_fw': car_fw_strategy,
+      'alpha_long': st.booleans(),
+    }
+  )
 
   params: dict = draw(params_strategy)
   # reduce search space by duplicating CAN fingerprints across all buses
@@ -61,10 +64,10 @@ def get_fuzzy_car_interface(car_name: str, draw: DrawType) -> CarInterfaceBase:
 
   # initialize car interface
   CarInterface = interfaces[car_name]
-  car_params = CarInterface.get_params(car_name, params['fingerprints'], params['car_fw'],
-                                       alpha_long=params['alpha_long'], is_release=False, docs=False)
-  car_params_sp = CarInterface.get_params_sp(car_params, car_name, params['fingerprints'], params['car_fw'],
-                                             alpha_long=params['alpha_long'], is_release_sp=False, docs=False)
+  car_params = CarInterface.get_params(car_name, params['fingerprints'], params['car_fw'], alpha_long=params['alpha_long'], is_release=False, docs=False)
+  car_params_sp = CarInterface.get_params_sp(
+    car_params, car_name, params['fingerprints'], params['car_fw'], alpha_long=params['alpha_long'], is_release_sp=False, docs=False
+  )
   result: CarInterfaceBase = CarInterface(car_params, car_params_sp)
   return result
 
@@ -73,8 +76,7 @@ class TestCarInterfaces:
   # FIXME: Due to the lists used in carParams, Phase.target is very slow and will cause
   #  many generated examples to overrun when max_examples > ~20, don't use it
   @parameterized.expand([(car,) for car in sorted(PLATFORMS)] + [MOCK.MOCK])
-  @settings(max_examples=MAX_EXAMPLES, deadline=None,
-            phases=(Phase.reuse, Phase.generate, Phase.shrink))
+  @settings(max_examples=MAX_EXAMPLES, deadline=None, phases=(Phase.reuse, Phase.generate, Phase.shrink))
   @given(data=st.data())
   def test_car_interfaces(self, car_name, data):
     car_interface = get_fuzzy_car_interface(car_name, data.draw)

@@ -10,6 +10,7 @@ from openpilot.selfdrive.ui.update_translations import LANGUAGES_FILE, TRANSLATI
 BADGE_HEIGHT = 20 + 8
 SHIELDS_URL = "https://img.shields.io/badge"
 
+
 def parse_po_file(file_path):
   """
   Parse a .po file and count total and unfinished translations.
@@ -50,7 +51,7 @@ def parse_po_file(file_path):
       if msgstr_idx is not None:
         # Check if any continuation lines have content
         has_content = False
-        for line in lines[msgstr_idx + 1:]:
+        for line in lines[msgstr_idx + 1 :]:
           stripped = line.strip()
           # Continuation line with content
           if stripped.startswith('"') and len(stripped) > 2:
@@ -65,6 +66,7 @@ def parse_po_file(file_path):
 
   return (total_translations, unfinished_translations)
 
+
 if __name__ == "__main__":
   with open(LANGUAGES_FILE) as f:
     translation_files = json.load(f)
@@ -76,7 +78,7 @@ if __name__ == "__main__":
 
     total_translations, unfinished_translations = parse_po_file(po_file_path)
 
-    percent_finished = int(100 - (unfinished_translations / total_translations * 100.)) if total_translations > 0 else 0
+    percent_finished = int(100 - (unfinished_translations / total_translations * 100.0)) if total_translations > 0 else 0
     color = f"rgb{(94, 188, 0) if percent_finished == 100 else (248, 255, 50) if percent_finished > 90 else (204, 55, 27)}"
 
     # Download badge
@@ -100,8 +102,11 @@ if __name__ == "__main__":
 
     badge_svg.extend([f'<g transform="translate(0, {idx * BADGE_HEIGHT})">', content_svg, "</g>"])
 
-  badge_svg.insert(0, '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ' +
-                   f'height="{len(translation_files) * BADGE_HEIGHT}" width="{max_badge_width}">')
+  badge_svg.insert(
+    0,
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+    + f'height="{len(translation_files) * BADGE_HEIGHT}" width="{max_badge_width}">',
+  )
   badge_svg.append("</svg>")
 
   with open(os.path.join(BASEDIR, "translation_badge.svg"), "w") as badge_f:

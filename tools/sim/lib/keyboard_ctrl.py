@@ -3,8 +3,7 @@ import termios
 import time
 
 from multiprocessing import Queue
-from termios import (BRKINT, CS8, CSIZE, ECHO, ICANON, ICRNL, IEXTEN, INPCK,
-                     ISTRIP, IXON, PARENB, VMIN, VTIME)
+from termios import BRKINT, CS8, CSIZE, ECHO, ICANON, ICRNL, IEXTEN, INPCK, ISTRIP, IXON, PARENB, VMIN, VTIME
 from typing import NoReturn
 
 from openpilot.tools.sim.bridge.common import QueueMessage, control_cmd_gen
@@ -39,7 +38,7 @@ def getch() -> str:
     # set
     mode = old_settings.copy()
     mode[IFLAG] &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON)
-    #mode[OFLAG] &= ~(OPOST)
+    # mode[OFLAG] &= ~(OPOST)
     mode[CFLAG] &= ~(CSIZE | PARENB)
     mode[CFLAG] |= CS8
     mode[LFLAG] &= ~(ECHO | ICANON | IEXTEN)
@@ -52,8 +51,10 @@ def getch() -> str:
     termios.tcsetattr(STDIN_FD, termios.TCSADRAIN, old_settings)
   return ch
 
+
 def print_keyboard_help():
   print(f"Keyboard Commands:\n{KEYBOARD_HELP}")
+
 
 def keyboard_poll_thread(q: 'Queue[QueueMessage]'):
   print_keyboard_help()
@@ -88,13 +89,16 @@ def keyboard_poll_thread(q: 'Queue[QueueMessage]'):
     else:
       print_keyboard_help()
 
+
 def test(q: 'Queue[str]') -> NoReturn:
   while True:
     print([q.get_nowait() for _ in range(q.qsize())] or None)
     time.sleep(0.25)
 
+
 if __name__ == '__main__':
   from multiprocessing import Process, Queue
+
   q: 'Queue[QueueMessage]' = Queue()
   p = Process(target=test, args=(q,))
   p.daemon = True

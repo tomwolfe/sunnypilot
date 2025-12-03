@@ -7,8 +7,7 @@ def test_cal_percent():
   msg = est.get_msg()
   assert msg.liveTorqueParameters.calPerc == 0
 
-  for (low, high), min_pts in zip(est.filtered_points.buckets.keys(),
-                                  est.filtered_points.buckets_min_points.values(), strict=True):
+  for (low, high), min_pts in zip(est.filtered_points.buckets.keys(), est.filtered_points.buckets_min_points.values(), strict=True):
     for _ in range(int(min_pts)):
       est.filtered_points.add_point((low + high) / 2.0, 0.0)
 

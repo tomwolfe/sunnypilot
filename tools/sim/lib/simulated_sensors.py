@@ -7,6 +7,7 @@ from openpilot.common.realtime import DT_DMON
 from openpilot.tools.sim.lib.camerad import Camerad
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
   from openpilot.tools.sim.lib.common import World, SimulatorState
 
@@ -73,20 +74,15 @@ class SimulatedSensors:
   def send_peripheral_state(self):
     dat = messaging.new_message('peripheralState')
     dat.valid = True
-    dat.peripheralState = {
-      'pandaType': log.PandaState.PandaType.blackPanda,
-      'voltage': 12000,
-      'current': 5678,
-      'fanSpeedRpm': 1000
-    }
+    dat.peripheralState = {'pandaType': log.PandaState.PandaType.blackPanda, 'voltage': 12000, 'current': 5678, 'fanSpeedRpm': 1000}
     self.pm.send('peripheralState', dat)
 
   def send_fake_driver_monitoring(self):
     # dmonitoringmodeld output
     dat = messaging.new_message('driverStateV2')
-    dat.driverStateV2.leftDriverData.faceOrientation = [0., 0., 0.]
+    dat.driverStateV2.leftDriverData.faceOrientation = [0.0, 0.0, 0.0]
     dat.driverStateV2.leftDriverData.faceProb = 1.0
-    dat.driverStateV2.rightDriverData.faceOrientation = [0., 0., 0.]
+    dat.driverStateV2.rightDriverData.faceOrientation = [0.0, 0.0, 0.0]
     dat.driverStateV2.rightDriverData.faceProb = 1.0
     self.pm.send('driverStateV2', dat)
 
@@ -95,7 +91,7 @@ class SimulatedSensors:
     dat.driverMonitoringState = {
       "faceDetected": True,
       "isDistracted": False,
-      "awarenessStatus": 1.,
+      "awarenessStatus": 1.0,
     }
     self.pm.send('driverMonitoringState', dat)
 
@@ -113,7 +109,7 @@ class SimulatedSensors:
     self.send_imu_message(simulator_state)
     self.send_gps_message(simulator_state)
 
-    if (now - self.last_dmon_update) > DT_DMON/2:
+    if (now - self.last_dmon_update) > DT_DMON / 2:
       self.send_fake_driver_monitoring()
       self.last_dmon_update = now
 

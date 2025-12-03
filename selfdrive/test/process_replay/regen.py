@@ -7,8 +7,16 @@ import capnp
 from typing import Any
 from collections.abc import Iterable
 
-from openpilot.selfdrive.test.process_replay.process_replay import CONFIGS, FAKEDATA, ProcessConfig, replay_process, get_process_config, \
-                                                                   check_openpilot_enabled, check_most_messages_valid, get_custom_params_from_lr
+from openpilot.selfdrive.test.process_replay.process_replay import (
+  CONFIGS,
+  FAKEDATA,
+  ProcessConfig,
+  replay_process,
+  get_process_config,
+  check_openpilot_enabled,
+  check_most_messages_valid,
+  get_custom_params_from_lr,
+)
 from openpilot.selfdrive.test.update_ci_routes import upload_route
 from openpilot.tools.lib.framereader import FrameReader
 from openpilot.tools.lib.logreader import LogReader, LogIterable, save_log
@@ -16,14 +24,13 @@ from openpilot.tools.lib.openpilotci import get_url
 
 
 def regen_segment(
-  lr: LogIterable, frs: dict[str, Any] = None,
-  processes: Iterable[ProcessConfig] = CONFIGS, disable_tqdm: bool = False
+  lr: LogIterable, frs: dict[str, Any] = None, processes: Iterable[ProcessConfig] = CONFIGS, disable_tqdm: bool = False
 ) -> list[capnp._DynamicStructReader]:
   all_msgs = sorted(lr, key=lambda m: m.logMonoTime)
   custom_params = get_custom_params_from_lr(all_msgs)
 
   print("Replayed processes:", [p.proc_name for p in processes])
-  print("\n\n", "*"*30, "\n\n", sep="")
+  print("\n\n", "*" * 30, "\n\n", sep="")
 
   output_logs = replay_process(processes, all_msgs, frs, return_all_logs=True, custom_params=custom_params, disable_progress=disable_tqdm)
 
@@ -31,7 +38,7 @@ def regen_segment(
 
 
 def setup_data_readers(
-    route: str, sidx: int, needs_driver_cam: bool = True, needs_road_cam: bool = True, dummy_driver_cam: bool = False
+  route: str, sidx: int, needs_driver_cam: bool = True, needs_road_cam: bool = True, dummy_driver_cam: bool = False
 ) -> tuple[LogReader, dict[str, Any]]:
   lr = LogReader(f"{route}/{sidx}/r")
   frs = {}
@@ -41,7 +48,7 @@ def setup_data_readers(
       frs['wideRoadCameraState'] = FrameReader(get_url(route, str(sidx), "ecamera.hevc"))
   if needs_driver_cam:
     if dummy_driver_cam:
-      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc")) # Use fcam as dummy
+      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc"))  # Use fcam as dummy
     else:
       device_type = next(str(msg.initData.deviceType) for msg in lr if msg.which() == "initData")
       assert device_type != "neo", "Driver camera not supported on neo segments. Use dummy dcamera."
@@ -51,8 +58,13 @@ def setup_data_readers(
 
 
 def regen_and_save(
-  route: str, sidx: int, processes: str | Iterable[str] = "all", outdir: str = FAKEDATA,
-  upload: bool = False, disable_tqdm: bool = False, dummy_driver_cam: bool = False
+  route: str,
+  sidx: int,
+  processes: str | Iterable[str] = "all",
+  outdir: str = FAKEDATA,
+  upload: bool = False,
+  disable_tqdm: bool = False,
+  dummy_driver_cam: bool = False,
 ) -> str:
   if not isinstance(processes, str) and not hasattr(processes, "__iter__"):
     raise ValueError("whitelist_proc must be a string or iterable")
@@ -69,10 +81,13 @@ def regen_and_save(
     replayed_processes = CONFIGS
 
   all_vision_pubs = {pub for cfg in replayed_processes for pub in cfg.vision_pubs}
-  lr, frs = setup_data_readers(route, sidx,
-                               needs_driver_cam="driverCameraState" in all_vision_pubs,
-                               needs_road_cam="roadCameraState" in all_vision_pubs or "wideRoadCameraState" in all_vision_pubs,
-                               dummy_driver_cam=dummy_driver_cam)
+  lr, frs = setup_data_readers(
+    route,
+    sidx,
+    needs_driver_cam="driverCameraState" in all_vision_pubs,
+    needs_road_cam="roadCameraState" in all_vision_pubs or "wideRoadCameraState" in all_vision_pubs,
+    dummy_driver_cam=dummy_driver_cam,
+  )
   output_logs = regen_segment(lr, frs, replayed_processes, disable_tqdm=disable_tqdm)
 
   log_dir = os.path.join(outdir, time.strftime("%Y-%m-%d--%H-%M-%S--0", time.gmtime()))
@@ -82,7 +97,7 @@ def regen_and_save(
   os.makedirs(log_dir)
   save_log(rpath, output_logs, compress=True)
 
-  print("\n\n", "*"*30, "\n\n", sep="")
+  print("\n\n", "*" * 30, "\n\n", sep="")
   print("New route:", rel_log_dir, "\n")
 
   if not check_openpilot_enabled(output_logs):
@@ -97,6 +112,7 @@ def regen_and_save(
 
 
 if __name__ == "__main__":
+
   def comma_separated_list(string):
     return string.split(",")
 
@@ -105,10 +121,12 @@ if __name__ == "__main__":
   parser.add_argument("--upload", action="store_true", help="Upload the new segment to the CI bucket")
   parser.add_argument("--outdir", help="log output dir", default=FAKEDATA)
   parser.add_argument("--dummy-dcamera", action='store_true', help="Use dummy blank driver camera")
-  parser.add_argument("--whitelist-procs", type=comma_separated_list, default=all_procs,
-                      help="Comma-separated whitelist of processes to regen (e.g. controlsd,radard)")
-  parser.add_argument("--blacklist-procs", type=comma_separated_list, default=[],
-                      help="Comma-separated blacklist of processes to regen (e.g. controlsd,radard)")
+  parser.add_argument(
+    "--whitelist-procs", type=comma_separated_list, default=all_procs, help="Comma-separated whitelist of processes to regen (e.g. controlsd,radard)"
+  )
+  parser.add_argument(
+    "--blacklist-procs", type=comma_separated_list, default=[], help="Comma-separated blacklist of processes to regen (e.g. controlsd,radard)"
+  )
   parser.add_argument("route", type=str, help="The source route")
   parser.add_argument("seg", type=int, help="Segment in source route")
   args = parser.parse_args()

@@ -43,6 +43,7 @@ class Bootlog:
       return False
     return self.id < b.id
 
+
 def get_bootlog_from_id(bootlog_id: str) -> Bootlog | None:
   # TODO: implement an API endpoint for this
   bl = Bootlog(bootlog_id)
@@ -50,6 +51,7 @@ def get_bootlog_from_id(bootlog_id: str) -> Bootlog | None:
     if b == bl:
       return b
   return None
+
 
 def get_bootlogs(dongle_id: str) -> list[Bootlog]:
   api = CommaApi(get_token())

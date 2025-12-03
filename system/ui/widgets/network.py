@@ -94,8 +94,9 @@ class NetworkUI(Widget):
 
   def _render(self, _):
     # subtract button
-    content_rect = rl.Rectangle(self._rect.x, self._rect.y + self._nav_button.rect.height + 40,
-                                self._rect.width, self._rect.height - self._nav_button.rect.height - 40)
+    content_rect = rl.Rectangle(
+      self._rect.x, self._rect.y + self._nav_button.rect.height + 40, self._rect.width, self._rect.height - self._nav_button.rect.height - 40
+    )
     if self._current_panel == PanelType.WIFI:
       self._nav_button.text = tr("Advanced")
       self._nav_button.set_position(self._rect.x + self._rect.width - self._nav_button.rect.width, self._rect.y + 20)
@@ -136,18 +137,25 @@ class AdvancedNetworkSettings(Widget):
     # Cellular metered toggle
     cellular_metered = self._params.get_bool("GsmMetered")
     self._cellular_metered_action = ToggleAction(initial_state=cellular_metered)
-    self._cellular_metered_btn = ListItem(lambda: tr("Cellular Metered"),
-                                          description=lambda: tr("Prevent large data uploads when on a metered cellular connection"),
-                                          action_item=self._cellular_metered_action, callback=self._toggle_cellular_metered)
+    self._cellular_metered_btn = ListItem(
+      lambda: tr("Cellular Metered"),
+      description=lambda: tr("Prevent large data uploads when on a metered cellular connection"),
+      action_item=self._cellular_metered_action,
+      callback=self._toggle_cellular_metered,
+    )
 
     # APN setting
     self._apn_btn = button_item(lambda: tr("APN Setting"), lambda: tr("EDIT"), callback=self._edit_apn)
 
     # Wi-Fi metered toggle
-    self._wifi_metered_action = MultipleButtonAction([lambda: tr("default"), lambda: tr("metered"), lambda: tr("unmetered")], 255, 0,
-                                                     callback=self._toggle_wifi_metered)
-    wifi_metered_btn = ListItem(lambda: tr("Wi-Fi Network Metered"), description=lambda: tr("Prevent large data uploads when on a metered Wi-Fi connection"),
-                                action_item=self._wifi_metered_action)
+    self._wifi_metered_action = MultipleButtonAction(
+      [lambda: tr("default"), lambda: tr("metered"), lambda: tr("unmetered")], 255, 0, callback=self._toggle_wifi_metered
+    )
+    wifi_metered_btn = ListItem(
+      lambda: tr("Wi-Fi Network Metered"),
+      description=lambda: tr("Prevent large data uploads when on a metered Wi-Fi connection"),
+      action_item=self._wifi_metered_action,
+    )
 
     items: list[Widget] = [
       tethering_btn,
@@ -290,11 +298,13 @@ class WifiManagerUI(Widget):
     self._networks_buttons: dict[str, Button] = {}
     self._forget_networks_buttons: dict[str, Button] = {}
 
-    self._wifi_manager.add_callbacks(need_auth=self._on_need_auth,
-                                     activated=self._on_activated,
-                                     forgotten=self._on_forgotten,
-                                     networks_updated=self._on_network_updated,
-                                     disconnected=self._on_disconnected)
+    self._wifi_manager.add_callbacks(
+      need_auth=self._on_need_auth,
+      activated=self._on_activated,
+      forgotten=self._on_forgotten,
+      networks_updated=self._on_network_updated,
+      disconnected=self._on_disconnected,
+    )
 
   def show_event(self):
     # start/stop scanning when widget is visible
@@ -450,11 +460,17 @@ class WifiManagerUI(Widget):
   def _on_network_updated(self, networks: list[Network]):
     self._networks = networks
     for n in self._networks:
-      self._networks_buttons[n.ssid] = Button(n.ssid, partial(self._networks_buttons_callback, n), font_size=55,
-                                              text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT, button_style=ButtonStyle.TRANSPARENT_WHITE_TEXT)
+      self._networks_buttons[n.ssid] = Button(
+        n.ssid,
+        partial(self._networks_buttons_callback, n),
+        font_size=55,
+        text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+        button_style=ButtonStyle.TRANSPARENT_WHITE_TEXT,
+      )
       self._networks_buttons[n.ssid].set_touch_valid_callback(lambda: self.scroll_panel.is_touch_valid())
-      self._forget_networks_buttons[n.ssid] = Button(tr("Forget"), partial(self._forget_networks_buttons_callback, n), button_style=ButtonStyle.FORGET_WIFI,
-                                                     font_size=45)
+      self._forget_networks_buttons[n.ssid] = Button(
+        tr("Forget"), partial(self._forget_networks_buttons_callback, n), button_style=ButtonStyle.FORGET_WIFI, font_size=45
+      )
       self._forget_networks_buttons[n.ssid].set_touch_valid_callback(lambda: self.scroll_panel.is_touch_valid())
 
   def _on_need_auth(self, ssid):

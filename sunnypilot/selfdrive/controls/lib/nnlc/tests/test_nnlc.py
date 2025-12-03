@@ -43,10 +43,8 @@ def generate_modelV2():
 
 
 class TestNeuralNetworkLateralControl:
-
   @parameterized.expand([HONDA.HONDA_CIVIC, TOYOTA.TOYOTA_RAV4, HYUNDAI.HYUNDAI_SANTA_CRUZ_1ST_GEN, GM.CHEVROLET_BOLT_EUV])
   def test_saturation(self, car_name):
-
     # Create mock params object similar to the conftest.py fixture
     mock_params = MagicMock()
     param_defaults = {
@@ -61,7 +59,7 @@ class TestNeuralNetworkLateralControl:
       "LateralMaxJerk": "5.0",
       "LateralHighSpeedThreshold": "15.0",
       "LateralHighSpeedKiLimit": "0.15",
-      "LateralCurvatureKiScaler": "0.2"
+      "LateralCurvatureKiScaler": "0.2",
     }
 
     def mock_get(key, block=False):

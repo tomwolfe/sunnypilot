@@ -28,12 +28,14 @@ def set_params_enabled():
   msg.liveCalibration.rpyCalib = [0.0, 0.0, 0.0]
   params.put("CalibrationParams", msg.to_bytes())
 
+
 def release_only(f):
   @wraps(f)
   def wrap(self, *args, **kwargs):
     if "RELEASE" not in os.environ:
       pytest.skip("This test is only for release branches")
     f(self, *args, **kwargs)
+
   return wrap
 
 
@@ -66,6 +68,7 @@ def with_processes(processes, init_time=0, ignore_stopped=None):
         return func(*args, **kwargs)
 
     return wrap
+
   return wrapper
 
 
@@ -104,6 +107,7 @@ def with_http_server(func, handler=http.server.BaseHTTPRequestHandler, setup=Non
   def inner(*args, **kwargs):
     with http_server_context(handler, setup) as (host, port):
       return func(*args, f"http://{host}:{port}", **kwargs)
+
   return inner
 
 

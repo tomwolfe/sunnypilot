@@ -18,7 +18,6 @@ RELAXED_MIN_BUCKET_POINTS = np.array([1, 200, 300, 500, 500, 300, 200, 1])
 ALLOWED_CARS = ['toyota', 'hyundai', 'rivian', 'honda']
 
 
-
 class TorqueEstimatorExt:
   def __init__(self, CP: car.CarParams):
     self.CP = CP
