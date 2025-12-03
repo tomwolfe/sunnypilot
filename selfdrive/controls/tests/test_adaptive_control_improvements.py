@@ -38,6 +38,7 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
         mock_cs.steeringAngleDeg = 5.0
         mock_cs.steeringRateDeg = 2.0
         mock_cs.aEgo = 1.0
+        mock_cs.windshieldWiper = 0.0 # Added to prevent TypeError in _detect_weather_conditions
 
         # Mock the submaster to have liveParameters
         self.controls.sm = Mock()
@@ -176,8 +177,7 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
 
         mock_sm = Mock()
         mock_model = Mock()
-        mock_model.meta = Mock()
-        mock_model.meta.hardBrakePredicted = False
+        mock_model.meta = MagicMock(hardBrakePredicted=False)
         mock_sm.__getitem__ = lambda _, key: {
             'modelV2': mock_model,
             'deviceState': mock_device_state,
@@ -213,8 +213,7 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
 
         mock_sm = Mock()
         mock_model = Mock()
-        mock_model.meta = Mock()
-        mock_model.meta.hardBrakePredicted = True  # Critical situation
+        mock_model.meta = MagicMock(hardBrakePredicted=True)
         mock_sm.__getitem__ = lambda _, key: {
             'modelV2': mock_model,
             'deviceState': mock_device_state,
