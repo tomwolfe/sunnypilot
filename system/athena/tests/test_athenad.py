@@ -333,8 +333,17 @@ class TestAthenadMethods:
     item = athenad.UploadItem(path=fn, url=f"{host}/qlog.zst", headers={}, created_at=int(datetime.now(timezone.utc).timestamp() * 1000), id='', allow_cellular=True)
 
     athenad.upload_queue.put_nowait(item)
-    self._wait_for_upload()
 
+    # Wait for the upload to be picked up by a handler (but don't wait for completion)
+    # This allows us to see the upload in progress with current=True
+    start_time = time.monotonic()
+    item_picked_up = False
+    while time.monotonic() - start_time < 5.0 and not item_picked_up:
+      if any(item is not None for item in athenad.cur_upload_items.values()):
+        item_picked_up = True
+      time.sleep(0.01)
+
+    # Verify that the item appears in the queue with current=True while in progress
     items = dispatcher["listUploadQueue"]()
     assert len(items) == 1
     assert items[0]['current']
