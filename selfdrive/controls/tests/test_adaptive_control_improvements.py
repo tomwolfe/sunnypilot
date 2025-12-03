@@ -4,15 +4,14 @@ Comprehensive tests for the improvements made to the adaptive control system.
 Tests the fixes for all issues identified in the critical review.
 """
 
-import unittest
-from unittest.mock import Mock, patch, MagicMock  # noqa: TID251
 import time
 import math
+from unittest.mock import Mock, patch, MagicMock  # noqa: TID251
 
 from openpilot.selfdrive.controls.controlsd import Controls
 
 
-class TestAdaptiveControlImprovements(unittest.TestCase):
+class TestAdaptiveControlImprovements:
   """Comprehensive tests for the adaptive control system improvements."""
 
   def setup_method(self, method):
@@ -61,7 +60,7 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
     assert 'lateral_accel' in context
     assert 'is_curvy_road' in context
     # Verify that calc_curvature was called
-    self.controls.VM.calc_curvature.assert_called()
+    assert self.controls.VM.calc_curvature.called
 
   def test_improved_circuit_breaker_with_root_cause_analysis(self):
     """Test the improved circuit breaker system with root cause tracking."""
