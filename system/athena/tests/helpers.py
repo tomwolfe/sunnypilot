@@ -66,5 +66,8 @@ class HTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
   def do_PUT(self):
     length = int(self.headers['Content-Length'])
     self.rfile.read(length)
+    # Add a minimal delay to allow for testing of in-progress uploads
+    import time
+    time.sleep(0.05)  # Very short delay to allow observing in-progress state
     self.send_response(201, "Created")
     self.end_headers()
