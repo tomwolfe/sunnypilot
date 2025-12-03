@@ -5,7 +5,7 @@ Tests the interaction between different components of the enhanced control syste
 """
 
 import numpy as np
-from unittest.mock import Mock
+from unittest.mock import Mock  # noqa: TID251
 import time
 
 

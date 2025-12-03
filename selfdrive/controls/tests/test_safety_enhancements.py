@@ -5,7 +5,7 @@ Tests the additional safety features added beyond the basic functionality.
 """
 
 import numpy as np
-from unittest.mock import Mock
+from unittest.mock import Mock  # noqa: TID251
 
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 
