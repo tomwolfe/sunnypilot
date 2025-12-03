@@ -24,23 +24,31 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
 
     def test_driving_context_and_adaptive_gains_integration(self):
         """Test that driving context properly influences adaptive gains."""
-        # Mock a Controls instance to test the interaction between context and gains
-        controls = Mock()
-        controls._calculate_driving_context = lambda cs: {
-            'is_curvy_road': False,
-            'traffic_density': 'low',
-            'weather_condition': 'normal',
-            'time_of_day': 'day',
-            'current_curvature': 0.001,
-            'lateral_accel': 0.5,
-            'long_accel_magnitude': 1.0,
-            'steering_activity': 0.1
-        }
+        # Mock CP (CarParams) and CP_SP (CarParamsSunnyPilot) for Controls initialization
+        mock_CP = Mock()
+        mock_CP.steerRatio = 15.0
+        mock_CP.wheelbase = 2.7
+        mock_CP.longitudinalActuatorDelay = 0.2
+        mock_CP.lateralTuning.which.return_value = 'torque' # Mock to return 'torque' for lateralTuning
+        mock_CP_SP = Mock() # Assuming SunnyPilot CarParams can be an empty mock for this test
+
+        # Create an instance of Controls
+        controls_instance = Controls()
+        controls_instance.CP = mock_CP
+        controls_instance.CP_SP = mock_CP_SP
         
-        from selfdrive.controls.controlsd import Controls as RealControls
-        # Test the actual implementation by calling the relevant functions directly
-        # with mocked dependencies
+        # We need to mock the CI in Controls for initialization, but it's not directly used in the test's scope
+        controls_instance.CI = Mock()
+        controls_instance.VM = Mock()
+        controls_instance.VM.calc_curvature = Mock(return_value=0.001) # Mock calc_curvature
         
+        # Mock sm and its attributes required by _calculate_driving_context and _calculate_contextual_adaptive_gains
+        controls_instance.sm = Mock()
+        controls_instance.sm.valid = {'radarState': True, 'liveParameters': True}
+        controls_instance.sm['liveParameters'] = Mock(angleOffsetDeg=0.0, stiffnessFactor=1.0, steerRatio=15.0, roll=0.0)
+        controls_instance.sm['radarState'] = Mock(leadOne=Mock(status=False), leadTwo=Mock(status=False))
+        controls_instance.sm['carState'] = Mock(vEgo=25.0, steeringAngleDeg=5.0, aEgo=0.0) # Add CS for _detect_weather_conditions
+
         # Create a basic function that mimics the interaction between context and gains
         def test_context_gain_interaction():
             # Simulate different contexts and verify that gains change appropriately
@@ -83,69 +91,11 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
                 }
             ]
             
-            # Import the actual functions to test
-            from selfdrive.controls.controlsd import _calculate_contextual_adaptive_gains, _validate_adaptive_gains
-            
-            # Define the functions locally since they're instance methods
-            def calculate_contextual_adaptive_gains(v_ego, thermal_state, context):
-                """This is a simplified version of the actual method."""
-                # Base gains that get adjusted based on context
-                base_gains = {
-                    'lateral': {
-                        'steer_kp': 1.0,
-                        'steer_ki': 0.1,
-                        'steer_kd': 0.01,
-                    },
-                    'longitudinal': {
-                        'accel_kp': 1.0,
-                        'accel_ki': 0.1,
-                    }
-                }
-
-                # Speed-dependent adjustments
-                speed_factor = min(1.0, v_ego / 30.0)
-                speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
-
-                # Thermal adjustments
-                thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
-
-                # Context-based adjustments
-                context_adjustment = 1.0
-
-                # Reduce gains on curvy roads for smoother steering
-                if context['is_curvy_road']:
-                    context_adjustment *= 0.85
-
-                # Increase caution in high traffic
-                if context['traffic_density'] == 'high':
-                    context_adjustment *= 0.9
-
-                # Reduce gains in poor weather (if we can detect it)
-                if context['weather_condition'] != 'normal':
-                    context_adjustment *= 0.9
-
-                # Apply combined adjustments
-                combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
-
-                # Apply adjustments to base gains
-                adaptive_gains = {
-                    'lateral': {
-                        'steer_kp': base_gains['lateral']['steer_kp'] * combined_adjustment,
-                        'steer_ki': base_gains['lateral']['steer_ki'] * combined_adjustment,
-                        'steer_kd': base_gains['lateral']['steer_kd'] * combined_adjustment,
-                    },
-                    'longitudinal': {
-                        'accel_kp': base_gains['longitudinal']['accel_kp'] * combined_adjustment,
-                        'accel_ki': base_gains['longitudinal']['accel_ki'] * combined_adjustment,
-                    }
-                }
-
-                return adaptive_gains  # Simplified, without validation for this test
-            
             # Test each context
             gains_list = []
             for i, context in enumerate(test_contexts):
-                gains = calculate_contextual_adaptive_gains(v_ego=25.0, thermal_state=0.1, context=context)
+                # Call the actual instance method
+                gains = controls_instance._calculate_contextual_adaptive_gains(v_ego=25.0, thermal_state=0.1, context=context)
                 gains_list.append(gains)
                 
                 # Verify gains are calculated
@@ -162,49 +112,22 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
     def test_fusion_safety_validation_integration(self):
         """Test that sensor fusion properly validates outputs."""
         # Test the fusion validation function with different inputs
-        from selfdrive.controls.lib.longitudinal_planner import _validate_fused_sensor_data
-        
-        def _validate_fused_sensor_data(x, v, a):
-            """
-            Simplified version of the fused sensor validation function for testing.
-            """
-            # Create copies to avoid modifying original arrays directly
-            validated_x = x.copy()
-            validated_v = v.copy() 
-            validated_a = a.copy()
-            
-            for i in range(len(validated_x)):
-                # Validate distance (positive, realistic range)
-                if not np.isnan(validated_x[i]) and not np.isinf(validated_x[i]):
-                    validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)  # 0.1m to 200m range
-                else:
-                    # If invalid, use a safe default (far distance)
-                    validated_x[i] = 200.0
-            
-            for i in range(len(validated_v)):
-                # Validate velocity (realistic relative velocities for lead vehicles)
-                if not np.isnan(validated_v[i]) and not np.isinf(validated_v[i]):
-                    validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)  # -50 to +50 m/s (about -180 to +180 km/h)
-                else:
-                    # If invalid, use a safe default (stationary relative to ego)
-                    validated_v[i] = 0.0
-            
-            for i in range(len(validated_a)):
-                # Validate acceleration (realistic acceleration values)
-                if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
-                    validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # -15 to +8 m/s^2 (extreme but possible)
-                else:
-                    # If invalid, use a safe default (no acceleration)
-                    validated_a[i] = 0.0
-            
-            return validated_x, validated_v, validated_a
+        # Mock CP (CarParams) and CP_SP (CarParamsSunnyPilot) for LongitudinalPlanner initialization
+        mock_CP = Mock()
+        mock_CP.steerRatio = 15.0
+        mock_CP.wheelbase = 2.7
+        mock_CP.longitudinalActuatorDelay = 0.2 # Example value
+        mock_CP_SP = Mock() # Assuming SunnyPilot CarParams can be an empty mock for this test
+
+        # Create an instance of LongitudinalPlanner
+        planner = LongitudinalPlanner(mock_CP, mock_CP_SP)
 
         # Test with normal values
         normal_x = np.array([50.0, 30.0, 20.0])
         normal_v = np.array([5.0, 0.0, -5.0])
         normal_a = np.array([1.0, 0.5, -0.5])
         
-        validated_x, validated_v, validated_a = _validate_fused_sensor_data(
+        validated_x, validated_v, validated_a = planner._validate_fused_sensor_data(
             normal_x, normal_v, normal_a
         )
         
@@ -218,7 +141,7 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
         invalid_v = np.array([5.0, 100.0, float('inf'), -5.0])  # 100.0 and inf are invalid
         invalid_a = np.array([2.0, -20.0, 15.0, -1.0])  # -20.0 and 15.0 are invalid
         
-        validated_invalid_x, validated_invalid_v, validated_invalid_a = _validate_fused_sensor_data(
+        validated_invalid_x, validated_invalid_v, validated_invalid_a = planner._validate_fused_sensor_data(
             invalid_x, invalid_v, invalid_a
         )
         
