@@ -4,12 +4,13 @@ Integration tests for the adaptive control system.
 Tests the interaction between different components of the enhanced control system.
 """
 
+import unittest
 import numpy as np
 from unittest.mock import Mock
 import time
 
 
-class TestIntegrationAdaptiveControl:
+class TestIntegrationAdaptiveControl(unittest.TestCase):
   """Integration tests for the adaptive control system components."""
 
   def setup_method(self, method):
@@ -28,6 +29,12 @@ class TestIntegrationAdaptiveControl:
     mock_CP.wheelbase = 2.7
     mock_CP.longitudinalActuatorDelay = 0.2
     mock_CP.lateralTuning.which.return_value = 'torque'  # Mock to return 'torque' for lateralTuning
+
+    # Create mock_CP_SP
+    mock_CP_SP = Mock()
+    mock_CP_SP.steerRatio = 15.0
+    mock_CP_SP.wheelbase = 2.7
+    mock_CP_SP.longitudinalActuatorDelay = 0.2
 
     # Create a minimal Controls instance using __new__ to avoid __init__ complexity
     from openpilot.selfdrive.controls.controlsd import Controls

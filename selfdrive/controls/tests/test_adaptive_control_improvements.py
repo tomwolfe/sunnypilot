@@ -4,6 +4,7 @@ Comprehensive tests for the improvements made to the adaptive control system.
 Tests the fixes for all issues identified in the critical review.
 """
 
+import unittest
 from unittest.mock import Mock, patch, MagicMock
 import time
 import math
@@ -11,7 +12,7 @@ import math
 from openpilot.selfdrive.controls.controlsd import Controls
 
 
-class TestAdaptiveControlImprovements:
+class TestAdaptiveControlImprovements(unittest.TestCase):
   """Comprehensive tests for the adaptive control system improvements."""
 
   def setup_method(self, method):
