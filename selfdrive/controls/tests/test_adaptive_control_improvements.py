@@ -4,6 +4,7 @@ Comprehensive tests for the improvements made to the adaptive control system.
 Tests the fixes for all issues identified in the critical review.
 """
 
+import unittest
 from unittest.mock import Mock, patch, MagicMock  # noqa: TID251
 import time
 import math
@@ -11,7 +12,7 @@ import math
 from openpilot.selfdrive.controls.controlsd import Controls
 
 
-class TestAdaptiveControlImprovements:
+class TestAdaptiveControlImprovements(unittest.TestCase):
   """Comprehensive tests for the adaptive control system improvements."""
 
   def setup_method(self, method):
@@ -149,7 +150,7 @@ class TestAdaptiveControlImprovements:
         'accel_ki': 0.05,
       }
 
-    self.assertEqual(longitudinal_gains['accel_kp'], 1.0)
+    assert longitudinal_gains['accel_kp'] == 1.0
 
     # Test with invalid structure - should use fallback
     invalid_gains = "invalid_structure"
@@ -163,8 +164,8 @@ class TestAdaptiveControlImprovements:
         'accel_ki': 0.05,
       }
 
-    self.assertEqual(longitudinal_gains['accel_kp'], 0.5)
-    self.assertEqual(longitudinal_gains['accel_ki'], 0.05)
+    assert longitudinal_gains['accel_kp'] == 0.5
+    assert longitudinal_gains['accel_ki'] == 0.05
 
   def test_adaptive_gpu_management_logic(self):
     """Test the adaptive GPU management to address thermal-latency trade-off."""
@@ -204,7 +205,7 @@ class TestAdaptiveControlImprovements:
 
         self.controls._adaptive_gpu_management(mock_cs, mock_sm)
         # Verify the method was called at least once
-        self.assertTrue(mock_open_func.called)
+        assert mock_open_func.called
 
   def test_gpu_management_with_context(self):
     """Test GPU management with proper context handling."""
@@ -256,7 +257,7 @@ class TestAdaptiveControlImprovements:
           # Verify that we at least tried to set the governor (to ondemand, not performance)
           mock_open_func.assert_called_with("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w")
           # The write call should have happened (with either "performance" or "ondemand")
-          self.assertTrue(mock_file.write.called)
+          assert mock_file.write.called
 
     # Clean up any temp performance time after the test to avoid affecting other tests
     if hasattr(self.controls, '_temp_perf_end_time'):
@@ -268,14 +269,14 @@ class TestAdaptiveControlImprovements:
     cb = self.controls._circuit_breakers[breaker_name]
 
     # Initially should be enabled
-    self.assertTrue(self.controls._check_circuit_breaker(breaker_name))
+    assert self.controls._check_circuit_breaker(breaker_name)
 
     # Trigger the circuit breaker to disable it
     for i in range(3):  # Hit max errors
       self.controls._trigger_circuit_breaker(breaker_name, f"Test error {i}")
 
     # Should be disabled now
-    self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+    assert not self.controls._check_circuit_breaker(breaker_name)
 
     # Manually set the last error time to simulate time passing
     original_time = time.monotonic()
