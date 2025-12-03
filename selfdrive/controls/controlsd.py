@@ -933,7 +933,7 @@ class Controls(ControlsExt):
               f.write("performance")
 
             # Log the temporary performance boost for monitoring
-            cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. " + f"Thermal: {thermal_status}, Power: {thermal_pwr}%")
+            cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. Thermal: {thermal_status}, Power: {thermal_pwr}%")
 
             # Set a flag to switch back to ondemand after a short period
             if not hasattr(self, '_temp_perf_end_time'):

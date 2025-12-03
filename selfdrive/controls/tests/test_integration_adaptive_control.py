@@ -4,13 +4,12 @@ Integration tests for the adaptive control system.
 Tests the interaction between different components of the enhanced control system.
 """
 
-import unittest
 import numpy as np
 from unittest.mock import Mock
 import time
 
 
-class TestIntegrationAdaptiveControl(unittest.TestCase):
+class TestIntegrationAdaptiveControl:
   """Integration tests for the adaptive control system components."""
 
   def setup_method(self, method):
@@ -111,13 +110,13 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
         gains_list.append(gains)
 
         # Verify gains are calculated
-        self.assertIn('lateral', gains)
-        self.assertIn('longitudinal', gains)
-        self.assertIn('steer_kp', gains['lateral'])
+        assert 'lateral' in gains
+        assert 'longitudinal' in gains
+        assert 'steer_kp' in gains['lateral']
 
         # Verify they are reasonable values
-        self.assertGreater(gains['lateral']['steer_kp'], 0)
-        self.assertLess(gains['lateral']['steer_kp'], 3.0)  # Upper bound
+        assert gains['lateral']['steer_kp'] > 0
+        assert gains['lateral']['steer_kp'] < 3.0  # Upper bound
 
     test_context_gain_interaction()
 
@@ -228,7 +227,7 @@ class TestIntegrationAdaptiveControl(unittest.TestCase):
       cb['last_error_time'] = time.monotonic()
 
     # Test normal operation
-    self.assertTrue(_check_circuit_breaker('adaptive_gains'))
+    assert _check_circuit_breaker('adaptive_gains')
 
     # Trigger the circuit breaker
     _trigger_circuit_breaker('adaptive_gains', 'test error')

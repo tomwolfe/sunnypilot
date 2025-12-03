@@ -4,7 +4,6 @@ Comprehensive tests for the improvements made to the adaptive control system.
 Tests the fixes for all issues identified in the critical review.
 """
 
-import unittest
 from unittest.mock import Mock, patch, MagicMock
 import time
 import math
@@ -12,7 +11,7 @@ import math
 from openpilot.selfdrive.controls.controlsd import Controls
 
 
-class TestAdaptiveControlImprovements(unittest.TestCase):
+class TestAdaptiveControlImprovements:
   """Comprehensive tests for the adaptive control system improvements."""
 
   def setup_method(self, method):
@@ -106,8 +105,8 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
     for gain_type in fallback_gains:
       for gain_name, gain_value in fallback_gains[gain_type].items():
         # All gains should be relatively low for safety
-        self.assertLess(gain_value, 1.0, f"{gain_name} should be conservative")
-        self.assertGreater(gain_value, 0, f"{gain_name} should be positive")
+        assert gain_value < 1.0, f"{gain_name} should be conservative"
+        assert gain_value > 0, f"{gain_name} should be positive"
 
   def test_circuit_breaker_abuse_prevention(self):
     """Test that circuit breaker prevents abuse with reduced error tolerance."""
@@ -117,9 +116,9 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
     cb = self.controls._circuit_breakers[breaker_name]
 
     # max_errors should be 3 (reduced from 5)
-    self.assertEqual(cb['max_errors'], 3)
+    assert cb['max_errors'] == 3
     # cooldown_period should be 10.0 (increased from 5)
-    self.assertEqual(cb['cooldown_period'], 10.0)
+    assert cb['cooldown_period'] == 10.0
 
     # Test that circuit breaker doesn't reset too quickly
     # First trigger it to disable
@@ -127,14 +126,14 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
       self.controls._trigger_circuit_breaker(breaker_name, f"Error {i}", f"test_{i}")
 
     # Should be disabled
-    self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+    assert not self.controls._check_circuit_breaker(breaker_name)
 
     # Even after cooldown time but before reset time, should not reset
     current_time = time.monotonic()
     cb['last_error_time'] = current_time - 12  # Past cooldown
     cb['last_error_reset_time'] = current_time - 2  # Not yet half of cooldown ago
 
-    self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+    assert not self.controls._check_circuit_breaker(breaker_name)
 
   def test_longitudinal_gains_extraction_safety(self):
     """Test that longitudinal gains extraction handles unexpected structures safely."""
@@ -287,15 +286,15 @@ class TestAdaptiveControlImprovements(unittest.TestCase):
     # the required stable period (cooldown_period / 2 = 5 seconds)
     # Total required time = cooldown (10s) + stable period (5s) = 15s
     # But we only waited 12s, so it should still be disabled
-    self.assertFalse(self.controls._check_circuit_breaker(breaker_name))
+    assert not self.controls._check_circuit_breaker(breaker_name)
 
     # Now set last_error_time to 16 seconds ago (past both cooldown and stable period)
     cb['last_error_time'] = original_time - 16.0
 
     # Should now be able to reset (if we also update last_error_reset_time)
     cb['last_error_reset_time'] = original_time - 16.0
-    self.assertTrue(self.controls._check_circuit_breaker(breaker_name))
+    assert self.controls._check_circuit_breaker(breaker_name)
 
     # Verify it reset properly
-    self.assertTrue(cb['enabled'])
-    self.assertEqual(cb['error_count'], 0)
+    assert cb['enabled']
+    assert cb['error_count'] == 0
