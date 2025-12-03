@@ -78,6 +78,9 @@ When triggered, circuit breakers:
 - **Improved Longitudinal Gain Extraction**: Added safe fallback when adaptive gains structure is unexpected
 - **Adaptive GPU Management**: Intelligent switching between ondemand (thermal safety) and performance (critical situations) governors
 - **Root Cause Analysis**: Circuit breakers now track error patterns to identify systematic issues and cascade failures
+- **Enhanced GPU Thermal Safety**: Additional GPU temperature monitoring with automatic fallback to thermal-safe mode if temperatures exceed safe thresholds
+- **Advanced Radar Reliability**: Improved reliability scoring with angle validation, acceleration plausibility checks, and consistency validation
+- **Enhanced Sensor Fusion Validation**: Additional physical plausibility checks, sustained extreme behavior detection, and acceleration-velocity consistency validation
 
 ## Debugging and Telemetry
 
@@ -129,3 +132,11 @@ When triggered, circuit breakers:
 - Add comprehensive validation and error handling
 - Include detailed logging for debugging
 - Consider impact on overall system complexity
+
+### When Modifying Safety Systems
+- Always maintain conservative fallback behaviors
+- Ensure all physical plausibility checks remain robust
+- Preserve thermal safety mechanisms and GPU management
+- Maintain radar reliability scoring integrity
+- Test all changes under extreme conditions
+- Verify that sensor fusion validation remains effective
