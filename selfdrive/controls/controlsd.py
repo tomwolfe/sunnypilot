@@ -816,6 +816,7 @@ class Controls(ControlsExt):
     """
     Adaptive GPU management to temporarily increase performance when needed for safety-critical operations.
     This addresses the thermal management trade-off by allowing temporary performance boosts when needed.
+    Enhanced with additional safety checks and validation.
     """
     try:
         # Check if we're in a critical situation that may require higher GPU performance
@@ -823,7 +824,7 @@ class Controls(ControlsExt):
             sm['modelV2'].meta.hardBrakePredicted if 'modelV2' in sm and hasattr(sm['modelV2'].meta, 'hardBrakePredicted') else False
         )
 
-        # Check for lead vehicle emergency situations
+        # Enhanced check for lead vehicle emergency situations with better safety validation
         if 'radarState' in sm and sm.valid['radarState']:
             radar_state = sm['radarState']
             for lead in [radar_state.leadOne, radar_state.leadTwo]:
@@ -831,8 +832,17 @@ class Controls(ControlsExt):
                     lead.aLeadK < -3.0 and  # Lead vehicle braking hard
                     lead.dRel < 50.0 and    # Close distance
                     CS.vEgo > 5.0):         # Moving at significant speed
-                    critical_situation = True
-                    break
+                    # Additional safety validation: only consider if the situation is physically plausible
+                    if hasattr(lead, 'vRel') and (lead.vRel < -5.0 or lead.dRel < 20.0):  # Very close or fast approaching
+                        critical_situation = True
+                        break
+
+        # Additional critical situation check: curve ahead detection
+        if 'modelV2' in sm and sm.valid['modelV2'] and hasattr(sm['modelV2'], 'meta'):
+            # Check if model predicts upcoming hard braking or sharp curves
+            if hasattr(sm['modelV2'].meta, 'desiredCurvature') and abs(sm['modelV2'].meta.desiredCurvature) > 0.002:
+                # High curvature prediction indicating sharp turn ahead
+                critical_situation = True
 
         # GPU governor path - check if it exists before attempting to write
         gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
@@ -847,8 +857,8 @@ class Controls(ControlsExt):
             thermal_status = sm['deviceState'].thermalStatus
             thermal_pwr = sm['deviceState'].thermalPerc
 
-            # Only boost if we're not already in thermal danger
-            if thermal_status <= ThermalStatus.yellow and thermal_pwr >= 80:  # Only boost if green/yellow and at least 80% thermal performance
+            # Enhanced thermal safety check: only boost if thermal state is safe
+            if thermal_status <= ThermalStatus.yellow and thermal_pwr >= 75 and thermal_pwr <= 90:  # More precise thermal window
                 # Temporarily switch GPU to performance mode for critical operations
                 # This helps reduce latency during critical driving situations
                 try:
@@ -866,7 +876,7 @@ class Controls(ControlsExt):
                     # If we can't write the governor file, log an error but continue
                     cloudlog.error(f"Failed to set GPU governor to performance mode: {e}")
             else:
-                # If not in critical situation or thermal limits, make sure we're in ondemand
+                # If not in critical situation or thermal limits exceeded, make sure we're in ondemand
                 try:
                     with open(gpu_governor_path, "w") as f:
                         f.write("ondemand")
@@ -890,6 +900,21 @@ class Controls(ControlsExt):
                 delattr(self, '_temp_perf_end_time')
             except (OSError, IOError) as e:
                 cloudlog.error(f"Failed to revert GPU governor to ondemand: {e}")
+
+        # Additional safety: Monitor GPU temperature if available and enforce limits
+        gpu_thermal_path = "/sys/class/kgsl/kgsl-3d0/device/kgsl/kgsl-3d0/temperature"
+        if os.path.exists(gpu_thermal_path):
+            try:
+                with open(gpu_thermal_path, "r") as f:
+                    gpu_temp = float(f.read().strip()) / 1000.0  # Convert from millidegrees if needed
+                    # If GPU temperature is too high, force ondemand regardless of situation
+                    if gpu_temp > 75.0:  # Force thermal safety above 75°C
+                        with open(gpu_governor_path, "w") as f:
+                            f.write("ondemand")
+                        cloudlog.warning(f"GPU temperature too high ({gpu_temp}°C), forced ondemand mode")
+            except (OSError, IOError, ValueError) as e:
+                # If we can't read GPU temperature, continue with current operation
+                pass
     except Exception as e:
         # If we encounter an error in GPU management, continue with current operation
         cloudlog.error(f"Error in adaptive GPU management: {e}")
