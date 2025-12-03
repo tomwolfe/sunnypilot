@@ -297,17 +297,19 @@ CASES = {
 }
 
 # sunnypilot cases
-CASES.update({
-  "settings_sunnylink": setup_settings_sunnylink,
-  "settings_models": setup_settings_models,
-  "settings_steering": setup_settings_steering,
-  "settings_cruise": setup_settings_cruise,
-  "settings_visuals": setup_settings_visuals,
-  "settings_display": setup_settings_display,
-  "settings_osm": setup_settings_osm,
-  "settings_trips": setup_settings_trips,
-  "settings_vehicle": setup_settings_vehicle,
-})
+CASES.update(
+  {
+    "settings_sunnylink": setup_settings_sunnylink,
+    "settings_models": setup_settings_models,
+    "settings_steering": setup_settings_steering,
+    "settings_cruise": setup_settings_cruise,
+    "settings_visuals": setup_settings_visuals,
+    "settings_display": setup_settings_display,
+    "settings_osm": setup_settings_osm,
+    "settings_trips": setup_settings_trips,
+    "settings_vehicle": setup_settings_vehicle,
+  }
+)
 
 
 class TestUI:

@@ -76,7 +76,7 @@ class TestCasync:
 
     # Populate seed with half of the target contents
     with open(self.seed_fn, 'wb') as seed_f:
-      seed_f.write(self.contents[:len(self.contents) // 2])
+      seed_f.write(self.contents[: len(self.contents) // 2])
 
     sources = [('seed', casync.FileChunkReader(self.seed_fn), casync.build_chunk_dict(target))]
     sources += [('remote', casync.RemoteChunkReader(self.store_fn), casync.build_chunk_dict(target))]

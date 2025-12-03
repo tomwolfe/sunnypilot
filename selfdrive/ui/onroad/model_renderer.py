@@ -16,15 +16,15 @@ MIN_DRAW_DISTANCE = 10.0
 MAX_DRAW_DISTANCE = 100.0
 
 THROTTLE_COLORS = [
-  rl.Color(13, 248, 122, 102),   # HSLF(148/360, 0.94, 0.51, 0.4)
-  rl.Color(114, 255, 92, 89),    # HSLF(112/360, 1.0, 0.68, 0.35)
-  rl.Color(114, 255, 92, 0),     # HSLF(112/360, 1.0, 0.68, 0.0)
+  rl.Color(13, 248, 122, 102),  # HSLF(148/360, 0.94, 0.51, 0.4)
+  rl.Color(114, 255, 92, 89),  # HSLF(112/360, 1.0, 0.68, 0.35)
+  rl.Color(114, 255, 92, 0),  # HSLF(112/360, 1.0, 0.68, 0.0)
 ]
 
 NO_THROTTLE_COLORS = [
-  rl.Color(242, 242, 242, 102), # HSLF(148/360, 0.0, 0.95, 0.4)
+  rl.Color(242, 242, 242, 102),  # HSLF(148/360, 0.0, 0.95, 0.4)
   rl.Color(242, 242, 242, 89),  # HSLF(112/360, 0.0, 0.95, 0.35)
-  rl.Color(242, 242, 242, 0),   # HSLF(112/360, 0.0, 0.95, 0.0)
+  rl.Color(242, 242, 242, 0),  # HSLF(112/360, 0.0, 0.95, 0.0)
 ]
 
 
@@ -84,14 +84,11 @@ class ModelRenderer(Widget):
     sm = ui_state.sm
 
     # Check if data is up-to-date
-    if (sm.recv_frame["liveCalibration"] < ui_state.started_frame or
-        sm.recv_frame["modelV2"] < ui_state.started_frame):
+    if sm.recv_frame["liveCalibration"] < ui_state.started_frame or sm.recv_frame["modelV2"] < ui_state.started_frame:
       return
 
     # Set up clipping region
-    self._clip_region = rl.Rectangle(
-      rect.x - CLIP_MARGIN, rect.y - CLIP_MARGIN, rect.width + 2 * CLIP_MARGIN, rect.height + 2 * CLIP_MARGIN
-    )
+    self._clip_region = rl.Rectangle(rect.x - CLIP_MARGIN, rect.y - CLIP_MARGIN, rect.width + 2 * CLIP_MARGIN, rect.height + 2 * CLIP_MARGIN)
 
     # Update state
     self._experimental_mode = sm['selfdriveState'].experimentalMode
@@ -166,9 +163,7 @@ class ModelRenderer(Widget):
 
     # Update lane lines using raw points
     for i, lane_line in enumerate(self._lane_lines):
-      lane_line.projected_points = self._map_line_to_polygon(
-        lane_line.raw_points, 0.025 * self._lane_line_probs[i], 0.0, max_idx, max_distance
-      )
+      lane_line.projected_points = self._map_line_to_polygon(lane_line.raw_points, 0.025 * self._lane_line_probs[i], 0.0, max_idx, max_distance)
 
     # Update road edges using raw points
     for road_edge in self._road_edges:
@@ -180,9 +175,7 @@ class ModelRenderer(Widget):
       max_distance = np.clip(lead_d - min(lead_d * 0.35, 10.0), 0.0, max_distance)
 
     max_idx = self._get_path_length_idx(path_x_array, max_distance)
-    self._path.projected_points = self._map_line_to_polygon(
-      self._path.raw_points, 0.9, self._path_offset_z, max_idx, max_distance, allow_invert=False
-    )
+    self._path.projected_points = self._map_line_to_polygon(self._path.raw_points, 0.9, self._path_offset_z, max_idx, max_distance, allow_invert=False)
 
     self._update_experimental_gradient()
 
@@ -338,7 +331,7 @@ class ModelRenderer(Widget):
       return np.empty((0, 2), dtype=np.float32)
 
     # Slice points and filter non-negative x-coordinates
-    points = line[:max_idx + 1]
+    points = line[: max_idx + 1]
 
     # Interpolate around max_idx so path end is smooth (max_distance is always >= p0.x)
     if 0 < max_idx < line.shape[0] - 1:
@@ -381,14 +374,8 @@ class ModelRenderer(Widget):
     y_min, y_max = clip.y, clip.y + clip.height
 
     # Filter points within clip region
-    left_in_clip = (
-      (left_screen[0] >= x_min) & (left_screen[0] <= x_max) &
-      (left_screen[1] >= y_min) & (left_screen[1] <= y_max)
-    )
-    right_in_clip = (
-      (right_screen[0] >= x_min) & (right_screen[0] <= x_max) &
-      (right_screen[1] >= y_min) & (right_screen[1] <= y_max)
-    )
+    left_in_clip = (left_screen[0] >= x_min) & (left_screen[0] <= x_max) & (left_screen[1] >= y_min) & (left_screen[1] <= y_max)
+    right_in_clip = (right_screen[0] >= x_min) & (right_screen[0] <= x_max) & (right_screen[1] >= y_min) & (right_screen[1] <= y_max)
     both_in_clip = left_in_clip & right_in_clip
 
     if not np.any(both_in_clip):
@@ -412,12 +399,7 @@ class ModelRenderer(Widget):
   @staticmethod
   def _hsla_to_color(h, s, l, a):
     rgb = colorsys.hls_to_rgb(h, l, s)
-    return rl.Color(
-      int(rgb[0] * 255),
-      int(rgb[1] * 255),
-      int(rgb[2] * 255),
-      int(a * 255)
-    )
+    return rl.Color(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), int(a * 255))
 
   @staticmethod
   def _blend_colors(begin_colors, end_colors, t):
@@ -427,9 +409,7 @@ class ModelRenderer(Widget):
       return begin_colors
 
     inv_t = 1.0 - t
-    return [rl.Color(
-      int(inv_t * start.r + t * end.r),
-      int(inv_t * start.g + t * end.g),
-      int(inv_t * start.b + t * end.b),
-      int(inv_t * start.a + t * end.a)
-    ) for start, end in zip(begin_colors, end_colors, strict=True)]
+    return [
+      rl.Color(int(inv_t * start.r + t * end.r), int(inv_t * start.g + t * end.g), int(inv_t * start.b + t * end.b), int(inv_t * start.a + t * end.a))
+      for start, end in zip(begin_colors, end_colors, strict=True)
+    ]

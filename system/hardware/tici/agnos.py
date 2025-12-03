@@ -57,12 +57,12 @@ class StreamingDecompressor:
 def unsparsify(f: StreamingDecompressor) -> Generator[bytes, None, None]:
   # https://source.android.com/devices/bootloader/images#sparse-format
   magic = struct.unpack("I", f.read(4))[0]
-  assert(magic == 0xed26ff3a)
+  assert magic == 0xED26FF3A
 
   # Version
   major = struct.unpack("H", f.read(2))[0]
   minor = struct.unpack("H", f.read(2))[0]
-  assert(major == 1 and minor == 0)
+  assert major == 1 and minor == 0
 
   f.read(2)  # file header size
   f.read(2)  # chunk header size
@@ -75,14 +75,14 @@ def unsparsify(f: StreamingDecompressor) -> Generator[bytes, None, None]:
   for _ in range(num_chunks):
     chunk_type, out_blocks = SPARSE_CHUNK_FMT.unpack(f.read(12))
 
-    if chunk_type == 0xcac1:  # Raw
+    if chunk_type == 0xCAC1:  # Raw
       # TODO: yield in smaller chunks. Yielding only block_sz is too slow. Largest observed data chunk is 252 MB.
       yield f.read(out_blocks * block_sz)
-    elif chunk_type == 0xcac2:  # Fill
+    elif chunk_type == 0xCAC2:  # Fill
       filler = f.read(4) * (block_sz // 4)
       for _ in range(out_blocks):
         yield filler
-    elif chunk_type == 0xcac3:  # Don't care
+    elif chunk_type == 0xCAC3:  # Don't care
       yield b""
     else:
       raise Exception("Unhandled sparse chunk type")
@@ -310,8 +310,7 @@ if __name__ == "__main__":
   import argparse
   import logging
 
-  parser = argparse.ArgumentParser(description="Flash and verify AGNOS update",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="Flash and verify AGNOS update", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   parser.add_argument("--verify", action="store_true", help="Verify and perform swap if update ready")
   parser.add_argument("--swap", action="store_true", help="Verify and perform swap, downloads if necessary")

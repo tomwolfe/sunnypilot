@@ -5,6 +5,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import argparse
 import os
 import re
@@ -56,7 +57,7 @@ def update_mapd_version(ver: str, path: str):
     if not found and line.startswith("VERSION ="):
       new_lines.append(f'VERSION = "{ver}"\n')
       found = True
-      new_lines.extend(lines[lines.index(line) + 1:])
+      new_lines.extend(lines[lines.index(line) + 1 :])
       break
     else:
       new_lines.append(line)

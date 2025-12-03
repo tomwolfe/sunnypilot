@@ -49,7 +49,9 @@ if platform.system() == "Darwin":
   """
 
 BURN_IN_MODE = "BURN_IN" in os.environ
-BURN_IN_VERTEX_SHADER = GL_VERSION + """
+BURN_IN_VERTEX_SHADER = (
+  GL_VERSION
+  + """
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 uniform mat4 mvp;
@@ -59,7 +61,10 @@ void main() {
   gl_Position = mvp * vec4(vertexPosition, 1.0);
 }
 """
-BURN_IN_FRAGMENT_SHADER = GL_VERSION + """
+)
+BURN_IN_FRAGMENT_SHADER = (
+  GL_VERSION
+  + """
 in vec2 fragTexCoord;
 uniform sampler2D texture0;
 out vec4 fragColor;
@@ -75,6 +80,7 @@ void main() {
   fragColor = vec4(gradient, sampled.a);
 }
 """
+)
 
 DEFAULT_TEXT_SIZE = 60
 DEFAULT_TEXT_COLOR = rl.WHITE
@@ -248,9 +254,11 @@ class GuiApplication(GuiApplicationExt):
 
   def init_window(self, title: str, fps: int = _DEFAULT_FPS):
     with self._startup_profile_context():
+
       def _close(sig, frame):
         self.close()
         sys.exit(0)
+
       signal.signal(signal.SIGINT, _close)
       atexit.register(self.close)
 
@@ -321,8 +329,7 @@ class GuiApplication(GuiApplicationExt):
   def set_should_render(self, should_render: bool):
     self._should_render = should_render
 
-  def texture(self, asset_path: str, width: int | None = None, height: int | None = None,
-              alpha_premultiply=False, keep_aspect_ratio=True):
+  def texture(self, asset_path: str, width: int | None = None, height: int | None = None, alpha_premultiply=False, keep_aspect_ratio=True):
     cache_key = f"{asset_path}_{width}_{height}_{alpha_premultiply}{keep_aspect_ratio}"
     if cache_key in self._textures:
       return self._textures[cache_key]
@@ -333,8 +340,9 @@ class GuiApplication(GuiApplicationExt):
     self._textures[cache_key] = texture_obj
     return texture_obj
 
-  def _load_image_from_path(self, image_path: str, width: int | None = None, height: int | None = None,
-                            alpha_premultiply: bool = False, keep_aspect_ratio: bool = True) -> rl.Image:
+  def _load_image_from_path(
+    self, image_path: str, width: int | None = None, height: int | None = None, alpha_premultiply: bool = False, keep_aspect_ratio: bool = True
+  ) -> rl.Image:
     """Load and resize an image, storing it for later automatic unloading."""
     image = rl.load_image(image_path)
 
@@ -419,6 +427,7 @@ class GuiApplication(GuiApplicationExt):
     try:
       if self._profile_render_frames > 0:
         import cProfile
+
         self._render_profiler = cProfile.Profile()
         self._render_profile_start_time = time.monotonic()
         self._render_profiler.enable()
@@ -662,11 +671,11 @@ class GuiApplication(GuiApplicationExt):
     green = "\033[92m"
     reset = "\033[0m"
     print(f"\n{green}Rendered {self._frame} frames in {elapsed_ms:.1f} ms{reset}")
-    print(f"{green}Average frame time: {avg_frame_time:.2f} ms ({1000/avg_frame_time:.1f} FPS){reset}")
+    print(f"{green}Average frame time: {avg_frame_time:.2f} ms ({1000 / avg_frame_time:.1f} FPS){reset}")
     sys.exit(0)
 
   def _calculate_auto_scale(self) -> float:
-     # Create temporary window to query monitor info
+    # Create temporary window to query monitor info
     rl.init_window(1, 1, "")
     w, h = rl.get_monitor_width(0), rl.get_monitor_height(0)
     rl.close_window()

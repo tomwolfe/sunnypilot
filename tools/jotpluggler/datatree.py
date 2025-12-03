@@ -28,7 +28,7 @@ class DataTree:
     self.playback_manager = playback_manager
     self.current_search = ""
     self.data_tree = DataTreeNode(name="root")
-    self._build_queue: dict[str, tuple[DataTreeNode, DataTreeNode, str | int]] = {} # full_path -> (node, parent, before_tag)
+    self._build_queue: dict[str, tuple[DataTreeNode, DataTreeNode, str | int]] = {}  # full_path -> (node, parent, before_tag)
     self._current_created_paths: set[str] = set()
     self._current_filtered_paths: set[str] = set()
     self._path_to_node: dict[str, DataTreeNode] = {}  # full_path -> node
@@ -67,7 +67,7 @@ class DataTree:
     with self._ui_lock:
       if self._char_width is None:
         if size := dpg.get_text_size(" ", font=font):
-          self._char_width = size[0] / 2 # we scale font 2x and downscale to fix hidpi bug
+          self._char_width = size[0] / 2  # we scale font 2x and downscale to fix hidpi bug
 
       if self._new_data:
         self._process_path_change()

@@ -15,6 +15,7 @@ from contextlib import contextmanager
 
 LOG_TIMESTAMPS = "LOG_TIMESTAMPS" in os.environ
 
+
 def json_handler(obj):
   if isinstance(obj, np.bool_):
     return bool(obj)
@@ -22,12 +23,15 @@ def json_handler(obj):
   #   return obj.isoformat()
   return repr(obj)
 
+
 def json_robust_dumps(obj):
   return json.dumps(obj, default=json_handler)
+
 
 class NiceOrderedDict(OrderedDict):
   def __str__(self):
     return json_robust_dumps(self)
+
 
 class SwagFormatter(logging.Formatter):
   def __init__(self, swaglogger):
@@ -45,7 +49,7 @@ class SwagFormatter(logging.Formatter):
       try:
         record_dict['msg'] = record.getMessage()
       except (ValueError, TypeError):
-        record_dict['msg'] = [record.msg]+record.args
+        record_dict['msg'] = [record.msg] + record.args
 
     record_dict['ctx'] = self.swaglogger.get_ctx()
 
@@ -72,6 +76,7 @@ class SwagFormatter(logging.Formatter):
     if self.swaglogger is None:
       raise Exception("must set swaglogger before calling format()")
     return json_robust_dumps(self.format_dict(record))
+
 
 class SwagLogFileFormatter(SwagFormatter):
   def fix_kv(self, k, v):
@@ -111,15 +116,19 @@ class SwagLogFileFormatter(SwagFormatter):
 
     return json_robust_dumps(v)
 
+
 class SwagErrorFilter(logging.Filter):
   def filter(self, record):
     return record.levelno < logging.ERROR
 
+
 def _tmpfunc():
   return 0
 
+
 def _srcfile():
   return os.path.normcase(_tmpfunc.__code__.co_filename)
+
 
 class SwagLogger(logging.Logger):
   def __init__(self):
@@ -175,7 +184,7 @@ class SwagLogger(logging.Logger):
       tstp = NiceOrderedDict()
       tstp['timestamp'] = NiceOrderedDict()
       tstp['timestamp']["event"] = event_name
-      tstp['timestamp']["time"] = t*1e9
+      tstp['timestamp']["time"] = t * 1e9
       self.debug(tstp)
 
   def findCaller(self, stack_info=False, stacklevel=1):
@@ -184,8 +193,8 @@ class SwagLogger(logging.Logger):
     file name, line number and function name.
     """
     f = sys._getframe(3)
-    #On some versions of IronPython, currentframe() returns None if
-    #IronPython isn't run with -X:Frames.
+    # On some versions of IronPython, currentframe() returns None if
+    # IronPython isn't run with -X:Frames.
     if f is not None:
       f = f.f_back
     orig_f = f
@@ -214,6 +223,7 @@ class SwagLogger(logging.Logger):
       rv = (co.co_filename, f.f_lineno, co.co_name, sinfo)
       break
     return rv
+
 
 if __name__ == "__main__":
   log = SwagLogger()

@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import random
 import time
 
@@ -30,24 +31,36 @@ def setup_sm_mock(mocker: MockerFixture):
   cruise_speed_limit = random.uniform(0, 120)
   live_map_data_limit = random.uniform(0, 120)
 
-  car_state = create_mock({
-    'gasPressed': False,
-    'brakePressed': False,
-    'standstill': False,
-  }, mocker)
-  car_state_sp = create_mock({
-    'speedLimit': cruise_speed_limit,
-  }, mocker)
-  live_map_data = create_mock({
-    'speedLimit': live_map_data_limit,
-    'speedLimitValid': True,
-    'speedLimitAhead': 0.,
-    'speedLimitAheadValid': 0.,
-    'speedLimitAheadDistance': 0.,
-  }, mocker)
-  gps_data = create_mock({
-    'unixTimestampMillis': time.monotonic() * 1e3,
-  }, mocker)
+  car_state = create_mock(
+    {
+      'gasPressed': False,
+      'brakePressed': False,
+      'standstill': False,
+    },
+    mocker,
+  )
+  car_state_sp = create_mock(
+    {
+      'speedLimit': cruise_speed_limit,
+    },
+    mocker,
+  )
+  live_map_data = create_mock(
+    {
+      'speedLimit': live_map_data_limit,
+      'speedLimitValid': True,
+      'speedLimitAhead': 0.0,
+      'speedLimitAheadValid': 0.0,
+      'speedLimitAheadDistance': 0.0,
+    },
+    mocker,
+  )
+  gps_data = create_mock(
+    {
+      'unixTimestampMillis': time.monotonic() * 1e3,
+    },
+    mocker,
+  )
   sm_mock = mocker.MagicMock()
   sm_mock.__getitem__.side_effect = lambda key: {
     'carState': car_state,
@@ -59,27 +72,27 @@ def setup_sm_mock(mocker: MockerFixture):
 
 
 parametrized_policies = pytest.mark.parametrize(
-  "policy, sm_key, function_key", [
+  "policy, sm_key, function_key",
+  [
     (Policy.car_state_only, 'carStateSP', SpeedLimitSource.car),
     (Policy.car_state_priority, 'carStateSP', SpeedLimitSource.car),
     (Policy.map_data_only, 'liveMapDataSP', SpeedLimitSource.map),
     (Policy.map_data_priority, 'liveMapDataSP', SpeedLimitSource.map),
   ],
-  ids=lambda val: val.name if hasattr(val, 'name') else str(val)
+  ids=lambda val: val.name if hasattr(val, 'name') else str(val),
 )
 
 
 @pytest.mark.parametrize("resolver_class", [SpeedLimitResolver])
 class TestSpeedLimitResolverValidation:
-
   @pytest.mark.parametrize("policy", list(Policy), ids=lambda policy: policy.name)
   def test_initial_state(self, resolver_class, policy):
     resolver = resolver_class()
     resolver.policy = policy
     for source in ALL_SOURCES:
       if source in resolver.limit_solutions:
-        assert resolver.limit_solutions[source] == 0.
-        assert resolver.distance_solutions[source] == 0.
+        assert resolver.limit_solutions[source] == 0.0
+        assert resolver.distance_solutions[source] == 0.0
 
   @parametrized_policies
   def test_resolver(self, resolver_class, policy, sm_key, function_key, mocker: MockerFixture):
@@ -98,9 +111,7 @@ class TestSpeedLimitResolverValidation:
     resolver.policy = Policy.combined
     sm_mock = setup_sm_mock(mocker)
     socket_to_source = {'carStateSP': SpeedLimitSource.car, 'liveMapDataSP': SpeedLimitSource.map}
-    minimum_key, minimum_speed_limit = min(
-      ((key, sm_mock[key].speedLimit) for key in
-       socket_to_source.keys()), key=lambda x: x[1])
+    minimum_key, minimum_speed_limit = min(((key, sm_mock[key].speedLimit) for key in socket_to_source.keys()), key=lambda x: x[1])
 
     # Assert the resolver
     resolver.update(minimum_speed_limit, sm_mock)
@@ -117,7 +128,7 @@ class TestSpeedLimitResolverValidation:
     # Assert the parsing
     resolver.update(source_speed_limit, sm_mock)
     assert resolver.limit_solutions[ALL_SOURCES[function_key]] == source_speed_limit
-    assert resolver.distance_solutions[ALL_SOURCES[function_key]] == 0.
+    assert resolver.distance_solutions[ALL_SOURCES[function_key]] == 0.0
 
   @pytest.mark.parametrize("policy", list(Policy), ids=lambda policy: policy.name)
   def test_resolve_interaction_in_update(self, resolver_class, policy, mocker: MockerFixture):
@@ -140,5 +151,5 @@ class TestSpeedLimitResolverValidation:
     sm_mock = mocker.MagicMock()
     sm_mock['gpsLocation'].unixTimestampMillis = (time.monotonic() - 2 * LIMIT_MAX_MAP_DATA_AGE) * 1e3
     resolver._get_from_map_data(sm_mock)
-    assert resolver.limit_solutions[SpeedLimitSource.map] == 0.
-    assert resolver.distance_solutions[SpeedLimitSource.map] == 0.
+    assert resolver.limit_solutions[SpeedLimitSource.map] == 0.0
+    assert resolver.distance_solutions[SpeedLimitSource.map] == 0.0

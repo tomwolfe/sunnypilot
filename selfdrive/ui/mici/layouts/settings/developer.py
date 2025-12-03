@@ -45,28 +45,31 @@ class DeveloperLayoutMici(NavWidget):
     # ******** Main Scroller ********
     self._adb_toggle = BigParamControl("enable ADB", "AdbEnabled")
     self._ssh_toggle = BigParamControl("enable SSH", "SshEnabled")
-    self._joystick_toggle = BigToggle("joystick debug mode",
-                                      initial_state=ui_state.params.get_bool("JoystickDebugMode"),
-                                      toggle_callback=self._on_joystick_debug_mode)
-    self._long_maneuver_toggle = BigToggle("longitudinal maneuver mode",
-                                           initial_state=ui_state.params.get_bool("LongitudinalManeuverMode"),
-                                           toggle_callback=self._on_long_maneuver_mode)
-    self._alpha_long_toggle = BigToggle("alpha longitudinal",
-                                        initial_state=ui_state.params.get_bool("AlphaLongitudinalEnabled"),
-                                        toggle_callback=self._on_alpha_long_enabled)
-    self._debug_mode_toggle = BigParamControl("ui debug mode", "ShowDebugInfo",
-                                              toggle_callback=lambda checked: (gui_app.set_show_touches(checked),
-                                                                               gui_app.set_show_fps(checked)))
+    self._joystick_toggle = BigToggle(
+      "joystick debug mode", initial_state=ui_state.params.get_bool("JoystickDebugMode"), toggle_callback=self._on_joystick_debug_mode
+    )
+    self._long_maneuver_toggle = BigToggle(
+      "longitudinal maneuver mode", initial_state=ui_state.params.get_bool("LongitudinalManeuverMode"), toggle_callback=self._on_long_maneuver_mode
+    )
+    self._alpha_long_toggle = BigToggle(
+      "alpha longitudinal", initial_state=ui_state.params.get_bool("AlphaLongitudinalEnabled"), toggle_callback=self._on_alpha_long_enabled
+    )
+    self._debug_mode_toggle = BigParamControl(
+      "ui debug mode", "ShowDebugInfo", toggle_callback=lambda checked: (gui_app.set_show_touches(checked), gui_app.set_show_fps(checked))
+    )
 
-    self._scroller = Scroller([
-      self._adb_toggle,
-      self._ssh_toggle,
-      self._ssh_keys_btn,
-      self._joystick_toggle,
-      self._long_maneuver_toggle,
-      self._alpha_long_toggle,
-      self._debug_mode_toggle,
-    ], snap_items=False)
+    self._scroller = Scroller(
+      [
+        self._adb_toggle,
+        self._ssh_toggle,
+        self._ssh_keys_btn,
+        self._joystick_toggle,
+        self._long_maneuver_toggle,
+        self._alpha_long_toggle,
+        self._debug_mode_toggle,
+      ],
+      snap_items=False,
+    )
 
     # Toggle lists
     self._refresh_toggles = (

@@ -10,6 +10,7 @@ TEST_ICCID = '8944476500001944011'
 
 TEST_NICKNAME = 'test_profile'
 
+
 def cleanup():
   lpa = HARDWARE.get_sim_lpa()
   try:
@@ -18,8 +19,8 @@ def cleanup():
     pass
   lpa.process_notifications()
 
-class TestEsim:
 
+class TestEsim:
   @classmethod
   def setup_class(cls):
     if not TICI:

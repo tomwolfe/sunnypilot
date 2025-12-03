@@ -27,9 +27,9 @@ END_FRAME = 60
 
 SEND_EXTRA_INPUTS = bool(int(os.getenv("SEND_EXTRA_INPUTS", "0")))
 
-DATA_TOKEN = os.getenv("CI_ARTIFACTS_TOKEN","")
-API_TOKEN = os.getenv("GITHUB_COMMENTS_TOKEN","")
-MODEL_REPLAY_BUCKET="model_replay_master"
+DATA_TOKEN = os.getenv("CI_ARTIFACTS_TOKEN", "")
+API_TOKEN = os.getenv("GITHUB_COMMENTS_TOKEN", "")
+MODEL_REPLAY_BUCKET = "model_replay_master"
 GITHUB = GithubUtils(API_TOKEN, DATA_TOKEN)
 
 EXEC_TIMINGS = [
@@ -38,8 +38,10 @@ EXEC_TIMINGS = [
   ("driverStateV2", 0.02, 0.015),
 ]
 
+
 def get_log_fn(test_route, ref="master"):
   return f"{test_route}_model_tici_{ref}.zst"
+
 
 def plot(proposed, master, title, tmp):
   proposed = list(proposed)
@@ -52,56 +54,69 @@ def plot(proposed, master, title, tmp):
   plt.savefig(f'{tmp}/{title}.png')
   return (title + '.png', proposed == master)
 
+
 def get_event(logs, event):
   return (getattr(m, m.which()) for m in filter(lambda m: m.which() == event, logs))
+
 
 def zl(array, fill):
   return zip_longest(array, [], fillvalue=fill)
 
+
 def get_idx_if_non_empty(l, idx=None):
   return l if idx is None else (l[idx] if len(l) > 0 else None)
 
-def generate_report(proposed, master, tmp, commit):
-  ModelV2_Plots = zl([
-                     (lambda x: get_idx_if_non_empty(x.velocity.x, 0), "velocity.x"),
-                     (lambda x: get_idx_if_non_empty(x.action.desiredCurvature), "desiredCurvature"),
-                     (lambda x: get_idx_if_non_empty(x.action.desiredAcceleration), "desiredAcceleration"),
-                     (lambda x: get_idx_if_non_empty(x.leadsV3[0].x, 0), "leadsV3.x"),
-                     (lambda x: get_idx_if_non_empty(x.laneLines[1].y, 0), "laneLines.y"),
-                     (lambda x: get_idx_if_non_empty(x.meta.desireState, 3), "desireState.laneChangeLeft"),
-                     (lambda x: get_idx_if_non_empty(x.meta.desireState, 4), "desireState.laneChangeRight"),
-                     (lambda x: get_idx_if_non_empty(x.meta.disengagePredictions.gasPressProbs, 1), "gasPressProbs")
-                    ], "modelV2")
-  DriverStateV2_Plots = zl([
-                     (lambda x: get_idx_if_non_empty(x.wheelOnRightProb), "wheelOnRightProb"),
-                     (lambda x: get_idx_if_non_empty(x.leftDriverData.faceProb), "leftDriverData.faceProb"),
-                     (lambda x: get_idx_if_non_empty(x.leftDriverData.faceOrientation, 0), "leftDriverData.faceOrientation0"),
-                     (lambda x: get_idx_if_non_empty(x.leftDriverData.leftBlinkProb), "leftDriverData.leftBlinkProb"),
-                     (lambda x: get_idx_if_non_empty(x.leftDriverData.phoneProb), "leftDriverData.phoneProb"),
-                     (lambda x: get_idx_if_non_empty(x.rightDriverData.faceProb), "rightDriverData.faceProb"),
-                    ], "driverStateV2")
 
-  return [plot(map(v[0], get_event(proposed, event)), \
-               map(v[0], get_event(master, event)), f"{v[1]}_{commit[:7]}", tmp) \
-               for v,event in ([*ModelV2_Plots] + [*DriverStateV2_Plots])]
+def generate_report(proposed, master, tmp, commit):
+  ModelV2_Plots = zl(
+    [
+      (lambda x: get_idx_if_non_empty(x.velocity.x, 0), "velocity.x"),
+      (lambda x: get_idx_if_non_empty(x.action.desiredCurvature), "desiredCurvature"),
+      (lambda x: get_idx_if_non_empty(x.action.desiredAcceleration), "desiredAcceleration"),
+      (lambda x: get_idx_if_non_empty(x.leadsV3[0].x, 0), "leadsV3.x"),
+      (lambda x: get_idx_if_non_empty(x.laneLines[1].y, 0), "laneLines.y"),
+      (lambda x: get_idx_if_non_empty(x.meta.desireState, 3), "desireState.laneChangeLeft"),
+      (lambda x: get_idx_if_non_empty(x.meta.desireState, 4), "desireState.laneChangeRight"),
+      (lambda x: get_idx_if_non_empty(x.meta.disengagePredictions.gasPressProbs, 1), "gasPressProbs"),
+    ],
+    "modelV2",
+  )
+  DriverStateV2_Plots = zl(
+    [
+      (lambda x: get_idx_if_non_empty(x.wheelOnRightProb), "wheelOnRightProb"),
+      (lambda x: get_idx_if_non_empty(x.leftDriverData.faceProb), "leftDriverData.faceProb"),
+      (lambda x: get_idx_if_non_empty(x.leftDriverData.faceOrientation, 0), "leftDriverData.faceOrientation0"),
+      (lambda x: get_idx_if_non_empty(x.leftDriverData.leftBlinkProb), "leftDriverData.leftBlinkProb"),
+      (lambda x: get_idx_if_non_empty(x.leftDriverData.phoneProb), "leftDriverData.phoneProb"),
+      (lambda x: get_idx_if_non_empty(x.rightDriverData.faceProb), "rightDriverData.faceProb"),
+    ],
+    "driverStateV2",
+  )
+
+  return [
+    plot(map(v[0], get_event(proposed, event)), map(v[0], get_event(master, event)), f"{v[1]}_{commit[:7]}", tmp)
+    for v, event in ([*ModelV2_Plots] + [*DriverStateV2_Plots])
+  ]
+
 
 def create_table(title, files, link, open_table=False):
   if not files:
     return ""
   table = [f'<details {"open" if open_table else ""}><summary>{title}</summary><table>']
-  for i,f in enumerate(files):
+  for i, f in enumerate(files):
     if not (i % 2):
       table.append("<tr>")
     table.append(f'<td><img src=\\"{link}/{f[0]}\\"></td>')
-    if (i % 2):
+    if i % 2:
       table.append("</tr>")
   table.append("</table></details>")
   table = "".join(table)
   return table
 
+
 def comment_replay_report(proposed, master, full_logs):
   with tempfile.TemporaryDirectory() as tmp:
-    PR_BRANCH = os.getenv("GIT_BRANCH","")
+    PR_BRANCH = os.getenv("GIT_BRANCH", "")
     DATA_BUCKET = f"model_replay_{PR_BRANCH}"
 
     try:
@@ -126,13 +141,14 @@ def comment_replay_report(proposed, master, full_logs):
     comment = f"ref for commit {commit}: {link}/{log_name}" + diff_plots + all_plots
     GITHUB.comment_on_pr(comment, PR_BRANCH, "commaci-public", True)
 
+
 def trim_logs(logs, start_frame, end_frame, frs_types, include_all_types):
   all_msgs = []
   cam_state_counts = defaultdict(int)
   for msg in sorted(logs, key=lambda m: m.logMonoTime):
     if msg.which() in frs_types:
       cam_state_counts[msg.which()] += 1
-    if any(cam_state_counts[state]  >= start_frame for state in frs_types):
+    if any(cam_state_counts[state] >= start_frame for state in frs_types):
       all_msgs.append(msg)
     if all(cam_state_counts[state] == end_frame for state in frs_types):
       break
@@ -146,8 +162,9 @@ def trim_logs(logs, start_frame, end_frame, frs_types, include_all_types):
 
 def model_replay(lr, frs):
   # modeld is using frame pairs
-  modeld_logs = trim_logs(lr, START_FRAME, END_FRAME, {"roadCameraState", "wideRoadCameraState"},
-                                                                         {"roadEncodeIdx", "wideRoadEncodeIdx", "carParams", "carState", "carControl", "can"})
+  modeld_logs = trim_logs(
+    lr, START_FRAME, END_FRAME, {"roadCameraState", "wideRoadCameraState"}, {"roadEncodeIdx", "wideRoadEncodeIdx", "carParams", "carState", "carControl", "can"}
+  )
   dmodeld_logs = trim_logs(lr, START_FRAME, END_FRAME, {"driverCameraState"}, {"driverEncodeIdx", "carParams", "can"})
 
   if not SEND_EXTRA_INPUTS:
@@ -172,7 +189,7 @@ def model_replay(lr, frs):
   header = ['model', 'max instant', 'max instant allowed', 'average', 'max average allowed', 'test result']
   rows = []
   timings_ok = True
-  for (s, instant_max, avg_max) in EXEC_TIMINGS:
+  for s, instant_max, avg_max in EXEC_TIMINGS:
     ts = [getattr(m, s).modelExecutionTime for m in msgs if m.which() == s]
     # TODO some init can happen in first iteration
     ts = ts[1:]
@@ -221,6 +238,7 @@ def get_frames():
   pickle.dump(frs, open(cache_name, "wb"))
   return frs
 
+
 if __name__ == "__main__":
   update = "--update" in sys.argv or (os.getenv("GIT_BRANCH", "") == 'master')
   replay_dir = os.path.dirname(os.path.abspath(__file__))
@@ -241,9 +259,9 @@ if __name__ == "__main__":
       all_logs = list(LogReader(GITHUB.get_file_url(MODEL_REPLAY_BUCKET, log_fn)))
       cmp_log = []
       model_start_index = next(i for i, m in enumerate(all_logs) if m.which() in ("modelV2", "drivingModelData", "cameraOdometry"))
-      cmp_log += all_logs[model_start_index+START_FRAME*3:model_start_index + END_FRAME*3]
+      cmp_log += all_logs[model_start_index + START_FRAME * 3 : model_start_index + END_FRAME * 3]
       dmon_start_index = next(i for i, m in enumerate(all_logs) if m.which() == "driverStateV2")
-      cmp_log += all_logs[dmon_start_index+START_FRAME:dmon_start_index + END_FRAME]
+      cmp_log += all_logs[dmon_start_index + START_FRAME : dmon_start_index + END_FRAME]
 
       ignore = [
         'logMonoTime',
@@ -252,19 +270,21 @@ if __name__ == "__main__":
         'modelV2.frameDropPerc',
         'modelV2.modelExecutionTime',
         'driverStateV2.modelExecutionTime',
-        'driverStateV2.gpuExecutionTime'
+        'driverStateV2.gpuExecutionTime',
       ]
       if PC:
         # TODO We ignore whole bunch so we can compare important stuff
         # like posenet with reasonable tolerance
-        ignore += ['modelV2.acceleration.x',
-                   'modelV2.position.x',
-                   'modelV2.position.xStd',
-                   'modelV2.position.y',
-                   'modelV2.position.yStd',
-                   'modelV2.position.z',
-                   'modelV2.position.zStd',
-                   'drivingModelData.path.xCoefficients',]
+        ignore += [
+          'modelV2.acceleration.x',
+          'modelV2.position.x',
+          'modelV2.position.xStd',
+          'modelV2.position.y',
+          'modelV2.position.yStd',
+          'modelV2.position.z',
+          'modelV2.position.zStd',
+          'drivingModelData.path.xCoefficients',
+        ]
         for i in range(3):
           for field in ('x', 'y', 'v', 'a'):
             ignore.append(f'modelV2.leadsV3.{i}.{field}')
@@ -275,7 +295,7 @@ if __name__ == "__main__":
         for i in range(2):
           for field in ('x', 'y', 'z', 't'):
             ignore.append(f'modelV2.roadEdges.{i}.{field}')
-      tolerance = .3 if PC else None
+      tolerance = 0.3 if PC else None
       results: Any = {TEST_ROUTE: {}}
       log_paths: Any = {TEST_ROUTE: {"models": {'ref': log_fn, 'new': log_fn}}}
       results[TEST_ROUTE]["models"] = compare_logs(cmp_log, log_msgs, tolerance=tolerance, ignore_fields=ignore)
@@ -285,7 +305,7 @@ if __name__ == "__main__":
         comment_replay_report(log_msgs, cmp_log, log_msgs)
         failed = False
         print(diff_long)
-      print('-------------\n'*5)
+      print('-------------\n' * 5)
       print(diff_short)
       with open("model_diff.txt", "w") as f:
         f.write(diff_long)

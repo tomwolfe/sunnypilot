@@ -7,6 +7,7 @@ from openpilot.tools.lib.logreader import LogIterable, RawLogIterable
 
 ALL_SERVICES = list(SERVICE_LIST.keys())
 
+
 def raw_live_logreader(services: list[str] = ALL_SERVICES, addr: str = '127.0.0.1') -> RawLogIterable:
   if addr != "127.0.0.1":
     os.environ["ZMQ"] = "1"

@@ -7,6 +7,7 @@ from openpilot.system.hardware import TICI
 if not TICI:
   from openpilot.sunnypilot.models.runners.onnx.onnx_runner import ONNXRunner
 
+
 def get_model_runner() -> ModelRunner:
   """
   Factory function to create and return the appropriate ModelRunner instance.

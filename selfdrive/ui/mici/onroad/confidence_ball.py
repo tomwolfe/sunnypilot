@@ -7,18 +7,13 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.filter_simple import FirstOrderFilter
 
 
-def draw_circle_gradient(center_x: float, center_y: float, radius: int,
-                         top: rl.Color, bottom: rl.Color) -> None:
+def draw_circle_gradient(center_x: float, center_y: float, radius: int, top: rl.Color, bottom: rl.Color) -> None:
   # Draw a square with the gradient
-  rl.draw_rectangle_gradient_v(int(center_x - radius), int(center_y - radius),
-                               radius * 2, radius * 2,
-                               top, bottom)
+  rl.draw_rectangle_gradient_v(int(center_x - radius), int(center_y - radius), radius * 2, radius * 2, top, bottom)
 
   # Paint over square with a ring
   outer_radius = math.ceil(radius * math.sqrt(2)) + 1
-  rl.draw_ring(rl.Vector2(int(center_x), int(center_y)), radius, outer_radius,
-               0.0, 360.0,
-               20, rl.BLACK)
+  rl.draw_ring(rl.Vector2(int(center_x), int(center_y)), radius, outer_radius, 0.0, 360.0, 20, rl.BLACK)
 
 
 class ConfidenceBall(Widget):
@@ -38,8 +33,10 @@ class ConfidenceBall(Widget):
     if ui_state.status == UIStatus.DISENGAGED:
       self._confidence_filter.update(-0.5)
     else:
-      self._confidence_filter.update((1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs or [1])) *
-                                                        (1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.steerOverrideProbs or [1])))
+      self._confidence_filter.update(
+        (1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs or [1]))
+        * (1 - max(ui_state.sm['modelV2'].meta.disengagePredictions.steerOverrideProbs or [1]))
+      )
 
   def _render(self, _):
     content_rect = rl.Rectangle(
@@ -73,6 +70,4 @@ class ConfidenceBall(Widget):
       top_dot_color = rl.Color(50, 50, 50, 255)
       bottom_dot_color = rl.Color(13, 13, 13, 255)
 
-    draw_circle_gradient(content_rect.x + content_rect.width - status_dot_radius,
-                         dot_height, status_dot_radius,
-                         top_dot_color, bottom_dot_color)
+    draw_circle_gradient(content_rect.x + content_rect.width - status_dot_radius, dot_height, status_dot_radius, top_dot_color, bottom_dot_color)

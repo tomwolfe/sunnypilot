@@ -276,19 +276,21 @@ position_report = """
   uint8       u_TotalGloSvs;            /* Total number of Glonass SVs detected by searcher, including ones not used in position calculation */
   uint8       u_NumBdsSvsUsed;          /* The number of BeiDou SVs used in the fix */
   uint8       u_TotalBdsSvs;            /* Total number of BeiDou SVs detected by searcher, including ones not used in position calculation */
-""" # noqa: E501
+"""  # noqa: E501
+
 
 def name_to_camelcase(nam):
   ret = []
   i = 0
   while i < len(nam):
     if nam[i] == "_":
-      ret.append(nam[i+1].upper())
+      ret.append(nam[i + 1].upper())
       i += 2
     else:
       ret.append(nam[i])
       i += 1
   return ''.join(ret)
+
 
 def parse_struct(ss):
   st = "<"
@@ -297,7 +299,7 @@ def parse_struct(ss):
     if len(l.strip()) == 0:
       continue
     typ, nam = l.split(";")[0].split()
-    #print(typ, nam)
+    # print(typ, nam)
     if typ == "float" or '_Flt' in nam:
       st += "f"
     elif typ == "double" or '_Dbl' in nam:
@@ -320,19 +322,21 @@ def parse_struct(ss):
       raise RuntimeError(f"unknown type {typ}")
     if '[' in nam:
       cnt = int(nam.split("[")[1].split("]")[0])
-      st += st[-1]*(cnt-1)
+      st += st[-1] * (cnt - 1)
       for i in range(cnt):
         nams.append(f'{nam.split("[")[0]}[{i}]')
     else:
       nams.append(nam)
   return st, nams
 
-def dict_unpacker(ss, camelcase = False):
+
+def dict_unpacker(ss, camelcase=False):
   st, nams = parse_struct(ss)
   if camelcase:
     nams = [name_to_camelcase(x) for x in nams]
   sz = calcsize(st)
   return lambda x: dict(zip(nams, unpack_from(st, x), strict=True)), sz
+
 
 def relist(dat):
   list_keys = set()

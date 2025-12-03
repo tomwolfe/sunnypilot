@@ -14,10 +14,8 @@ def fetch_tinygrad_ref():
 def test_tinygrad_ref():
   current_ref = get_tinygrad_ref()
   remote_ref = fetch_tinygrad_ref()
-  assert remote_ref == current_ref, (
-    f"""tinygrad_repo ref does not match remote tinygrad_ref of current compiled driving models json.
+  assert remote_ref == current_ref, f"""tinygrad_repo ref does not match remote tinygrad_ref of current compiled driving models json.
   Current: {current_ref}
   Remote: {remote_ref}
   Please run build-all workflow to update models."""
-  )
   print("tinygrad_repo ref matches current compiled driving models json ref.")

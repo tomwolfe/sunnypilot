@@ -3,7 +3,7 @@ import copy
 import os
 import pytest
 import random
-import unittest # noqa: TID251
+import unittest  # noqa: TID251
 from collections import defaultdict, Counter
 import hypothesis.strategies as st
 from hypothesis import Phase, given, settings
@@ -54,8 +54,7 @@ def get_test_cases() -> list[tuple[str, CarTestRoute | None]]:
     for platform, segment in segment_list:
       platform = MIGRATION.get(platform, platform)
       segment_name = SegmentName(segment)
-      test_cases.append((platform, CarTestRoute(segment_name.route_name.canonical_name, platform,
-                                                segment=segment_name.segment_num)))
+      test_cases.append((platform, CarTestRoute(segment_name.route_name.canonical_name, platform, segment=segment_name.segment_num)))
   return test_cases
 
 
@@ -100,15 +99,13 @@ class TestCarModelBase(unittest.TestCase):
         for ps in msg.pandaStates:
           if cls.elm_frame is None and ps.safetyModel != SafetyModel.elm327:
             cls.elm_frame = len(can_msgs)
-          if cls.car_safety_mode_frame is None and ps.safetyModel not in \
-            (SafetyModel.elm327, SafetyModel.noOutput):
+          if cls.car_safety_mode_frame is None and ps.safetyModel not in (SafetyModel.elm327, SafetyModel.noOutput):
             cls.car_safety_mode_frame = len(can_msgs)
 
       elif msg.which() == 'pandaStateDEPRECATED':
         if cls.elm_frame is None and msg.pandaStateDEPRECATED.safetyModel != SafetyModel.elm327:
           cls.elm_frame = len(can_msgs)
-        if cls.car_safety_mode_frame is None and msg.pandaStateDEPRECATED.safetyModel not in \
-          (SafetyModel.elm327, SafetyModel.noOutput):
+        if cls.car_safety_mode_frame is None and msg.pandaStateDEPRECATED.safetyModel not in (SafetyModel.elm327, SafetyModel.noOutput):
           cls.car_safety_mode_frame = len(can_msgs)
 
     assert len(can_msgs) > int(50 / DT_CTRL), "no can data found"
@@ -132,7 +129,6 @@ class TestCarModelBase(unittest.TestCase):
 
     raise Exception(f"Route: {repr(cls.test_route.route)} with segments: {test_segs} not found or no CAN msgs found. Is it uploaded and public?")
 
-
   @classmethod
   def setUpClass(cls):
     if cls.__name__ == 'TestCarModel' or cls.__name__.endswith('Base'):
@@ -151,7 +147,7 @@ class TestCarModelBase(unittest.TestCase):
 
     cls.CarInterface = interfaces[cls.platform]
     cls.CP = cls.CarInterface.get_params(cls.platform, cls.fingerprint, car_fw, alpha_long, False, docs=False)
-    cls.CP_SP = cls.CarInterface.get_params_sp(cls.CP, cls.platform,  cls.fingerprint, car_fw, alpha_long, False, docs=False)
+    cls.CP_SP = cls.CarInterface.get_params_sp(cls.CP, cls.platform, cls.fingerprint, car_fw, alpha_long, False, docs=False)
     assert cls.CP
     assert cls.CP_SP
     assert cls.CP.carFingerprint == cls.platform
@@ -216,7 +212,7 @@ class TestCarModelBase(unittest.TestCase):
     # Since OBD port is multiplexed to bus 1 (commonly radar bus) while fingerprinting,
     # start parsing CAN messages after we've left ELM mode and can expect CAN traffic
     error_cnt = 0
-    for i, msg in enumerate(self.can_msgs[self.elm_frame:]):
+    for i, msg in enumerate(self.can_msgs[self.elm_frame :]):
       rr: structs.RadarData | None = RI.update(msg)
       if rr is not None and i > 50:
         error_cnt += rr.errors.canError
@@ -258,7 +254,7 @@ class TestCarModelBase(unittest.TestCase):
     self.assertFalse(len(failed_addrs), f"panda safety RX check failed: {failed_addrs}")
 
     # ensure RX checks go invalid after small time with no traffic
-    self.safety.set_timer(int(t + (2*1e6)))
+    self.safety.set_timer(int(t + (2 * 1e6)))
     self.safety.safety_tick_current_safety_config()
     self.assertFalse(self.safety.safety_config_valid())
 
@@ -304,13 +300,12 @@ class TestCarModelBase(unittest.TestCase):
 
   # Skip stdout/stderr capture with pytest, causes elevated memory usage
   @pytest.mark.nocapture
-  @settings(max_examples=MAX_EXAMPLES, deadline=None,
-            phases=(Phase.reuse, Phase.generate, Phase.shrink))
+  @settings(max_examples=MAX_EXAMPLES, deadline=None, phases=(Phase.reuse, Phase.generate, Phase.shrink))
   @given(data=st.data())
   def test_panda_safety_carstate_fuzzy(self, data):
     """
-      For each example, pick a random CAN message on the bus and fuzz its data,
-      checking for panda state mismatches.
+    For each example, pick a random CAN message on the bus and fuzz its data,
+    checking for panda state mismatches.
     """
 
     if self.CP.dashcamOnly:
@@ -371,11 +366,11 @@ class TestCarModelBase(unittest.TestCase):
       if self.safety.get_vehicle_speed_min() > 0 or self.safety.get_vehicle_speed_max() > 0:
         vehicle_speed_seen = True
 
-      if vehicle_speed_seen and (self.safety.get_vehicle_speed_min() != prev_panda_vehicle_speed_min or
-                                 self.safety.get_vehicle_speed_max() != prev_panda_vehicle_speed_max):
+      if vehicle_speed_seen and (
+        self.safety.get_vehicle_speed_min() != prev_panda_vehicle_speed_min or self.safety.get_vehicle_speed_max() != prev_panda_vehicle_speed_max
+      ):
         v_ego_raw = CS.vEgoRaw / self.CP.wheelSpeedFactor
-        self.assertFalse(v_ego_raw > (self.safety.get_vehicle_speed_max() + 1e-3) or
-                         v_ego_raw < (self.safety.get_vehicle_speed_min() - 1e-3))
+        self.assertFalse(v_ego_raw > (self.safety.get_vehicle_speed_max() + 1e-3) or v_ego_raw < (self.safety.get_vehicle_speed_min() - 1e-3))
 
       if not (self.CP.brand == "honda" and not (self.CP.flags & HondaFlags.BOSCH)):
         if self.safety.get_cruise_engaged_prev() != prev_panda_cruise_engaged:
@@ -387,7 +382,7 @@ class TestCarModelBase(unittest.TestCase):
 
   def test_panda_safety_carstate(self):
     """
-      Assert that panda safety matches openpilot's carState
+    Assert that panda safety matches openpilot's carState
     """
     if self.CP.dashcamOnly:
       self.skipTest("no need to check panda safety for dashcamOnly")
@@ -430,8 +425,7 @@ class TestCarModelBase(unittest.TestCase):
 
       if vehicle_speed_seen:
         v_ego_raw = CS.vEgoRaw / self.CP.wheelSpeedFactor
-        checks['vEgoRaw'] += (v_ego_raw > (self.safety.get_vehicle_speed_max() + 1e-3) or
-                              v_ego_raw < (self.safety.get_vehicle_speed_min() - 1e-3))
+        checks['vEgoRaw'] += v_ego_raw > (self.safety.get_vehicle_speed_max() + 1e-3) or v_ego_raw < (self.safety.get_vehicle_speed_min() - 1e-3)
 
       # TODO: remove this exception once this mismatch is resolved
       brake_pressed = CS.brakePressed

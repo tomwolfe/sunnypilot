@@ -86,8 +86,7 @@ class Sidebar(Widget):
     self._on_flag_click: Callable | None = None
     self._open_settings_callback: Callable | None = None
 
-  def set_callbacks(self, on_settings: Callable | None = None, on_flag: Callable | None = None,
-                    open_settings: Callable | None = None):
+  def set_callbacks(self, on_settings: Callable | None = None, on_flag: Callable | None = None, open_settings: Callable | None = None):
     self._on_settings_click = on_settings
     self._on_flag_click = on_flag
     self._open_settings_callback = open_settings
@@ -178,8 +177,12 @@ class Sidebar(Widget):
       bg_color = rl.Color(Colors.DANGER.r, Colors.DANGER.g, Colors.DANGER.b, int(255 * 0.65)) if mic_pressed else Colors.DANGER
 
       rl.draw_rectangle_rounded(self._mic_indicator_rect, 1, 10, bg_color)
-      rl.draw_texture(self._mic_img, int(self._mic_indicator_rect.x + (self._mic_indicator_rect.width - self._mic_img.width) / 2),
-                      int(self._mic_indicator_rect.y + (self._mic_indicator_rect.height - self._mic_img.height) / 2), Colors.WHITE)
+      rl.draw_texture(
+        self._mic_img,
+        int(self._mic_indicator_rect.x + (self._mic_indicator_rect.width - self._mic_img.width) / 2),
+        int(self._mic_indicator_rect.y + (self._mic_indicator_rect.height - self._mic_img.height) / 2),
+        Colors.WHITE,
+      )
 
   def _draw_network_indicator(self, rect: rl.Rectangle):
     # Signal strength dots
@@ -222,8 +225,5 @@ class Sidebar(Widget):
     for text in labels:
       text_size = measure_text_cached(self._font_bold, text, FONT_SIZE)
       text_y += text_size.y
-      text_pos = rl.Vector2(
-        metric_rect.x + 22 + (metric_rect.width - 22 - text_size.x) / 2,
-        text_y
-      )
+      text_pos = rl.Vector2(metric_rect.x + 22 + (metric_rect.width - 22 - text_size.x) / 2, text_y)
       rl.draw_text_ex(self._font_bold, text, text_pos, FONT_SIZE, 0, Colors.WHITE)

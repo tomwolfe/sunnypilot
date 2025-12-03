@@ -32,8 +32,7 @@ class ExperimentalModeButton(Widget):
 
   def _draw_gradient_background(self, rect):
     start_color, end_color = self._get_gradient_colors()
-    rl.draw_rectangle_gradient_h(int(rect.x), int(rect.y), int(rect.width), int(rect.height),
-                                 start_color, end_color)
+    rl.draw_rectangle_gradient_h(int(rect.x), int(rect.y), int(rect.width), int(rect.height), start_color, end_color)
 
   def _render(self, rect):
     rl.begin_scissor_mode(int(rect.x), int(rect.y), int(rect.width), int(rect.height))

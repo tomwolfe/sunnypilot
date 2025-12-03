@@ -24,7 +24,6 @@ for event_types in EVENTS.values():
 
 
 class TestAlerts:
-
   @classmethod
   def setup_class(cls):
     with open(OFFROAD_ALERTS_PATH) as f:
@@ -57,8 +56,7 @@ class TestAlerts:
 
     fonts = {
       AlertSize.small: [ImageFont.truetype(semibold_font_path, 74)],
-      AlertSize.mid: [ImageFont.truetype(bold_font_path, 88),
-                      ImageFont.truetype(regular_font_path, 66)],
+      AlertSize.mid: [ImageFont.truetype(bold_font_path, 88), ImageFont.truetype(regular_font_path, 66)],
     }
 
     for alert in ALERTS:
@@ -99,10 +97,10 @@ class TestAlerts:
         else:
           assert len(a.alert_text_1) > 0
 
-        assert a.duration >= 0.
+        assert a.duration >= 0.0
 
         if event_type not in (ET.WARNING, ET.PERMANENT, ET.PRE_ENABLE):
-          assert a.creation_delay == 0.
+          assert a.creation_delay == 0.0
 
   def test_offroad_alerts(self):
     params = Params()
@@ -123,8 +121,8 @@ class TestAlerts:
       # set the alert
       a = random.choice(list(self.offroad_alerts))
       alert = self.offroad_alerts[a]
-      set_offroad_alert(a, True, extra_text="a"*i)
+      set_offroad_alert(a, True, extra_text="a" * i)
 
       written_alert = params.get(a)
-      assert "a"*i == written_alert['extra']
+      assert "a" * i == written_alert['extra']
       assert alert["text"] == written_alert['text']

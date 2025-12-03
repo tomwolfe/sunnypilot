@@ -62,11 +62,11 @@ if __name__ == "__main__":
         if st is None:
           st = m.logMonoTime
         if m.which() == 'logMessage':
-          print_logmessage(m.logMonoTime-st, m.logMessage, min_level)
+          print_logmessage(m.logMonoTime - st, m.logMessage, min_level)
         elif m.which() == 'errorLogMessage':
-          print_logmessage(m.logMonoTime-st, m.errorLogMessage, min_level)
+          print_logmessage(m.logMonoTime - st, m.errorLogMessage, min_level)
         elif m.which() == 'androidLog':
-          print_androidlog(m.logMonoTime-st, m.androidLog)
+          print_androidlog(m.logMonoTime - st, m.androidLog)
   else:
     sm = messaging.SubMaster(['logMessage', 'androidLog'], addr=args.addr)
     while True:

@@ -105,8 +105,7 @@ def juggle_route(route_or_segment_name, can, layout, dbc, should_migrate):
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="A helper to run PlotJuggler on openpilot routes",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="A helper to run PlotJuggler on openpilot routes", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   parser.add_argument("--demo", action="store_true", help="Use the demo route instead of providing one")
   parser.add_argument("--can", action="store_true", help="Parse CAN data")

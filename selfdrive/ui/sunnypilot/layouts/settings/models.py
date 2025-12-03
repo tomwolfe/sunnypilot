@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from openpilot.common.params import Params
 from openpilot.system.ui.widgets.scroller_tici import Scroller
 from openpilot.system.ui.widgets import Widget
@@ -11,13 +12,15 @@ from openpilot.system.ui.widgets.list_view import multiple_button_item
 from openpilot.system.ui.lib.multilang import tr
 
 # Constants
-DESCRIPTION = " ".join([
+DESCRIPTION = " ".join(
+  [
     "User-settable factor (0.0 to 1.0) to simulate thermal conditions",
     "and fine-tune model execution performance. Values below 1.0 will",
-    "throttle model inference frequency."
-])
+    "throttle model inference frequency.",
+  ]
+)
 THROTTLE_FACTORS = [0.0, 0.25, 0.5, 0.75, 1.0]
-BUTTON_TEXTS = ["0%", "25%", "50%", "75%", "100%"] # Representing percentage of full execution
+BUTTON_TEXTS = ["0%", "25%", "50%", "75%", "100%"]  # Representing percentage of full execution
 
 
 class ModelsLayout(Widget):
@@ -32,7 +35,7 @@ class ModelsLayout(Widget):
       button_width=180,
       callback=self._set_model_throttle_factor,
       selected_index=self._get_current_throttle_factor_index(),
-      icon="settings.png"  # Placeholder icon, consider a more appropriate one
+      icon="settings.png",  # Placeholder icon, consider a more appropriate one
     )
 
     items = self._initialize_items()
@@ -51,7 +54,7 @@ class ModelsLayout(Widget):
     try:
       return THROTTLE_FACTORS.index(current_value)
     except ValueError:
-      return THROTTLE_FACTORS.index(1.0) # Default to 100% if current value is not in discrete options
+      return THROTTLE_FACTORS.index(1.0)  # Default to 100% if current value is not in discrete options
 
   def _set_model_throttle_factor(self, index: int):
     value = THROTTLE_FACTORS[index]

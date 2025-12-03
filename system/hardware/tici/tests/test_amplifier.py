@@ -10,7 +10,6 @@ from openpilot.system.hardware.tici.amplifier import Amplifier
 
 
 class TestAmplifier:
-
   @classmethod
   def setup_class(cls):
     if not TICI:

@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 import time
 
 import requests
-from requests.exceptions import (SSLError, RequestException, HTTPError)
+from requests.exceptions import SSLError, RequestException, HTTPError
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.models.helpers import is_bundle_version_compatible
@@ -59,7 +59,7 @@ class ModelParser:
     model_bundle.index = int(bundle["index"])
     model_bundle.internalName = bundle["short_name"]
     model_bundle.displayName = bundle["display_name"]
-    model_bundle.models = [ModelParser._parse_model(model) for model in bundle.get("models",[])]
+    model_bundle.models = [ModelParser._parse_model(model) for model in bundle.get("models", [])]
     model_bundle.status = 0
     model_bundle.generation = int(bundle["generation"])
     model_bundle.environment = bundle["environment"]
@@ -116,6 +116,7 @@ class ModelCache:
 
 class ModelFetcher:
   """Handles fetching and caching of model data from remote source"""
+
   MODEL_URL = "https://raw.githubusercontent.com/sunnypilot/sunnypilot-docs/refs/heads/gh-pages/docs/driving_models_v10.json"
 
   def __init__(self, params: Params):
@@ -171,6 +172,7 @@ class ModelFetcher:
 
     cloudlog.warning("Failed to fetch fresh data. Using expired cache as fallback")
     return self.model_parser.parse_models(cached_data)
+
 
 if __name__ == "__main__":
   params = Params()

@@ -12,11 +12,11 @@ import threading
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 
+
 def unblock_stdout() -> None:
   # get a non-blocking stdout
   child_pid, child_pty = os.forkpty()
   if child_pid != 0:  # parent
-
     # child is in its own process group, manually pass kill signals
     signal.signal(signal.SIGINT, lambda signum, frame: os.kill(child_pid, signal.SIGINT))
     signal.signal(signal.SIGTERM, lambda signum, frame: os.kill(child_pid, signal.SIGTERM))
@@ -62,6 +62,7 @@ def save_bootlog():
     env['PARAMS_COPY_PATH'] = tmpdir
     subprocess.call("./bootlog", cwd=os.path.join(BASEDIR, "system/loggerd"), env=env)
     shutil.rmtree(tmpdir)
-  t = threading.Thread(target=fn, args=(tmp, ))
+
+  t = threading.Thread(target=fn, args=(tmp,))
   t.daemon = True
   t.start()

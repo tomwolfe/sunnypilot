@@ -4,8 +4,14 @@ import time
 import pytest
 
 from cereal import messaging, log, car
-from openpilot.selfdrive.locationd.lagd import LateralLagEstimator, retrieve_initial_lag, masked_normalized_cross_correlation, \
-                                               BLOCK_NUM_NEEDED, BLOCK_SIZE, MIN_OKAY_WINDOW_SEC
+from openpilot.selfdrive.locationd.lagd import (
+  LateralLagEstimator,
+  retrieve_initial_lag,
+  masked_normalized_cross_correlation,
+  BLOCK_NUM_NEEDED,
+  BLOCK_SIZE,
+  MIN_OKAY_WINDOW_SEC,
+)
 from openpilot.selfdrive.test.process_replay.migration import migrate, migrate_carParams
 from openpilot.selfdrive.locationd.test.test_locationd_scenarios import TEST_ROUTE
 from openpilot.common.params import Params
@@ -27,14 +33,13 @@ def process_messages(estimator, lag_frames, n_frames, vego=20.0, rejection_thres
     if rejected:
       actual_la = desired_la
 
-    desired_cuvature = float(desired_la / (vego ** 2))
+    desired_cuvature = float(desired_la / (vego**2))
     actual_yr = float(actual_la / vego)
     msgs = [
       (t, "carControl", car.CarControl(latActive=not rejected)),
       (t, "carState", car.CarState(vEgo=vego, steeringPressed=False)),
       (t, "controlsState", log.ControlsState(desiredCurvature=desired_cuvature)),
-      (t, "livePose", log.LivePose(angularVelocityDevice=log.LivePose.XYZMeasurement(z=actual_yr, valid=True),
-                                   posenetOK=True, inputsOK=True)),
+      (t, "livePose", log.LivePose(angularVelocityDevice=log.LivePose.XYZMeasurement(z=actual_yr, valid=True), posenetOK=True, inputsOK=True)),
       (t, "liveCalibration", log.LiveCalibrationData(rpyCalib=[0, 0, 0], calStatus=log.LiveCalibrationData.Status.calibrated)),
     ]
     for t, w, m in msgs:
@@ -70,20 +75,20 @@ class TestLagd:
     actual_sig = np.sin(np.arange(0.0, 10.0, 0.1) - lag_frames * 0.1)
     mask = np.ones(len(desired_sig), dtype=bool)
 
-    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1:len(desired_sig) + 20]
+    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1 : len(desired_sig) + 20]
     assert np.argmax(corr) == lag_frames
 
     # add some noise
     desired_sig += np.random.normal(0, 0.05, len(desired_sig))
     actual_sig += np.random.normal(0, 0.05, len(actual_sig))
-    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1:len(desired_sig) + 20]
-    assert np.argmax(corr)  in range(lag_frames - MAX_ERR_FRAMES, lag_frames + MAX_ERR_FRAMES + 1)
+    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1 : len(desired_sig) + 20]
+    assert np.argmax(corr) in range(lag_frames - MAX_ERR_FRAMES, lag_frames + MAX_ERR_FRAMES + 1)
 
     # mask out 40% of the values, and make them noise
     mask = np.random.choice([True, False], size=len(desired_sig), p=[0.6, 0.4])
     desired_sig[~mask] = np.random.normal(0, 1, size=np.sum(~mask))
     actual_sig[~mask] = np.random.normal(0, 1, size=np.sum(~mask))
-    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1:len(desired_sig) + 20]
+    corr = masked_normalized_cross_correlation(desired_sig, actual_sig, mask, 200)[len(desired_sig) - 1 : len(desired_sig) + 20]
     assert np.argmax(corr) in range(lag_frames - MAX_ERR_FRAMES, lag_frames + MAX_ERR_FRAMES + 1)
 
   def test_empty_estimator(self):

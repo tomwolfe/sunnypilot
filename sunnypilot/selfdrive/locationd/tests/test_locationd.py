@@ -18,8 +18,7 @@ if platform.system() == 'Darwin':
 
 
 class TestLocationdProc:
-  LLD_MSGS = ['gpsLocationExternal', 'cameraOdometry', 'carState', 'liveCalibration',
-              'accelerometer', 'gyroscope', 'magnetometer']
+  LLD_MSGS = ['gpsLocationExternal', 'cameraOdometry', 'carState', 'liveCalibration', 'accelerometer', 'gyroscope', 'magnetometer']
 
   def setup_method(self):
     self.pm = messaging.PubMaster(self.LLD_MSGS)
@@ -49,7 +48,7 @@ class TestLocationdProc:
       msg.gpsLocationExternal.longitude = float(self.lon)
       msg.gpsLocationExternal.unixTimestampMillis = t * 1e6
       msg.gpsLocationExternal.altitude = float(self.alt)
-    #if name == "gnssMeasurements":
+    # if name == "gnssMeasurements":
     #  msg.gnssMeasurements.measTime = t
     #  msg.gnssMeasurements.positionECEF.value = [self.x , self.y, self.z]
     #  msg.gnssMeasurements.positionECEF.std = [0,0,0]

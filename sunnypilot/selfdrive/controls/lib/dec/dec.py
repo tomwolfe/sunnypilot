@@ -25,8 +25,7 @@ ModeType = Literal['acc', 'blended']
 class SmoothKalmanFilter:
   """Enhanced Kalman filter with smoothing for stable decision making."""
 
-  def __init__(self, initial_value=0, measurement_noise=0.1, process_noise=0.01,
-               alpha=1.0, smoothing_factor=0.85):
+  def __init__(self, initial_value=0, measurement_noise=0.1, process_noise=0.01, alpha=1.0, smoothing_factor=0.85):
     self.x = initial_value
     self.P = 1.0
     self.R = measurement_noise
@@ -143,33 +142,13 @@ class DynamicExperimentalController:
     self._mode_manager = ModeTransitionManager()
 
     # Smooth filters for stable decision making with faster response for critical scenarios
-    self._lead_filter = SmoothKalmanFilter(
-      measurement_noise=0.15,
-      process_noise=0.05,
-      alpha=1.02,
-      smoothing_factor=0.8
-    )
+    self._lead_filter = SmoothKalmanFilter(measurement_noise=0.15, process_noise=0.05, alpha=1.02, smoothing_factor=0.8)
 
-    self._slow_down_filter = SmoothKalmanFilter(
-      measurement_noise=0.1,
-      process_noise=0.1,
-      alpha=1.05,
-      smoothing_factor=0.7
-    )
+    self._slow_down_filter = SmoothKalmanFilter(measurement_noise=0.1, process_noise=0.1, alpha=1.05, smoothing_factor=0.7)
 
-    self._slowness_filter = SmoothKalmanFilter(
-      measurement_noise=0.1,
-      process_noise=0.06,
-      alpha=1.015,
-      smoothing_factor=0.92
-    )
+    self._slowness_filter = SmoothKalmanFilter(measurement_noise=0.1, process_noise=0.06, alpha=1.015, smoothing_factor=0.92)
 
-    self._mpc_fcw_filter = SmoothKalmanFilter(
-      measurement_noise=0.2,
-      process_noise=0.1,
-      alpha=1.1,
-      smoothing_factor=0.5
-    )
+    self._mpc_fcw_filter = SmoothKalmanFilter(measurement_noise=0.2, process_noise=0.1, alpha=1.1, smoothing_factor=0.5)
     self._has_lead_filtered = False
     self._has_slow_down = False
     self._has_slowness = False
@@ -185,7 +164,7 @@ class DynamicExperimentalController:
     self._trajectory_valid = False
 
   def _read_params(self) -> None:
-    if self._frame % int(1. / DT_MDL) == 0:
+    if self._frame % int(1.0 / DT_MDL) == 0:
       self._enabled = self._params.get_bool("DynamicExperimentalControl")
 
   def mode(self) -> str:
@@ -247,7 +226,7 @@ class DynamicExperimentalController:
     self._endpoint_x = float('inf')
     self._trajectory_valid = False
 
-    #Require exact trajectory size
+    # Require exact trajectory size
     position_valid = len(md.position.x) == TRAJECTORY_SIZE
     orientation_valid = len(md.orientation.x) == TRAJECTORY_SIZE
 
@@ -271,9 +250,7 @@ class DynamicExperimentalController:
     self._endpoint_x = endpoint_x
 
     # Get expected distance based on current speed using tuned constants
-    expected_distance = interp(self._v_ego_kph,
-                               WMACConstants.SLOW_DOWN_BP,
-                               WMACConstants.SLOW_DOWN_DIST)
+    expected_distance = interp(self._v_ego_kph, WMACConstants.SLOW_DOWN_BP, WMACConstants.SLOW_DOWN_DIST)
     self._expected_distance = expected_distance
 
     # Calculate urgency based on trajectory shortage with enhanced logic for traffic lights/stops
@@ -295,10 +272,11 @@ class DynamicExperimentalController:
         urgency = min(1.0, urgency * 2.0)
 
       # Enhanced speed-based urgency adjustment for better traffic light handling
-      if (self._v_ego_kph > WMACConstants.URBAN_INTERSECTION_MIN_SPEED
-          and self._v_ego_kph <= WMACConstants.URBAN_INTERSECTION_MAX_SPEED):  # Typical urban intersection speeds
+      if (
+        self._v_ego_kph > WMACConstants.URBAN_INTERSECTION_MIN_SPEED and self._v_ego_kph <= WMACConstants.URBAN_INTERSECTION_MAX_SPEED
+      ):  # Typical urban intersection speeds
         speed_factor = 1.0 + (WMACConstants.URBAN_INTERSECTION_MAX_SPEED - self._v_ego_kph) / (
-            WMACConstants.URBAN_INTERSECTION_SPEED_FACTOR_DENOMINATOR
+          WMACConstants.URBAN_INTERSECTION_SPEED_FACTOR_DENOMINATOR
         )  # More urgency when decelerating in urban areas
         urgency = min(1.0, urgency * speed_factor)
 

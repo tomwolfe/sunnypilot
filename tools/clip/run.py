@@ -29,7 +29,7 @@ FRAMERATE = 20
 PIXEL_DEPTH = '24'
 RESOLUTION = '2160x1080'
 SECONDS_TO_WARM = 2
-PROC_WAIT_SECONDS = 30*10
+PROC_WAIT_SECONDS = 30 * 10
 
 OPENPILOT_FONT = str(Path(BASEDIR, 'selfdrive/assets/fonts/Inter-Regular.ttf').resolve())
 REPLAY = str(Path(BASEDIR, 'tools/replay/replay').resolve())
@@ -74,15 +74,17 @@ def get_meta_text(lr: LogReader, route: Route):
   car_params = lr.first('carParams')
   origin_parts = init_data.gitRemote.split('/')
   origin = origin_parts[3] if len(origin_parts) > 3 else 'unknown'
-  return ', '.join([
-    f"openpilot v{init_data.version}",
-    f"route: {route.name.canonical_name}",
-    f"car: {car_params.carFingerprint}",
-    f"origin: {origin}",
-    f"branch: {init_data.gitBranch}",
-    f"commit: {init_data.gitCommit[:7]}",
-    f"modified: {str(init_data.dirty).lower()}",
-  ])
+  return ', '.join(
+    [
+      f"openpilot v{init_data.version}",
+      f"route: {route.name.canonical_name}",
+      f"car: {car_params.carFingerprint}",
+      f"origin: {origin}",
+      f"branch: {init_data.gitBranch}",
+      f"commit: {init_data.gitCommit[:7]}",
+      f"modified: {str(init_data.dirty).lower()}",
+    ]
+  )
 
 
 def parse_args(parser: ArgumentParser):
@@ -172,7 +174,7 @@ def wait_for_frames(procs: list[Popen]):
   no_frames_drawn = True
   while no_frames_drawn:
     sm.update()
-    no_frames_drawn = sm['uiDebug'].drawTimeMillis == 0.
+    no_frames_drawn = sm['uiDebug'].drawTimeMillis == 0.0
     check_for_failure(procs)
 
 
@@ -204,7 +206,7 @@ def clip(
     # metadata overlay
     f"drawtext=text='{escape_ffmpeg_text(meta_text)}':fontfile={OPENPILOT_FONT}:fontcolor=white:fontsize=15:{box_style}:x=(w-text_w)/2:y=5.5:enable='between(t,1,5)'",
     # route time overlay
-    f"drawtext=text='%{{eif\\:floor(({start}+t)/60)\\:d\\:2}}\\:%{{eif\\:mod({start}+t\\,60)\\:d\\:2}}':fontfile={OPENPILOT_FONT}:fontcolor=white:fontsize=24:{box_style}:x=w-text_w-38:y=38"
+    f"drawtext=text='%{{eif\\:floor(({start}+t)/60)\\:d\\:2}}\\:%{{eif\\:mod({start}+t\\,60)\\:d\\:2}}':fontfile={OPENPILOT_FONT}:fontcolor=white:fontsize=24:{box_style}:x=w-text_w-38:y=38",
   ]
   if title:
     overlays.append(f"drawtext=text='{escape_ffmpeg_text(title)}':fontfile={OPENPILOT_FONT}:fontcolor=white:fontsize=32:{box_style}:x=(w-text_w)/2:y=53")
@@ -216,24 +218,42 @@ def clip(
     ]
 
   ffmpeg_cmd = [
-    'ffmpeg', '-y',
-    '-video_size', RESOLUTION,
-    '-framerate', str(FRAMERATE),
-    '-f', 'x11grab',
-    '-rtbufsize', '100M',
-    '-draw_mouse', '0',
-    '-i', display,
-    '-c:v', 'libx264',
-    '-maxrate', f'{bit_rate_kbps}k',
-    '-bufsize', f'{bit_rate_kbps*2}k',
-    '-crf', '23',
-    '-filter:v', ','.join(overlays),
-    '-preset', 'ultrafast',
-    '-tune', 'zerolatency',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    '-f', 'mp4',
-    '-t', str(duration),
+    'ffmpeg',
+    '-y',
+    '-video_size',
+    RESOLUTION,
+    '-framerate',
+    str(FRAMERATE),
+    '-f',
+    'x11grab',
+    '-rtbufsize',
+    '100M',
+    '-draw_mouse',
+    '0',
+    '-i',
+    display,
+    '-c:v',
+    'libx264',
+    '-maxrate',
+    f'{bit_rate_kbps}k',
+    '-bufsize',
+    f'{bit_rate_kbps * 2}k',
+    '-crf',
+    '23',
+    '-filter:v',
+    ','.join(overlays),
+    '-preset',
+    'ultrafast',
+    '-tune',
+    'zerolatency',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-f',
+    'mp4',
+    '-t',
+    str(duration),
     out,
   ]
 
@@ -275,7 +295,7 @@ def main():
   route_group.add_argument('--demo', help='use the demo route', action='store_true')
   p.add_argument('-d', '--data-dir', help='local directory where route data is stored')
   p.add_argument('-e', '--end', help='stop clipping at <end> seconds', type=int)
-  p.add_argument('-f', '--file-size', help='target file size (Discord/GitHub support max 10MB, default is 9MB)', type=float, default=9.)
+  p.add_argument('-f', '--file-size', help='target file size (Discord/GitHub support max 10MB, default is 9MB)', type=float, default=9.0)
   p.add_argument('-o', '--output', help='output clip to (.mp4)', type=validate_output_file, default=DEFAULT_OUTPUT)
   p.add_argument('-p', '--prefix', help='openpilot prefix', default=f'clip_{randint(100, 99999)}')
   p.add_argument('-q', '--quality', help='quality of camera (low = qcam, high = hevc)', choices=['low', 'high'], default='high')

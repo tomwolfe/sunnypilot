@@ -9,9 +9,7 @@ ROOT = HERE + "/.."
 blacklist = [
   ".git/",
   ".github/workflows/",
-
   "matlab.*.md",
-
   # no LFS or submodules in release
   ".lfsconfig",
   ".gitattributes",
@@ -22,8 +20,7 @@ blacklist = [
 ]
 
 # gets you through the blacklist
-whitelist: list[str] = [
-]
+whitelist: list[str] = []
 
 
 if __name__ == "__main__":

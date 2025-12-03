@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from cereal import log
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
@@ -22,12 +23,12 @@ class AutoLaneChangeMode:
 
 
 AUTO_LANE_CHANGE_TIMER = {
-  AutoLaneChangeMode.OFF: 0.0,            # Off
-  AutoLaneChangeMode.NUDGE: 0.0,          # Nudge
-  AutoLaneChangeMode.NUDGELESS: 0.05,     # Nudgeless
-  AutoLaneChangeMode.HALF_SECOND: 0.5,    # 0.5-second delay
-  AutoLaneChangeMode.ONE_SECOND: 1.0,     # 1-second delay
-  AutoLaneChangeMode.TWO_SECONDS: 2.0,    # 2-second delay
+  AutoLaneChangeMode.OFF: 0.0,  # Off
+  AutoLaneChangeMode.NUDGE: 0.0,  # Nudge
+  AutoLaneChangeMode.NUDGELESS: 0.05,  # Nudgeless
+  AutoLaneChangeMode.HALF_SECOND: 0.5,  # 0.5-second delay
+  AutoLaneChangeMode.ONE_SECOND: 1.0,  # 1-second delay
+  AutoLaneChangeMode.TWO_SECONDS: 2.0,  # 2-second delay
   AutoLaneChangeMode.THREE_SECONDS: 3.0,  # 3-second delay
 }
 
@@ -52,15 +53,14 @@ class AutoLaneChangeController:
 
     # Enhanced lane change safety tracking
     self.lead_vehicle_buffer = deque(maxlen=10)  # Track lead vehicle data over time (0.1 seconds at 100Hz)
-    self.lane_width_buffer = deque(maxlen=5)     # Track lane width consistency
-    self.speed_diff_buffer = deque(maxlen=20)    # Track relative speed for safety assessment
+    self.lane_width_buffer = deque(maxlen=5)  # Track lane width consistency
+    self.speed_diff_buffer = deque(maxlen=20)  # Track relative speed for safety assessment
 
     self.read_params()
 
   def reset(self) -> None:
     # Auto reset if parent state indicates we should
-    if self.DH.lane_change_state == log.LaneChangeState.off and \
-       self.DH.lane_change_direction == log.LaneChangeDirection.none:
+    if self.DH.lane_change_state == log.LaneChangeState.off and self.DH.lane_change_direction == log.LaneChangeDirection.none:
       self.lane_change_wait_timer = 0.0
       self.prev_brake_pressed = False
       self.prev_lane_change = False
@@ -79,8 +79,7 @@ class AutoLaneChangeController:
     self.param_read_counter += 1
 
   def update_lane_change_timers(self, blindspot_detected: bool) -> None:
-    self.lane_change_delay = AUTO_LANE_CHANGE_TIMER.get(self.lane_change_set_timer,
-                                                        AUTO_LANE_CHANGE_TIMER[AutoLaneChangeMode.NUDGE])
+    self.lane_change_delay = AUTO_LANE_CHANGE_TIMER.get(self.lane_change_set_timer, AUTO_LANE_CHANGE_TIMER[AutoLaneChangeMode.NUDGE])
 
     self.lane_change_wait_timer += DT_MDL
 
@@ -118,8 +117,11 @@ class AutoLaneChangeController:
         try:
           # Use the y-coordinates of lane lines at a fixed distance ahead (e.g., 10 meters)
           # to estimate lane width
-          lane_width_estimate = abs(model_data.laneLines[1].y[10] - model_data.laneLines[2].y[10]) \
-                               if len(model_data.laneLines[1].y) > 10 and len(model_data.laneLines[2].y) > 10 else 3.7  # Default to 3.7m
+          lane_width_estimate = (
+            abs(model_data.laneLines[1].y[10] - model_data.laneLines[2].y[10])
+            if len(model_data.laneLines[1].y) > 10 and len(model_data.laneLines[2].y) > 10
+            else 3.7
+          )  # Default to 3.7m
           self.lane_width_buffer.append(lane_width_estimate)
         except (IndexError, AttributeError):
           # If we can't estimate lane width, continue with default

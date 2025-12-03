@@ -28,8 +28,7 @@ MigrationFunc = Callable[[list[MessageWithIndex]], MigrationOps]
 # 3. product is the message type created by the migration function, and the function will be skipped if product type already exists in lr
 # 4. it must return a list of operations to be applied to the logreader (replace, add, delete)
 # 5. all migration functions must be independent of each other
-def migrate_all(lr: LogIterable, manager_states: bool = False, panda_states: bool = False, camera_states: bool = False,
-                live_location_kalman: bool = True):
+def migrate_all(lr: LogIterable, manager_states: bool = False, panda_states: bool = False, camera_states: bool = False, live_location_kalman: bool = True):
   migrations = [
     migrate_sensorEvents,
     migrate_carParams,
@@ -66,7 +65,7 @@ def migrate(lr: LogIterable, migration_funcs: list[MigrationFunc]):
   replace_ops, add_ops, del_ops = [], [], []
   for migration in migration_funcs:
     assert hasattr(migration, "inputs") and hasattr(migration, "product"), "Migration functions must use @migration decorator"
-    if migration.product in grouped: # skip if product already exists
+    if migration.product in grouped:  # skip if product already exists
       continue
 
     sorted_indices = sorted(ii for i in migration.inputs for ii in grouped[i])
@@ -87,14 +86,16 @@ def migrate(lr: LogIterable, migration_funcs: list[MigrationFunc]):
   return lr
 
 
-def migration(inputs: list[str], product: str|None=None):
+def migration(inputs: list[str], product: str | None = None):
   def decorator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
       return func(*args, **kwargs)
+
     wrapper.inputs = inputs
     wrapper.product = product
     return wrapper
+
   return decorator
 
 
@@ -139,7 +140,7 @@ def migrate_drivingModelData(msgs):
       fill_lane_line_meta(dmd.drivingModelData.laneLineMeta, msg.modelV2.laneLines, msg.modelV2.laneLineProbs)
     if all(len(a) for a in [msg.modelV2.position.x, msg.modelV2.position.y, msg.modelV2.position.z]):
       fill_xyz_poly(dmd.drivingModelData.path, ModelConstants.POLY_PATH_DEGREE, msg.modelV2.position.x, msg.modelV2.position.y, msg.modelV2.position.z)
-    add_ops.append( dmd.as_reader())
+    add_ops.append(dmd.as_reader())
   return [], add_ops, []
 
 
@@ -195,10 +196,20 @@ def migrate_controlsState(msgs):
     m.valid = msg.valid
     m.logMonoTime = msg.logMonoTime
     ss = m.selfdriveState
-    for field in ("enabled", "active", "state", "engageable", "alertText1", "alertText2",
-                  "alertStatus", "alertSize", "alertType", "experimentalMode",
-                  "personality"):
-      setattr(ss, field, getattr(msg.controlsState, field+"DEPRECATED"))
+    for field in (
+      "enabled",
+      "active",
+      "state",
+      "engageable",
+      "alertText1",
+      "alertText2",
+      "alertStatus",
+      "alertSize",
+      "alertType",
+      "experimentalMode",
+      "personality",
+    ):
+      setattr(ss, field, getattr(msg.controlsState, field + "DEPRECATED"))
     add_ops.append(m.as_reader())
   return [], add_ops, []
 

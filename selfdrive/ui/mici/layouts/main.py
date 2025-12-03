@@ -43,11 +43,16 @@ class MiciMainLayout(Widget):
       # TODO: set parent rect and use it if never passed rect from render (like in Scroller)
       widget.set_rect(rl.Rectangle(0, 0, gui_app.width, gui_app.height))
 
-    self._scroller = Scroller([
-      self._alerts_layout,
-      self._home_layout,
-      self._onroad_layout,
-    ], spacing=0, pad_start=0, pad_end=0)
+    self._scroller = Scroller(
+      [
+        self._alerts_layout,
+        self._home_layout,
+        self._onroad_layout,
+      ],
+      spacing=0,
+      pad_start=0,
+      pad_end=0,
+    )
     self._scroller.set_reset_scroll_at_show(False)
 
     # Disable scrolling when onroad is interacting with bookmark

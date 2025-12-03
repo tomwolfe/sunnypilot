@@ -9,12 +9,12 @@ class WMACConstants:
 
   # Threshold multipliers for different scenarios
   SLOW_DOWN_THRESHOLD_MULTIPLIER = 0.7  # Multiplier that effectively lowers the slow down detection threshold when map data is available,
-                                         # making the system more sensitive to upcoming traffic lights/stops (0.7 * base threshold)
+  # making the system more sensitive to upcoming traffic lights/stops (0.7 * base threshold)
 
   # Optimized slow down distance curve - enhanced for traffic light/stop sign scenarios
   # Adjusted to better anticipate stops at traffic lights and stop signs
-  SLOW_DOWN_BP = [0., 10., 20., 30., 40., 50., 55., 60.]
-  SLOW_DOWN_DIST = [25., 35., 50., 70., 90., 115., 135., 155.]  # Reduced distances for more responsive stopping
+  SLOW_DOWN_BP = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 55.0, 60.0]
+  SLOW_DOWN_DIST = [25.0, 35.0, 50.0, 70.0, 90.0, 115.0, 135.0, 155.0]  # Reduced distances for more responsive stopping
 
   # Traffic light/stop sign related constants
   TRAFFIC_LIGHT_URGENCY_MULTIPLIER = 1.2  # Multiplier for urgency calculation when approaching traffic light

@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from dataclasses import dataclass, field
 
 import pyray as rl
@@ -35,8 +36,14 @@ class TreeFolder:
 
 class TreeItemWidget(Button):
   def __init__(self, text, ref, is_folder=False, indent_level=0, click_callback=None, favorite_callback=None, is_favorite=False):
-    super().__init__(text, click_callback, button_style=ButtonStyle.NORMAL, text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-                     text_padding=20 + indent_level * 30, elide_right=True)
+    super().__init__(
+      text,
+      click_callback,
+      button_style=ButtonStyle.NORMAL,
+      text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+      text_padding=20 + indent_level * 30,
+      elide_right=True,
+    )
     self.text = text
     self.ref = ref
     self.is_folder = is_folder
@@ -57,8 +64,9 @@ class TreeItemWidget(Button):
     self._label.render(text_rect)
 
     if not self.is_folder and self._favorite_callback:
-      draw_star(self._rect.x + self._rect.width - 90, self._rect.y + self._rect.height / 2, 40, self.is_favorite,
-                style.ON_BG_COLOR if self.is_favorite else rl.GRAY)
+      draw_star(
+        self._rect.x + self._rect.width - 90, self._rect.y + self._rect.height / 2, 40, self.is_favorite, style.ON_BG_COLOR if self.is_favorite else rl.GRAY
+      )
 
   def _handle_mouse_release(self, mouse_pos):
     star_rect = rl.Rectangle(self._rect.x + self._rect.width - 90 - 40, self._rect.y + self._rect.height / 2 - 40, 80, 80)
@@ -69,8 +77,19 @@ class TreeItemWidget(Button):
 
 
 class TreeOptionDialog(MultiOptionDialog):
-  def __init__(self, title, folders, current_ref="", fav_param="", option_font_weight=FontWeight.MEDIUM, search_prompt=None,
-               get_folders_fn=None, on_exit=None, display_func=None, search_funcs=None):
+  def __init__(
+    self,
+    title,
+    folders,
+    current_ref="",
+    fav_param="",
+    option_font_weight=FontWeight.MEDIUM,
+    search_prompt=None,
+    get_folders_fn=None,
+    on_exit=None,
+    display_func=None,
+    search_funcs=None,
+  ):
     super().__init__(title, [], "", option_font_weight)
     self.folders = folders
     self.selection_ref = current_ref
@@ -128,13 +147,23 @@ class TreeOptionDialog(MultiOptionDialog):
         continue
       expanded = folder.folder in self.expanded or not folder.folder or bool(self.query)
       if folder.folder:
-        self.visible_items.append(TreeItemWidget(f"{'-' if expanded else '+'} {folder.folder}", "", True, 0,
-                                                 lambda folder_ref=folder: self._toggle_folder(folder_ref)))
+        self.visible_items.append(
+          TreeItemWidget(f"{'-' if expanded else '+'} {folder.folder}", "", True, 0, lambda folder_ref=folder: self._toggle_folder(folder_ref))
+        )
       if expanded:
         for node in nodes:
           favorite_cb = (lambda node_ref=node: self._toggle_favorite(node_ref)) if self.fav_param and node.ref != "Default" else None
-          self.visible_items.append(TreeItemWidget(self.display_func(node), node.ref, False, 1 if folder.folder else 0,
-                                                   lambda node_ref=node: self._select_node(node_ref), favorite_cb, node.ref in self.favorites))
+          self.visible_items.append(
+            TreeItemWidget(
+              self.display_func(node),
+              node.ref,
+              False,
+              1 if folder.folder else 0,
+              lambda node_ref=node: self._select_node(node_ref),
+              favorite_cb,
+              node.ref in self.favorites,
+            )
+          )
     self.option_buttons = self.visible_items
     self.options = [item.text for item in self.visible_items]
     self.scroller._items = self.visible_items
@@ -150,19 +179,19 @@ class TreeOptionDialog(MultiOptionDialog):
       button_color = style.BUTTON_DISABLED_BG_COLOR
     roundness = 10 / (min(button_rect.width, button_rect.height) / 2)
     rl.draw_rectangle_rounded(button_rect, roundness, 10, button_color)
-    label = Label(button_text, 60, FontWeight.NORMAL, rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                  text_color=rl.WHITE if is_enabled else rl.GRAY)
+    label = Label(button_text, 60, FontWeight.NORMAL, rl.GuiTextAlignment.TEXT_ALIGN_CENTER, text_color=rl.WHITE if is_enabled else rl.GRAY)
     label.render(button_rect)
 
   def _render(self, rect):
     dialog_content_rect = rl.Rectangle(rect.x + 50, rect.y + 50, rect.width - 100, rect.height - 100)
     rl.draw_rectangle_rounded(dialog_content_rect, 0.02, 20, rl.BLACK)
-    gui_label(rl.Rectangle(dialog_content_rect.x + 50, dialog_content_rect.y + 50, dialog_content_rect.width - 100, 70),
-              self.title, 70, font_weight=FontWeight.BOLD)
+    gui_label(
+      rl.Rectangle(dialog_content_rect.x + 50, dialog_content_rect.y + 50, dialog_content_rect.width - 100, 70), self.title, 70, font_weight=FontWeight.BOLD
+    )
 
     options_area_rect = rl.Rectangle(dialog_content_rect.x + 50, dialog_content_rect.y + 170, dialog_content_rect.width - 100, dialog_content_rect.height - 330)
     for index, option_text in enumerate(self.options):
-      self.option_buttons[index].selected = (option_text == self.selection)
+      self.option_buttons[index].selected = option_text == self.selection
       self.option_buttons[index].set_button_style(ButtonStyle.PRIMARY if option_text == self.selection else ButtonStyle.NORMAL)
       self.option_buttons[index].set_rect(rl.Rectangle(0, 0, options_area_rect.width, 135))
     self.scroller.render(options_area_rect)

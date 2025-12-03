@@ -28,10 +28,12 @@ def create_random_file(file_path: Path, size_mb: float, lock: bool = False, uplo
   if upload_xattr is not None:
     setxattr(str(file_path), uploader.UPLOAD_ATTR_NAME, upload_xattr)
 
+
 class MockResponse:
   def __init__(self, text, status_code):
     self.text = text
     self.status_code = status_code
+
 
 class MockApi:
   def __init__(self, dongle_id):
@@ -43,6 +45,7 @@ class MockApi:
   def get_token(self):
     return "fake-token"
 
+
 class MockApiIgnore:
   def __init__(self, dongle_id):
     pass
@@ -52,6 +55,7 @@ class MockApiIgnore:
 
   def get_token(self):
     return "fake-token"
+
 
 class UploaderTestCase:
   f_type = "UNKNOWN"
@@ -79,8 +83,9 @@ class UploaderTestCase:
     self.params.put("IsOffroad", True)
     self.params.put("DongleId", "0000000000000000")
 
-  def make_file_with_data(self, f_dir: str, fn: str, size_mb: float = .1, lock: bool = False,
-                          upload_xattr: bytes = None, preserve_xattr: bytes = None) -> Path:
+  def make_file_with_data(
+    self, f_dir: str, fn: str, size_mb: float = 0.1, lock: bool = False, upload_xattr: bytes = None, preserve_xattr: bytes = None
+  ) -> Path:
     file_path = Path(Paths.log_root()) / f_dir / fn
     create_random_file(file_path, size_mb, lock, upload_xattr)
 

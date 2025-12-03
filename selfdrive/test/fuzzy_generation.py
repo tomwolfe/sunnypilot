@@ -36,7 +36,7 @@ class FuzzyGenerator:
 
     try:
       if hasattr(field.proto, 'slot'):
-        slot_type =  field.proto.slot.type
+        slot_type = field.proto.slot.type
         base_type = slot_type.which()
         return rec(slot_type)
       else:
@@ -54,14 +54,14 @@ class FuzzyGenerator:
   def _get_native_type_map(real_floats: bool) -> dict[str, st.SearchStrategy]:
     return {
       'bool': st.booleans(),
-      'int8': st.integers(min_value=-2**7, max_value=2**7-1),
-      'int16': st.integers(min_value=-2**15, max_value=2**15-1),
-      'int32': st.integers(min_value=-2**31, max_value=2**31-1),
-      'int64': st.integers(min_value=-2**63, max_value=2**63-1),
-      'uint8': st.integers(min_value=0, max_value=2**8-1),
-      'uint16': st.integers(min_value=0, max_value=2**16-1),
-      'uint32': st.integers(min_value=0, max_value=2**32-1),
-      'uint64': st.integers(min_value=0, max_value=2**64-1),
+      'int8': st.integers(min_value=-(2**7), max_value=2**7 - 1),
+      'int16': st.integers(min_value=-(2**15), max_value=2**15 - 1),
+      'int32': st.integers(min_value=-(2**31), max_value=2**31 - 1),
+      'int64': st.integers(min_value=-(2**63), max_value=2**63 - 1),
+      'uint8': st.integers(min_value=0, max_value=2**8 - 1),
+      'uint16': st.integers(min_value=0, max_value=2**16 - 1),
+      'uint32': st.integers(min_value=0, max_value=2**32 - 1),
+      'uint64': st.integers(min_value=0, max_value=2**64 - 1),
       'float32': st.floats(width=32, allow_nan=not real_floats, allow_infinity=not real_floats),
       'float64': st.floats(width=64, allow_nan=not real_floats, allow_infinity=not real_floats),
       'text': st.text(max_size=1000),

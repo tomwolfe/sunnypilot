@@ -18,9 +18,14 @@ from openpilot.sunnypilot.selfdrive.car import interfaces as sunnypilot_interfac
 
 
 class TestLatControl:
-
-  @parameterized.expand([(HONDA.HONDA_CIVIC, LatControlPID), (TOYOTA.TOYOTA_RAV4, LatControlTorque),
-                         (NISSAN.NISSAN_LEAF, LatControlAngle), (GM.CHEVROLET_BOLT_EUV, LatControlTorque)])
+  @parameterized.expand(
+    [
+      (HONDA.HONDA_CIVIC, LatControlPID),
+      (TOYOTA.TOYOTA_RAV4, LatControlTorque),
+      (NISSAN.NISSAN_LEAF, LatControlAngle),
+      (GM.CHEVROLET_BOLT_EUV, LatControlTorque),
+    ]
+  )
   def test_saturation(self, car_name, controller):
     CarInterface = interfaces[car_name]
     CP = CarInterface.get_non_essential_params(car_name)
@@ -37,6 +42,7 @@ class TestLatControl:
     CS.steeringPressed = False
 
     from types import SimpleNamespace
+
     params = SimpleNamespace()
     params.roll = 0.0
     params.angleOffsetDeg = 0.0
@@ -49,7 +55,7 @@ class TestLatControl:
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, True, 0.2, adaptive_gains={})
     assert lac_log.saturated
 
-    controller.reset() # Reset the controller state before the next set of tests
+    controller.reset()  # Reset the controller state before the next set of tests
 
     for _ in range(1000):
       _, _, lac_log = controller.update(True, CS, VM, params, False, 0, pose, False, 0.2, adaptive_gains={})

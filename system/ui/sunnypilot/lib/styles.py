@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from dataclasses import dataclass
 
 import pyray as rl
@@ -69,5 +70,6 @@ class DefaultStyleSP(Base):
   BUTTON_PRIMARY_COLOR = rl.Color(70, 91, 234, 255)  # Royal Blue
   BUTTON_NEUTRAL_GRAY = rl.Color(51, 51, 51, 255)
   BUTTON_DISABLED_BG_COLOR = rl.Color(30, 30, 30, 255)  # Very Dark Grey
+
 
 style = DefaultStyleSP

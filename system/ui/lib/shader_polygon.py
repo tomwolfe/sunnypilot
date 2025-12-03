@@ -28,7 +28,9 @@ class Gradient:
       self.stops = [i / max(1, color_count - 1) for i in range(color_count)]
 
 
-FRAGMENT_SHADER = GL_VERSION + """
+FRAGMENT_SHADER = (
+  GL_VERSION
+  + """
 in vec2 fragTexCoord;
 out vec4 finalColor;
 
@@ -71,9 +73,12 @@ void main() {
   finalColor = useGradient == 1 ? getGradientColor(gl_FragCoord.xy) : fillColor;
 }
 """
+)
 
 # Default vertex shader
-VERTEX_SHADER = GL_VERSION + """
+VERTEX_SHADER = (
+  GL_VERSION
+  + """
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 out vec2 fragTexCoord;
@@ -84,6 +89,7 @@ void main() {
   gl_Position = mvp * vec4(vertexPosition, 1.0);
 }
 """
+)
 
 UNIFORM_INT = rl.ShaderUniformDataType.SHADER_UNIFORM_INT
 UNIFORM_FLOAT = rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
@@ -152,8 +158,7 @@ class ShaderState:
     self.initialized = False
 
 
-def _configure_shader_color(state: ShaderState, color: Optional[rl.Color],
-                            gradient: Gradient | None, origin_rect: rl.Rectangle):
+def _configure_shader_color(state: ShaderState, color: Optional[rl.Color], gradient: Gradient | None, origin_rect: rl.Rectangle):
   assert (color is not None) != (gradient is not None), "Either color or gradient must be provided"
 
   use_gradient = 1 if (gradient is not None and len(gradient.colors) >= 1) else 0
@@ -166,7 +171,7 @@ def _configure_shader_color(state: ShaderState, color: Optional[rl.Color],
     for i in range(len(gradient.colors)):
       c = gradient.colors[i]
       base = i * 4
-      state.gradient_colors_ptr[base:base + 4] = [c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0]
+      state.gradient_colors_ptr[base : base + 4] = [c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0]
     rl.set_shader_value_v(state.shader, state.locations['gradientColors'], state.gradient_colors_ptr, UNIFORM_VEC4, len(gradient.colors))
 
     for i in range(len(gradient.stops)):
@@ -203,9 +208,7 @@ def triangulate(pts: np.ndarray) -> list[tuple[float, float]]:
   return cast(list, np.array(tri_strip).tolist())
 
 
-def draw_polygon(origin_rect: rl.Rectangle, points: np.ndarray,
-                 color: Optional[rl.Color] = None, gradient: Gradient | None = None):
-
+def draw_polygon(origin_rect: rl.Rectangle, points: np.ndarray, color: Optional[rl.Color] = None, gradient: Gradient | None = None):
   """
   Draw a ribbon polygon (two chains) with a triangle strip and gradient.
   - Input must be [L0..Lk-1, Rk-1..R0], even count, no crossings/holes.

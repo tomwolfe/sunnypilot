@@ -7,9 +7,9 @@ def test_improved_longitudinal_control_jerk_limiting():
   """Test the improved jerk limiting in longitudinal control."""
   # Create mock car params
   CP = CarParams()
-  CP.longitudinalTuning.kpBP = [0., 5., 35.]
+  CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kpV = [1.0, 1.2, 0.8]
-  CP.longitudinalTuning.kiBP = [0., 5., 35.]
+  CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
@@ -31,7 +31,7 @@ def test_improved_longitudinal_control_jerk_limiting():
         "LongitudinalStartingAccelMultiplier": "0.8",
         "LongitudinalStartingAccelLimit": "0.8",
         "LongitudinalAdaptiveErrorThreshold": "0.6",
-        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+        "LongitudinalAdaptiveSpeedThreshold": "5.0",
       }
       return param_defaults.get(key, None)
 
@@ -43,7 +43,7 @@ def test_improved_longitudinal_control_jerk_limiting():
   # Simulate car state
   CS = car.CarState.new_message()
   CS.vEgo = 20.0  # 20 m/s
-  CS.aEgo = 0.5   # 0.5 m/s^2 acceleration
+  CS.aEgo = 0.5  # 0.5 m/s^2 acceleration
 
   # Test with varying acceleration targets to verify jerk limiting
   accel_limits = (-3.0, 2.0)
@@ -66,9 +66,9 @@ def test_improved_longitudinal_control_jerk_limiting():
 def test_adaptive_pid_in_longitudinal_control():
   """Test the adaptive PID based on driving conditions."""
   CP = CarParams()
-  CP.longitudinalTuning.kpBP = [0., 5., 35.]
+  CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kpV = [1.0, 1.2, 0.8]
-  CP.longitudinalTuning.kiBP = [0., 5., 35.]
+  CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
@@ -89,7 +89,7 @@ def test_adaptive_pid_in_longitudinal_control():
         "LongitudinalStartingAccelMultiplier": "0.8",
         "LongitudinalStartingAccelLimit": "0.8",
         "LongitudinalAdaptiveErrorThreshold": "0.6",
-        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+        "LongitudinalAdaptiveSpeedThreshold": "5.0",
       }
       return param_defaults.get(key, None)
 
@@ -118,9 +118,9 @@ def test_adaptive_pid_in_longitudinal_control():
 def test_low_speed_crawl_control():
   """Test improved low-speed control for smoother stop-and-go."""
   CP = CarParams()
-  CP.longitudinalTuning.kpBP = [0., 5., 35.]
+  CP.longitudinalTuning.kpBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kpV = [1.0, 1.2, 0.8]
-  CP.longitudinalTuning.kiBP = [0., 5., 35.]
+  CP.longitudinalTuning.kiBP = [0.0, 5.0, 35.0]
   CP.longitudinalTuning.kiV = [0.2, 0.3, 0.1]
   CP.stopAccel = -2.0
   CP.startAccel = 1.0
@@ -141,7 +141,7 @@ def test_low_speed_crawl_control():
         "LongitudinalStartingAccelMultiplier": "0.8",
         "LongitudinalStartingAccelLimit": "0.8",
         "LongitudinalAdaptiveErrorThreshold": "0.6",
-        "LongitudinalAdaptiveSpeedThreshold": "5.0"
+        "LongitudinalAdaptiveSpeedThreshold": "5.0",
       }
       return param_defaults.get(key, None)
 

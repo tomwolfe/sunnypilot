@@ -21,6 +21,7 @@ from openpilot.system.sensord.sensors.mmc5603nj_magn import MMC5603NJ_Magn
 
 I2C_BUS_IMU = 1
 
+
 def interrupt_loop(sensors: list[tuple[Sensor, str, bool]], event) -> None:
   pm = messaging.PubMaster([service for sensor, service, interrupt in sensors if interrupt])
 
@@ -49,7 +50,7 @@ def interrupt_loop(sensors: list[tuple[Sensor, str, bool]], event) -> None:
       cloudlog.error("no poll events set")
       continue
 
-    dat = os.read(fd, ctypes.sizeof(gpioevent_data)*16)
+    dat = os.read(fd, ctypes.sizeof(gpioevent_data) * 16)
     evd = gpioevent_data.from_buffer_copy(dat)
 
     cur_offset = time.time_ns() - time.monotonic_ns()
@@ -89,8 +90,14 @@ def polling_loop(sensor: Sensor, service: str, event: threading.Event) -> None:
       cloudlog.exception(f"Error in {service} polling loop")
     rk.keep_time()
 
+
 def main() -> None:
-  config_realtime_process([1, ], 1)
+  config_realtime_process(
+    [
+      1,
+    ],
+    1,
+  )
 
   sensors_cfg = [
     (LSM6DS3_Accel(I2C_BUS_IMU), "accelerometer", True),
@@ -111,19 +118,13 @@ def main() -> None:
 
   # Initialize sensors
   exit_event = threading.Event()
-  threads = [
-    threading.Thread(target=interrupt_loop, args=(sensors_cfg, exit_event), daemon=True)
-  ]
+  threads = [threading.Thread(target=interrupt_loop, args=(sensors_cfg, exit_event), daemon=True)]
   for sensor, service, interrupt in sensors_cfg:
     try:
       sensor.init()
       if not interrupt:
         # Start polling thread for sensors without interrupts
-        threads.append(threading.Thread(
-          target=polling_loop,
-          args=(sensor, service, exit_event),
-          daemon=True
-        ))
+        threads.append(threading.Thread(target=polling_loop, args=(sensor, service, exit_event), daemon=True))
     except Exception:
       cloudlog.exception(f"Error initializing {service} sensor")
 
@@ -145,6 +146,7 @@ def main() -> None:
         sensor.shutdown()
       except Exception:
         cloudlog.exception("Error shutting down sensor")
+
 
 if __name__ == "__main__":
   main()

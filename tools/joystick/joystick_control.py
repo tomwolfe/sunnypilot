@@ -18,9 +18,8 @@ class Keyboard:
   def __init__(self):
     self.kb = KBHit()
     self.axis_increment = 0.05  # 5% of full actuation each key press
-    self.axes_map = {'w': 'gb', 's': 'gb',
-                     'a': 'steer', 'd': 'steer'}
-    self.axes_values = {'gb': 0., 'steer': 0.}
+    self.axes_map = {'w': 'gb', 's': 'gb', 'a': 'steer', 'd': 'steer'}
+    self.axes_values = {'gb': 0.0, 'steer': 0.0}
     self.axes_order = ['gb', 'steer']
     self.cancel = False
 
@@ -28,7 +27,7 @@ class Keyboard:
     key = self.kb.getch().lower()
     self.cancel = False
     if key == 'r':
-      self.axes_values = dict.fromkeys(self.axes_values, 0.)
+      self.axes_values = dict.fromkeys(self.axes_values, 0.0)
     elif key == 'c':
       self.cancel = True
     elif key in self.axes_map:
@@ -55,9 +54,9 @@ class Joystick:
       steer_axis = 'ABS_Z'
       self.flip_map = {'ABS_RY': accel_axis}
 
-    self.min_axis_value = {accel_axis: 0., steer_axis: 0.}
-    self.max_axis_value = {accel_axis: 255., steer_axis: 255.}
-    self.axes_values = {accel_axis: 0., steer_axis: 0.}
+    self.min_axis_value = {accel_axis: 0.0, steer_axis: 0.0}
+    self.max_axis_value = {accel_axis: 255.0, steer_axis: 255.0}
+    self.axes_values = {accel_axis: 0.0, steer_axis: 0.0}
     self.axes_order = [accel_axis, steer_axis]
     self.cancel = False
 
@@ -65,7 +64,7 @@ class Joystick:
     try:
       joystick_event = get_gamepad()[0]
     except (OSError, UnpluggedError):
-      self.axes_values = dict.fromkeys(self.axes_values, 0.)
+      self.axes_values = dict.fromkeys(self.axes_values, 0.0)
       return False
 
     event = (joystick_event.code, joystick_event.state)
@@ -77,15 +76,15 @@ class Joystick:
     if event[0] == self.cancel_button:
       if event[1] == 1:
         self.cancel = True
-      elif event[1] == 0:   # state 0 is falling edge
+      elif event[1] == 0:  # state 0 is falling edge
         self.cancel = False
     elif event[0] in self.axes_values:
       self.max_axis_value[event[0]] = max(event[1], self.max_axis_value[event[0]])
       self.min_axis_value[event[0]] = min(event[1], self.min_axis_value[event[0]])
 
-      norm = -float(np.interp(event[1], [self.min_axis_value[event[0]], self.max_axis_value[event[0]]], [-1., 1.]))
-      norm = norm if abs(norm) > 0.03 else 0.  # center can be noisy, deadzone of 3%
-      self.axes_values[event[0]] = EXPO * norm ** 3 + (1 - EXPO) * norm  # less action near center for fine control
+      norm = -float(np.interp(event[1], [self.min_axis_value[event[0]], self.max_axis_value[event[0]]], [-1.0, 1.0]))
+      norm = norm if abs(norm) > 0.03 else 0.0  # center can be noisy, deadzone of 3%
+      self.axes_values[event[0]] = EXPO * norm**3 + (1 - EXPO) * norm  # less action near center for fine control
     else:
       return False
     return True
@@ -121,10 +120,12 @@ def main():
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Publishes events from your joystick to control your car.\n' +
-                                               'openpilot must be offroad before starting joystick_control. This tool supports ' +
-                                               'a PlayStation 5 DualSense controller on the comma 3X.',
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(
+    description='Publishes events from your joystick to control your car.\n'
+    + 'openpilot must be offroad before starting joystick_control. This tool supports '
+    + 'a PlayStation 5 DualSense controller on the comma 3X.',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+  )
   parser.add_argument('--keyboard', action='store_true', help='Use your keyboard instead of a joystick')
   args = parser.parse_args()
 

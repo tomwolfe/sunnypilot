@@ -7,6 +7,7 @@ import uuid
 
 from openpilot.common.params import Params, ParamKeyFlag, UnknownKeyName
 
+
 class TestParams:
   def setup_method(self):
     self.params = Params()
@@ -45,6 +46,7 @@ class TestParams:
     def _delayed_writer():
       time.sleep(0.1)
       self.params.put("CarParams", b"test")
+
     threading.Thread(target=_delayed_writer).start()
     assert self.params.get("CarParams") is None
     assert self.params.get("CarParams", block=True) == b"test"
@@ -85,18 +87,22 @@ class TestParams:
 
   def test_put_non_blocking_with_get_block(self):
     q = Params()
+
     def _delayed_writer():
       time.sleep(0.1)
       Params().put_nonblocking("CarParams", b"test")
+
     threading.Thread(target=_delayed_writer).start()
     assert q.get("CarParams") is None
     assert q.get("CarParams", True) == b"test"
 
   def test_put_bool_non_blocking_with_get_block(self):
     q = Params()
+
     def _delayed_writer():
       time.sleep(0.1)
       Params().put_bool_nonblocking("CarParams", True)
+
     threading.Thread(target=_delayed_writer).start()
     assert q.get("CarParams") is None
     assert q.get("CarParams", True) == b"1"

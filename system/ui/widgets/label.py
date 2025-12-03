@@ -28,19 +28,21 @@ class ScrollState(IntEnum):
 
 # TODO: merge anything new here to master
 class MiciLabel(Widget):
-  def __init__(self,
-               text: str,
-               font_size: int = DEFAULT_TEXT_SIZE,
-               width: int = None,
-               color: rl.Color = DEFAULT_TEXT_COLOR,
-               font_weight: FontWeight = FontWeight.NORMAL,
-               alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-               alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
-               spacing: int = 0,
-               line_height: int = None,
-               elide_right: bool = True,
-               wrap_text: bool = False,
-               scroll: bool = False):
+  def __init__(
+    self,
+    text: str,
+    font_size: int = DEFAULT_TEXT_SIZE,
+    width: int = None,
+    color: rl.Color = DEFAULT_TEXT_COLOR,
+    font_weight: FontWeight = FontWeight.NORMAL,
+    alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+    alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
+    spacing: int = 0,
+    line_height: int = None,
+    elide_right: bool = True,
+    wrap_text: bool = False,
+    scroll: bool = False,
+  ):
     super().__init__()
     self.text = text
     self.wrapped_text: list[str] = []
@@ -144,7 +146,7 @@ class MiciLabel(Widget):
             self._scroll_pause_t = None
 
         elif self._scroll_state == ScrollState.SCROLLING:
-          self._scroll_offset -= 0.8 / 60. * gui_app.target_fps
+          self._scroll_offset -= 0.8 / 60.0 * gui_app.target_fps
           # don't fully hide
           if self._scroll_offset <= -text_size.x - self._rect.width / 3:
             self._scroll_offset = 0
@@ -152,11 +154,15 @@ class MiciLabel(Widget):
             self._scroll_pause_t = None
 
       # Calculate horizontal position based on alignment
-      text_x = rect.x + {
-        rl.GuiTextAlignment.TEXT_ALIGN_LEFT: 0,
-        rl.GuiTextAlignment.TEXT_ALIGN_CENTER: (rect.width - text_size.x) / 2,
-        rl.GuiTextAlignment.TEXT_ALIGN_RIGHT: rect.width - text_size.x,
-      }.get(self.alignment, 0) + self._scroll_offset
+      text_x = (
+        rect.x
+        + {
+          rl.GuiTextAlignment.TEXT_ALIGN_LEFT: 0,
+          rl.GuiTextAlignment.TEXT_ALIGN_CENTER: (rect.width - text_size.x) / 2,
+          rl.GuiTextAlignment.TEXT_ALIGN_RIGHT: rect.width - text_size.x,
+        }.get(self.alignment, 0)
+        + self._scroll_offset
+      )
 
       # Calculate vertical position based on alignment
       text_y = rect.y + {
@@ -195,7 +201,7 @@ def gui_label(
   font_weight: FontWeight = FontWeight.NORMAL,
   alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
   alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
-  elide_right: bool = True
+  elide_right: bool = True,
 ):
   font = gui_app.font(font_weight)
   text_size = measure_text_cached(font, text, font_size)
@@ -251,7 +257,7 @@ def gui_text_box(
     (rl.GuiControl.DEFAULT, rl.GuiDefaultProperty.TEXT_LINE_SPACING, round(font_size * FONT_SCALE * line_scale)),
     (rl.GuiControl.DEFAULT, rl.GuiControlProperty.TEXT_ALIGNMENT, alignment),
     (rl.GuiControl.DEFAULT, rl.GuiDefaultProperty.TEXT_ALIGNMENT_VERTICAL, alignment_vertical),
-    (rl.GuiControl.DEFAULT, rl.GuiDefaultProperty.TEXT_WRAP_MODE, rl.GuiTextWrapMode.TEXT_WRAP_WORD)
+    (rl.GuiControl.DEFAULT, rl.GuiDefaultProperty.TEXT_WRAP_MODE, rl.GuiTextWrapMode.TEXT_WRAP_WORD),
   ]
   if font_weight != FontWeight.NORMAL:
     rl.gui_set_font(gui_app.font(font_weight))
@@ -265,19 +271,19 @@ def gui_text_box(
 
 # Non-interactive text area. Can render emojis and an optional specified icon.
 class Label(Widget):
-  def __init__(self,
-               text: str | Callable[[], str],
-               font_size: int = DEFAULT_TEXT_SIZE,
-               font_weight: FontWeight = FontWeight.NORMAL,
-               text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-               text_alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
-               text_padding: int = 0,
-               text_color: rl.Color = DEFAULT_TEXT_COLOR,
-               icon: Union[rl.Texture, None] = None,
-               elide_right: bool = False,
-               line_scale=1.0,
-               ):
-
+  def __init__(
+    self,
+    text: str | Callable[[], str],
+    font_size: int = DEFAULT_TEXT_SIZE,
+    font_weight: FontWeight = FontWeight.NORMAL,
+    text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+    text_alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    text_padding: int = 0,
+    text_color: rl.Color = DEFAULT_TEXT_COLOR,
+    icon: Union[rl.Texture, None] = None,
+    elide_right: bool = False,
+    line_scale=1.0,
+  ):
     super().__init__()
     self._font_weight = font_weight
     self._font = gui_app.font(self._font_weight)
@@ -401,19 +407,22 @@ class UnifiedLabel(Widget):
   - Proper multiline vertical alignment
   - Height calculation for layout purposes
   """
-  def __init__(self,
-               text: str | Callable[[], str],
-               font_size: int = DEFAULT_TEXT_SIZE,
-               font_weight: FontWeight = FontWeight.NORMAL,
-               text_color: rl.Color = DEFAULT_TEXT_COLOR,
-               alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-               alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
-               text_padding: int = 0,
-               max_width: int | None = None,
-               elide: bool = True,
-               wrap_text: bool = True,
-               line_height: float = 1.0,
-               letter_spacing: float = 0.0):
+
+  def __init__(
+    self,
+    text: str | Callable[[], str],
+    font_size: int = DEFAULT_TEXT_SIZE,
+    font_weight: FontWeight = FontWeight.NORMAL,
+    text_color: rl.Color = DEFAULT_TEXT_COLOR,
+    alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+    alignment_vertical: int = rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
+    text_padding: int = 0,
+    max_width: int | None = None,
+    elide: bool = True,
+    wrap_text: bool = True,
+    line_height: float = 1.0,
+    letter_spacing: float = 0.0,
+  ):
     super().__init__()
     self._text = text
     self._font_size = font_size
@@ -503,9 +512,7 @@ class UnifiedLabel(Widget):
     text = self.text
 
     # Check if cache is still valid
-    if (self._cached_text == text and
-        self._cached_width == available_width and
-        self._cached_wrapped_lines):
+    if self._cached_text == text and self._cached_width == available_width and self._cached_wrapped_lines:
       return
 
     self._cached_text = text
@@ -582,7 +589,7 @@ class UnifiedLabel(Widget):
         left = mid + 1
       else:
         right = mid
-    return line[:left - 1] + ellipsis if left > 0 else ellipsis
+    return line[: left - 1] + ellipsis if left > 0 else ellipsis
 
   def get_content_height(self, max_width: int) -> float:
     """
@@ -620,12 +627,7 @@ class UnifiedLabel(Widget):
 
     current_height = 0.0
     broke_early = False
-    for line, size, emojis in zip(
-      self._cached_wrapped_lines,
-      self._cached_line_sizes,
-      self._cached_line_emojis,
-      strict=True):
-
+    for line, size, emojis in zip(self._cached_wrapped_lines, self._cached_line_sizes, self._cached_line_emojis, strict=True):
       # Calculate height needed for this line
       # Each line contributes its height * line_height (matching Label's behavior)
       line_height_needed = size.y * self._line_height

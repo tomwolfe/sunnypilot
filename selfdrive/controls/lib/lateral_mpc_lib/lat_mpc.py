@@ -4,6 +4,7 @@ import time
 import numpy as np
 
 from casadi import SX, vertcat, sin, cos
+
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
@@ -23,6 +24,7 @@ SPEED_OFFSET = 10.0
 MODEL_NAME = 'lat'
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 N = 32
+
 
 def gen_lat_model():
   model = AcadosModel()
@@ -53,10 +55,12 @@ def gen_lat_model():
   model.xdot = vertcat(x_ego_dot, y_ego_dot, psi_ego_dot, psi_rate_ego_dot)
 
   # dynamics model
-  f_expl = vertcat(v_ego * cos(psi_ego) - rotation_radius * sin(psi_ego) * psi_rate_ego,
-                   v_ego * sin(psi_ego) + rotation_radius * cos(psi_ego) * psi_rate_ego,
-                   psi_rate_ego,
-                   psi_accel_ego)
+  f_expl = vertcat(
+    v_ego * cos(psi_ego) - rotation_radius * sin(psi_ego) * psi_rate_ego,
+    v_ego * sin(psi_ego) + rotation_radius * cos(psi_ego) * psi_rate_ego,
+    psi_rate_ego,
+    psi_accel_ego,
+  )
   model.f_impl_expr = model.xdot - f_expl
   model.f_expl_expr = f_expl
   return model
@@ -85,10 +89,10 @@ def gen_lat_ocp():
   psi_rate_ego_dot = ocp.model.u[0]
   v_ego = ocp.model.p[0]
 
-  ocp.parameter_values = np.zeros((P_DIM, ))
+  ocp.parameter_values = np.zeros((P_DIM,))
 
-  ocp.cost.yref = np.zeros((COST_DIM, ))
-  ocp.cost.yref_e = np.zeros((COST_E_DIM, ))
+  ocp.cost.yref = np.zeros((COST_DIM,))
+  ocp.cost.yref_e = np.zeros((COST_E_DIM,))
   # Add offset to smooth out low speed control
   # TODO unclear if this right solution long term
   v_ego_offset = v_ego + SPEED_OFFSET
@@ -96,18 +100,12 @@ def gen_lat_ocp():
   # is correlated to jerk the other to steering wheel movement
   # the steering wheel movement cost is added to prevent excessive
   # wheel movements
-  ocp.model.cost_y_expr = vertcat(y_ego,
-                                  v_ego_offset * psi_ego,
-                                  v_ego_offset * psi_rate_ego,
-                                  v_ego_offset * psi_rate_ego_dot,
-                                  psi_rate_ego_dot / (v_ego + 0.1))
-  ocp.model.cost_y_expr_e = vertcat(y_ego,
-                                   v_ego_offset * psi_ego,
-                                   v_ego_offset * psi_rate_ego)
+  ocp.model.cost_y_expr = vertcat(y_ego, v_ego_offset * psi_ego, v_ego_offset * psi_rate_ego, v_ego_offset * psi_rate_ego_dot, psi_rate_ego_dot / (v_ego + 0.1))
+  ocp.model.cost_y_expr_e = vertcat(y_ego, v_ego_offset * psi_ego, v_ego_offset * psi_rate_ego)
 
   # set constraints
   ocp.constraints.constr_type = 'BGH'
-  ocp.constraints.idxbx = np.array([2,3])
+  ocp.constraints.idxbx = np.array([2, 3])
   ocp.constraints.ubx = np.array([np.radians(90), np.radians(50)])
   ocp.constraints.lbx = np.array([-np.radians(90), -np.radians(50)])
   x0 = np.zeros((X_DIM,))
@@ -122,7 +120,7 @@ def gen_lat_ocp():
 
   # set prediction horizon
   ocp.solver_options.tf = Tf
-  ocp.solver_options.shooting_nodes = np.array(ModelConstants.T_IDXS)[:N+1]
+  ocp.solver_options.shooting_nodes = np.array(ModelConstants.T_IDXS)[: N + 1]
 
   ocp.code_export_directory = EXPORT_DIR
   return ocp
@@ -138,15 +136,15 @@ class LateralMpc:
   def reset(self, x0=None):
     if x0 is None:
       x0 = np.zeros(X_DIM)
-    self.x_sol = np.zeros((N+1, X_DIM))
+    self.x_sol = np.zeros((N + 1, X_DIM))
     self.u_sol = np.zeros((N, 1))
-    self.yref = np.zeros((N+1, COST_DIM))
+    self.yref = np.zeros((N + 1, COST_DIM))
     for i in range(N):
       self.solver.cost_set(i, "yref", self.yref[i])
     self.solver.cost_set(N, "yref", self.yref[N][:COST_E_DIM])
 
     # Somehow needed for stable init
-    for i in range(N+1):
+    for i in range(N + 1):
       self.solver.set(i, 'x', np.zeros(X_DIM))
       self.solver.set(i, 'p', np.zeros(P_DIM))
     self.solver.constraints_set(0, "lbx", x0)
@@ -156,26 +154,22 @@ class LateralMpc:
     self.solve_time = 0.0
     self.cost = 0
 
-  def set_weights(self, path_weight, heading_weight,
-                  lat_accel_weight, lat_jerk_weight,
-                  steering_rate_weight):
-    W = np.asfortranarray(np.diag([path_weight, heading_weight,
-                                   lat_accel_weight, lat_jerk_weight,
-                                   steering_rate_weight]))
+  def set_weights(self, path_weight, heading_weight, lat_accel_weight, lat_jerk_weight, steering_rate_weight):
+    W = np.asfortranarray(np.diag([path_weight, heading_weight, lat_accel_weight, lat_jerk_weight, steering_rate_weight]))
     for i in range(N):
       self.solver.cost_set(i, 'W', W)
-    self.solver.cost_set(N, 'W', W[:COST_E_DIM,:COST_E_DIM])
+    self.solver.cost_set(N, 'W', W[:COST_E_DIM, :COST_E_DIM])
 
   def run(self, x0, p, y_pts, heading_pts, yaw_rate_pts):
     x0_cp = np.copy(x0)
     p_cp = np.copy(p)
     self.solver.constraints_set(0, "lbx", x0_cp)
     self.solver.constraints_set(0, "ubx", x0_cp)
-    self.yref[:,0] = y_pts
+    self.yref[:, 0] = y_pts
     v_ego = p_cp[0, 0]
     # rotation_radius = p_cp[1]
-    self.yref[:,1] = heading_pts * (v_ego + SPEED_OFFSET)
-    self.yref[:,2] = yaw_rate_pts * (v_ego + SPEED_OFFSET)
+    self.yref[:, 1] = heading_pts * (v_ego + SPEED_OFFSET)
+    self.yref[:, 2] = yaw_rate_pts * (v_ego + SPEED_OFFSET)
     for i in range(N):
       self.solver.cost_set(i, "yref", self.yref[i])
       self.solver.set(i, "p", p_cp[i])
@@ -186,7 +180,7 @@ class LateralMpc:
     self.solution_status = self.solver.solve()
     self.solve_time = time.monotonic() - t
 
-    for i in range(N+1):
+    for i in range(N + 1):
       self.x_sol[i] = self.solver.get(i, 'x')
     for i in range(N):
       self.u_sol[i] = self.solver.get(i, 'u')

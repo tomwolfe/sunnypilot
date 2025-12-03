@@ -22,14 +22,19 @@ DEBUG = False
 def quantized_lru_cache(maxsize=128):
   def decorator(func):
     cache = OrderedDict()
+
     @wraps(func)
     def wrapper(cx, cy, r_mid, thickness, a0_deg, a1_deg, **kwargs):
       # Quantize inputs: balanced for smoothness vs cache effectiveness
-      key = (round(cx), round(cy), round(r_mid),
-             round(thickness),           # 1px precision for smoother height transitions
-             round(a0_deg * 10) / 10,    # 0.1° precision for smoother angle transitions
-             round(a1_deg * 10) / 10,
-             tuple(sorted(kwargs.items())))
+      key = (
+        round(cx),
+        round(cy),
+        round(r_mid),
+        round(thickness),  # 1px precision for smoother height transitions
+        round(a0_deg * 10) / 10,  # 0.1° precision for smoother angle transitions
+        round(a1_deg * 10) / 10,
+        tuple(sorted(kwargs.items())),
+      )
 
       if key in cache:
         cache.move_to_end(key)
@@ -40,16 +45,26 @@ def quantized_lru_cache(maxsize=128):
         result = func(cx, cy, r_mid, thickness, a0_deg, a1_deg, **kwargs)
         cache[key] = result
       return cache[key]
+
     return wrapper
+
   return decorator
 
 
 @quantized_lru_cache(maxsize=256)
-def arc_bar_pts(cx: float, cy: float,
-                r_mid: float, thickness: float,
-                a0_deg: float, a1_deg: float,
-                *, max_points: int = 100, cap_segs: int = 10,
-                cap_radius: float = 7, px_per_seg: float = 2.0) -> np.ndarray:
+def arc_bar_pts(
+  cx: float,
+  cy: float,
+  r_mid: float,
+  thickness: float,
+  a0_deg: float,
+  a1_deg: float,
+  *,
+  max_points: int = 100,
+  cap_segs: int = 10,
+  cap_radius: float = 7,
+  px_per_seg: float = 2.0,
+) -> np.ndarray:
   """Return Nx2 np.float32 points for a single closed polygon (rounded thick arc)."""
 
   def get_cap(left: bool, a_deg: float):
@@ -74,8 +89,9 @@ def arc_bar_pts(cx: float, cy: float,
       alpha = np.deg2rad(np.linspace(90, 0, cap_segs + 2))[1:-1]
     else:
       alpha = np.deg2rad(np.linspace(180, 90, cap_segs + 2))[1:-1]
-    cap_end = np.c_[ex + np.cos(alpha) * cap_radius * tx + np.sin(alpha) * cap_radius * nx,
-                    ey + np.cos(alpha) * cap_radius * ty + np.sin(alpha) * cap_radius * ny]
+    cap_end = np.c_[
+      ex + np.cos(alpha) * cap_radius * tx + np.sin(alpha) * cap_radius * nx, ey + np.cos(alpha) * cap_radius * ty + np.sin(alpha) * cap_radius * ny
+    ]
 
     # bottom quarter (inner corner) at a1
     ex2 = mx + nx * (-half + cap_radius)
@@ -87,8 +103,9 @@ def arc_bar_pts(cx: float, cy: float,
       alpha2 = np.deg2rad(np.linspace(0, -90, cap_segs + 1))[:-1]  # include 0 once, exclude -90
     else:
       alpha2 = np.deg2rad(np.linspace(90 - 90 - 90, 0 - 90 - 90, cap_segs + 1))[:-1]
-    cap_end_bot = np.c_[ex2 + np.cos(alpha2) * cap_radius * tx + np.sin(alpha2) * cap_radius * nx,
-                        ey2 + np.cos(alpha2) * cap_radius * ty + np.sin(alpha2) * cap_radius * ny]
+    cap_end_bot = np.c_[
+      ex2 + np.cos(alpha2) * cap_radius * tx + np.sin(alpha2) * cap_radius * nx, ey2 + np.cos(alpha2) * cap_radius * ty + np.sin(alpha2) * cap_radius * ny
+    ]
 
     # append to the top quarter
     if not left:
@@ -114,16 +131,14 @@ def arc_bar_pts(cx: float, cy: float,
 
   # outer arc a0→a1
   ang_o = np.deg2rad(np.linspace(a0_deg, a1_deg, arc_segs + 1))
-  outer = np.c_[cx + np.cos(ang_o) * (r_mid + half),
-                cy + np.sin(ang_o) * (r_mid + half)]
+  outer = np.c_[cx + np.cos(ang_o) * (r_mid + half), cy + np.sin(ang_o) * (r_mid + half)]
 
   # end cap at a1
   cap_end = get_cap(False, a1_deg)
 
   # inner arc a1→a0
   ang_i = np.deg2rad(np.linspace(a1_deg, a0_deg, arc_segs + 1))
-  inner = np.c_[cx + np.cos(ang_i) * (r_mid - half),
-                cy + np.sin(ang_i) * (r_mid - half)]
+  inner = np.c_[cx + np.cos(ang_i) * (r_mid - half), cy + np.sin(ang_i) * (r_mid - half)]
 
   # start cap at a0
   cap_start = get_cap(True, a0_deg)
@@ -162,14 +177,14 @@ class TorqueBar(Widget):
       controls_state = ui_state.sm['controlsState']
       car_state = ui_state.sm['carState']
       live_parameters = ui_state.sm['liveParameters']
-      lateral_acceleration = controls_state.curvature * car_state.vEgo ** 2 - live_parameters.roll * ACCELERATION_DUE_TO_GRAVITY
+      lateral_acceleration = controls_state.curvature * car_state.vEgo**2 - live_parameters.roll * ACCELERATION_DUE_TO_GRAVITY
       # TODO: pull from carparams
       max_lateral_acceleration = 3
 
       # from selfdrived
-      actual_lateral_accel = controls_state.curvature * car_state.vEgo ** 2
-      desired_lateral_accel = controls_state.desiredCurvature * car_state.vEgo ** 2
-      accel_diff = (desired_lateral_accel - actual_lateral_accel)
+      actual_lateral_accel = controls_state.curvature * car_state.vEgo**2
+      desired_lateral_accel = controls_state.desiredCurvature * car_state.vEgo**2
+      accel_diff = desired_lateral_accel - actual_lateral_accel
 
       self._torque_filter.update(min(max(lateral_acceleration / max_lateral_acceleration + accel_diff, -1), 1))
     else:
@@ -249,5 +264,4 @@ class TorqueBar(Widget):
     # draw center torque bar dot
     if abs(self._torque_filter.x) < 0.5:
       dot_y = self._rect.y + self._rect.height - torque_line_offset - torque_line_height / 2
-      rl.draw_circle(int(cx), int(dot_y), 10 // 2,
-                     rl.Color(182, 182, 182, int(255 * 0.9 * self._torque_line_alpha_filter.x)))
+      rl.draw_circle(int(cx), int(dot_y), 10 // 2, rl.Color(182, 182, 182, int(255 * 0.9 * self._torque_line_alpha_filter.x)))

@@ -11,6 +11,7 @@ from openpilot.selfdrive.pandad.tests.test_pandad_loopback import setup_pandad, 
 
 JUNGLE_SPAM = "JUNGLE_SPAM" in os.environ
 
+
 @pytest.mark.tici
 class TestBoarddSpi:
   @classmethod
@@ -56,8 +57,8 @@ class TestBoarddSpi:
                 # PandaJungle.set_generated_can(True)
                 i = msg.address - 0x200
                 assert msg.address >= 0x200
-                assert msg.src == (i%3)
-                assert msg.dat == b"\xff"*(i%8)
+                assert msg.src == (i % 3)
+                assert msg.dat == b"\xff" * (i % 8)
                 total_recv_count += 1
                 continue
 
@@ -66,7 +67,7 @@ class TestBoarddSpi:
               key = (msg.address, msg.dat)
               assert key in sent_msgs[msg.src], f"got unexpected msg: {msg.src=} {msg.address=} {msg.dat=}"
               # TODO: enable this
-              #sent_msgs[msg.src].remove(key)
+              # sent_msgs[msg.src].remove(key)
               total_recv_count += 1
           elif service == "pandaStates":
             assert len(m.pandaStates) == 1
@@ -88,15 +89,15 @@ class TestBoarddSpi:
 
     print("\n======== timing report ========")
     for service, times in ts.items():
-      dts = np.diff(times)/1e6
+      dts = np.diff(times) / 1e6
       print(service.ljust(17), f"{np.mean(dts):7.2f} {np.min(dts):7.2f} {np.max(dts):7.2f}")
       with subtests.test(msg="timing check", service=service):
         edt = 1e3 / SERVICE_LIST[service].frequency
-        assert edt*0.9 < np.mean(dts) < edt*1.1
-        assert np.max(dts) < edt*8
+        assert edt * 0.9 < np.mean(dts) < edt * 1.1
+        assert np.max(dts) < edt * 8
         assert np.min(dts) < edt
-        assert len(dts) >= ((et-0.5)*SERVICE_LIST[service].frequency*0.8)
+        assert len(dts) >= ((et - 0.5) * SERVICE_LIST[service].frequency * 0.8)
 
     with subtests.test(msg="CAN traffic"):
-      print(f"Sent {total_sent_count} CAN messages, got {total_recv_count} back. {total_recv_count/(total_sent_count+1e-4):.2%} received")
+      print(f"Sent {total_sent_count} CAN messages, got {total_recv_count} back. {total_recv_count / (total_sent_count + 1e-4):.2%} received")
       assert total_recv_count > 20

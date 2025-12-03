@@ -100,8 +100,10 @@ if __name__ == "__main__":
           padding = max([len(fw.brand or UNKNOWN_BRAND) for fw in car_fw] + [0])
           for version in sorted(car_fw, key=lambda fw: fw.brand):
             subaddr = None if version.subAddress == 0 else hex(version.subAddress)
-            print(f"  Brand: {version.brand or UNKNOWN_BRAND:{padding}}, bus: {version.bus} - " +
-                  f"(Ecu.{version.ecu}, {hex(version.address)}, {subaddr}): [{version.fwVersion}],")
+            print(
+              f"  Brand: {version.brand or UNKNOWN_BRAND:{padding}}, bus: {version.bus} - "
+              + f"(Ecu.{version.ecu}, {hex(version.address)}, {subaddr}): [{version.fwVersion}],"
+            )
 
           print("Mismatches")
           found = False
@@ -159,7 +161,7 @@ if __name__ == "__main__":
   for car, m in sorted(mismatches.items()):
     print(car)
     addrs = defaultdict(list)
-    for (addr, sub_addr, version) in m:
+    for addr, sub_addr, version in m:
       addrs[(addr, sub_addr)].append(version)
 
     for (addr, sub_addr), versions in addrs.items():
@@ -179,4 +181,3 @@ if __name__ == "__main__":
   print(f"Correct fuzzy matches:        {good_fuzzy}")
   print(f"Wrong fuzzy matches:          {wrong_fuzzy}")
   print()
-

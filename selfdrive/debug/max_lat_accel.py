@@ -70,7 +70,7 @@ def find_events(lr: LogReader, extrapolate: bool = False, qlog: bool = False) ->
       requesting_max = 0
 
       factor = 1 / abs(out_torque)
-      current_lateral_accel = (curvature * v_ego ** 2 * factor) - roll * EARTH_G
+      current_lateral_accel = (curvature * v_ego**2 * factor) - roll * EARTH_G
       events.append(Event(current_lateral_accel, v_ego, roll, round((msg.logMonoTime - start_ts) * 1e-9, 2)))
       print(events[-1])
 
@@ -78,12 +78,12 @@ def find_events(lr: LogReader, extrapolate: bool = False, qlog: bool = False) ->
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description="Find max lateral acceleration events",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="Find max lateral acceleration events", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   parser.add_argument("route", nargs='+')
-  parser.add_argument("-e", "--extrapolate", action="store_true", help="Extrapolates max lateral acceleration events linearly. " +
-                                                                       "This option can be far less accurate.")
+  parser.add_argument(
+    "-e", "--extrapolate", action="store_true", help="Extrapolates max lateral acceleration events linearly. " + "This option can be far less accurate."
+  )
   args = parser.parse_args()
 
   events = []

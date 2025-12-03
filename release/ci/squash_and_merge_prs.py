@@ -9,15 +9,13 @@ from datetime import datetime
 
 TRUST_FORK_LABEL = "trust-fork-pr"
 
+
 def setup_argument_parser():
   parser = argparse.ArgumentParser(description='Process and squash GitHub PRs')
   parser.add_argument('--pr-data', type=str, help='PR data in JSON format')
-  parser.add_argument('--source-branch', type=str, default='master',
-                      help='Source branch for merging')
-  parser.add_argument('--target-branch', type=str, default='master-dev-test',
-                      help='Target branch for merging')
-  parser.add_argument('--squash-script-path', type=str, required=True,
-                      help='Path to the squash_and_merge.py script')
+  parser.add_argument('--source-branch', type=str, default='master', help='Source branch for merging')
+  parser.add_argument('--target-branch', type=str, default='master-dev-test', help='Target branch for merging')
+  parser.add_argument('--squash-script-path', type=str, required=True, help='Path to the squash_and_merge.py script')
   return parser
 
 
@@ -30,12 +28,9 @@ def validate_squash_script(script_path):
 
 def sort_prs_by_creation(pr_data):
   """Sort PRs by creation date"""
-  nodes = (pr_data.get('data', {}).get('search', {}).get('nodes', []))
+  nodes = pr_data.get('data', {}).get('search', {}).get('nodes', [])
 
-  return sorted(
-    nodes,
-    key=lambda x: datetime.fromisoformat(x.get('createdAt', '').replace('Z', '+00:00'))
-  )
+  return sorted(nodes, key=lambda x: datetime.fromisoformat(x.get('createdAt', '').replace('Z', '+00:00')))
 
 
 def add_pr_comments(pr_number, comments: list[str]):
@@ -51,10 +46,7 @@ def _add_pr_comment(pr_number, comment):
   try:
     full_comment = f"{title}\n\n{comment}"
     subprocess.run(
-      ['gh', 'pr', 'comment', '--edit-last', '--create-if-none', f"#{pr_number}", '--body', full_comment],
-      check=True,
-      capture_output=True,
-      text=True
+      ['gh', 'pr', 'comment', '--edit-last', '--create-if-none', f"#{pr_number}", '--body', full_comment], check=True, capture_output=True, text=True
     )
 
   except subprocess.CalledProcessError as e:
@@ -82,10 +74,7 @@ def validate_pr(pr):
   # If status is not SUCCESS, we need to check individual check runs
   if not status or status.get('state') != 'SUCCESS':
     # Get detailed check runs for this PR
-    checks_output = subprocess.run(
-      ['gh', 'pr', 'checks', str(pr_number), '--json', 'name,state'],
-      capture_output=True, text=True
-    )
+    checks_output = subprocess.run(['gh', 'pr', 'checks', str(pr_number), '--json', 'name,state'], capture_output=True, text=True)
 
     try:
       checks_data = json.loads(checks_output.stdout)
@@ -108,8 +97,7 @@ def validate_pr(pr):
       return False, "unable to verify check status"
 
   # Check for merge conflicts
-  merge_status = subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeable,mergeStateStatus'],
-                                capture_output=True, text=True)
+  merge_status = subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeable,mergeStateStatus'], capture_output=True, text=True)
   merge_data = json.loads(merge_status.stdout)
   if not merge_data.get('mergeable'):
     return False, "merge conflicts detected"
@@ -158,13 +146,20 @@ def process_pr(pr_data, source_branch, target_branch, squash_script_path):
         subprocess.run(['git', 'branch', branch, f'{origin}/{branch}'], check=True)
 
         # Run squash script
-        result = subprocess.run([
-          squash_script_path,
-          '--target', target_branch,
-          '--base', source_branch,
-          '--title', f"{title} (PR-{pr_number})",
-          branch,
-        ], capture_output=True, text=True)
+        result = subprocess.run(
+          [
+            squash_script_path,
+            '--target',
+            target_branch,
+            '--base',
+            source_branch,
+            '--title',
+            f"{title} (PR-{pr_number})",
+            branch,
+          ],
+          capture_output=True,
+          text=True,
+        )
 
         print(result.stdout)
         if result.returncode == 0:
@@ -192,6 +187,7 @@ def process_pr(pr_data, source_branch, target_branch, squash_script_path):
 
   except Exception as e:
     import traceback
+
     print(f"Error in process_pr: {str(e)}")
     print("Full traceback:")
     print(traceback.format_exc())

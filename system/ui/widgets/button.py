@@ -79,27 +79,35 @@ BUTTON_DISABLED_BACKGROUND_COLORS = {
 
 
 class Button(Widget):
-  def __init__(self,
-               text: str | Callable[[], str],
-               click_callback: Callable[[], None] | None = None,
-               font_size: int = DEFAULT_BUTTON_FONT_SIZE,
-               font_weight: FontWeight = FontWeight.MEDIUM,
-               button_style: ButtonStyle = ButtonStyle.NORMAL,
-               border_radius: int = 10,
-               text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-               text_padding: int = 20,
-               icon=None,
-               elide_right: bool = False,
-               multi_touch: bool = False,
-               ):
-
+  def __init__(
+    self,
+    text: str | Callable[[], str],
+    click_callback: Callable[[], None] | None = None,
+    font_size: int = DEFAULT_BUTTON_FONT_SIZE,
+    font_weight: FontWeight = FontWeight.MEDIUM,
+    button_style: ButtonStyle = ButtonStyle.NORMAL,
+    border_radius: int = 10,
+    text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+    text_padding: int = 20,
+    icon=None,
+    elide_right: bool = False,
+    multi_touch: bool = False,
+  ):
     super().__init__()
     self._button_style = button_style
     self._border_radius = border_radius
     self._background_color = BUTTON_BACKGROUND_COLORS[self._button_style]
 
-    self._label = Label(text, font_size, font_weight, text_alignment, text_padding=text_padding,
-                        text_color=BUTTON_TEXT_COLOR[self._button_style], icon=icon, elide_right=elide_right)
+    self._label = Label(
+      text,
+      font_size,
+      font_weight,
+      text_alignment,
+      text_padding=text_padding,
+      text_color=BUTTON_TEXT_COLOR[self._button_style],
+      icon=icon,
+      elide_right=elide_right,
+    )
 
     self._click_callback = click_callback
     self._multi_touch = multi_touch
@@ -134,19 +142,19 @@ class Button(Widget):
 
 
 class ButtonRadio(Button):
-  def __init__(self,
-               text: str,
-               icon,
-               click_callback: Callable[[], None] | None = None,
-               font_size: int = DEFAULT_BUTTON_FONT_SIZE,
-               text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-               border_radius: int = 10,
-               text_padding: int = 20,
-               ):
-
-    super().__init__(text, click_callback=click_callback, font_size=font_size,
-                     border_radius=border_radius, text_padding=text_padding,
-                     text_alignment=text_alignment)
+  def __init__(
+    self,
+    text: str,
+    icon,
+    click_callback: Callable[[], None] | None = None,
+    font_size: int = DEFAULT_BUTTON_FONT_SIZE,
+    text_alignment: int = rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+    border_radius: int = 10,
+    text_padding: int = 20,
+  ):
+    super().__init__(
+      text, click_callback=click_callback, font_size=font_size, border_radius=border_radius, text_padding=text_padding, text_alignment=text_alignment
+    )
     self._text_padding = text_padding
     self._icon = icon
     self.selected = False
@@ -225,10 +233,14 @@ class SmallButton(Widget):
 
     self._load_assets()
 
-    self._label = UnifiedLabel(text, 36, font_weight=FontWeight.MEDIUM,
-                               text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                               alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                               alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._label = UnifiedLabel(
+      text,
+      36,
+      font_weight=FontWeight.MEDIUM,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    )
 
     self._bg_disabled_txt = None
 

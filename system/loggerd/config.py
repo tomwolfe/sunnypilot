@@ -9,10 +9,8 @@ STATS_DIR_FILE_LIMIT = 10000
 STATS_SOCKET = "ipc:///tmp/stats"
 STATS_FLUSH_TIME_S = 60
 
-PATH_DICT = {
-  "internal": Paths.log_root(),
-  "external": Paths.log_root_external()
-}
+PATH_DICT = {"internal": Paths.log_root(), "external": Paths.log_root_external()}
+
 
 def get_available_percent(default: float, path_type="internal") -> float:
   try:

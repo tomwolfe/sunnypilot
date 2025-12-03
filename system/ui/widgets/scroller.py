@@ -28,14 +28,20 @@ class LineSeparator(Widget):
     self._rect.width = parent_rect.width
 
   def _render(self, _):
-    rl.draw_line(int(self._rect.x) + LINE_PADDING, int(self._rect.y),
-                 int(self._rect.x + self._rect.width) - LINE_PADDING, int(self._rect.y),
-                 LINE_COLOR)
+    rl.draw_line(int(self._rect.x) + LINE_PADDING, int(self._rect.y), int(self._rect.x + self._rect.width) - LINE_PADDING, int(self._rect.y), LINE_COLOR)
 
 
 class Scroller(Widget):
-  def __init__(self, items: list[Widget], horizontal: bool = True, snap_items: bool = True, spacing: int = ITEM_SPACING,
-               line_separator: bool = False, pad_start: int = ITEM_SPACING, pad_end: int = ITEM_SPACING):
+  def __init__(
+    self,
+    items: list[Widget],
+    horizontal: bool = True,
+    snap_items: bool = True,
+    spacing: int = ITEM_SPACING,
+    line_separator: bool = False,
+    pad_start: int = ITEM_SPACING,
+    pad_end: int = ITEM_SPACING,
+  ):
     super().__init__()
     self._items: list[Widget] = []
     self._horizontal = horizontal
@@ -175,8 +181,7 @@ class Scroller(Widget):
 
     scroll_offset = self._get_scroll(visible_items, content_size)
 
-    rl.begin_scissor_mode(int(self._rect.x), int(self._rect.y),
-                          int(self._rect.width), int(self._rect.height))
+    rl.begin_scissor_mode(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height))
 
     self._item_pos_filter.update(scroll_offset)
 
@@ -203,15 +208,15 @@ class Scroller(Widget):
       if DO_JELLO:
         if self._horizontal:
           cx = self._rect.x + self._rect.width / 2
-          jello_offset = scroll_offset - np.interp(x + item.rect.width / 2,
-                                                   [self._rect.x, cx, self._rect.x + self._rect.width],
-                                                   [self._item_pos_filter.x, scroll_offset, self._item_pos_filter.x])
+          jello_offset = scroll_offset - np.interp(
+            x + item.rect.width / 2, [self._rect.x, cx, self._rect.x + self._rect.width], [self._item_pos_filter.x, scroll_offset, self._item_pos_filter.x]
+          )
           x -= np.clip(jello_offset, -20, 20)
         else:
           cy = self._rect.y + self._rect.height / 2
-          jello_offset = scroll_offset - np.interp(y + item.rect.height / 2,
-                                                   [self._rect.y, cy, self._rect.y + self._rect.height],
-                                                   [self._item_pos_filter.x, scroll_offset, self._item_pos_filter.x])
+          jello_offset = scroll_offset - np.interp(
+            y + item.rect.height / 2, [self._rect.y, cy, self._rect.y + self._rect.height], [self._item_pos_filter.x, scroll_offset, self._item_pos_filter.x]
+          )
           y -= np.clip(jello_offset, -20, 20)
 
       # Update item state
@@ -226,8 +231,7 @@ class Scroller(Widget):
       scale = self._zoom_filter.x
       rl.rl_push_matrix()
       rl.rl_scalef(scale, scale, 1.0)
-      rl.rl_translatef((1 - scale) * (x + item.rect.width / 2) / scale,
-                       (1 - scale) * (y + item.rect.height / 2) / scale, 0)
+      rl.rl_translatef((1 - scale) * (x + item.rect.width / 2) / scale, (1 - scale) * (y + item.rect.height / 2) / scale, 0)
       item.render()
       rl.rl_pop_matrix()
 

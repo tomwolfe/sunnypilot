@@ -27,8 +27,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 
 SentinelType = log.Sentinel.SentinelType
 
-CEREAL_SERVICES = [f for f in log.Event.schema.union_fields if f in SERVICE_LIST
-                   and SERVICE_LIST[f].should_log and "encode" not in f.lower()]
+CEREAL_SERVICES = [f for f in log.Event.schema.union_fields if f in SERVICE_LIST and SERVICE_LIST[f].should_log and "encode" not in f.lower()]
 
 
 class TestLoggerd:
@@ -131,7 +130,7 @@ class TestLoggerd:
 
       # send audio
       msg = messaging.new_message('rawAudioData')
-      msg.rawAudioData.data = bytes(800 * 2) # 800 samples of int16
+      msg.rawAudioData.data = bytes(800 * 2)  # 800 samples of int16
       msg.rawAudioData.sampleRate = 16000
       pm.send('rawAudioData', msg)
 
@@ -144,7 +143,7 @@ class TestLoggerd:
   def test_init_data_values(self):
     os.environ["CLEAN"] = random.choice(["0", "1"])
 
-    dongle  = ''.join(random.choice(string.printable) for n in range(random.randint(1, 100)))
+    dongle = ''.join(random.choice(string.printable) for n in range(random.randint(1, 100)))
     fake_params = [
       # param, initData field, value
       ("DongleId", "dongleId", dongle),
@@ -187,7 +186,7 @@ class TestLoggerd:
     expected_files = {"rlog.zst", "qlog.zst", "qcamera.ts", "fcamera.hevc", "dcamera.hevc", "ecamera.hevc"}
 
     num_segs = random.randint(2, 3)
-    length = random.randint(4, 5) # H264 encoder uses 40 lookahead frames and does B-frame reordering, so minimum 3 seconds before qcam output
+    length = random.randint(4, 5)  # H264 encoder uses 40 lookahead frames and does B-frame reordering, so minimum 3 seconds before qcam output
 
     self._publish_camera_and_audio_messages(num_segs=num_segs, segment_length=length)
 
@@ -218,7 +217,7 @@ class TestLoggerd:
 
     # sanity check values
     boot = bootlog_msgs.pop().boot
-    assert abs(boot.wallTimeNanos - time.time_ns()) < 5*1e9 # within 5s
+    assert abs(boot.wallTimeNanos - time.time_ns()) < 5 * 1e9  # within 5s
     assert boot.launchLog == launch_log
 
     for fn in ["console-ramoops", "pmsg-ramoops-0"]:
@@ -239,8 +238,9 @@ class TestLoggerd:
     qlog_services = [s for s in CEREAL_SERVICES if SERVICE_LIST[s].decimation is not None]
     no_qlog_services = [s for s in CEREAL_SERVICES if SERVICE_LIST[s].decimation is None]
 
-    services = random.sample(qlog_services, random.randint(2, min(10, len(qlog_services)))) + \
-               random.sample(no_qlog_services, random.randint(2, min(10, len(no_qlog_services))))
+    services = random.sample(qlog_services, random.randint(2, min(10, len(qlog_services)))) + random.sample(
+      no_qlog_services, random.randint(2, min(10, len(no_qlog_services)))
+    )
     sent_msgs = self._publish_random_messages(services)
 
     qlog_path = os.path.join(self._get_latest_log_dir(), "qlog.zst")
@@ -276,7 +276,7 @@ class TestLoggerd:
     self._check_sentinel(lr, True)
 
     # check all messages were logged and in order
-    lr = lr[2:-1] # slice off initData and both sentinels
+    lr = lr[2:-1]  # slice off initData and both sentinels
     for m in lr:
       sent = sent_msgs[m.which()].pop(0)
       sent.clear_write_flag()

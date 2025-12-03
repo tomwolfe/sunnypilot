@@ -18,14 +18,17 @@ from openpilot.tools.sim.lib.simulated_sensors import SimulatedSensors
 
 QueueMessage = namedtuple("QueueMessage", ["type", "info"], defaults=[None])
 
+
 class QueueMessageType(Enum):
   START_STATUS = 0
   CONTROL_COMMAND = 1
   TERMINATION_INFO = 2
   CLOSE_STATUS = 3
 
+
 def control_cmd_gen(cmd: str):
   return QueueMessage(QueueMessageType.CONTROL_COMMAND, cmd)
+
 
 def rk_loop(function, hz, exit_event: threading.Event):
   rk = Ratekeeper(hz, None)
@@ -89,10 +92,11 @@ class SimulatorBridge(ABC):
 
   def print_status(self):
     print(
-    f"""
+      f"""
 State:
 Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_engaged}
-    """)
+    """
+    )
 
   @abstractmethod
   def spawn_world(self, q: Queue) -> World:
@@ -106,12 +110,14 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
 
     self._exit_event = threading.Event()
 
-    self.simulated_car_thread = threading.Thread(target=rk_loop, args=(functools.partial(self.simulated_car.update, self.simulator_state),
-                                                                        100, self._exit_event))
+    self.simulated_car_thread = threading.Thread(
+      target=rk_loop, args=(functools.partial(self.simulated_car.update, self.simulator_state), 100, self._exit_event)
+    )
     self.simulated_car_thread.start()
 
-    self.simulated_camera_thread = threading.Thread(target=rk_loop, args=(functools.partial(self.simulated_sensors.send_camera_images, self.world),
-                                                                        20, self._exit_event))
+    self.simulated_camera_thread = threading.Thread(
+      target=rk_loop, args=(functools.partial(self.simulated_sensors.send_camera_images, self.world), 20, self._exit_event)
+    )
     self.simulated_camera_thread.start()
 
     # Simulation tends to be slow in the initial steps. This prevents lagging later
@@ -126,7 +132,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.left_blinker = False
       self.simulator_state.right_blinker = False
 
-      throttle_manual = steer_manual = brake_manual = 0.
+      throttle_manual = steer_manual = brake_manual = 0.0
 
       # Read manual controls
       if not q.empty():
@@ -179,7 +185,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
 
         self.past_startup_engaged = True
       elif not self.past_startup_engaged and self.simulated_car.sm['selfdriveState'].engageable:
-        self.simulator_state.cruise_button = CruiseButtons.DECEL_SET if self.startup_button_prev else CruiseButtons.MAIN # force engagement on startup
+        self.simulator_state.cruise_button = CruiseButtons.DECEL_SET if self.startup_button_prev else CruiseButtons.MAIN  # force engagement on startup
         self.startup_button_prev = not self.startup_button_prev
 
       throttle_out = throttle_op if self.simulator_state.is_engaged else throttle_manual

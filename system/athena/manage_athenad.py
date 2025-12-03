@@ -21,13 +21,15 @@ def manage_athenad(dongle_id_param, pid_param, process_name, target):
   dongle_id = params.get(dongle_id_param)
   build_metadata = get_build_metadata()
 
-  cloudlog.bind_global(dongle_id=dongle_id,
-                       version=build_metadata.openpilot.version,
-                       origin=build_metadata.openpilot.git_normalized_origin,
-                       branch=build_metadata.channel,
-                       commit=build_metadata.openpilot.git_commit,
-                       dirty=build_metadata.openpilot.is_dirty,
-                       device=HARDWARE.get_device_type())
+  cloudlog.bind_global(
+    dongle_id=dongle_id,
+    version=build_metadata.openpilot.version,
+    origin=build_metadata.openpilot.git_normalized_origin,
+    branch=build_metadata.channel,
+    commit=build_metadata.openpilot.git_commit,
+    dirty=build_metadata.openpilot.is_dirty,
+    device=HARDWARE.get_device_type(),
+  )
 
   try:
     while 1:
@@ -41,6 +43,7 @@ def manage_athenad(dongle_id_param, pid_param, process_name, target):
     cloudlog.exception(f"manage_{process_name}.exception")
   finally:
     params.remove(pid_param)
+
 
 if __name__ == '__main__':
   main()

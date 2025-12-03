@@ -23,7 +23,6 @@ class TestCruiseHelper:
       self.cruise_helper.experimental_mode_switched = False
       self.cruise_helper.update(CS, self.events, False)
 
-
   def test_gap_adjust_cruise_long_press_toggle_mode(self) -> None:
     for pressed in (True, False):
       for experimental_mode in (True, False):

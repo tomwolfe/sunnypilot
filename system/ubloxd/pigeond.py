@@ -25,6 +25,7 @@ UBLOX_SOS_NACK = b"\xb5\x62\x09\x14\x08\x00\x02\x00\x00\x00\x00\x00\x00\x00"
 UBLOX_BACKUP_RESTORE_MSG = b"\xb5\x62\x09\x14\x08\x00\x03"
 UBLOX_ASSIST_ACK = b"\xb5\x62\x13\x60\x08\x00"
 
+
 def set_power(enabled: bool) -> None:
   gpio_init(GPIO.UBLOX_SAFEBOOT_N, True)
   gpio_init(GPIO.GNSS_PWR_EN, True)
@@ -34,6 +35,7 @@ def set_power(enabled: bool) -> None:
   gpio_set(GPIO.GNSS_PWR_EN, enabled)
   gpio_set(GPIO.UBLOX_RST_N, enabled)
 
+
 def add_ubx_checksum(msg: bytes) -> bytes:
   A = B = 0
   for b in msg[2:]:
@@ -41,21 +43,29 @@ def add_ubx_checksum(msg: bytes) -> bytes:
     B = (B + A) % 256
   return msg + bytes([A, B])
 
+
 def get_assistnow_messages(token: str) -> list[bytes]:
   # make request
   # TODO: implement adding the last known location
-  r = requests.get("https://online-live2.services.u-blox.com/GetOnlineData.ashx", params=urllib.parse.urlencode({
-    'token': token,
-    'gnss': 'gps,glo',
-    'datatype': 'eph,alm,aux',
-  }, safe=':,'), timeout=5)
+  r = requests.get(
+    "https://online-live2.services.u-blox.com/GetOnlineData.ashx",
+    params=urllib.parse.urlencode(
+      {
+        'token': token,
+        'gnss': 'gps,glo',
+        'datatype': 'eph,alm,aux',
+      },
+      safe=':,',
+    ),
+    timeout=5,
+  )
   assert r.status_code == 200, "Got invalid status code"
   dat = r.content
 
   # split up messages
   msgs = []
   while len(dat) > 0:
-    assert dat[:2] == b"\xB5\x62"
+    assert dat[:2] == b"\xb5\x62"
     msg_len = 6 + (dat[5] << 8 | dat[4]) + 2
     msgs.append(dat[:msg_len])
     dat = dat[msg_len:]
@@ -101,7 +111,7 @@ class TTYPigeon:
     self.send(dat)
     self.wait_for_ack(ack, nack)
 
-  def wait_for_backup_restore_status(self, timeout: float = 1.) -> int:
+  def wait_for_backup_restore_status(self, timeout: float = 1.0) -> int:
     dat = b''
     st = time.monotonic()
     while True:
@@ -119,26 +129,27 @@ class TTYPigeon:
     for _ in range(5):
       # device cold start
       self.send(b"\xb5\x62\x06\x04\x04\x00\xff\xff\x00\x00\x0c\x5d")
-      time.sleep(1) # wait for cold start
+      time.sleep(1)  # wait for cold start
       init_baudrate(self)
 
       # clear configuration
       self.send_with_ack(b"\xb5\x62\x06\x09\x0d\x00\x1f\x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x17\x71\xd7")
 
       # clear flash memory (almanac backup)
-      self.send_with_ack(b"\xB5\x62\x09\x14\x04\x00\x01\x00\x00\x00\x22\xf0")
+      self.send_with_ack(b"\xb5\x62\x09\x14\x04\x00\x01\x00\x00\x00\x22\xf0")
 
       # try restoring backup to verify it got deleted
-      self.send(b"\xB5\x62\x09\x14\x00\x00\x1D\x60")
+      self.send(b"\xb5\x62\x09\x14\x00\x00\x1d\x60")
       # 1: failed to restore, 2: could restore, 3: no backup
       status = self.wait_for_backup_restore_status()
       if status == 1 or status == 3:
         return True
     return False
 
+
 def save_almanac(pigeon: TTYPigeon) -> None:
   # store almanac in flash
-  pigeon.send(b"\xB5\x62\x09\x14\x04\x00\x00\x00\x00\x00\x21\xEC")
+  pigeon.send(b"\xb5\x62\x09\x14\x04\x00\x00\x00\x00\x00\x21\xec")
   try:
     if pigeon.wait_for_ack(ack=UBLOX_SOS_ACK, nack=UBLOX_SOS_NACK):
       cloudlog.info("Done storing almanac")
@@ -147,12 +158,13 @@ def save_almanac(pigeon: TTYPigeon) -> None:
   except TimeoutError:
     pass
 
+
 def init_baudrate(pigeon: TTYPigeon):
   # ublox default setting on startup is 9600 baudrate
   pigeon.set_baud(9600)
 
   # $PUBX,41,1,0007,0003,460800,0*15\r\n
-  pigeon.send(b"\x24\x50\x55\x42\x58\x2C\x34\x31\x2C\x31\x2C\x30\x30\x30\x37\x2C\x30\x30\x30\x33\x2C\x34\x36\x30\x38\x30\x30\x2C\x30\x2A\x31\x35\x0D\x0A")
+  pigeon.send(b"\x24\x50\x55\x42\x58\x2c\x34\x31\x2c\x31\x2c\x30\x30\x30\x37\x2c\x30\x30\x30\x33\x2c\x34\x36\x30\x38\x30\x30\x2c\x30\x2a\x31\x35\x0d\x0a")
   time.sleep(0.1)
   pigeon.set_baud(460800)
 
@@ -161,44 +173,47 @@ def init_pigeon(pigeon: TTYPigeon) -> bool:
   # try initializing a few times
   for _ in range(10):
     try:
-
       # setup port config
-      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x03\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00\x00\x1E\x7F")
-      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x00\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\x35")
-      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x01\x00\x00\x00\xC0\x08\x00\x00\x00\x08\x07\x00\x01\x00\x01\x00\x00\x00\x00\x00\xF4\x80")
-      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x04\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1D\x85")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x03\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00\x00\x1e\x7f")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\x35")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x01\x00\x00\x00\xc0\x08\x00\x00\x00\x08\x07\x00\x01\x00\x01\x00\x00\x00\x00\x00\xf4\x80")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x14\x00\x04\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1d\x85")
       pigeon.send_with_ack(b"\xb5\x62\x06\x00\x00\x00\x06\x18")
       pigeon.send_with_ack(b"\xb5\x62\x06\x00\x01\x00\x01\x08\x22")
-      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x01\x00\x03\x0A\x24")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x00\x01\x00\x03\x0a\x24")
 
       # UBX-CFG-RATE (0x06 0x08)
-      pigeon.send_with_ack(b"\xB5\x62\x06\x08\x06\x00\x64\x00\x01\x00\x00\x00\x79\x10")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x08\x06\x00\x64\x00\x01\x00\x00\x00\x79\x10")
 
       # UBX-CFG-NAV5 (0x06 0x24)
-      pigeon.send_with_ack(b"\xB5\x62\x06\x24\x24\x00\x05\x00\x04\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x5A\x63")
+      pigeon.send_with_ack(
+        b"\xb5\x62\x06\x24\x24\x00\x05\x00\x04\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x5a\x63"
+      )
 
       # UBX-CFG-ODO (0x06 0x1E)
-      pigeon.send_with_ack(b"\xB5\x62\x06\x1E\x14\x00\x00\x00\x00\x00\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x3C\x37")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x39\x08\x00\xFF\xAD\x62\xAD\x1E\x63\x00\x00\x83\x0C")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x23\x28\x00\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x56\x24")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x1e\x14\x00\x00\x00\x00\x00\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x3c\x37")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x39\x08\x00\xff\xad\x62\xad\x1e\x63\x00\x00\x83\x0c")
+      pigeon.send_with_ack(
+        b"\xb5\x62\x06\x23\x28\x00\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x56\x24"
+      )
 
       # UBX-CFG-NAV5 (0x06 0x24)
-      pigeon.send_with_ack(b"\xB5\x62\x06\x24\x00\x00\x2A\x84")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x23\x00\x00\x29\x81")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x1E\x00\x00\x24\x72")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x39\x00\x00\x3F\xC3")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x24\x00\x00\x2a\x84")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x23\x00\x00\x29\x81")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x1e\x00\x00\x24\x72")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x39\x00\x00\x3f\xc3")
 
       # UBX-CFG-MSG (set message rate)
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x01\x07\x01\x13\x51")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x02\x15\x01\x22\x70")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x02\x13\x01\x20\x6C")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x0A\x09\x01\x1E\x70")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x0A\x0B\x01\x20\x74")
-      pigeon.send_with_ack(b"\xB5\x62\x06\x01\x03\x00\x01\x35\x01\x41\xAD")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x01\x07\x01\x13\x51")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x02\x15\x01\x22\x70")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x02\x13\x01\x20\x6c")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x0a\x09\x01\x1e\x70")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x0a\x0b\x01\x20\x74")
+      pigeon.send_with_ack(b"\xb5\x62\x06\x01\x03\x00\x01\x35\x01\x41\xad")
       cloudlog.debug("pigeon configured")
 
       # try restoring almanac backup
-      pigeon.send(b"\xB5\x62\x09\x14\x00\x00\x1D\x60")
+      pigeon.send(b"\xb5\x62\x09\x14\x00\x00\x1d\x60")
       restore_status = pigeon.wait_for_backup_restore_status()
       if restore_status == 2:
         cloudlog.warning("almanac backup restored")
@@ -213,21 +228,10 @@ def init_pigeon(pigeon: TTYPigeon) -> bool:
         cloudlog.warning("Sending current time to ublox")
 
         # UBX-MGA-INI-TIME_UTC
-        msg = add_ubx_checksum(b"\xB5\x62\x13\x40\x18\x00" + struct.pack("<BBBBHBBBBBxIHxxI",
-          0x10,
-          0x00,
-          0x00,
-          0x80,
-          t_now.year,
-          t_now.month,
-          t_now.day,
-          t_now.hour,
-          t_now.minute,
-          t_now.second,
-          0,
-          30,
-          0
-        ))
+        msg = add_ubx_checksum(
+          b"\xb5\x62\x13\x40\x18\x00"
+          + struct.pack("<BBBBHBBBBBxIHxxI", 0x10, 0x00, 0x00, 0x80, t_now.year, t_now.month, t_now.day, t_now.hour, t_now.minute, t_now.second, 0, 30, 0)
+        )
         pigeon.send_with_ack(msg, ack=UBLOX_ASSIST_ACK)
 
       # try getting AssistNow if we have a token
@@ -249,14 +253,16 @@ def init_pigeon(pigeon: TTYPigeon) -> bool:
     return False
   return True
 
+
 def deinitialize_and_exit(pigeon: TTYPigeon | None):
   if pigeon is not None:
     # controlled GNSS stop
-    pigeon.send(b"\xB5\x62\x06\x04\x04\x00\x00\x00\x08\x00\x16\x74")
+    pigeon.send(b"\xb5\x62\x06\x04\x04\x00\x00\x00\x08\x00\x16\x74")
 
   # turn off power and exit cleanly
   set_power(False)
   sys.exit(0)
+
 
 def init(pigeon: TTYPigeon) -> None:
   # register exit handler
@@ -270,6 +276,7 @@ def init(pigeon: TTYPigeon) -> None:
 
   init_baudrate(pigeon)
   init_pigeon(pigeon)
+
 
 def run_receiving(duration: int = 0):
   pm = messaging.PubMaster(['ubloxRaw'])
@@ -293,7 +300,7 @@ def run_receiving(duration: int = 0):
       pm.send('ubloxRaw', msg)
 
       # save almanac every 5 minutes
-      if (time.monotonic() - last_almanac_save) > 60*5:
+      if (time.monotonic() - last_almanac_save) > 60 * 5:
         save_almanac(pigeon)
         last_almanac_save = time.monotonic()
     else:
@@ -304,6 +311,7 @@ def run_receiving(duration: int = 0):
 def main():
   assert TICI, "unsupported hardware for pigeond"
   run_receiving()
+
 
 if __name__ == "__main__":
   main()

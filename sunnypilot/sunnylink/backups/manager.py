@@ -108,7 +108,7 @@ class BackupManagerSP:
       backup_info.backupMetadata = [
         custom.BackupManagerSP.MetadataEntry(key="creator", value="BackupManagerSP"),
         custom.BackupManagerSP.MetadataEntry(key="all_values_encoded", value="True"),
-        custom.BackupManagerSP.MetadataEntry(key="AES", value="256")
+        custom.BackupManagerSP.MetadataEntry(key="AES", value="256"),
       ]
 
       payload = json.loads(json.dumps(backup_info.to_dict(), cls=SnakeCaseEncoder))
@@ -116,12 +116,7 @@ class BackupManagerSP:
 
       cloudlog.debug(f"Uploading backup with payload: {json.dumps(payload)}")
       # Upload to sunnylink
-      result = self.api.api_get(
-        f"backup/{self.device_id}",
-        method='PUT',
-        access_token=self.api.get_token(),
-        json=payload
-      )
+      result = self.api.api_get(f"backup/{self.device_id}", method='PUT', access_token=self.api.get_token(), json=payload)
 
       if result:
         self.backup_status = custom.BackupManagerSP.Status.completed
@@ -276,6 +271,7 @@ class BackupManagerSP:
 
 def main():
   import asyncio
+
   asyncio.run(BackupManagerSP().main_thread())
 
 

@@ -120,13 +120,7 @@ def test_adaptive_control_modifications():
   handler = EdgeCaseHandler()
 
   # Test with caution required
-  scenarios = {
-    'caution_required': True,
-    'sharp_curve': True,
-    'construction_zone': False,
-    'sudden_object': False,
-    'abnormal_steering': False
-  }
+  scenarios = {'caution_required': True, 'sharp_curve': True, 'construction_zone': False, 'sudden_object': False, 'abnormal_steering': False}
 
   modifications = handler.get_adaptive_control_modifications(None, scenarios)
 

@@ -25,8 +25,7 @@ ANIMATION_SCALE = 0.65
 def zip_repeat(a, b):
   la, lb = len(a), len(b)
   for i in range(max(la, lb)):
-    yield (a[i] if i < la else a[-1],
-           b[i] if i < lb else b[-1])
+    yield (a[i] if i < la else a[-1], b[i] if i < lb else b[-1])
 
 
 def fast_euclidean_distance(dx, dy):
@@ -117,15 +116,19 @@ class IconKey(Key):
     scale = np.interp(self._size_filter.x, [CHAR_FONT_SIZE, CHAR_NEAR_FONT_SIZE], [1, 1.5])
 
     if self._vertical_align == "center":
-      dest_rec = rl.Rectangle(self._rect.x + (self._rect.width - self._icon.width * scale) / 2,
-                              self._rect.y + (self._rect.height - self._icon.height * scale) / 2,
-                              self._icon.width * scale, self._icon.height * scale)
+      dest_rec = rl.Rectangle(
+        self._rect.x + (self._rect.width - self._icon.width * scale) / 2,
+        self._rect.y + (self._rect.height - self._icon.height * scale) / 2,
+        self._icon.width * scale,
+        self._icon.height * scale,
+      )
       src_rec = rl.Rectangle(0, 0, self._icon.width, self._icon.height)
       rl.draw_texture_pro(self._icon, src_rec, dest_rec, rl.Vector2(0, 0), 0, self._color)
 
     elif self._vertical_align == "bottom":
-      dest_rec = rl.Rectangle(self._rect.x + (self._rect.width - self._icon.width * scale) / 2, self._rect.y,
-                              self._icon.width * scale, self._icon.height * scale)
+      dest_rec = rl.Rectangle(
+        self._rect.x + (self._rect.width - self._icon.width * scale) / 2, self._rect.y, self._icon.width * scale, self._icon.height * scale
+      )
       src_rec = rl.Rectangle(0, 0, self._icon.width, self._icon.height)
       rl.draw_texture_pro(self._icon, src_rec, dest_rec, rl.Vector2(0, 0), 0, self._color)
 
@@ -335,8 +338,7 @@ class MiciKeyboard(Widget):
           key.set_font_size(SELECTED_CHAR_FONT_SIZE)
 
           # draw black circle behind selected key
-          rl.draw_circle_gradient(int(key_x + key.rect.width / 2), int(key_y + key.rect.height / 2),
-                                  SELECTED_CHAR_FONT_SIZE, rl.Color(0, 0, 0, 225), rl.BLANK)
+          rl.draw_circle_gradient(int(key_x + key.rect.width / 2), int(key_y + key.rect.height / 2), SELECTED_CHAR_FONT_SIZE, rl.Color(0, 0, 0, 225), rl.BLANK)
         else:
           # move other keys away from selected key a bit
           dx = key.original_position.x - self._closest_key[0].original_position.x
@@ -369,8 +371,7 @@ class MiciKeyboard(Widget):
 
     scale = self._bg_scale_filter.update(1.0307692307692307 if self._closest_key[0] is not None else 1.0)
     src_rec = rl.Rectangle(0, 0, self._txt_bg.width, self._txt_bg.height)
-    dest_rec = rl.Rectangle(self._rect.x + self._rect.width / 2 - self._txt_bg.width * scale / 2, bg_y,
-                            self._txt_bg.width * scale, self._txt_bg.height)
+    dest_rec = rl.Rectangle(self._rect.x + self._rect.width / 2 - self._txt_bg.width * scale / 2, bg_y, self._txt_bg.width * scale, self._txt_bg.height)
 
     rl.draw_texture_pro(self._txt_bg, src_rec, dest_rec, rl.Vector2(0, 0), 0.0, rl.WHITE)
 

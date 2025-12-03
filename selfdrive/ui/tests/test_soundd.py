@@ -32,4 +32,3 @@ class TestSoundd:
     assert check_selfdrive_timeout_alert(sm)
 
   # TODO: add test with micd for checking that soundd actually outputs sounds
-

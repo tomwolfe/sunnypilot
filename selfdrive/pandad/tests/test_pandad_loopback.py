@@ -25,20 +25,21 @@ def setup_pandad(num_pandas):
 
   sm = messaging.SubMaster(['pandaStates'])
   with Timeout(90, "pandad didn't start"):
-    while sm.recv_frame['pandaStates'] < 1 or len(sm['pandaStates']) == 0 or \
-        any(ps.pandaType == log.PandaState.PandaType.unknown for ps in sm['pandaStates']):
+    while sm.recv_frame['pandaStates'] < 1 or len(sm['pandaStates']) == 0 or any(ps.pandaType == log.PandaState.PandaType.unknown for ps in sm['pandaStates']):
       sm.update(1000)
 
   found_pandas = len(sm['pandaStates'])
-  assert num_pandas == found_pandas, "connected pandas ({found_pandas}) doesn't match expected panda count ({num_pandas}). \
+  assert num_pandas == found_pandas, (
+    "connected pandas ({found_pandas}) doesn't match expected panda count ({num_pandas}). \
                                       connect another panda for multipanda tests."
+  )
 
   # pandad safety setting relies on these params
   cp = car.CarParams.new_message()
 
   safety_config = car.CarParams.SafetyConfig.new_message()
   safety_config.safetyModel = car.CarParams.SafetyModel.allOutput
-  cp.safetyConfigs = [safety_config]*num_pandas
+  cp.safetyConfigs = [safety_config] * num_pandas
 
   params.put_bool("IsOnroad", True)
   params.put_bool("FirmwareQueryDone", True)
@@ -49,13 +50,14 @@ def setup_pandad(num_pandas):
     while any(ps.safetyModel != car.CarParams.SafetyModel.allOutput for ps in sm['pandaStates']):
       sm.update(1000)
 
+
 def send_random_can_messages(sendcan, count, num_pandas=1):
   sent_msgs = defaultdict(set)
   for _ in range(count):
     to_send = []
     for __ in range(random.randrange(20)):
-      bus = random.choice([b for b in range(3*num_pandas) if b % 4 != 3])
-      addr = random.randrange(1, 1<<29)
+      bus = random.choice([b for b in range(3 * num_pandas) if b % 4 != 3])
+      addr = random.randrange(1, 1 << 29)
       dat = bytes(random.getrandbits(8) for _ in range(random.randrange(1, 9)))
       if (addr, dat) in sent_msgs[bus]:
         continue
@@ -89,7 +91,7 @@ class TestBoarddLoopback:
       sent_msgs = send_random_can_messages(sendcan, random.randrange(20, 100), num_pandas)
 
       sent_loopback = copy.deepcopy(sent_msgs)
-      sent_loopback.update({k+128: copy.deepcopy(v) for k, v in sent_msgs.items()})
+      sent_loopback.update({k + 128: copy.deepcopy(v) for k, v in sent_msgs.items()})
       sent_total = {k: len(v) for k, v in sent_loopback.items()}
       for _ in range(100 * 5):
         sm.update(0)

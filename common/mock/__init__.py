@@ -3,7 +3,6 @@ Utilities for generating mock messages for testing.
 example in common/tests/test_mock.py
 """
 
-
 import functools
 import threading
 from cereal.messaging import PubMaster
@@ -12,9 +11,7 @@ from openpilot.common.mock.generators import generate_livePose
 from openpilot.common.realtime import Ratekeeper
 
 
-MOCK_GENERATOR = {
-  "livePose": generate_livePose
-}
+MOCK_GENERATOR = {"livePose": generate_livePose}
 
 
 def generate_messages_loop(services: list[str], done: threading.Event):
@@ -23,7 +20,7 @@ def generate_messages_loop(services: list[str], done: threading.Event):
   i = 0
   while not done.is_set():
     for s in services:
-      should_send = i % (100/SERVICE_LIST[s].frequency) == 0
+      should_send = i % (100 / SERVICE_LIST[s].frequency) == 0
       if should_send:
         message = MOCK_GENERATOR[s]()
         pm.send(s, message)
@@ -46,5 +43,7 @@ def mock_messages(services: list[str] | str):
       finally:
         done.set()
         t.join()
+
     return wrapper
+
   return decorator

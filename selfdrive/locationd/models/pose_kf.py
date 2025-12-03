@@ -7,7 +7,7 @@ from openpilot.selfdrive.locationd.models.constants import ObservationKind
 
 from rednose.helpers.kalmanfilter import KalmanFilter
 
-if __name__=="__main__":
+if __name__ == "__main__":
   import sympy as sp
   from rednose.helpers.ekf_sym import gen_code
   from rednose.helpers.sympy_helpers import euler_rotate, rot_to_euler
@@ -30,32 +30,40 @@ class PoseKalman(KalmanFilter):
   name = "pose"
 
   # state
-  initial_x = np.array([0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0,
-                        0.0, 0.0, 0.0])
+  initial_x = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
   # state covariance
-  initial_P = np.diag([0.01**2, 0.01**2, 0.01**2,
-                       10**2, 10**2, 10**2,
-                       1**2, 1**2, 1**2,
-                       1**2, 1**2, 1**2,
-                       100**2, 100**2, 100**2,
-                       0.01**2, 0.01**2, 0.01**2])
+  initial_P = np.diag([0.01**2, 0.01**2, 0.01**2, 10**2, 10**2, 10**2, 1**2, 1**2, 1**2, 1**2, 1**2, 1**2, 100**2, 100**2, 100**2, 0.01**2, 0.01**2, 0.01**2])
 
   # process noise
-  Q = np.diag([0.001**2, 0.001**2, 0.001**2,
-               0.01**2, 0.01**2, 0.01**2,
-               0.1**2, 0.1**2, 0.1**2,
-               (0.005 / 100)**2, (0.005 / 100)**2, (0.005 / 100)**2,
-               3**2, 3**2, 3**2,
-               0.005**2, 0.005**2, 0.005**2])
+  Q = np.diag(
+    [
+      0.001**2,
+      0.001**2,
+      0.001**2,
+      0.01**2,
+      0.01**2,
+      0.01**2,
+      0.1**2,
+      0.1**2,
+      0.1**2,
+      (0.005 / 100) ** 2,
+      (0.005 / 100) ** 2,
+      (0.005 / 100) ** 2,
+      3**2,
+      3**2,
+      3**2,
+      0.005**2,
+      0.005**2,
+      0.005**2,
+    ]
+  )
 
-  obs_noise = {ObservationKind.PHONE_GYRO: np.diag([0.025**2, 0.025**2, 0.025**2]),
-               ObservationKind.PHONE_ACCEL: np.diag([.5**2, .5**2, .5**2]),
-               ObservationKind.CAMERA_ODO_TRANSLATION: np.diag([0.5**2, 0.5**2, 0.5**2]),
-               ObservationKind.CAMERA_ODO_ROTATION: np.diag([0.05**2, 0.05**2, 0.05**2])}
+  obs_noise = {
+    ObservationKind.PHONE_GYRO: np.diag([0.025**2, 0.025**2, 0.025**2]),
+    ObservationKind.PHONE_ACCEL: np.diag([0.5**2, 0.5**2, 0.5**2]),
+    ObservationKind.CAMERA_ODO_TRANSLATION: np.diag([0.5**2, 0.5**2, 0.5**2]),
+    ObservationKind.CAMERA_ODO_ROTATION: np.diag([0.05**2, 0.05**2, 0.05**2]),
+  }
 
   @staticmethod
   def generate_code(generated_dir):
@@ -82,7 +90,7 @@ class PoseKalman(KalmanFilter):
     state_dot[States.DEVICE_VELOCITY, :] = acceleration
 
     f_sym = state + dt * state_dot
-    device_from_device_t1 = euler_rotate(dt*vroll, dt*vpitch, dt*vyaw)
+    device_from_device_t1 = euler_rotate(dt * vroll, dt * vpitch, dt * vyaw)
     ned_from_device_t1 = ned_from_device * device_from_device_t1
     f_sym[States.NED_ORIENTATION, :] = rot_to_euler(ned_from_device_t1)
 
@@ -102,8 +110,9 @@ class PoseKalman(KalmanFilter):
 
   def __init__(self, generated_dir, max_rewind_age):
     dim_state, dim_state_err = PoseKalman.initial_x.shape[0], PoseKalman.initial_P.shape[0]
-    self.filter = EKF_sym_pyx(generated_dir, self.name, PoseKalman.Q, PoseKalman.initial_x, PoseKalman.initial_P,
-                              dim_state, dim_state_err, max_rewind_age=max_rewind_age)
+    self.filter = EKF_sym_pyx(
+      generated_dir, self.name, PoseKalman.Q, PoseKalman.initial_x, PoseKalman.initial_P, dim_state, dim_state_err, max_rewind_age=max_rewind_age
+    )
 
 
 if __name__ == "__main__":

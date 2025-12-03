@@ -11,12 +11,11 @@ from openpilot.system.manager.process_config import managed_processes
 from openpilot.selfdrive.test.process_replay.vision_meta import meta_from_camera_state
 
 CAM = DEVICE_CAMERAS[("tici", "ar0231")].fcam
-IMG = np.zeros(int(CAM.width*CAM.height*(3/2)), dtype=np.uint8)
+IMG = np.zeros(int(CAM.width * CAM.height * (3 / 2)), dtype=np.uint8)
 IMG_BYTES = IMG.flatten().tobytes()
 
 
 class TestModeld:
-
   def setup_method(self):
     self.vipc_server = VisionIpcServer("camerad")
     self.vipc_server.create_buffers(VisionStreamType.VISION_STREAM_ROAD, 40, CAM.width, CAM.height)
@@ -49,8 +48,7 @@ class TestModeld:
       cam_meta = meta_from_camera_state(cam)
 
       self.pm.send(msg.which(), msg)
-      self.vipc_server.send(cam_meta.stream, IMG_BYTES, cs.frameId,
-                            cs.timestampSof, cs.timestampEof)
+      self.vipc_server.send(cam_meta.stream, IMG_BYTES, cs.frameId, cs.timestampSof, cs.timestampEof)
     return cs
 
   def _wait(self):
@@ -76,13 +74,13 @@ class TestModeld:
 
   def test_dropped_frames(self):
     """
-      modeld should only run on consecutive road frames
+    modeld should only run on consecutive road frames
     """
     frame_id = -1
     road_frames = list()
     for n in range(1, 50):
       if (random.random() < 0.1) and n > 3:
-        cams = random.choice([(), ('wideRoadCameraState', )])
+        cams = random.choice([(), ('wideRoadCameraState',)])
         self._send_frames(n, cams)
       else:
         self._send_frames(n)

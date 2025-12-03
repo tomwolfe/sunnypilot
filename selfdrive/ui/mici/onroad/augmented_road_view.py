@@ -30,6 +30,7 @@ class BookmarkState(IntEnum):
   DRAGGING = 1
   TRIGGERED = 2
 
+
 WIDE_CAM_MAX_SPEED = 5.0  # m/s (10 mph)
 ROAD_CAM_MIN_SPEED = 10  # m/s (25 mph)
 
@@ -153,10 +154,14 @@ class AugmentedRoadView(CameraView):
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer()
     self._confidence_ball = ConfidenceBall()
-    self._offroad_label = UnifiedLabel("start the car to\nuse sunnypilot", 54, FontWeight.DISPLAY,
-                                       text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
-                                       alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                                       alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._offroad_label = UnifiedLabel(
+      "start the car to\nuse sunnypilot",
+      54,
+      FontWeight.DISPLAY,
+      text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    )
 
     self._fade_texture = gui_app.texture("icons_mici/onroad/onroad_fade.png")
 
@@ -194,12 +199,7 @@ class AugmentedRoadView(CameraView):
 
     # Enable scissor mode to clip all rendering within content rectangle boundaries
     # This creates a rendering viewport that prevents graphics from drawing outside the border
-    rl.begin_scissor_mode(
-      int(self._content_rect.x),
-      int(self._content_rect.y),
-      int(self._content_rect.width),
-      int(self._content_rect.height)
-    )
+    rl.begin_scissor_mode(int(self._content_rect.x), int(self._content_rect.y), int(self._content_rect.width), int(self._content_rect.height))
 
     # Render the base camera view
     super()._render(self._content_rect)
@@ -213,15 +213,17 @@ class AugmentedRoadView(CameraView):
     alert_to_render, not_animating_out = self._alert_renderer.will_render()
 
     # Hide DMoji when disengaged unless AlwaysOnDM is enabled
-    should_draw_dmoji = (not self._hud_renderer.drawing_top_icons() and ui_state.is_onroad() and
-                         (ui_state.status != UIStatus.DISENGAGED or ui_state.always_on_dm))
+    should_draw_dmoji = (
+      not self._hud_renderer.drawing_top_icons() and ui_state.is_onroad() and (ui_state.status != UIStatus.DISENGAGED or ui_state.always_on_dm)
+    )
     self._driver_state_renderer.set_should_draw(should_draw_dmoji)
     self._driver_state_renderer.set_position(self._rect.x + 16, self._rect.y + 10)
     self._driver_state_renderer.render()
 
     self._hud_renderer.set_can_draw_top_icons(alert_to_render is None)
-    self._hud_renderer.set_wheel_critical_icon(alert_to_render is not None and not not_animating_out and
-                                               alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
+    self._hud_renderer.set_wheel_critical_icon(
+      alert_to_render is not None and not not_animating_out and alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired
+    )
     # TODO: have alert renderer draw offroad mici label below
     if ui_state.started:
       self._alert_renderer.render(self._content_rect)
@@ -326,17 +328,9 @@ class AugmentedRoadView(CameraView):
     self._last_calib_time = calib_time
     self._last_rect_dims = current_dims
     self._last_stream_type = self.stream_type
-    self._cached_matrix = np.array([
-      [zoom * 2 * cx / w, 0, -x_offset / w * 2],
-      [0, zoom * 2 * cy / h, -y_offset / h * 2],
-      [0, 0, 1.0]
-    ])
+    self._cached_matrix = np.array([[zoom * 2 * cx / w, 0, -x_offset / w * 2], [0, zoom * 2 * cy / h, -y_offset / h * 2], [0, 0, 1.0]])
 
-    video_transform = np.array([
-      [zoom, 0.0, (w / 2 + x - x_offset) - (cx * zoom)],
-      [0.0, zoom, (h / 2 + y - y_offset) - (cy * zoom)],
-      [0.0, 0.0, 1.0]
-    ])
+    video_transform = np.array([[zoom, 0.0, (w / 2 + x - x_offset) - (cx * zoom)], [0.0, zoom, (h / 2 + y - y_offset) - (cy * zoom)], [0.0, 0.0, 1.0]])
     self._model_renderer.set_transform(video_transform @ calib_transform)
 
     return self._cached_matrix

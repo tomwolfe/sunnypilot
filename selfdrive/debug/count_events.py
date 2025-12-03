@@ -63,7 +63,7 @@ if __name__ == "__main__":
   for k, v in cnt_cameras.items():
     s = SERVICE_LIST[k]
     expected_frames = int(s.frequency * duration / cast(float, s.decimation))
-    print("  ", k.ljust(20), f"{v}, {v/expected_frames:.1%} of expected")
+    print("  ", k.ljust(20), f"{v}, {v / expected_frames:.1%} of expected")
 
   print("\n")
   print("Alerts")
@@ -73,5 +73,5 @@ if __name__ == "__main__":
   print("\n")
   if ignition_off is not None:
     ignition_off = round((ignition_off - start_time) / 1e9, 2)
-  print("Ignition off at",  ignition_off)
+  print("Ignition off at", ignition_off)
   print("Route duration", datetime.timedelta(seconds=duration))

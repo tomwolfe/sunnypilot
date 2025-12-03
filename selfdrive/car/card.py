@@ -41,6 +41,7 @@ def obd_callback(params: Params) -> ObdCallback:
       params.put_bool("ObdMultiplexingEnabled", obd_multiplexing)
       params.get_bool("ObdMultiplexingChanged", block=True)
       cloudlog.warning("OBD multiplexing set successfully")
+
   return set_obd_multiplexing
 
 
@@ -110,8 +111,17 @@ class Car:
       fixed_fingerprint = (self.params.get("CarPlatformBundle") or {}).get("platform", None)
       init_params_list_sp = sunnypilot_interfaces.initialize_params(self.params)
 
-      self.CI = get_car(*self.can_callbacks, obd_callback(self.params), alpha_long_allowed, is_release, num_pandas, cached_params,
-                        fixed_fingerprint, init_params_list_sp, is_release_sp)
+      self.CI = get_car(
+        *self.can_callbacks,
+        obd_callback(self.params),
+        alpha_long_allowed,
+        is_release,
+        num_pandas,
+        cached_params,
+        fixed_fingerprint,
+        init_params_list_sp,
+        is_release_sp,
+      )
       sunnypilot_interfaces.setup_interfaces(self.CI, self.params)
       self.RI = interfaces[self.CI.CP.carFingerprint].RadarInterface(self.CI.CP, self.CI.CP_SP)
       self.CP = self.CI.CP
@@ -233,7 +243,7 @@ class Car:
     """carState and carParams publish loop"""
 
     # carParams - logged every 50 seconds (> 1 per segment)
-    if self.sm.frame % int(50. / DT_CTRL) == 0:
+    if self.sm.frame % int(50.0 / DT_CTRL) == 0:
       cp_send = messaging.new_message('carParams')
       cp_send.valid = True
       cp_send.carParams = self.CP
@@ -250,7 +260,7 @@ class Car:
     cs_send.valid = CS.canValid
     cs_send.carState = CS
     cs_send.carState.canErrorCounter = self.can_rcv_cum_timeout_counter
-    cs_send.carState.cumLagMs = -self.rk.remaining * 1000.
+    cs_send.carState.cumLagMs = -self.rk.remaining * 1000.0
     self.pm.send('carState', cs_send)
 
     if RD is not None:
@@ -260,7 +270,7 @@ class Car:
       self.pm.send('liveTracks', tracks_msg)
 
     # carParamsSP - logged every 50 seconds (> 1 per segment)
-    if self.sm.frame % int(50. / DT_CTRL) == 0:
+    if self.sm.frame % int(50.0 / DT_CTRL) == 0:
       cp_sp_send = messaging.new_message('carParamsSP')
       cp_sp_send.valid = True
       cp_sp_send.carParamsSP = self.CP_SP_capnp
@@ -294,8 +304,7 @@ class Car:
 
     self.state_publish(CS, CS_SP, RD)
 
-    initialized = (not any(e.name == EventName.selfdriveInitializing for e in self.sm['onroadEvents']) and
-                   self.sm.seen['onroadEvents'])
+    initialized = not any(e.name == EventName.selfdriveInitializing for e in self.sm['onroadEvents']) and self.sm.seen['onroadEvents']
     if not self.CP.passive and initialized:
       self.controls_update(CS, self.sm['carControl'], self.sm['carControlSP'])
 
@@ -316,7 +325,7 @@ class Car:
 
   def card_thread(self):
     e = threading.Event()
-    t = threading.Thread(target=self.params_thread, args=(e, ))
+    t = threading.Thread(target=self.params_thread, args=(e,))
     try:
       t.start()
       while True:

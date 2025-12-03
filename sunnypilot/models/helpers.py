@@ -115,12 +115,14 @@ def get_active_model_runner(params: Params = None, force_check=False) -> custom.
 
   return runner_type
 
+
 def _get_model():
   if bundle := get_active_bundle():
     drive_model = next(model for model in bundle.models if model.type == ModelManager.Model.Type.supercombo)
     return drive_model
 
   return None
+
 
 def get_model_path():
   if USE_ONNX:
@@ -144,11 +146,7 @@ def load_metadata():
 
 def prepare_inputs(model_metadata) -> dict[str, np.ndarray]:
   # img buffers are managed in openCL transform code so we don't pass them as inputs
-  inputs = {
-    k: np.zeros(v, dtype=np.float32).flatten()
-    for k, v in model_metadata['input_shapes'].items()
-    if 'img' not in k
-  }
+  inputs = {k: np.zeros(v, dtype=np.float32).flatten() for k, v in model_metadata['input_shapes'].items() if 'img' not in k}
 
   return inputs
 
@@ -177,11 +175,7 @@ def load_meta_constants(model_metadata):
     meta_slice = model_metadata['output_slices']['meta']
     meta_tf_slice = slice(5868, 5921, None)
 
-    if (
-            meta_slice.start == meta_tf_slice.start and
-            meta_slice.stop == meta_tf_slice.stop and
-            meta_slice.step == meta_tf_slice.step
-    ):
+    if meta_slice.start == meta_tf_slice.start and meta_slice.stop == meta_tf_slice.stop and meta_slice.step == meta_tf_slice.step:
       meta = MetaTombRaider
 
   return meta
@@ -205,7 +199,6 @@ def plan_x_idxs_helper(constants, plan, model_output) -> list[float]:
     # interpolate to find `t` for the current xidx
     current_x_val = plan_x[tidx]
     next_x_val = plan_x[tidx + 1]
-    p = (constants.X_IDXS[xidx] - current_x_val) / (next_x_val - current_x_val) if abs(
-      next_x_val - current_x_val) > 1e-9 else float('nan')
+    p = (constants.X_IDXS[xidx] - current_x_val) / (next_x_val - current_x_val) if abs(next_x_val - current_x_val) > 1e-9 else float('nan')
     LINE_T_IDXS[xidx] = p * constants.T_IDXS[tidx + 1] + (1 - p) * constants.T_IDXS[tidx]
   return LINE_T_IDXS

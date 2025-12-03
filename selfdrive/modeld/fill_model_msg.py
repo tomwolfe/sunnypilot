@@ -8,11 +8,12 @@ from openpilot.sunnypilot.models.helpers import plan_x_idxs_helper
 
 # Import scipy with fallback
 try:
-    from scipy.signal import savgol_filter
-    SCIPY_AVAILABLE = True
+  from scipy.signal import savgol_filter
+
+  SCIPY_AVAILABLE = True
 except ImportError:
-    SCIPY_AVAILABLE = False
-    savgol_filter = None
+  SCIPY_AVAILABLE = False
+  savgol_filter = None
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
 
@@ -21,9 +22,10 @@ ConfidenceClass = log.ModelDataV2.ConfidenceClass
 
 class PublishState:
   def __init__(self):
-    self.disengage_buffer = np.zeros(ModelConstants.CONFIDENCE_BUFFER_LEN*ModelConstants.DISENGAGE_WIDTH, dtype=np.float32)
+    self.disengage_buffer = np.zeros(ModelConstants.CONFIDENCE_BUFFER_LEN * ModelConstants.DISENGAGE_WIDTH, dtype=np.float32)
     self.prev_brake_5ms2_probs = np.zeros(ModelConstants.FCW_5MS2_PROBS_WIDTH, dtype=np.float32)
     self.prev_brake_3ms2_probs = np.zeros(ModelConstants.FCW_3MS2_PROBS_WIDTH, dtype=np.float32)
+
 
 def smooth_trajectory(data: Optional[np.ndarray]) -> np.ndarray:
   """
@@ -36,25 +38,25 @@ def smooth_trajectory(data: Optional[np.ndarray]) -> np.ndarray:
 
   # Check if data is valid and has sufficient length
   if data is None or len(data) == 0:
-      # Not enough data points to apply filter, return original
-      return np.array([], dtype=np.float32) if data is None else np.asarray(data)
+    # Not enough data points to apply filter, return original
+    return np.array([], dtype=np.float32) if data is None else np.asarray(data)
 
   # Use scipy filter if available
   if SCIPY_AVAILABLE:
-      if len(data) >= window_length:
-          try:
-              result = savgol_filter(data, window_length, polyorder)
-              return np.asarray(result)
-          except Exception:
-              # If smoothing fails, return original data to maintain functionality
-              return np.asarray(data)
-      else:
-          # Not enough data points for the window length
-          return np.asarray(data)
+    if len(data) >= window_length:
+      try:
+        result = savgol_filter(data, window_length, polyorder)
+        return np.asarray(result)
+      except Exception:
+        # If smoothing fails, return original data to maintain functionality
+        return np.asarray(data)
+    else:
+      # Not enough data points for the window length
+      return np.asarray(data)
   else:
-      # Return original data when scipy is not available
-      # This maintains functionality, albeit without smoothing
-      return np.asarray(data if data is not None else [])
+    # Return original data when scipy is not available
+    # This maintains functionality, albeit without smoothing
+    return np.asarray(data if data is not None else [])
 
 
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
@@ -68,6 +70,7 @@ def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
     builder.yStd = y_std.tolist()
   if z_std is not None:
     builder.zStd = z_std.tolist()
+
 
 def fill_xyvat(builder, t, x, y, v, a, x_std=None, y_std=None, v_std=None, a_std=None):
   builder.t = t
@@ -84,6 +87,7 @@ def fill_xyvat(builder, t, x, y, v, a, x_std=None, y_std=None, v_std=None, a_std
   if a_std is not None:
     builder.aStd = a_std.tolist()
 
+
 def fill_xyz_poly(builder, degree, x, y, z):
   xyz = np.stack([x, y, z], axis=1)
   coeffs = np.polynomial.polynomial.polyfit(ModelConstants.T_IDXS, xyz, deg=degree)
@@ -91,17 +95,28 @@ def fill_xyz_poly(builder, degree, x, y, z):
   builder.yCoefficients = coeffs[:, 1].tolist()
   builder.zCoefficients = coeffs[:, 2].tolist()
 
+
 def fill_lane_line_meta(builder, lane_lines, lane_line_probs):
   builder.leftY = lane_lines[1].y[0]
   builder.leftProb = lane_line_probs[1]
   builder.rightY = lane_lines[2].y[0]
   builder.rightProb = lane_line_probs[2]
 
-def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._DynamicStructBuilder,
-                   net_output_data: dict[str, np.ndarray], action: log.ModelDataV2.Action,
-                   publish_state: PublishState, vipc_frame_id: int, vipc_frame_id_extra: int,
-                   frame_id: int, frame_drop: float, timestamp_eof: int, model_execution_time: float,
-                   valid: bool) -> None:
+
+def fill_model_msg(
+  base_msg: capnp._DynamicStructBuilder,
+  extended_msg: capnp._DynamicStructBuilder,
+  net_output_data: dict[str, np.ndarray],
+  action: log.ModelDataV2.Action,
+  publish_state: PublishState,
+  vipc_frame_id: int,
+  vipc_frame_id_extra: int,
+  frame_id: int,
+  frame_drop: float,
+  timestamp_eof: int,
+  model_execution_time: float,
+  valid: bool,
+) -> None:
   frame_age = frame_id - vipc_frame_id if frame_id > vipc_frame_id else 0
   frame_drop_perc = frame_drop * 100
   extended_msg.valid = valid
@@ -125,37 +140,35 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   modelV2.modelExecutionTime = model_execution_time
 
   # Apply smoothing to the plan data
-  plan_position_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,0])
-  plan_position_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,1])
-  plan_position_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.POSITION][:,2])
+  plan_position_x = smooth_trajectory(net_output_data['plan'][0, :, Plan.POSITION][:, 0])
+  plan_position_y = smooth_trajectory(net_output_data['plan'][0, :, Plan.POSITION][:, 1])
+  plan_position_z = smooth_trajectory(net_output_data['plan'][0, :, Plan.POSITION][:, 2])
 
-  plan_velocity_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,0])
-  plan_velocity_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,1])
-  plan_velocity_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.VELOCITY][:,2])
+  plan_velocity_x = smooth_trajectory(net_output_data['plan'][0, :, Plan.VELOCITY][:, 0])
+  plan_velocity_y = smooth_trajectory(net_output_data['plan'][0, :, Plan.VELOCITY][:, 1])
+  plan_velocity_z = smooth_trajectory(net_output_data['plan'][0, :, Plan.VELOCITY][:, 2])
 
-  plan_acceleration_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,0])
-  plan_acceleration_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,1])
-  plan_acceleration_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.ACCELERATION][:,2])
+  plan_acceleration_x = smooth_trajectory(net_output_data['plan'][0, :, Plan.ACCELERATION][:, 0])
+  plan_acceleration_y = smooth_trajectory(net_output_data['plan'][0, :, Plan.ACCELERATION][:, 1])
+  plan_acceleration_z = smooth_trajectory(net_output_data['plan'][0, :, Plan.ACCELERATION][:, 2])
 
-  plan_orientation_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,0])
-  plan_orientation_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,1])
-  plan_orientation_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.T_FROM_CURRENT_EULER][:,2])
+  plan_orientation_x = smooth_trajectory(net_output_data['plan'][0, :, Plan.T_FROM_CURRENT_EULER][:, 0])
+  plan_orientation_y = smooth_trajectory(net_output_data['plan'][0, :, Plan.T_FROM_CURRENT_EULER][:, 1])
+  plan_orientation_z = smooth_trajectory(net_output_data['plan'][0, :, Plan.T_FROM_CURRENT_EULER][:, 2])
 
-  plan_orientation_rate_x = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,0])
-  plan_orientation_rate_y = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,1])
-  plan_orientation_rate_z = smooth_trajectory(net_output_data['plan'][0,:,Plan.ORIENTATION_RATE][:,2])
-
+  plan_orientation_rate_x = smooth_trajectory(net_output_data['plan'][0, :, Plan.ORIENTATION_RATE][:, 0])
+  plan_orientation_rate_y = smooth_trajectory(net_output_data['plan'][0, :, Plan.ORIENTATION_RATE][:, 1])
+  plan_orientation_rate_z = smooth_trajectory(net_output_data['plan'][0, :, Plan.ORIENTATION_RATE][:, 2])
 
   # plan
-  fill_xyzt(modelV2.position, ModelConstants.T_IDXS, plan_position_x, plan_position_y, plan_position_z, *net_output_data['plan_stds'][0,:,Plan.POSITION].T)
+  fill_xyzt(modelV2.position, ModelConstants.T_IDXS, plan_position_x, plan_position_y, plan_position_z, *net_output_data['plan_stds'][0, :, Plan.POSITION].T)
   fill_xyzt(modelV2.velocity, ModelConstants.T_IDXS, plan_velocity_x, plan_velocity_y, plan_velocity_z)
   fill_xyzt(modelV2.acceleration, ModelConstants.T_IDXS, plan_acceleration_x, plan_acceleration_y, plan_acceleration_z)
   fill_xyzt(modelV2.orientation, ModelConstants.T_IDXS, plan_orientation_x, plan_orientation_y, plan_orientation_z)
   fill_xyzt(modelV2.orientationRate, ModelConstants.T_IDXS, plan_orientation_rate_x, plan_orientation_rate_y, plan_orientation_rate_z)
 
-
   # poly path
-  fill_xyz_poly(driving_model_data.path, ModelConstants.POLY_PATH_DEGREE, *net_output_data['plan'][0,:,Plan.POSITION].T)
+  fill_xyz_poly(driving_model_data.path, ModelConstants.POLY_PATH_DEGREE, *net_output_data['plan'][0, :, Plan.POSITION].T)
 
   # action
   modelV2.action = action
@@ -167,9 +180,9 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   modelV2.init('laneLines', 4)
   for i in range(4):
     lane_line = modelV2.laneLines[i]
-    fill_xyzt(lane_line, LINE_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['lane_lines'][0,i,:,0], net_output_data['lane_lines'][0,i,:,1])
-  modelV2.laneLineStds = net_output_data['lane_lines_stds'][0,:,0,0].tolist()
-  modelV2.laneLineProbs = net_output_data['lane_lines_prob'][0,1::2].tolist()
+    fill_xyzt(lane_line, LINE_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['lane_lines'][0, i, :, 0], net_output_data['lane_lines'][0, i, :, 1])
+  modelV2.laneLineStds = net_output_data['lane_lines_stds'][0, :, 0, 0].tolist()
+  modelV2.laneLineProbs = net_output_data['lane_lines_prob'][0, 1::2].tolist()
 
   fill_lane_line_meta(driving_model_data.laneLineMeta, modelV2.laneLines, modelV2.laneLineProbs)
 
@@ -177,58 +190,59 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   modelV2.init('roadEdges', 2)
   for i in range(2):
     road_edge = modelV2.roadEdges[i]
-    fill_xyzt(road_edge, LINE_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['road_edges'][0,i,:,0], net_output_data['road_edges'][0,i,:,1])
-  modelV2.roadEdgeStds = net_output_data['road_edges_stds'][0,:,0,0].tolist()
+    fill_xyzt(road_edge, LINE_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['road_edges'][0, i, :, 0], net_output_data['road_edges'][0, i, :, 1])
+  modelV2.roadEdgeStds = net_output_data['road_edges_stds'][0, :, 0, 0].tolist()
 
   # leads
   modelV2.init('leadsV3', 3)
   for i in range(3):
     lead = modelV2.leadsV3[i]
-    fill_xyvat(lead, ModelConstants.LEAD_T_IDXS, *net_output_data['lead'][0,i].T, *net_output_data['lead_stds'][0,i].T)
-    lead.prob = net_output_data['lead_prob'][0,i].tolist()
+    fill_xyvat(lead, ModelConstants.LEAD_T_IDXS, *net_output_data['lead'][0, i].T, *net_output_data['lead_stds'][0, i].T)
+    lead.prob = net_output_data['lead_prob'][0, i].tolist()
     lead.probTime = ModelConstants.LEAD_T_OFFSETS[i]
 
   # meta
   meta = modelV2.meta
   meta.desireState = net_output_data['desire_state'][0].reshape(-1).tolist()
   meta.desirePrediction = net_output_data['desire_pred'][0].reshape(-1).tolist()
-  meta.engagedProb = net_output_data['meta'][0,Meta.ENGAGED].item()
+  meta.engagedProb = net_output_data['meta'][0, Meta.ENGAGED].item()
   meta.init('disengagePredictions')
   disengage_predictions = meta.disengagePredictions
   disengage_predictions.t = ModelConstants.META_T_IDXS
-  disengage_predictions.brakeDisengageProbs = net_output_data['meta'][0,Meta.BRAKE_DISENGAGE].tolist()
-  disengage_predictions.gasDisengageProbs = net_output_data['meta'][0,Meta.GAS_DISENGAGE].tolist()
-  disengage_predictions.steerOverrideProbs = net_output_data['meta'][0,Meta.STEER_OVERRIDE].tolist()
-  disengage_predictions.brake3MetersPerSecondSquaredProbs = net_output_data['meta'][0,Meta.HARD_BRAKE_3].tolist()
-  disengage_predictions.brake4MetersPerSecondSquaredProbs = net_output_data['meta'][0,Meta.HARD_BRAKE_4].tolist()
-  disengage_predictions.brake5MetersPerSecondSquaredProbs = net_output_data['meta'][0,Meta.HARD_BRAKE_5].tolist()
-  disengage_predictions.gasPressProbs = net_output_data['meta'][0,Meta.GAS_PRESS].tolist()
-  disengage_predictions.brakePressProbs = net_output_data['meta'][0,Meta.BRAKE_PRESS].tolist()
+  disengage_predictions.brakeDisengageProbs = net_output_data['meta'][0, Meta.BRAKE_DISENGAGE].tolist()
+  disengage_predictions.gasDisengageProbs = net_output_data['meta'][0, Meta.GAS_DISENGAGE].tolist()
+  disengage_predictions.steerOverrideProbs = net_output_data['meta'][0, Meta.STEER_OVERRIDE].tolist()
+  disengage_predictions.brake3MetersPerSecondSquaredProbs = net_output_data['meta'][0, Meta.HARD_BRAKE_3].tolist()
+  disengage_predictions.brake4MetersPerSecondSquaredProbs = net_output_data['meta'][0, Meta.HARD_BRAKE_4].tolist()
+  disengage_predictions.brake5MetersPerSecondSquaredProbs = net_output_data['meta'][0, Meta.HARD_BRAKE_5].tolist()
+  disengage_predictions.gasPressProbs = net_output_data['meta'][0, Meta.GAS_PRESS].tolist()
+  disengage_predictions.brakePressProbs = net_output_data['meta'][0, Meta.BRAKE_PRESS].tolist()
 
   publish_state.prev_brake_5ms2_probs[:-1] = publish_state.prev_brake_5ms2_probs[1:]
-  publish_state.prev_brake_5ms2_probs[-1] = net_output_data['meta'][0,Meta.HARD_BRAKE_5][0]
+  publish_state.prev_brake_5ms2_probs[-1] = net_output_data['meta'][0, Meta.HARD_BRAKE_5][0]
   publish_state.prev_brake_3ms2_probs[:-1] = publish_state.prev_brake_3ms2_probs[1:]
-  publish_state.prev_brake_3ms2_probs[-1] = net_output_data['meta'][0,Meta.HARD_BRAKE_3][0]
-  hard_brake_predicted = (publish_state.prev_brake_5ms2_probs > ModelConstants.FCW_THRESHOLDS_5MS2).all() and \
-    (publish_state.prev_brake_3ms2_probs > ModelConstants.FCW_THRESHOLDS_3MS2).all()
+  publish_state.prev_brake_3ms2_probs[-1] = net_output_data['meta'][0, Meta.HARD_BRAKE_3][0]
+  hard_brake_predicted = (publish_state.prev_brake_5ms2_probs > ModelConstants.FCW_THRESHOLDS_5MS2).all() and (
+    publish_state.prev_brake_3ms2_probs > ModelConstants.FCW_THRESHOLDS_3MS2
+  ).all()
   meta.hardBrakePredicted = hard_brake_predicted.item()
 
   # confidence
-  if vipc_frame_id % (2*ModelConstants.MODEL_RUN_FREQ) == 0:
+  if vipc_frame_id % (2 * ModelConstants.MODEL_RUN_FREQ) == 0:
     # any disengage prob
-    brake_disengage_probs = net_output_data['meta'][0,Meta.BRAKE_DISENGAGE]
-    gas_disengage_probs = net_output_data['meta'][0,Meta.GAS_DISENGAGE]
-    steer_override_probs = net_output_data['meta'][0,Meta.STEER_OVERRIDE]
-    any_disengage_probs = 1-((1-brake_disengage_probs)*(1-gas_disengage_probs)*(1-steer_override_probs))
+    brake_disengage_probs = net_output_data['meta'][0, Meta.BRAKE_DISENGAGE]
+    gas_disengage_probs = net_output_data['meta'][0, Meta.GAS_DISENGAGE]
+    steer_override_probs = net_output_data['meta'][0, Meta.STEER_OVERRIDE]
+    any_disengage_probs = 1 - ((1 - brake_disengage_probs) * (1 - gas_disengage_probs) * (1 - steer_override_probs))
     # independent disengage prob for each 2s slice
     ind_disengage_probs = np.r_[any_disengage_probs[0], np.diff(any_disengage_probs) / (1 - any_disengage_probs[:-1])]
     # rolling buf for 2, 4, 6, 8, 10s
-    publish_state.disengage_buffer[:-ModelConstants.DISENGAGE_WIDTH] = publish_state.disengage_buffer[ModelConstants.DISENGAGE_WIDTH:]
-    publish_state.disengage_buffer[-ModelConstants.DISENGAGE_WIDTH:] = ind_disengage_probs
+    publish_state.disengage_buffer[: -ModelConstants.DISENGAGE_WIDTH] = publish_state.disengage_buffer[ModelConstants.DISENGAGE_WIDTH :]
+    publish_state.disengage_buffer[-ModelConstants.DISENGAGE_WIDTH :] = ind_disengage_probs
 
-  score = 0.
+  score = 0.0
   for i in range(ModelConstants.DISENGAGE_WIDTH):
-    score += publish_state.disengage_buffer[i*ModelConstants.DISENGAGE_WIDTH+ModelConstants.DISENGAGE_WIDTH-1-i].item() / ModelConstants.DISENGAGE_WIDTH
+    score += publish_state.disengage_buffer[i * ModelConstants.DISENGAGE_WIDTH + ModelConstants.DISENGAGE_WIDTH - 1 - i].item() / ModelConstants.DISENGAGE_WIDTH
   if score < ModelConstants.RYG_GREEN:
     modelV2.confidence = ConfidenceClass.green
   elif score < ModelConstants.RYG_YELLOW:
@@ -240,19 +254,26 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   if SEND_RAW_PRED:
     modelV2.rawPredictions = net_output_data['raw_pred'].tobytes()
 
-def fill_pose_msg(msg: capnp._DynamicStructBuilder, net_output_data: dict[str, np.ndarray],
-                  vipc_frame_id: int, vipc_dropped_frames: int, timestamp_eof: int, live_calib_seen: bool) -> None:
+
+def fill_pose_msg(
+  msg: capnp._DynamicStructBuilder,
+  net_output_data: dict[str, np.ndarray],
+  vipc_frame_id: int,
+  vipc_dropped_frames: int,
+  timestamp_eof: int,
+  live_calib_seen: bool,
+) -> None:
   msg.valid = live_calib_seen & (vipc_dropped_frames < 1)
   cameraOdometry = msg.cameraOdometry
 
   cameraOdometry.frameId = vipc_frame_id
   cameraOdometry.timestampEof = timestamp_eof
 
-  cameraOdometry.trans = net_output_data['pose'][0,:3].tolist()
-  cameraOdometry.rot = net_output_data['pose'][0,3:].tolist()
-  cameraOdometry.wideFromDeviceEuler = net_output_data['wide_from_device_euler'][0,:].tolist()
-  cameraOdometry.roadTransformTrans = net_output_data['road_transform'][0,:3].tolist()
-  cameraOdometry.transStd = net_output_data['pose_stds'][0,:3].tolist()
-  cameraOdometry.rotStd = net_output_data['pose_stds'][0,3:].tolist()
-  cameraOdometry.wideFromDeviceEulerStd = net_output_data['wide_from_device_euler_stds'][0,:].tolist()
-  cameraOdometry.roadTransformTransStd = net_output_data['road_transform_stds'][0,:3].tolist()
+  cameraOdometry.trans = net_output_data['pose'][0, :3].tolist()
+  cameraOdometry.rot = net_output_data['pose'][0, 3:].tolist()
+  cameraOdometry.wideFromDeviceEuler = net_output_data['wide_from_device_euler'][0, :].tolist()
+  cameraOdometry.roadTransformTrans = net_output_data['road_transform'][0, :3].tolist()
+  cameraOdometry.transStd = net_output_data['pose_stds'][0, :3].tolist()
+  cameraOdometry.rotStd = net_output_data['pose_stds'][0, 3:].tolist()
+  cameraOdometry.wideFromDeviceEulerStd = net_output_data['wide_from_device_euler_stds'][0, :].tolist()
+  cameraOdometry.roadTransformTransStd = net_output_data['road_transform_stds'][0, :3].tolist()

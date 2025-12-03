@@ -6,11 +6,14 @@ from cereal import log
 
 NetworkType = log.DeviceState.NetworkType
 
+
 class LPAError(RuntimeError):
   pass
 
+
 class LPAProfileNotFoundError(LPAError):
   pass
+
 
 @dataclass
 class Profile:
@@ -19,11 +22,12 @@ class Profile:
   enabled: bool
   provider: str
 
+
 @dataclass
 class ThermalZone:
   # a zone from /sys/class/thermal/thermal_zone*
-  name: str             # a.k.a type
-  scale: float = 1000.  # scale to get degrees in C
+  name: str  # a.k.a type
+  scale: float = 1000.0  # scale to get degrees in C
   zone_number = -1
 
   def read(self) -> float:
@@ -41,6 +45,7 @@ class ThermalZone:
         return int(f.read()) / self.scale
     except FileNotFoundError:
       return 0
+
 
 @dataclass
 class ThermalConfig:
@@ -63,6 +68,7 @@ class ThermalConfig:
         else:
           ret[f.name + "TempC"] = v.read()
     return ret
+
 
 class LPABase(ABC):
   @abstractmethod
@@ -95,6 +101,7 @@ class LPABase(ABC):
 
   def is_comma_profile(self, iccid: str) -> bool:
     return any(iccid.startswith(prefix) for prefix in ('8985235',))
+
 
 class HardwareBase(ABC):
   @staticmethod
@@ -206,7 +213,6 @@ class HardwareBase(ABC):
   def get_modem_temperatures(self):
     pass
 
-
   @abstractmethod
   def initialize_hardware(self):
     pass
@@ -234,10 +240,10 @@ class HardwareBase(ABC):
     return -1, -1
 
   def get_voltage(self) -> float:
-    return 0.
+    return 0.0
 
   def get_current(self) -> float:
-    return 0.
+    return 0.0
 
   def set_ir_power(self, percent: int):
     pass

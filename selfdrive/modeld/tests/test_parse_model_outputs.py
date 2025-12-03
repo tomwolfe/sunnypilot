@@ -41,7 +41,7 @@ def test_parser_with_temporal_filtering():
   mock_outputs = {
     'plan': np.random.rand(1, 33, 15).astype(np.float32),
     'lane_lines': np.random.rand(1, 4, 33, 2).astype(np.float32),  # 4 lane lines, 33 points, 2 values each
-    'lead': np.random.rand(1, 2, 6, 4).astype(np.float32)  # 2 leads, 6 trajectories, 4 values each
+    'lead': np.random.rand(1, 2, 6, 4).astype(np.float32),  # 2 leads, 6 trajectories, 4 values each
   }
 
   # Parse outputs with temporal filtering
@@ -67,7 +67,7 @@ def test_confidence_based_lane_line_filtering():
   # Create mock outputs with very low confidence
   mock_outputs = {
     'lane_lines': np.ones((1, 4, 33, 2), dtype=np.float32) * 5.0,  # High values
-    'lane_lines_prob': np.array([0.1])  # Low confidence
+    'lane_lines_prob': np.array([0.1]),  # Low confidence
   }
 
   # Parse outputs - should apply filtering based on confidence

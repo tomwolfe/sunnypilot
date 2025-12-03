@@ -66,6 +66,7 @@ def openpilot_function_fixture(request):
       gc.enable()
       gc.collect()
 
+
 # If you use setUpClass, the environment variables won't be cleared properly,
 # so we need to hook both the function and class pytest fixtures
 @pytest.fixture(scope="class", autouse=True)
@@ -118,7 +119,7 @@ def mock_params(mocker):
     "LateralMaxJerk": "5.0",
     "LateralHighSpeedThreshold": "15.0",
     "LateralHighSpeedKiLimit": "0.15",
-    "LateralCurvatureKiScaler": "0.2"
+    "LateralCurvatureKiScaler": "0.2",
   }
 
   def mock_get(key, block=False):

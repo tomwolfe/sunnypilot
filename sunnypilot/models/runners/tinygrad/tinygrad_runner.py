@@ -22,6 +22,7 @@ class TinygradRunner(ModelRunner, SupercomboTinygrad, PolicyTinygrad, VisionTiny
 
   :param model_type: The type of model (e.g., supercombo) to load and run.
   """
+
   def __init__(self, model_type: int = ModelType.supercombo):
     ModelRunner.__init__(self)
     SupercomboTinygrad.__init__(self)
@@ -33,8 +34,7 @@ class TinygradRunner(ModelRunner, SupercomboTinygrad, PolicyTinygrad, VisionTiny
       raise ValueError(f"Model data for type {model_type} not available.")
 
     artifact_filename = self._model_data.model.artifact.fileName
-    assert artifact_filename.endswith('_tinygrad.pkl'), \
-      f"Invalid model file {artifact_filename} for TinygradRunner"
+    assert artifact_filename.endswith('_tinygrad.pkl'), f"Invalid model file {artifact_filename} for TinygradRunner"
 
     model_pkl_path = f"{CUSTOM_MODEL_PATH}/{artifact_filename}"
     with open(model_pkl_path, "rb") as f:
@@ -101,6 +101,7 @@ class TinygradSplitRunner(ModelRunner):
 
   Manages the execution of split vision and policy models, combining their inputs and outputs.
   """
+
   def __init__(self):
     super().__init__()
     self.is_20hz_3d = True
@@ -112,7 +113,7 @@ class TinygradSplitRunner(ModelRunner):
     """Runs both vision and policy models and merges their parsed outputs."""
     policy_output = self.policy_runner.run_model()
     vision_output = self.vision_runner.run_model()
-    return {**policy_output, **vision_output} # Combine results
+    return {**policy_output, **vision_output}  # Combine results
 
   @property
   def vision_input_names(self) -> list[str]:

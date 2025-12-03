@@ -217,9 +217,13 @@ class ProcessContainer:
     self.process.start()
 
   def start(
-    self, params_config: dict[str, Any], environ_config: dict[str, Any],
-    all_msgs: LogIterable, frs: dict[str, FrameReader] | None,
-    fingerprint: str | None, capture_output: bool
+    self,
+    params_config: dict[str, Any],
+    environ_config: dict[str, Any],
+    all_msgs: LogIterable,
+    frs: dict[str, FrameReader] | None,
+    fingerprint: str | None,
+    capture_output: bool,
   ):
     with self.prefix as p:
       self.prefix.create_dirs()
@@ -301,8 +305,7 @@ class ProcessContainer:
             camera_meta = meta_from_camera_state(m.which())
             assert frs is not None
             img = frs[m.which()].get(camera_state.frameId)
-            self.vipc_server.send(camera_meta.stream, img.flatten().tobytes(),
-                                  camera_state.frameId, camera_state.timestampSof, camera_state.timestampEof)
+            self.vipc_server.send(camera_meta.stream, img.flatten().tobytes(), camera_state.frameId, camera_state.timestampSof, camera_state.timestampEof)
         self.msg_queue = []
 
         self.rc.unlock_sockets()
@@ -345,8 +348,9 @@ def get_car_params_callback(rc, pm, msgs, fingerprint):
     can_msgs = ([CanData(can.address, can.dat, can.src) for can in m.can] for m in msgs if m.which() == "can")
     cached_params_raw = params.get("CarParamsCache")
     assert next(can_msgs, None), "CAN messages are required for fingerprinting"
-    assert os.environ.get("SKIP_FW_QUERY", False) or cached_params_raw is not None, \
-            "CarParamsCache is required for fingerprinting. Make sure to keep carParams msgs in the logs."
+    assert os.environ.get("SKIP_FW_QUERY", False) or cached_params_raw is not None, (
+      "CarParamsCache is required for fingerprinting. Make sure to keep carParams msgs in the logs."
+    )
 
     def can_recv(wait_for_one: bool = False) -> list[list[CanData]]:
       return [next(can_msgs, [])]
@@ -368,10 +372,7 @@ def card_rcv_callback(msg, cfg, frame):
   if msg.which() != "can":
     return False
 
-  socks = [
-    s for s in cfg.subs if
-    frame % int(SERVICE_LIST[msg.which()].frequency / SERVICE_LIST[s].frequency) == 0
-  ]
+  socks = [s for s in cfg.subs if frame % int(SERVICE_LIST[msg.which()].frequency / SERVICE_LIST[s].frequency) == 0]
   if "sendcan" in socks and (frame - 1) < 2000:
     socks.remove("sendcan")
   return len(socks) > 0
@@ -412,7 +413,15 @@ class MessageBasedRcvCallback:
 
 def selfdrived_config_callback(params, cfg, lr):
   ublox = params.get_bool("UbloxAvailable")
-  sub_keys = ({"gpsLocation", } if ublox else {"gpsLocationExternal", })
+  sub_keys = (
+    {
+      "gpsLocation",
+    }
+    if ublox
+    else {
+      "gpsLocationExternal",
+    }
+  )
 
   cfg.pubs = set(cfg.pubs) - sub_keys
 
@@ -421,11 +430,33 @@ CONFIGS = [
   ProcessConfig(
     proc_name="selfdrived",
     pubs=[
-      "carState", "deviceState", "pandaStates", "peripheralState", "liveCalibration", "driverMonitoringState",
-      "longitudinalPlan", "livePose", "liveDelay", "liveParameters", "radarState", "modelV2",
-      "driverCameraState", "roadCameraState", "wideRoadCameraState", "managerState", "liveTorqueParameters",
-      "accelerometer", "gyroscope", "carOutput", "gpsLocationExternal", "gpsLocation", "controlsState",
-      "carControl", "driverAssistance", "alertDebug", "audioFeedback",
+      "carState",
+      "deviceState",
+      "pandaStates",
+      "peripheralState",
+      "liveCalibration",
+      "driverMonitoringState",
+      "longitudinalPlan",
+      "livePose",
+      "liveDelay",
+      "liveParameters",
+      "radarState",
+      "modelV2",
+      "driverCameraState",
+      "roadCameraState",
+      "wideRoadCameraState",
+      "managerState",
+      "liveTorqueParameters",
+      "accelerometer",
+      "gyroscope",
+      "carOutput",
+      "gpsLocationExternal",
+      "gpsLocation",
+      "controlsState",
+      "carControl",
+      "driverAssistance",
+      "alertDebug",
+      "audioFeedback",
     ],
     subs=["selfdriveState", "onroadEvents"],
     ignore=["logMonoTime"],
@@ -437,11 +468,24 @@ CONFIGS = [
   ),
   ProcessConfig(
     proc_name="controlsd",
-    pubs=["liveParameters", "liveTorqueParameters", "modelV2", "selfdriveState",
-          "liveCalibration", "livePose", "longitudinalPlan", "carState", "carOutput",
-          "driverMonitoringState", "onroadEvents", "driverAssistance"],
+    pubs=[
+      "liveParameters",
+      "liveTorqueParameters",
+      "modelV2",
+      "selfdriveState",
+      "liveCalibration",
+      "livePose",
+      "longitudinalPlan",
+      "carState",
+      "carOutput",
+      "driverMonitoringState",
+      "onroadEvents",
+      "driverAssistance",
+    ],
     subs=["carControl", "controlsState"],
-    ignore=["logMonoTime", ],
+    ignore=[
+      "logMonoTime",
+    ],
     init_callback=get_car_params_callback,
     should_recv_callback=MessageBasedRcvCallback("selfdriveState"),
     tolerance=NUMPY_TOLERANCE,
@@ -493,9 +537,7 @@ CONFIGS = [
   ),
   ProcessConfig(
     proc_name="locationd",
-    pubs=[
-      "cameraOdometry", "accelerometer", "gyroscope", "liveCalibration", "carState"
-    ],
+    pubs=["cameraOdometry", "accelerometer", "gyroscope", "liveCalibration", "carState"],
     subs=["liveLocationKalman", "livePose"],
     ignore=["logMonoTime"],
     should_recv_callback=MessageBasedRcvCallback("cameraOdometry"),
@@ -588,9 +630,7 @@ def get_custom_params_from_lr(lr: LogIterable, initial_state: str = "first") -> 
   assert len(car_params) > 0, "carParams required for initial state of liveParameters and CarParamsPrevRoute"
   CP = car_params[msg_index].carParams
 
-  custom_params = {
-    "CarParamsPrevRoute": CP.as_builder().to_bytes()
-  }
+  custom_params = {"CarParamsPrevRoute": CP.as_builder().to_bytes()}
 
   if len(live_calibration) > 0:
     custom_params["CalibrationParams"] = live_calibration[msg_index].as_builder().to_bytes()
@@ -614,19 +654,23 @@ def replay_process_with_name(name: str | Iterable[str], lr: LogIterable, *args, 
 
 
 def replay_process(
-  cfg: ProcessConfig | Iterable[ProcessConfig], lr: LogIterable, frs: dict[str, FrameReader] = None,
-  fingerprint: str = None, return_all_logs: bool = False, custom_params: dict[str, Any] = None,
-  captured_output_store: dict[str, dict[str, str]] = None, disable_progress: bool = False
+  cfg: ProcessConfig | Iterable[ProcessConfig],
+  lr: LogIterable,
+  frs: dict[str, FrameReader] = None,
+  fingerprint: str = None,
+  return_all_logs: bool = False,
+  custom_params: dict[str, Any] = None,
+  captured_output_store: dict[str, dict[str, str]] = None,
+  disable_progress: bool = False,
 ) -> list[capnp._DynamicStructReader]:
   if isinstance(cfg, Iterable):
     cfgs = list(cfg)
   else:
     cfgs = [cfg]
 
-  all_msgs = migrate_all(lr,
-                         manager_states=True,
-                         panda_states=any("pandaStates" in cfg.pubs for cfg in cfgs),
-                         camera_states=any(len(cfg.vision_pubs) != 0 for cfg in cfgs))
+  all_msgs = migrate_all(
+    lr, manager_states=True, panda_states=any("pandaStates" in cfg.pubs for cfg in cfgs), camera_states=any(len(cfg.vision_pubs) != 0 for cfg in cfgs)
+  )
   process_logs = _replay_multi_process(cfgs, all_msgs, frs, fingerprint, custom_params, captured_output_store, disable_progress)
 
   if return_all_logs:
@@ -642,8 +686,13 @@ def replay_process(
 
 
 def _replay_multi_process(
-  cfgs: list[ProcessConfig], lr: LogIterable, frs: dict[str, FrameReader] | None, fingerprint: str | None,
-  custom_params: dict[str, Any] | None, captured_output_store: dict[str, dict[str, str]] | None, disable_progress: bool
+  cfgs: list[ProcessConfig],
+  lr: LogIterable,
+  frs: dict[str, FrameReader] | None,
+  fingerprint: str | None,
+  custom_params: dict[str, Any] | None,
+  captured_output_store: dict[str, dict[str, str]] | None,
+  disable_progress: bool,
 ) -> list[capnp._DynamicStructReader]:
   if fingerprint is not None:
     params_config = generate_params_config(lr=lr, fingerprint=fingerprint, custom_params=custom_params)
@@ -657,8 +706,9 @@ def _replay_multi_process(
   all_vision_pubs = [pub for cfg in cfgs for pub in cfg.vision_pubs]
   if len(all_vision_pubs) != 0:
     assert frs is not None, "frs must be provided when replaying process using vision streams"
-    assert all(meta_from_camera_state(st) is not None for st in all_vision_pubs), \
-                                                          f"undefined vision stream spotted, probably misconfigured process: (vision pubs: {all_vision_pubs})"
+    assert all(meta_from_camera_state(st) is not None for st in all_vision_pubs), (
+      f"undefined vision stream spotted, probably misconfigured process: (vision pubs: {all_vision_pubs})"
+    )
     required_vision_pubs = {m.camera_state for m in available_streams(lr)} & set(all_vision_pubs)
     assert all(st in frs for st in required_vision_pubs), f"frs for this process must contain following vision streams: {required_vision_pubs}"
 
@@ -785,7 +835,7 @@ def check_openpilot_enabled(msgs: LogIterable) -> bool:
         cur_enabled_count = 0
       max_enabled_count = max(max_enabled_count, cur_enabled_count)
 
-  return max_enabled_count > int(10. / DT_CTRL)
+  return max_enabled_count > int(10.0 / DT_CTRL)
 
 
 def check_most_messages_valid(msgs: LogIterable, threshold: float = 0.9) -> bool:

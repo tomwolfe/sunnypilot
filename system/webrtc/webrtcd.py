@@ -10,11 +10,13 @@ from typing import Any, TYPE_CHECKING
 
 # aiortc and its dependencies have lots of internal warnings :(
 import warnings
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning) # TODO: remove this when google-crc32c publish a python3.12 wheel
+warnings.filterwarnings("ignore", category=RuntimeWarning)  # TODO: remove this when google-crc32c publish a python3.12 wheel
 
 import capnp
 from aiohttp import web
+
 if TYPE_CHECKING:
   from aiortc.rtcdatachannel import RTCDataChannel
 
@@ -154,8 +156,15 @@ class StreamSession:
     self.audio_output: AudioOutputSpeaker | MediaBlackhole | None = None
     self.run_task: asyncio.Task | None = None
     self.logger = logging.getLogger("webrtcd")
-    self.logger.info("New stream session (%s), cameras %s, audio in %s out %s, incoming services %s, outgoing services %s",
-                      self.identifier, cameras, config.incoming_audio_track, config.expected_audio_track, incoming_services, outgoing_services)
+    self.logger.info(
+      "New stream session (%s), cameras %s, audio in %s out %s, incoming services %s, outgoing services %s",
+      self.identifier,
+      cameras,
+      config.incoming_audio_track,
+      config.expected_audio_track,
+      incoming_services,
+      outgoing_services,
+    )
 
   def start(self):
     self.run_task = asyncio.create_task(self.run())
@@ -239,6 +248,7 @@ async def get_schema(request: 'web.Request'):
   schema_dict = {s: generate_field(log.Event.schema.fields[s]) for s in services}
   return web.json_response(schema_dict)
 
+
 async def post_notify(request: 'web.Request'):
   try:
     payload = await request.json()
@@ -253,6 +263,7 @@ async def post_notify(request: 'web.Request'):
       continue
 
   return web.Response(status=200, text="OK")
+
 
 async def on_shutdown(app: 'web.Application'):
   for session in app['streams'].values():
@@ -288,5 +299,5 @@ def main():
   webrtcd_thread(args.host, args.port, args.debug)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
   main()

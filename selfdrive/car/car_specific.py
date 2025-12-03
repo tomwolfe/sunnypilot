@@ -49,9 +49,9 @@ class CarSpecificEvents:
       events = self.create_common_events(CS, CS_prev, extra_gears=[GearShifter.low])
 
       # Low speed steer alert hysteresis logic
-      if self.CP.minSteerSpeed > 0. and CS.vEgo < (self.CP.minSteerSpeed + 0.5):
+      if self.CP.minSteerSpeed > 0.0 and CS.vEgo < (self.CP.minSteerSpeed + 0.5):
         self.low_speed_alert = True
-      elif CS.vEgo > (self.CP.minSteerSpeed + 1.):
+      elif CS.vEgo > (self.CP.minSteerSpeed + 1.0):
         self.low_speed_alert = False
       if self.low_speed_alert:
         events.add(EventName.belowSteerSpeed)
@@ -66,10 +66,10 @@ class CarSpecificEvents:
         # we engage when pcm is active (rising edge)
         if CS.cruiseState.enabled and not CS_prev.cruiseState.enabled:
           events.add(EventName.pcmEnable)
-        elif not CS.cruiseState.enabled and (CC.actuators.accel >= 0. or not self.CP.openpilotLongitudinalControl):
+        elif not CS.cruiseState.enabled and (CC.actuators.accel >= 0.0 or not self.CP.openpilotLongitudinalControl):
           # it can happen that car cruise disables while comma system is enabled: need to
           # keep braking if needed or if the speed is very low
-          if CS.vEgo < self.CP.minEnableSpeed + 2.:
+          if CS.vEgo < self.CP.minEnableSpeed + 2.0:
             # non loud alert if cruise disables below 25mph as expected (+ a little margin)
             events.add(EventName.speedTooLow)
           else:
@@ -94,21 +94,19 @@ class CarSpecificEvents:
             events.add(EventName.manualRestart)
 
     elif self.CP.brand == 'gm':
-      events = self.create_common_events(CS, CS_prev, extra_gears=[GearShifter.sport, GearShifter.low,
-                                                                   GearShifter.eco, GearShifter.manumatic],
-                                         pcm_enable=self.CP.pcmCruise)
+      events = self.create_common_events(
+        CS, CS_prev, extra_gears=[GearShifter.sport, GearShifter.low, GearShifter.eco, GearShifter.manumatic], pcm_enable=self.CP.pcmCruise
+      )
 
       # Enabling at a standstill with brake is allowed
       # TODO: verify 17 Volt can enable for the first time at a stop and allow for all GMs
-      if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brake >= 20 and
-                                                   self.CP.networkLocation == NetworkLocation.fwdCamera):
+      if CS.vEgo < self.CP.minEnableSpeed and not (CS.standstill and CS.brake >= 20 and self.CP.networkLocation == NetworkLocation.fwdCamera):
         events.add(EventName.belowEngageSpeed)
       if CS.cruiseState.standstill:
         events.add(EventName.resumeRequired)
 
     elif self.CP.brand == 'volkswagen':
-      events = self.create_common_events(CS, CS_prev, extra_gears=[GearShifter.eco, GearShifter.sport, GearShifter.manumatic],
-                                         pcm_enable=self.CP.pcmCruise)
+      events = self.create_common_events(CS, CS_prev, extra_gears=[GearShifter.eco, GearShifter.sport, GearShifter.manumatic], pcm_enable=self.CP.pcmCruise)
 
       if self.CP.openpilotLongitudinalControl:
         if CS.vEgo < self.CP.minEnableSpeed + 0.5:
@@ -121,24 +119,23 @@ class CarSpecificEvents:
       #   events.add(EventName.steerTimeLimit)
 
     elif self.CP.brand == 'hyundai':
-      events = self.create_common_events(CS, CS_prev, extra_gears=(GearShifter.sport, GearShifter.manumatic),
-                                         pcm_enable=self.CP.pcmCruise, allow_button_cancel=False)
+      events = self.create_common_events(
+        CS, CS_prev, extra_gears=(GearShifter.sport, GearShifter.manumatic), pcm_enable=self.CP.pcmCruise, allow_button_cancel=False
+      )
 
     else:
       events = self.create_common_events(CS, CS_prev)
 
     return events
 
-  def create_common_events(self, CS: structs.CarState, CS_prev: car.CarState, extra_gears=None, pcm_enable=True,
-                           allow_button_cancel=True):
+  def create_common_events(self, CS: structs.CarState, CS_prev: car.CarState, extra_gears=None, pcm_enable=True, allow_button_cancel=True):
     events = Events()
 
     if CS.doorOpen:
       events.add(EventName.doorOpen)
     if CS.seatbeltUnlatched:
       events.add(EventName.seatbeltNotLatched)
-    if CS.gearShifter != GearShifter.drive and (extra_gears is None or
-       CS.gearShifter not in extra_gears):
+    if CS.gearShifter != GearShifter.drive and (extra_gears is None or CS.gearShifter not in extra_gears):
       events.add(EventName.wrongGear)
     if CS.gearShifter == GearShifter.reverse:
       events.add(EventName.reverseGear)

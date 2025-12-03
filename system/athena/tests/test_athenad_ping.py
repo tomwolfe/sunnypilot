@@ -58,8 +58,9 @@ class TestAthenadPing:
   def assertTimeout(self, reconnect_time: float, subtests, mocker) -> None:
     self.athenad.start()
 
-    mock_create_connection = mocker.patch('openpilot.system.athena.athenad.create_connection',
-                                          new_callable=lambda: mocker.MagicMock(wraps=athenad.create_connection))
+    mock_create_connection = mocker.patch(
+      'openpilot.system.athena.athenad.create_connection', new_callable=lambda: mocker.MagicMock(wraps=athenad.create_connection)
+    )
 
     time.sleep(1)
     mock_create_connection.assert_called_once()

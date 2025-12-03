@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 from cereal import messaging, custom
 from openpilot.common.params import Params
 
@@ -12,8 +13,15 @@ class UIStateSP:
   def __init__(self):
     self.params = Params()
     self.sm_services_ext = [
-      "modelManagerSP", "selfdriveStateSP", "longitudinalPlanSP", "backupManagerSP",
-      "gpsLocation", "liveTorqueParameters", "carStateSP", "liveMapDataSP", "carParamsSP"
+      "modelManagerSP",
+      "selfdriveStateSP",
+      "longitudinalPlanSP",
+      "backupManagerSP",
+      "gpsLocation",
+      "liveTorqueParameters",
+      "carStateSP",
+      "liveMapDataSP",
+      "carParamsSP",
     ]
 
   def update(self) -> None:

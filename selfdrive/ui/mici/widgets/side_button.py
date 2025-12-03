@@ -25,7 +25,6 @@ class SideButton(Widget):
   def _render(self, _) -> bool:
     x = int(self._rect.x + 12)
     y = int(self._rect.y + (self._rect.height - self._txt_btn.height) / 2)
-    rl.draw_texture(self._txt_btn if not self.is_pressed else self._txt_btn_back,
-                    x, y, rl.WHITE)
+    rl.draw_texture(self._txt_btn if not self.is_pressed else self._txt_btn_back, x, y, rl.WHITE)
 
     return False

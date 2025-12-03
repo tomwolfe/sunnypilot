@@ -48,5 +48,3 @@ if __name__ == "__main__":
   print(f"Total fuzz cases: {total}")
   print(f"Correct matches:  {match}")
   print(f"Wrong matches:    {wrong_match}")
-
-

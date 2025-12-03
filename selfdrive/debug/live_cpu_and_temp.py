@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from cereal.messaging import SubMaster
 
+
 def cputime_total(ct):
   return ct.user + ct.nice + ct.system + ct.idle + ct.iowait + ct.irq + ct.softirq
 
@@ -38,8 +39,8 @@ if __name__ == "__main__":
 
   last_temp = 0.0
   last_mem = 0.0
-  total_times = [0.]*8
-  busy_times = [0.]*8
+  total_times = [0.0] * 8
+  busy_times = [0.0] * 8
 
   prev_proclog: capnp._DynamicStructReader | None = None
   prev_proclog_t: int | None = None
@@ -55,9 +56,9 @@ if __name__ == "__main__":
     if sm.updated['procLog']:
       m = sm['procLog']
 
-      cores = [0.]*8
-      total_times_new = [0.]*8
-      busy_times_new = [0.]*8
+      cores = [0.0] * 8
+      total_times_new = [0.0] * 8
+      busy_times_new = [0.0] * 8
 
       for c in m.cpuTimes:
         n = c.cpuNum
@@ -82,7 +83,7 @@ if __name__ == "__main__":
             name = proc_name(proc)
             prev_proc = [p for p in prev_proclog.procs if proc.pid == p.pid][0]
             cpu_time = proc_cputime_total(proc) - proc_cputime_total(prev_proc)
-            cpu_usage = cpu_time / dt * 100.
+            cpu_usage = cpu_time / dt * 100.0
             procs[name] += cpu_usage
           except IndexError:
             pass

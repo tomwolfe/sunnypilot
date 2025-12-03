@@ -94,10 +94,8 @@ class AlertRenderer(Widget):
     self.font_bold: rl.Font = gui_app.font(FontWeight.BOLD)
     self.font_display: rl.Font = gui_app.font(FontWeight.DISPLAY)
 
-    self._alert_text1_label = UnifiedLabel(text="", font_size=ALERT_FONT_BIG, font_weight=FontWeight.DISPLAY, line_height=0.86,
-                                           letter_spacing=-0.02)
-    self._alert_text2_label = UnifiedLabel(text="", font_size=ALERT_FONT_SMALL, font_weight=FontWeight.ROMAN, line_height=0.86,
-                                           letter_spacing=0.025)
+    self._alert_text1_label = UnifiedLabel(text="", font_size=ALERT_FONT_BIG, font_weight=FontWeight.DISPLAY, line_height=0.86, letter_spacing=-0.02)
+    self._alert_text2_label = UnifiedLabel(text="", font_size=ALERT_FONT_SMALL, font_weight=FontWeight.ROMAN, line_height=0.86, letter_spacing=0.025)
 
     self._prev_alert: Alert | None = None
     self._text_gen_time = 0
@@ -147,8 +145,9 @@ class AlertRenderer(Widget):
       return None
 
     # Return current alert
-    ret = Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
-                visual_alert=ss.alertHudVisual, alert_type=ss.alertType)
+    ret = Alert(
+      text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw, visual_alert=ss.alertHudVisual, alert_type=ss.alertType
+    )
     self._prev_alert = ret
     return ret
 
@@ -262,8 +261,9 @@ class AlertRenderer(Widget):
     else:
       icon_alpha = int(min(self._turn_signal_alpha_filter.x, 255))
 
-    rl.draw_texture(alert_layout.icon.texture, pos_x, int(self._rect.y + alert_layout.icon.margin_y),
-                    rl.Color(255, 255, 255, int(icon_alpha * self._alpha_filter.x)))
+    rl.draw_texture(
+      alert_layout.icon.texture, pos_x, int(self._rect.y + alert_layout.icon.margin_y), rl.Color(255, 255, 255, int(icon_alpha * self._alpha_filter.x))
+    )
 
   def _draw_background(self, alert: Alert) -> None:
     # draw top gradient for alert text at top
@@ -271,8 +271,8 @@ class AlertRenderer(Widget):
     color = rl.Color(color.r, color.g, color.b, int(255 * 0.90 * self._alpha_filter.x))
     translucent_color = rl.Color(color.r, color.g, color.b, int(0 * self._alpha_filter.x))
 
-    small_alert_height = round(self._rect.height * 0.583) # 140px at mici height
-    medium_alert_height = round(self._rect.height * 0.833) # 200px at mici height
+    small_alert_height = round(self._rect.height * 0.583)  # 140px at mici height
+    medium_alert_height = round(self._rect.height * 0.833)  # 200px at mici height
 
     # alert_type format is "EventName/eventType" (e.g., "preLaneChangeLeft/warning")
     event_name = alert.alert_type.split('/')[0] if alert.alert_type else ''
@@ -290,9 +290,9 @@ class AlertRenderer(Widget):
 
     solid_height = round(bg_height * 0.2)
     rl.draw_rectangle(int(self._rect.x), int(self._rect.y), int(self._rect.width), solid_height, color)
-    rl.draw_rectangle_gradient_v(int(self._rect.x), int(self._rect.y + solid_height), int(self._rect.width),
-                                 int(bg_height - solid_height),
-                                 color, translucent_color)
+    rl.draw_rectangle_gradient_v(
+      int(self._rect.x), int(self._rect.y + solid_height), int(self._rect.width), int(bg_height - solid_height), color, translucent_color
+    )
 
   def _draw_text(self, alert: Alert, alert_layout: AlertLayout) -> None:
     icon_side = alert_layout.icon.side if alert_layout.icon is not None else None
@@ -346,12 +346,7 @@ class AlertRenderer(Widget):
         small_font_size = 32
       else:
         small_font_size = 40
-      text_rect2 = rl.Rectangle(
-        alert_layout.text_rect.x,
-        last_line_h,
-        alert_layout.text_rect.width,
-        alert_layout.text_rect.height - last_line_h
-      )
+      text_rect2 = rl.Rectangle(alert_layout.text_rect.x, last_line_h, alert_layout.text_rect.width, alert_layout.text_rect.height - last_line_h)
       color = rl.Color(255, 255, 255, int(255 * 0.65 * self._alpha_filter.x))
 
       self._alert_text2_label.set_text(alert_text2)

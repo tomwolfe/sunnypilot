@@ -17,9 +17,7 @@ class LineSeparator(Widget):
     self._rect.width = parent_rect.width
 
   def _render(self, _):
-    rl.draw_line(int(self._rect.x) + LINE_PADDING, int(self._rect.y),
-                 int(self._rect.x + self._rect.width) - LINE_PADDING, int(self._rect.y),
-                 LINE_COLOR)
+    rl.draw_line(int(self._rect.x) + LINE_PADDING, int(self._rect.y), int(self._rect.x + self._rect.width) - LINE_PADDING, int(self._rect.y), LINE_COLOR)
 
 
 class Scroller(Widget):
@@ -54,8 +52,7 @@ class Scroller(Widget):
       content_height -= self._spacing
     scroll = self.scroll_panel.update(self._rect, rl.Rectangle(0, 0, self._rect.width, content_height))
 
-    rl.begin_scissor_mode(int(self._rect.x), int(self._rect.y),
-                          int(self._rect.width), int(self._rect.height))
+    rl.begin_scissor_mode(int(self._rect.x), int(self._rect.y), int(self._rect.width), int(self._rect.height))
 
     cur_height = 0
     for idx, item in enumerate(visible_items):

@@ -7,8 +7,7 @@ import time
 from multiprocessing import Pipe, Array
 
 from openpilot.tools.sim.bridge.common import QueueMessage, QueueMessageType
-from openpilot.tools.sim.bridge.metadrive.metadrive_process import (metadrive_process, metadrive_simulation_state,
-                                                                    metadrive_vehicle_state)
+from openpilot.tools.sim.bridge.metadrive.metadrive_process import metadrive_process, metadrive_simulation_state, metadrive_vehicle_state
 from openpilot.tools.sim.lib.common import SimulatorState, World
 from openpilot.tools.sim.lib.camerad import W, H
 
@@ -17,11 +16,11 @@ class MetaDriveWorld(World):
   def __init__(self, status_q, config, test_duration, test_run, dual_camera=False):
     super().__init__(dual_camera)
     self.status_q = status_q
-    self.camera_array = Array(ctypes.c_uint8, W*H*3)
+    self.camera_array = Array(ctypes.c_uint8, W * H * 3)
     self.road_image = np.frombuffer(self.camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
     self.wide_camera_array = None
     if dual_camera:
-      self.wide_camera_array = Array(ctypes.c_uint8, W*H*3)
+      self.wide_camera_array = Array(ctypes.c_uint8, W * H * 3)
       self.wide_road_image = np.frombuffer(self.wide_camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
 
     self.controls_send, self.controls_recv = Pipe()
@@ -37,11 +36,24 @@ class MetaDriveWorld(World):
     self.last_check_timestamp = 0
     self.distance_moved = 0
 
-    self.metadrive_process = multiprocessing.Process(name="metadrive process", target=
-                              functools.partial(metadrive_process, dual_camera, config,
-                                                self.camera_array, self.wide_camera_array, self.image_lock,
-                                                self.controls_recv, self.simulation_state_send,
-                                                self.vehicle_state_send, self.exit_event, self.op_engaged, test_duration, self.test_run))
+    self.metadrive_process = multiprocessing.Process(
+      name="metadrive process",
+      target=functools.partial(
+        metadrive_process,
+        dual_camera,
+        config,
+        self.camera_array,
+        self.wide_camera_array,
+        self.image_lock,
+        self.controls_recv,
+        self.simulation_state_send,
+        self.vehicle_state_send,
+        self.exit_event,
+        self.op_engaged,
+        test_duration,
+        self.test_run,
+      ),
+    )
 
     self.metadrive_process.start()
     self.status_q.put(QueueMessage(QueueMessageType.START_STATUS, "starting"))
@@ -50,11 +62,11 @@ class MetaDriveWorld(World):
     print("---- Spawning Metadrive world, this might take awhile ----")
     print("----------------------------------------------------------")
 
-    self.vehicle_last_pos = self.vehicle_state_recv.recv().position # wait for a state message to ensure metadrive is launched
+    self.vehicle_last_pos = self.vehicle_state_recv.recv().position  # wait for a state message to ensure metadrive is launched
     self.status_q.put(QueueMessage(QueueMessageType.START_STATUS, "started"))
 
     self.steer_ratio = 15
-    self.vc = [0.0,0.0]
+    self.vc = [0.0, 0.0]
     self.reset_time = 0
     self.should_reset = False
 
@@ -102,7 +114,7 @@ class MetaDriveWorld(World):
       x_dist = abs(curr_pos[0] - self.vehicle_last_pos[0])
       y_dist = abs(curr_pos[1] - self.vehicle_last_pos[1])
       dist_threshold = 1
-      if x_dist >= dist_threshold or y_dist >= dist_threshold: # position not the same during staying still, > threshold is considered moving
+      if x_dist >= dist_threshold or y_dist >= dist_threshold:  # position not the same during staying still, > threshold is considered moving
         self.distance_moved += x_dist + y_dist
 
       time_check_threshold = 29
@@ -110,7 +122,7 @@ class MetaDriveWorld(World):
       since_last_check = current_time - self.last_check_timestamp
       if since_last_check >= time_check_threshold:
         if after_engaged_check and self.distance_moved == 0:
-          self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"vehicle_not_moving" : True}))
+          self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"vehicle_not_moving": True}))
           self.exit_event.set()
 
         self.last_check_timestamp = current_time

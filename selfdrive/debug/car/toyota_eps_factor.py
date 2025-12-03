@@ -27,7 +27,7 @@ def get_eps_factor(lr, plot=False):
       continue
 
     for m in msg.can:
-      if m.address == 0x2e4 and m.src == 128:
+      if m.address == 0x2E4 and m.src == 128:
         engaged = bool(m.dat[0] & 1)
         torque_cmd = to_signed((m.dat[1] << 8) | m.dat[2], 16)
       elif m.address == 0x260 and m.src == 0:
@@ -47,7 +47,7 @@ def get_eps_factor(lr, plot=False):
 
   lm = linear_model.LinearRegression(fit_intercept=False)
   lm.fit(np.array(cmds).reshape(-1, 1), eps)
-  scale_factor = 1. / lm.coef_[0]
+  scale_factor = 1.0 / lm.coef_[0]
 
   if plot:
     plt.plot(np.array(eps) * scale_factor)

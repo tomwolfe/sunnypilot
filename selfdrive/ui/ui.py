@@ -11,7 +11,9 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 
 
 def main():
-  cores = {5, }
+  cores = {
+    5,
+  }
   config_realtime_process(0, 51)
 
   gui_app.init_window("UI")

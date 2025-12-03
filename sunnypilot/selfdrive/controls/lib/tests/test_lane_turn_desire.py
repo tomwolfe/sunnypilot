@@ -9,15 +9,18 @@ from openpilot.sunnypilot.selfdrive.controls.lib.auto_lane_change import AutoLan
 TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 
-@pytest.mark.parametrize("left_blinker,right_blinker,v_ego,blindspot_left,blindspot_right,expected", [
-  (True, False, 5, False, False, TurnDirection.turnLeft),
-  (False, True, 6, False, False, TurnDirection.turnRight),
-  (True, False, 9, False, False, TurnDirection.none),
-  (True, False, 7, True, False, TurnDirection.none),
-  (False, True, 6, False, True, TurnDirection.none),
-  (False, False, 5, False, False, TurnDirection.none),
-  (True, True, 5, False, False, TurnDirection.none),
-])
+@pytest.mark.parametrize(
+  "left_blinker,right_blinker,v_ego,blindspot_left,blindspot_right,expected",
+  [
+    (True, False, 5, False, False, TurnDirection.turnLeft),
+    (False, True, 6, False, False, TurnDirection.turnRight),
+    (True, False, 9, False, False, TurnDirection.none),
+    (True, False, 7, True, False, TurnDirection.none),
+    (False, True, 6, False, True, TurnDirection.none),
+    (False, False, 5, False, False, TurnDirection.none),
+    (True, True, 5, False, False, TurnDirection.none),
+  ],
+)
 def test_lane_turn_desire_conditions(left_blinker, right_blinker, v_ego, blindspot_left, blindspot_right, expected):
   dh = DesireHelper()
   controller = LaneTurnController(dh)
@@ -55,11 +58,14 @@ def test_lane_turn_overrides_lane_change():
   assert controller.get_turn_direction() == TurnDirection.none
 
 
-@pytest.mark.parametrize("v_ego,expected", [
-  (8.93, TurnDirection.turnLeft),  # just below threshold
-  (8.96, TurnDirection.none),  # above threshold
-  (8.95, TurnDirection.none),  # just above threshold
-])
+@pytest.mark.parametrize(
+  "v_ego,expected",
+  [
+    (8.93, TurnDirection.turnLeft),  # just below threshold
+    (8.96, TurnDirection.none),  # above threshold
+    (8.95, TurnDirection.none),  # just above threshold
+  ],
+)
 def test_lane_turn_desire_speed_boundary(v_ego, expected):
   dh = DesireHelper()
   controller = LaneTurnController(dh)
@@ -71,8 +77,9 @@ def test_lane_turn_desire_speed_boundary(v_ego, expected):
 
 
 class DummyCarState:
-  def __init__(self, vEgo=0, leftBlinker=False, rightBlinker=False, leftBlindspot=False, rightBlindspot=False,
-               steeringPressed=False, steeringTorque=0, brakePressed=False):
+  def __init__(
+    self, vEgo=0, leftBlinker=False, rightBlinker=False, leftBlindspot=False, rightBlindspot=False, steeringPressed=False, steeringTorque=0, brakePressed=False
+  ):
     self.vEgo = vEgo
     self.leftBlinker = leftBlinker
     self.rightBlinker = rightBlinker
@@ -90,21 +97,30 @@ def set_lane_turn_params():
   params.put("LaneTurnValue", 20.0)
 
 
-@pytest.mark.parametrize("carstate, lateral_active, lane_change_prob, expected_desire", [
-  # Lane turn desire overrides lane change desire
-  (DummyCarState(vEgo=5, leftBlinker=True, rightBlinker=False, leftBlindspot=False, rightBlindspot=False), True, 1.0,
-   log.Desire.turnLeft),
-  (DummyCarState(vEgo=7, leftBlinker=False, rightBlinker=True, leftBlindspot=False, rightBlindspot=False), True, 1.0,
-   log.Desire.turnRight),
-  # Lane change desire only (no turn desires)
-  (DummyCarState(vEgo=9, leftBlinker=True, rightBlinker=False, leftBlindspot=False, rightBlindspot=False,
-                 steeringPressed=True, steeringTorque=1), True, 1.0, log.Desire.laneChangeLeft),
-  (DummyCarState(vEgo=9, leftBlinker=False, rightBlinker=True, leftBlindspot=False, rightBlindspot=False,
-                 steeringPressed=True, steeringTorque=-1), True, 1.0, log.Desire.laneChangeRight),
-  # No desire (inactive)
-  (DummyCarState(vEgo=9, leftBlinker=False, rightBlinker=False), False, 1.0, log.Desire.none),
-  (DummyCarState(vEgo=4, leftBlinker=False, rightBlinker=False), True, 1.0, log.Desire.none),  # No blinkers? no desire!
-])
+@pytest.mark.parametrize(
+  "carstate, lateral_active, lane_change_prob, expected_desire",
+  [
+    # Lane turn desire overrides lane change desire
+    (DummyCarState(vEgo=5, leftBlinker=True, rightBlinker=False, leftBlindspot=False, rightBlindspot=False), True, 1.0, log.Desire.turnLeft),
+    (DummyCarState(vEgo=7, leftBlinker=False, rightBlinker=True, leftBlindspot=False, rightBlindspot=False), True, 1.0, log.Desire.turnRight),
+    # Lane change desire only (no turn desires)
+    (
+      DummyCarState(vEgo=9, leftBlinker=True, rightBlinker=False, leftBlindspot=False, rightBlindspot=False, steeringPressed=True, steeringTorque=1),
+      True,
+      1.0,
+      log.Desire.laneChangeLeft,
+    ),
+    (
+      DummyCarState(vEgo=9, leftBlinker=False, rightBlinker=True, leftBlindspot=False, rightBlindspot=False, steeringPressed=True, steeringTorque=-1),
+      True,
+      1.0,
+      log.Desire.laneChangeRight,
+    ),
+    # No desire (inactive)
+    (DummyCarState(vEgo=9, leftBlinker=False, rightBlinker=False), False, 1.0, log.Desire.none),
+    (DummyCarState(vEgo=4, leftBlinker=False, rightBlinker=False), True, 1.0, log.Desire.none),  # No blinkers? no desire!
+  ],
+)
 def test_desire_helper_integration(carstate, lateral_active, lane_change_prob, expected_desire, set_lane_turn_params):
   dh = DesireHelper()
   dh.alc.lane_change_set_timer = AutoLaneChangeMode.NUDGE

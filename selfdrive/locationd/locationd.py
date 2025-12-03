@@ -30,8 +30,8 @@ MIN_STD_SANITY_CHECK = 1e-5  # m or rad - Minimum standard deviation sanity chec
 MAX_FILTER_REWIND_TIME = 0.8  # s - Maximum time allowed to rewind filter
 MAX_SENSOR_TIME_DIFF = 0.1  # s - Maximum acceptable time difference between sensor and log
 YAWRATE_CROSS_ERR_CHECK_FACTOR = 30
-INPUT_INVALID_LIMIT = 2.0 # 1 (camodo) / 9 (sensor) bad input[s] ignored
-INPUT_INVALID_RECOVERY = 10.0 # ~10 secs to resume after exceeding allowed bad inputs by one
+INPUT_INVALID_LIMIT = 2.0  # 1 (camodo) / 9 (sensor) bad input[s] ignored
+INPUT_INVALID_RECOVERY = 10.0  # ~10 secs to resume after exceeding allowed bad inputs by one
 POSENET_STD_INITIAL_VALUE = 10.0
 POSENET_STD_HIST_HALF = 20
 
@@ -242,12 +242,12 @@ class LocationEstimator:
 
       rot_device_std = rotate_std(self.device_from_calib, rot_calib_std)
       trans_device_std = rotate_std(self.device_from_calib, trans_calib_std)
-      rot_device_noise = rot_device_std ** 2
-      trans_device_noise = trans_device_std ** 2
+      rot_device_noise = rot_device_std**2
+      trans_device_noise = trans_device_std**2
 
       cam_odo_rot_res = self.kf.predict_and_observe(t, ObservationKind.CAMERA_ODO_ROTATION, rot_device, np.array([np.diag(rot_device_noise)]))
       cam_odo_trans_res = self.kf.predict_and_observe(t, ObservationKind.CAMERA_ODO_TRANSLATION, trans_device, np.array([np.diag(trans_device_noise)]))
-      self.camodo_yawrate_distribution =  np.array([rot_device[2], rot_device_std[2]])
+      self.camodo_yawrate_distribution = np.array([rot_device[2], rot_device_std[2]])
       if cam_odo_rot_res is not None:
         _, new_x, _, new_P, _, _, (cam_odo_rot_err,), _, _ = cam_odo_rot_res
         self.observation_errors[ObservationKind.CAMERA_ODO_ROTATION] = np.array(cam_odo_rot_err)
@@ -283,8 +283,7 @@ class LocationEstimator:
       livePose.debugFilterState.std = std.tolist()
       livePose.debugFilterState.valid = filter_valid
       livePose.debugFilterState.observations = [
-        {'kind': k, 'value': self.observations[k].tolist(), 'error': self.observation_errors[k].tolist()}
-        for k in self.observations.keys()
+        {'kind': k, 'value': self.observations[k].tolist(), 'error': self.observation_errors[k].tolist()} for k in self.observations.keys()
       ]
 
     old_mean = np.mean(self.posenet_stds[:POSENET_STD_HIST_HALF])
@@ -333,7 +332,7 @@ def main():
   critcal_services = ["accelerometer", "gyroscope", "cameraOdometry"]
   observation_input_invalid = defaultdict(int)
 
-  input_invalid_limit = {s: round(INPUT_INVALID_LIMIT * (SERVICE_LIST[s].frequency / 20.)) for s in critcal_services}
+  input_invalid_limit = {s: round(INPUT_INVALID_LIMIT * (SERVICE_LIST[s].frequency / 20.0)) for s in critcal_services}
   input_invalid_threshold = {s: input_invalid_limit[s] - 0.5 for s in critcal_services}
   input_invalid_decay = {s: calculate_invalid_input_decay(input_invalid_limit[s], INPUT_INVALID_RECOVERY, SERVICE_LIST[s].frequency) for s in critcal_services}
 

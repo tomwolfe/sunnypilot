@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class RunningStat:
   # tracks realtime mean and standard deviation without storing any data
   def __init__(self, priors=None, max_trackable=-1):
@@ -16,10 +17,10 @@ class RunningStat:
       self.reset()
 
   def reset(self):
-    self.M = 0.
-    self.S = 0.
-    self.M_last = 0.
-    self.S_last = 0.
+    self.M = 0.0
+    self.S = 0.0
+    self.M_last = 0.0
+    self.S_last = 0.0
     self.n = 0
 
   def push_data(self, new_data):
@@ -29,7 +30,7 @@ class RunningStat:
     if self.n == 0:
       self.M_last = new_data
       self.M = self.M_last
-      self.S_last = 0.
+      self.S_last = 0.0
     else:
       self.M = self.M_last + (new_data - self.M_last) / self.n
       self.S = self.S_last + (new_data - self.M_last) * (new_data - self.M)
@@ -41,7 +42,7 @@ class RunningStat:
 
   def variance(self):
     if self.n >= 2:
-      return self.S / (self.n - 1.)
+      return self.S / (self.n - 1.0)
     else:
       return 0
 
@@ -50,6 +51,7 @@ class RunningStat:
 
   def params_to_save(self):
     return [self.M, self.S, self.n]
+
 
 class RunningStatFilter:
   def __init__(self, raw_priors=None, filtered_priors=None, max_trackable=-1):
@@ -69,5 +71,6 @@ class RunningStatFilter:
     else:
       pass
       # self.filtered_stat.push_data(self.filtered_stat.mean())
+
 
 # class SequentialBayesian():

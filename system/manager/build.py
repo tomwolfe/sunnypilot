@@ -17,6 +17,7 @@ CACHE_DIR = Path("/data/scons_cache" if AGNOS else "/tmp/scons_cache")
 TOTAL_SCONS_NODES = 2280
 MAX_BUILD_PROGRESS = 100
 
+
 def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   env = os.environ.copy()
   env['SCONS_PROGRESS'] = "1"
@@ -33,7 +34,7 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   # building with all cores can result in using too
   # much memory, so retry with less parallelism
   compile_output: list[bytes] = []
-  for n in (nproc, nproc/2, 1):
+  for n in (nproc, nproc / 2, 1):
     compile_output.clear()
     scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env, stderr=subprocess.PIPE)
     assert scons.stderr is not None
@@ -48,8 +49,8 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
 
         prefix = b'progress: '
         if line.startswith(prefix):
-          i = int(line[len(prefix):])
-          spinner.update_progress(MAX_BUILD_PROGRESS * min(1., i / TOTAL_SCONS_NODES), 100.)
+          i = int(line[len(prefix) :])
+          spinner.update_progress(MAX_BUILD_PROGRESS * min(1.0, i / TOTAL_SCONS_NODES), 100.0)
         elif len(line):
           compile_output.append(line)
           print(line.decode('utf8', 'replace'))
@@ -91,4 +92,4 @@ if __name__ == "__main__":
   spinner = Spinner()
   spinner.update_progress(0, 100)
   build_metadata = get_build_metadata()
-  build(spinner, build_metadata.openpilot.is_dirty, minimal = AGNOS)
+  build(spinner, build_metadata.openpilot.is_dirty, minimal=AGNOS)

@@ -22,7 +22,9 @@ if platform.system() == "Darwin":
   """
 
 
-VERTEX_SHADER = VERSION + """
+VERTEX_SHADER = (
+  VERSION
+  + """
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 in vec3 vertexNormal;
@@ -36,6 +38,7 @@ void main() {
   gl_Position = mvp * vec4(vertexPosition, 1.0);
 }
 """
+)
 
 # Choose fragment shader based on platform capabilities
 if TICI:
@@ -52,7 +55,9 @@ if TICI:
     }
     """
 else:
-  FRAME_FRAGMENT_SHADER = VERSION + """
+  FRAME_FRAGMENT_SHADER = (
+    VERSION
+    + """
     in vec2 fragTexCoord;
     uniform sampler2D texture0;
     uniform sampler2D texture1;
@@ -63,6 +68,7 @@ else:
       fragColor = vec4(y + 1.402*uv.y, y - 0.344*uv.x - 0.714*uv.y, y + 1.772*uv.x, 1.0);
     }
     """
+  )
 
 
 class CameraView(Widget):
@@ -174,11 +180,7 @@ class CameraView(Widget):
     zx = min(frame_aspect_ratio / widget_aspect_ratio, 1.0)
     zy = min(widget_aspect_ratio / frame_aspect_ratio, 1.0)
 
-    return np.array([
-      [zx, 0.0, 0.0],
-      [0.0, zy, 0.0],
-      [0.0, 0.0, 1.0]
-    ])
+    return np.array([[zx, 0.0, 0.0], [0.0, zy, 0.0], [0.0, 0.0, 1.0]])
 
   def _render(self, rect: rl.Rectangle):
     if self._switching:
@@ -266,7 +268,7 @@ class CameraView(Widget):
     # Update textures with new frame data
     if self._texture_needs_update:
       y_data = self.frame.data[: self.frame.uv_offset]
-      uv_data = self.frame.data[self.frame.uv_offset:]
+      uv_data = self.frame.data[self.frame.uv_offset :]
 
       rl.update_texture(self.texture_y, rl.ffi.cast("void *", y_data.ctypes.data))
       rl.update_texture(self.texture_uv, rl.ffi.cast("void *", uv_data.ctypes.data))
@@ -337,12 +339,14 @@ class CameraView(Widget):
     self._initialize_textures()
 
   def _initialize_textures(self):
-      self._clear_textures()
-      if not TICI:
-        self.texture_y = rl.load_texture_from_image(rl.Image(None, int(self.client.stride),
-          int(self.client.height), 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_GRAYSCALE))
-        self.texture_uv = rl.load_texture_from_image(rl.Image(None, int(self.client.stride // 2),
-          int(self.client.height // 2), 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA))
+    self._clear_textures()
+    if not TICI:
+      self.texture_y = rl.load_texture_from_image(
+        rl.Image(None, int(self.client.stride), int(self.client.height), 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_GRAYSCALE)
+      )
+      self.texture_uv = rl.load_texture_from_image(
+        rl.Image(None, int(self.client.stride // 2), int(self.client.height // 2), 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA)
+      )
 
   def _clear_textures(self):
     if self.texture_y and self.texture_y.id:

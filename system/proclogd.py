@@ -19,16 +19,18 @@ def _cpu_times() -> list[dict[str, float]]:
       if not line.startswith('cpu') or len(line) < 4 or not line[3].isdigit():
         break
       parts = line.split()
-      cpu_times.append({
-        'cpuNum': int(parts[0][3:]),
-        'user': float(parts[1]) / JIFFY,
-        'nice': float(parts[2]) / JIFFY,
-        'system': float(parts[3]) / JIFFY,
-        'idle': float(parts[4]) / JIFFY,
-        'iowait': float(parts[5]) / JIFFY,
-        'irq': float(parts[6]) / JIFFY,
-        'softirq': float(parts[7]) / JIFFY,
-      })
+      cpu_times.append(
+        {
+          'cpuNum': int(parts[0][3:]),
+          'user': float(parts[1]) / JIFFY,
+          'nice': float(parts[2]) / JIFFY,
+          'system': float(parts[3]) / JIFFY,
+          'idle': float(parts[4]) / JIFFY,
+          'iowait': float(parts[5]) / JIFFY,
+          'irq': float(parts[6]) / JIFFY,
+          'softirq': float(parts[7]) / JIFFY,
+        }
+      )
   except Exception:
     cloudlog.exception("failed to read /proc/stat")
   return cpu_times
@@ -65,6 +67,7 @@ _STAT_POS = {
   'processor': 39,
 }
 
+
 class ProcStat(TypedDict):
   name: str
   pid: int
@@ -88,7 +91,7 @@ def _parse_proc_stat(stat: str) -> ProcStat | None:
   close_paren = stat.rfind(')')
   if open_paren == -1 or close_paren == -1 or open_paren > close_paren:
     return None
-  name = stat[open_paren + 1:close_paren]
+  name = stat[open_paren + 1 : close_paren]
   stat = stat[:open_paren] + stat[open_paren:close_paren].replace(' ', '_') + stat[close_paren:]
   parts = stat.split()
   if len(parts) < 52:
@@ -114,6 +117,7 @@ def _parse_proc_stat(stat: str) -> ProcStat | None:
   except Exception:
     cloudlog.exception("failed to parse /proc/<pid>/stat")
     return None
+
 
 class ProcExtra(TypedDict):
   pid: int

@@ -16,7 +16,6 @@ FINGERPRINT_ANGLE_NO_MATCH = [TOYOTA.TOYOTA_RAV4_TSS2_2023, NISSAN.NISSAN_LEAF, 
 
 
 class TestNNLCFingerprintBase:
-
   @staticmethod
   def _setup_platform(car_name):
     CarInterface = interfaces[car_name]

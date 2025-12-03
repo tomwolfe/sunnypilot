@@ -26,10 +26,18 @@ class MultiOptionDialog(Widget):
     self._result: DialogResult = DialogResult.NO_ACTION
 
     # Create scroller with option buttons
-    self.option_buttons = [Button(option, click_callback=lambda opt=option: self._on_option_clicked(opt),
-                                  font_weight=option_font_weight,
-                                  text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT, button_style=ButtonStyle.NORMAL,
-                                  text_padding=50, elide_right=True) for option in options]
+    self.option_buttons = [
+      Button(
+        option,
+        click_callback=lambda opt=option: self._on_option_clicked(opt),
+        font_weight=option_font_weight,
+        text_alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+        button_style=ButtonStyle.NORMAL,
+        text_padding=50,
+        elide_right=True,
+      )
+      for option in options
+    ]
     self.scroller = Scroller(self.option_buttons, spacing=LIST_ITEM_SPACING)
 
     self.cancel_button = Button(lambda: tr("Cancel"), click_callback=lambda: self._set_result(DialogResult.CANCEL))
@@ -45,8 +53,7 @@ class MultiOptionDialog(Widget):
     dialog_rect = rl.Rectangle(rect.x + MARGIN, rect.y + MARGIN, rect.width - 2 * MARGIN, rect.height - 2 * MARGIN)
     rl.draw_rectangle_rounded(dialog_rect, 0.02, 20, rl.Color(30, 30, 30, 255))
 
-    content_rect = rl.Rectangle(dialog_rect.x + MARGIN, dialog_rect.y + MARGIN,
-                                dialog_rect.width - 2 * MARGIN, dialog_rect.height - 2 * MARGIN)
+    content_rect = rl.Rectangle(dialog_rect.x + MARGIN, dialog_rect.y + MARGIN, dialog_rect.width - 2 * MARGIN, dialog_rect.height - 2 * MARGIN)
 
     gui_label(rl.Rectangle(content_rect.x, content_rect.y, content_rect.width, TITLE_FONT_SIZE), self.title, 70, font_weight=FontWeight.BOLD)
 

@@ -6,11 +6,7 @@ if len(sys.argv) < 4:
   print('example: ./fetch_image_from_route.py "02c45f73a2e5c6e9|2020-06-01--18-03-08" 3 500 driver')
   exit(0)
 
-cameras = {
-  "front": "cameras",
-  "wide": "ecameras",
-  "driver": "dcameras"
-}
+cameras = {"front": "cameras", "wide": "ecameras", "driver": "dcameras"}
 
 import requests
 from PIL import Image

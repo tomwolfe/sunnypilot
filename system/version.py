@@ -96,18 +96,16 @@ class OpenpilotMetadata:
 
   @property
   def sunnypilot_remote(self) -> bool:
-    return self.git_normalized_origin in ("github.com/sunnypilot/sunnypilot",
-                                          "github.com/sunnypilot/openpilot",
-                                          "github.com/sunnyhaibin/sunnypilot",
-                                          "github.com/sunnyhaibin/openpilot")
+    return self.git_normalized_origin in (
+      "github.com/sunnypilot/sunnypilot",
+      "github.com/sunnypilot/openpilot",
+      "github.com/sunnyhaibin/sunnypilot",
+      "github.com/sunnyhaibin/openpilot",
+    )
 
   @property
   def git_normalized_origin(self) -> str:
-    return self.git_origin \
-      .replace("git@", "", 1) \
-      .replace(".git", "", 1) \
-      .replace("https://", "", 1) \
-      .replace(":", "/", 1)
+    return self.git_origin.replace("git@", "", 1).replace(".git", "", 1).replace("https://", "", 1).replace(":", "/", 1)
 
 
 @dataclass
@@ -168,15 +166,18 @@ def build_metadata_from_dict(build_metadata: dict) -> BuildMetadata:
   git_origin = openpilot_metadata.get("git_origin", "unknown")
   git_commit_date = openpilot_metadata.get("git_commit_date", "unknown")
   build_style = openpilot_metadata.get("build_style", "unknown")
-  return BuildMetadata(channel,
-            OpenpilotMetadata(
-              version=version,
-              release_notes=release_notes,
-              git_commit=git_commit,
-              git_origin=git_origin,
-              git_commit_date=git_commit_date,
-              build_style=build_style,
-              is_dirty=False))
+  return BuildMetadata(
+    channel,
+    OpenpilotMetadata(
+      version=version,
+      release_notes=release_notes,
+      git_commit=git_commit,
+      git_origin=git_origin,
+      git_commit_date=git_commit_date,
+      build_style=build_style,
+      is_dirty=False,
+    ),
+  )
 
 
 def get_build_metadata(path: str = BASEDIR) -> BuildMetadata:
@@ -189,15 +190,18 @@ def get_build_metadata(path: str = BASEDIR) -> BuildMetadata:
   git_folder = pathlib.Path(path) / ".git"
 
   if git_folder.exists():
-    return BuildMetadata(get_short_branch(path),
-                    OpenpilotMetadata(
-                      version=get_version(path),
-                      release_notes=get_release_notes(path),
-                      git_commit=get_commit(path),
-                      git_origin=get_origin(path),
-                      git_commit_date=get_commit_date(path),
-                      build_style="unknown",
-                      is_dirty=is_dirty(path)))
+    return BuildMetadata(
+      get_short_branch(path),
+      OpenpilotMetadata(
+        version=get_version(path),
+        release_notes=get_release_notes(path),
+        git_commit=get_commit(path),
+        git_origin=get_origin(path),
+        git_commit_date=get_commit_date(path),
+        build_style="unknown",
+        is_dirty=is_dirty(path),
+      ),
+    )
 
   cloudlog.exception("unable to get build metadata")
   raise Exception("invalid build metadata")

@@ -48,15 +48,18 @@ class SettingsLayout(NavWidget):
     firehose_btn = BigButton("firehose", "", "icons_mici/settings/comma_icon.png")
     firehose_btn.set_click_callback(lambda: self._set_current_panel(PanelType.FIREHOSE))
 
-    self._scroller = Scroller([
-      toggles_btn,
-      network_btn,
-      device_btn,
-      PairBigButton(),
-      #BigDialogButton("manual", "", "icons_mici/settings/manual_icon.png", "Check out the mici user\nmanual at comma.ai/setup"),
-      firehose_btn,
-      developer_btn,
-    ], snap_items=False)
+    self._scroller = Scroller(
+      [
+        toggles_btn,
+        network_btn,
+        device_btn,
+        PairBigButton(),
+        # BigDialogButton("manual", "", "icons_mici/settings/manual_icon.png", "Check out the mici user\nmanual at comma.ai/setup"),
+        firehose_btn,
+        developer_btn,
+      ],
+      snap_items=False,
+    )
 
     # Set up back navigation
     self.set_back_callback(self.close_settings)

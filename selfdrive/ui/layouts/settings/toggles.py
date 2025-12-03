@@ -18,18 +18,17 @@ PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 # Description constants
 DESCRIPTIONS = {
   "OpenpilotEnabledToggle": tr_noop(
-    "Use the sunnypilot system for adaptive cruise control and lane keep driver assistance. " +
-    "Your attention is required at all times to use this feature."
+    "Use the sunnypilot system for adaptive cruise control and lane keep driver assistance. " + "Your attention is required at all times to use this feature."
   ),
   "DisengageOnAccelerator": tr_noop("When enabled, pressing the accelerator pedal will disengage sunnypilot."),
   "LongitudinalPersonality": tr_noop(
-    "Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive with the gas and brake. " +
-    "In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with " +
-    "your steering wheel distance button."
+    "Standard is recommended. In aggressive mode, sunnypilot will follow lead cars closer and be more aggressive with the gas and brake. "
+    + "In relaxed mode sunnypilot will stay further away from lead cars. On supported cars, you can cycle through these personalities with "
+    + "your steering wheel distance button."
   ),
   "IsLdwEnabled": tr_noop(
-    "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
-    "without a turn signal activated while driving over 31 mph (50 km/h)."
+    "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line "
+    + "without a turn signal activated while driving over 31 mph (50 km/h)."
   ),
   "AlwaysOnDM": tr_noop("Enable driver monitoring even when sunnypilot is not engaged."),
   'RecordFront': tr_noop("Upload data from the driver facing camera and help improve the driver monitoring algorithm."),
@@ -103,7 +102,7 @@ class TogglesLayout(Widget):
       button_width=300,
       callback=self._set_longitudinal_personality,
       selected_index=self._params.get("LongitudinalPersonality", return_default=True),
-      icon="speed_limit.png"
+      icon="speed_limit.png",
     )
 
     self._toggles = {}
@@ -159,15 +158,15 @@ class TogglesLayout(Widget):
     ui_state.update_params()
 
     e2e_description = tr(
-      "sunnypilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. " +
-      "Experimental features are listed below:<br>" +
-      "<h4>End-to-End Longitudinal Control</h4><br>" +
-      "Let the driving model control the gas and brakes. sunnypilot will drive as it thinks a human would, including stopping for red lights and stop signs. " +
-      "Since the driving model decides the speed to drive, the set speed will only act as an upper bound. This is an alpha quality feature; " +
-      "mistakes should be expected.<br>" +
-      "<h4>New Driving Visualization</h4><br>" +
-      "The driving visualization will transition to the road-facing wide-angle camera at low speeds to better show some turns. " +
-      "The Experimental mode logo will also be shown in the top right corner."
+      "sunnypilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. "
+      + "Experimental features are listed below:<br>"
+      + "<h4>End-to-End Longitudinal Control</h4><br>"
+      + "Let the driving model control the gas and brakes. sunnypilot will drive as it thinks a human would, including stopping for red lights and stop signs. "
+      + "Since the driving model decides the speed to drive, the set speed will only act as an upper bound. This is an alpha quality feature; "
+      + "mistakes should be expected.<br>"
+      + "<h4>New Driving Visualization</h4><br>"
+      + "The driving visualization will transition to the road-facing wide-angle camera at low speeds to better show some turns. "
+      + "The Experimental mode logo will also be shown in the top right corner."
     )
 
     if ui_state.CP is not None:
@@ -187,8 +186,11 @@ class TogglesLayout(Widget):
         long_desc = unavailable + " " + tr("sunnypilot longitudinal control may come in a future update.")
         if ui_state.CP.alphaLongitudinalAvailable:
           if self._is_release:
-            long_desc = unavailable + " " + tr("An alpha version of sunnypilot longitudinal control can be tested, along with " +
-                                               "Experimental mode, on non-release branches.")
+            long_desc = (
+              unavailable
+              + " "
+              + tr("An alpha version of sunnypilot longitudinal control can be tested, along with " + "Experimental mode, on non-release branches.")
+            )
           else:
             long_desc = tr("Enable the sunnypilot longitudinal control (alpha) toggle to allow Experimental mode.")
 
@@ -218,6 +220,7 @@ class TogglesLayout(Widget):
   def _handle_experimental_mode_toggle(self, state: bool):
     confirmed = self._params.get_bool("ExperimentalModeConfirmed")
     if state and not confirmed:
+
       def confirm_callback(result: int):
         if result == DialogResult.CONFIRM:
           self._params.put_bool("ExperimentalMode", True)
@@ -227,8 +230,7 @@ class TogglesLayout(Widget):
         self._update_experimental_mode_icon()
 
       # show confirmation dialog
-      content = (f"<h1>{self._toggles['ExperimentalMode'].title}</h1><br>" +
-                 f"<p>{self._toggles['ExperimentalMode'].description}</p>")
+      content = f"<h1>{self._toggles['ExperimentalMode'].title}</h1><br>" + f"<p>{self._toggles['ExperimentalMode'].description}</p>"
       dlg = ConfirmDialog(content, tr("Enable"), rich=True)
       gui_app.set_modal_overlay(dlg, callback=confirm_callback)
     else:

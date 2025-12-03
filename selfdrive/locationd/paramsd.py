@@ -40,7 +40,7 @@ class VehicleParamsLearner:
       center_to_front=CP.centerToFront,
       center_to_rear=CP.wheelbase - CP.centerToFront,
       stiffness_front=CP.tireStiffnessFront,
-      stiffness_rear=CP.tireStiffnessRear
+      stiffness_rear=CP.tireStiffnessRear,
     )
 
     self.min_sr, self.max_sr = 0.5 * CP.steerRatio, 2.0 * CP.steerRatio
@@ -92,15 +92,9 @@ class VehicleParamsLearner:
 
       if self.active:
         if msg.posenetOK:
-          self.kf.predict_and_observe(t,
-                                      ObservationKind.ROAD_FRAME_YAW_RATE,
-                                      np.array([[-self.observed_yaw_rate]]),
-                                      np.array([np.atleast_2d(yaw_rate_std**2)]))
+          self.kf.predict_and_observe(t, ObservationKind.ROAD_FRAME_YAW_RATE, np.array([[-self.observed_yaw_rate]]), np.array([np.atleast_2d(yaw_rate_std**2)]))
 
-          self.kf.predict_and_observe(t,
-                                      ObservationKind.ROAD_ROLL,
-                                      np.array([[self.observed_roll]]),
-                                      np.array([np.atleast_2d(roll_std**2)]))
+          self.kf.predict_and_observe(t, ObservationKind.ROAD_ROLL, np.array([[self.observed_roll]]), np.array([np.atleast_2d(roll_std**2)]))
         self.kf.predict_and_observe(t, ObservationKind.ANGLE_OFFSET_FAST, np.array([[0]]))
 
         # We observe the current stiffness and steer ratio (with a high observation noise) to bound
@@ -128,7 +122,7 @@ class VehicleParamsLearner:
     if not self.active:
       # Reset time when stopped so uncertainty doesn't grow
       self.kf.filter.set_filter_time(t)  # type: ignore
-      self.kf.filter.reset_rewind()      # type: ignore
+      self.kf.filter.reset_rewind()  # type: ignore
 
   def get_msg(self, valid: bool, debug: bool = False) -> capnp._DynamicStructBuilder:
     x = self.kf.x
@@ -138,10 +132,14 @@ class VehicleParamsLearner:
       self.reset(self.kf.t)
       x = self.kf.x
 
-    self.avg_angle_offset = np.clip(np.degrees(x[States.ANGLE_OFFSET].item()),
-                                self.avg_angle_offset - MAX_ANGLE_OFFSET_DELTA, self.avg_angle_offset + MAX_ANGLE_OFFSET_DELTA)
-    self.angle_offset = np.clip(np.degrees(x[States.ANGLE_OFFSET].item() + x[States.ANGLE_OFFSET_FAST].item()),
-                        self.angle_offset - MAX_ANGLE_OFFSET_DELTA, self.angle_offset + MAX_ANGLE_OFFSET_DELTA)
+    self.avg_angle_offset = np.clip(
+      np.degrees(x[States.ANGLE_OFFSET].item()), self.avg_angle_offset - MAX_ANGLE_OFFSET_DELTA, self.avg_angle_offset + MAX_ANGLE_OFFSET_DELTA
+    )
+    self.angle_offset = np.clip(
+      np.degrees(x[States.ANGLE_OFFSET].item() + x[States.ANGLE_OFFSET_FAST].item()),
+      self.angle_offset - MAX_ANGLE_OFFSET_DELTA,
+      self.angle_offset + MAX_ANGLE_OFFSET_DELTA,
+    )
     self.roll = np.clip(float(x[States.ROAD_ROLL].item()), self.roll - ROLL_MAX_DELTA, self.roll + ROLL_MAX_DELTA)
     roll_std = float(P[States.ROAD_ROLL].item())
     if self.active and self.observed_speed > LOW_ACTIVE_SPEED:
@@ -170,14 +168,16 @@ class VehicleParamsLearner:
     liveParameters.stiffnessFactorValid = 0.2 <= liveParameters.stiffnessFactor <= 5.0
     liveParameters.angleOffsetAverageValid = bool(self.avg_offset_valid)
     liveParameters.angleOffsetValid = bool(self.total_offset_valid)
-    liveParameters.valid = all((
-      liveParameters.angleOffsetAverageValid,
-      liveParameters.angleOffsetValid ,
-      self.roll_valid,
-      roll_std < ROLL_STD_MAX,
-      liveParameters.stiffnessFactorValid,
-      liveParameters.steerRatioValid,
-    ))
+    liveParameters.valid = all(
+      (
+        liveParameters.angleOffsetAverageValid,
+        liveParameters.angleOffsetValid,
+        self.roll_valid,
+        roll_std < ROLL_STD_MAX,
+        liveParameters.stiffnessFactorValid,
+        liveParameters.steerRatioValid,
+      )
+    )
     liveParameters.steerRatioStd = float(P[States.STEER_RATIO].item())
     liveParameters.stiffnessFactorStd = float(P[States.STIFFNESS].item())
     liveParameters.angleOffsetAverageStd = float(P[States.ANGLE_OFFSET].item())
@@ -196,7 +196,6 @@ def check_valid_with_hysteresis(current_valid: bool, val: float, threshold: floa
   else:
     current_valid = abs(val) < lowered_threshold
   return current_valid
-
 
 
 def retrieve_initial_vehicle_params(params: Params, CP: car.CarParams, replay: bool, debug: bool):

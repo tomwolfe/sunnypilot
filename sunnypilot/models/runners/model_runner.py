@@ -29,6 +29,7 @@ class ModelData:
 
   :param model: The machine learning model object containing metadata.
   """
+
   def __init__(self, model: Model):
     self.model = model
     self.metadata = model.metadata

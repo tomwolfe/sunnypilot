@@ -178,8 +178,8 @@ class ModelManagerSP:
               self.params.remove("ModelManager_DownloadIndex")
 
         if self.params.get("ModelManager_ClearCache"):
-            self.clear_model_cache()
-            self.params.remove("ModelManager_ClearCache")
+          self.clear_model_cache()
+          self.params.remove("ModelManager_ClearCache")
 
         self._report_status()
         rk.keep_time()
@@ -195,7 +195,7 @@ class ModelManagerSP:
 
     # Get list of files used by active model bundle
     active_files = []
-    if self.active_bundle is not None: # When the default model is active
+    if self.active_bundle is not None:  # When the default model is active
       for model in self.active_bundle.models:
         if hasattr(model, 'artifact') and model.artifact.fileName:
           active_files.append(model.artifact.fileName)
@@ -213,6 +213,7 @@ class ModelManagerSP:
       cloudlog.info("Model cache cleared, keeping active model files")
     except Exception as e:
       cloudlog.exception(f"Error clearing model cache: {str(e)}")
+
 
 def main():
   ModelManagerSP().main_thread()

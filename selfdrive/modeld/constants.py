@@ -1,21 +1,23 @@
 import numpy as np
 
+
 def index_function(idx, max_val=192, max_idx=32):
-  return (max_val) * ((idx/max_idx)**2)
+  return (max_val) * ((idx / max_idx) ** 2)
+
 
 class ModelConstants:
   # time and distance indices
   IDX_N = 33
   T_IDXS = [index_function(idx, max_val=10.0) for idx in range(IDX_N)]
   X_IDXS = [index_function(idx, max_val=192.0) for idx in range(IDX_N)]
-  LEAD_T_IDXS = [0., 2., 4., 6., 8., 10.]
-  LEAD_T_OFFSETS = [0., 2., 4.]
-  META_T_IDXS = [2., 4., 6., 8., 10.]
+  LEAD_T_IDXS = [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+  LEAD_T_OFFSETS = [0.0, 2.0, 4.0]
+  META_T_IDXS = [2.0, 4.0, 6.0, 8.0, 10.0]
 
   # model inputs constants
   N_FRAMES = 2
   MODEL_RUN_FREQ = 20
-  MODEL_CONTEXT_FREQ = 5 # "model_trained_fps"
+  MODEL_CONTEXT_FREQ = 5  # "model_trained_fps"
 
   FEATURE_LEN = 512
 
@@ -26,8 +28,8 @@ class ModelConstants:
   PREV_DESIRED_CURV_LEN = 1
 
   # model outputs constants
-  FCW_THRESHOLDS_5MS2 = np.array([.05, .05, .15, .15, .15], dtype=np.float32)
-  FCW_THRESHOLDS_3MS2 = np.array([.7, .7], dtype=np.float32)
+  FCW_THRESHOLDS_5MS2 = np.array([0.05, 0.05, 0.15, 0.15, 0.15], dtype=np.float32)
+  FCW_THRESHOLDS_3MS2 = np.array([0.7, 0.7], dtype=np.float32)
   FCW_5MS2_PROBS_WIDTH = 5
   FCW_3MS2_PROBS_WIDTH = 2
 
@@ -67,6 +69,7 @@ class ModelConstants:
 
   POLY_PATH_DEGREE = 4
 
+
 # model outputs slices
 class Plan:
   POSITION = slice(0, 3)
@@ -74,6 +77,7 @@ class Plan:
   ACCELERATION = slice(6, 9)
   T_FROM_CURRENT_EULER = slice(9, 12)
   ORIENTATION_RATE = slice(12, 15)
+
 
 class Meta:
   ENGAGED = slice(0, 1)

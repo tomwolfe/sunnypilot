@@ -5,10 +5,12 @@ import itertools
 
 ORT_TYPES_TO_NP_TYPES = {'tensor(float16)': np.float16, 'tensor(float)': np.float32, 'tensor(uint8)': np.uint8}
 
+
 def attributeproto_fp16_to_fp32(attr):
   float32_list = np.frombuffer(attr.raw_data, dtype=np.float16)
   attr.data_type = 1
   attr.raw_data = float32_list.astype(np.float32).tobytes()
+
 
 def convert_fp16_to_fp32(model):
   for i in model.graph.initializer:
@@ -33,4 +35,4 @@ def make_onnx_cpu_runner(model_path):
   options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
   options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
   model_data = convert_fp16_to_fp32(onnx.load(model_path))
-  return ort.InferenceSession(model_data,  options, providers=['CPUExecutionProvider'])
+  return ort.InferenceSession(model_data, options, providers=['CPUExecutionProvider'])

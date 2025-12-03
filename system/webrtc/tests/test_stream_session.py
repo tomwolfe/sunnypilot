@@ -1,10 +1,12 @@
 import asyncio
 import json
 import time
+
 # for aiortc and its dependencies
 import warnings
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning) # TODO: remove this when google-crc32c publish a python3.12 wheel
+warnings.filterwarnings("ignore", category=RuntimeWarning)  # TODO: remove this when google-crc32c publish a python3.12 wheel
 
 from aiortc import RTCDataChannel
 from aiortc.mediastreams import VIDEO_CLOCK_RATE, VIDEO_TIME_BASE
@@ -35,6 +37,7 @@ class TestStreamSession:
 
     channel = mocker.Mock(spec=RTCDataChannel)
     mocked_submaster = messaging.SubMaster(["customReservedRawData0"])
+
     def mocked_update(t):
       mocked_submaster.update_msgs(0, [test_msg])
 
@@ -48,9 +51,9 @@ class TestStreamSession:
 
   def test_incoming_proxy(self, mocker):
     tested_msgs = [
-      {"type": "customReservedRawData0", "data": "test"}, # primitive
-      {"type": "can", "data": [{"address": 0, "dat": "", "src": 0}]}, # list
-      {"type": "testJoystick", "data": {"axes": [0, 0], "buttons": [False]}}, # dict
+      {"type": "customReservedRawData0", "data": "test"},  # primitive
+      {"type": "can", "data": [{"address": 0, "dat": "", "src": 0}]},  # list
+      {"type": "testJoystick", "data": {"axes": [0, 0], "buttons": [False]}},  # dict
     ]
 
     mocked_pubmaster = mocker.MagicMock(spec=messaging.PubMaster)
@@ -84,7 +87,7 @@ class TestStreamSession:
       if i == 0:
         start_ns = time.monotonic_ns()
         start_pts = packet.pts
-      assert abs(i + packet.pts - (start_pts + (((time.monotonic_ns() - start_ns) * VIDEO_CLOCK_RATE) // 1_000_000_000))) < 450 #5ms
+      assert abs(i + packet.pts - (start_pts + (((time.monotonic_ns() - start_ns) * VIDEO_CLOCK_RATE) // 1_000_000_000))) < 450  # 5ms
       assert packet.size == 0
 
   def test_input_audio_track(self, mocker):

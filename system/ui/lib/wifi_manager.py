@@ -16,16 +16,33 @@ from jeepney.low_level import MessageType
 from jeepney.wrappers import Properties
 
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.ui.lib.networkmanager import (NM, NM_WIRELESS_IFACE, NM_802_11_AP_SEC_PAIR_WEP40,
-                                                    NM_802_11_AP_SEC_PAIR_WEP104, NM_802_11_AP_SEC_GROUP_WEP40,
-                                                    NM_802_11_AP_SEC_GROUP_WEP104, NM_802_11_AP_SEC_KEY_MGMT_PSK,
-                                                    NM_802_11_AP_SEC_KEY_MGMT_802_1X, NM_802_11_AP_FLAGS_NONE,
-                                                    NM_802_11_AP_FLAGS_PRIVACY, NM_802_11_AP_FLAGS_WPS,
-                                                    NM_PATH, NM_IFACE, NM_ACCESS_POINT_IFACE, NM_SETTINGS_PATH,
-                                                    NM_SETTINGS_IFACE, NM_CONNECTION_IFACE, NM_DEVICE_IFACE,
-                                                    NM_DEVICE_TYPE_WIFI, NM_DEVICE_TYPE_MODEM, NM_DEVICE_STATE_REASON_SUPPLICANT_DISCONNECT,
-                                                    NM_DEVICE_STATE_REASON_NEW_ACTIVATION, NM_ACTIVE_CONNECTION_IFACE,
-                                                    NM_IP4_CONFIG_IFACE, NMDeviceState)
+from openpilot.system.ui.lib.networkmanager import (
+  NM,
+  NM_WIRELESS_IFACE,
+  NM_802_11_AP_SEC_PAIR_WEP40,
+  NM_802_11_AP_SEC_PAIR_WEP104,
+  NM_802_11_AP_SEC_GROUP_WEP40,
+  NM_802_11_AP_SEC_GROUP_WEP104,
+  NM_802_11_AP_SEC_KEY_MGMT_PSK,
+  NM_802_11_AP_SEC_KEY_MGMT_802_1X,
+  NM_802_11_AP_FLAGS_NONE,
+  NM_802_11_AP_FLAGS_PRIVACY,
+  NM_802_11_AP_FLAGS_WPS,
+  NM_PATH,
+  NM_IFACE,
+  NM_ACCESS_POINT_IFACE,
+  NM_SETTINGS_PATH,
+  NM_SETTINGS_IFACE,
+  NM_CONNECTION_IFACE,
+  NM_DEVICE_IFACE,
+  NM_DEVICE_TYPE_WIFI,
+  NM_DEVICE_TYPE_MODEM,
+  NM_DEVICE_STATE_REASON_SUPPLICANT_DISCONNECT,
+  NM_DEVICE_STATE_REASON_NEW_ACTIVATION,
+  NM_ACTIVE_CONNECTION_IFACE,
+  NM_IP4_CONFIG_IFACE,
+  NMDeviceState,
+)
 
 try:
   from openpilot.common.params import Params
@@ -56,8 +73,9 @@ def get_security_type(flags: int, wpa_flags: int, rsn_flags: int) -> SecurityTyp
   wpa_props = wpa_flags | rsn_flags
 
   # obtained by looking at flags of networks in the office as reported by an Android phone
-  supports_wpa = (NM_802_11_AP_SEC_PAIR_WEP40 | NM_802_11_AP_SEC_PAIR_WEP104 | NM_802_11_AP_SEC_GROUP_WEP40 |
-                  NM_802_11_AP_SEC_GROUP_WEP104 | NM_802_11_AP_SEC_KEY_MGMT_PSK)
+  supports_wpa = (
+    NM_802_11_AP_SEC_PAIR_WEP40 | NM_802_11_AP_SEC_PAIR_WEP104 | NM_802_11_AP_SEC_GROUP_WEP40 | NM_802_11_AP_SEC_GROUP_WEP104 | NM_802_11_AP_SEC_KEY_MGMT_PSK
+  )
 
   if (flags == NM_802_11_AP_FLAGS_NONE) or ((flags & NM_802_11_AP_FLAGS_WPS) and not (wpa_props & supports_wpa)):
     return SecurityType.OPEN
@@ -189,11 +207,14 @@ class WifiManager:
 
     threading.Thread(target=worker, daemon=True).start()
 
-  def add_callbacks(self, need_auth: Callable[[str], None] | None = None,
-                    activated: Callable[[], None] | None = None,
-                    forgotten: Callable[[], None] | None = None,
-                    networks_updated: Callable[[list[Network]], None] | None = None,
-                    disconnected: Callable[[], None] | None = None):
+  def add_callbacks(
+    self,
+    need_auth: Callable[[str], None] | None = None,
+    activated: Callable[[], None] | None = None,
+    forgotten: Callable[[], None] | None = None,
+    networks_updated: Callable[[list[Network]], None] | None = None,
+    disconnected: Callable[[], None] | None = None,
+  ):
     if need_auth is not None:
       self._need_auth.append(need_auth)
     if activated is not None:
@@ -301,7 +322,7 @@ class WifiManager:
           self._update_networks()
           self._request_scan()
           self._last_network_update = time.monotonic()
-      time.sleep(1 / 2.)
+      time.sleep(1 / 2.0)
 
   def _wait_for_wifi_device(self):
     while not self._exit:
@@ -409,10 +430,15 @@ class WifiManager:
       },
       'ipv4': {
         'method': ('s', 'shared'),
-        'address-data': ('aa{sv}', [[
-          ('address', ('s', TETHERING_IP_ADDRESS)),
-          ('prefix', ('u', 24)),
-        ]]),
+        'address-data': (
+          'aa{sv}',
+          [
+            [
+              ('address', ('s', TETHERING_IP_ADDRESS)),
+              ('prefix', ('u', 24)),
+            ]
+          ],
+        ),
         'gateway': ('s', TETHERING_IP_ADDRESS),
         'never-default': ('b', True),
       },
@@ -507,8 +533,7 @@ class WifiManager:
 
         self._connecting_to_ssid = ssid
         try:
-          self._router_main.send(new_method_call(self._nm, 'ActivateConnection', 'ooo',
-                                                 (conn_path, self._wifi_device, "/")))
+          self._router_main.send(new_method_call(self._nm, 'ActivateConnection', 'ooo', (conn_path, self._wifi_device, "/")))
         except Exception:
           cloudlog.exception("Failed to activate connection when router_main is None")
 
@@ -589,10 +614,9 @@ class WifiManager:
       return ''
 
     try:
-      reply = self._router_main.send_and_get_reply(new_method_call(
-        DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE),
-        'GetSecrets', 's', ('802-11-wireless-security',)
-      ))
+      reply = self._router_main.send_and_get_reply(
+        new_method_call(DBusAddress(conn_path, bus_name=NM, interface=NM_CONNECTION_IFACE), 'GetSecrets', 's', ('802-11-wireless-security',))
+      )
 
       if reply.header.message_type == MessageType.error:
         cloudlog.warning(f'Failed to get tethering password: {reply}')

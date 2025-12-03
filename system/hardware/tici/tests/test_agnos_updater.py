@@ -7,7 +7,6 @@ MANIFEST = os.path.join(TEST_DIR, "../agnos.json")
 
 
 class TestAgnosUpdater:
-
   def test_manifest(self):
     with open(MANIFEST) as f:
       m = json.load(f)

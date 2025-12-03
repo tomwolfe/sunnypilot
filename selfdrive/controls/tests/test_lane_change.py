@@ -22,21 +22,29 @@ def test_enhanced_lane_change_safety_assessment():
 
   class MockRadarData:
     def __init__(self):
-      self.leadOne = type('obj', (object,), {
-        'status': True,
-        'dRel': 50.0,  # Distance in meters
-        'vRel': -5.0,  # Relative velocity
-        'yRel': 0.0,   # Lateral offset
-        'vLead': 20.0
-      })()
+      self.leadOne = type(
+        'obj',
+        (object,),
+        {
+          'status': True,
+          'dRel': 50.0,  # Distance in meters
+          'vRel': -5.0,  # Relative velocity
+          'yRel': 0.0,  # Lateral offset
+          'vLead': 20.0,
+        },
+      )()
 
-      self.leadTwo = type('obj', (object,), {
-        'status': True,
-        'dRel': 80.0,
-        'vRel': -2.0,
-        'yRel': 3.5,   # In adjacent lane
-        'vLead': 18.0
-      })()
+      self.leadTwo = type(
+        'obj',
+        (object,),
+        {
+          'status': True,
+          'dRel': 80.0,
+          'vRel': -2.0,
+          'yRel': 3.5,  # In adjacent lane
+          'vLead': 18.0,
+        },
+      )()
 
   class MockCarState:
     vEgo = 25.0  # 25 m/s

@@ -122,6 +122,7 @@ class PlaybackManager:
     if callback in self.x_axis_observers:
       self.x_axis_observers.remove(callback)
 
+
 class MainController:
   def __init__(self, scale: float = 1.0):
     self.scale = scale
@@ -199,8 +200,12 @@ class MainController:
     if dpg.does_item_exist("save_layout_dialog"):
       dpg.delete_item("save_layout_dialog")
     with dpg.file_dialog(
-      callback=self._save_layout_callback, tag="save_layout_dialog", width=int(700 * self.scale), height=int(400 * self.scale),
-      default_filename="layout", default_path=os.path.join(os.path.dirname(os.path.realpath(__file__)), "layouts")
+      callback=self._save_layout_callback,
+      tag="save_layout_dialog",
+      width=int(700 * self.scale),
+      height=int(400 * self.scale),
+      default_filename="layout",
+      default_path=os.path.join(os.path.dirname(os.path.realpath(__file__)), "layouts"),
     ):
       dpg.add_file_extension(".yaml")
 
@@ -208,8 +213,11 @@ class MainController:
     if dpg.does_item_exist("load_layout_dialog"):
       dpg.delete_item("load_layout_dialog")
     with dpg.file_dialog(
-      callback=self._load_layout_callback, tag="load_layout_dialog", width=int(700 * self.scale), height=int(400 * self.scale),
-      default_path=os.path.join(os.path.dirname(os.path.realpath(__file__)), "layouts")
+      callback=self._load_layout_callback,
+      tag="load_layout_dialog",
+      width=int(700 * self.scale),
+      height=int(400 * self.scale),
+      default_path=os.path.join(os.path.dirname(os.path.realpath(__file__)), "layouts"),
     ):
       dpg.add_file_extension(".yaml")
 
@@ -323,7 +331,7 @@ def main(route_to_load=None, layout_to_load=None):
     scale = 1
 
   with dpg.font_registry():
-    default_font = dpg.add_font(os.path.join(BASEDIR, "selfdrive/assets/fonts/JetBrainsMono-Medium.ttf"), int(13 * scale * 2)) # 2x then scale for hidpi
+    default_font = dpg.add_font(os.path.join(BASEDIR, "selfdrive/assets/fonts/JetBrainsMono-Medium.ttf"), int(13 * scale * 2))  # 2x then scale for hidpi
   dpg.bind_font(default_font)
   dpg.set_global_font_scale(0.5)
 
@@ -359,6 +367,7 @@ def main(route_to_load=None, layout_to_load=None):
   finally:
     controller.shutdown()
     dpg.destroy_context()
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description="A tool for visualizing openpilot logs.")

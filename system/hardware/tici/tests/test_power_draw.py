@@ -14,8 +14,9 @@ from openpilot.system.hardware.tici.power_monitor import get_power
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.manager.manager import manager_cleanup
 
-SAMPLE_TIME = 8       # seconds to sample power
+SAMPLE_TIME = 8  # seconds to sample power
 MAX_WARMUP_TIME = 30  # seconds to wait for SAMPLE_TIME consecutive valid samples
+
 
 @dataclass
 class Proc:
@@ -40,7 +41,6 @@ PROCS = [
 
 @pytest.mark.tici
 class TestPowerDraw:
-
   def setup_method(self):
     Params().put("CarParams", get_demo_car_params().to_bytes())
 
@@ -56,7 +56,7 @@ class TestPowerDraw:
   def valid_msg_count(self, proc, msg_counts):
     msgs_received = sum(msg_counts[msg] for msg in proc.msgs)
     msgs_expected = self.get_expected_messages(proc)
-    return np.isclose(msgs_expected, msgs_received, rtol=.02, atol=2)
+    return np.isclose(msgs_expected, msgs_received, rtol=0.02, atol=2)
 
   def valid_power_draw(self, proc, used):
     return np.isclose(used, proc.power, rtol=proc.rtol, atol=proc.atol)
@@ -80,7 +80,7 @@ class TestPowerDraw:
     while (time.monotonic() - start_time) < MAX_WARMUP_TIME:
       power = get_power(1)
       iteration_msg_counts = {}
-      for msg,sock in socks.items():
+      for msg, sock in socks.items():
         iteration_msg_counts[msg] = len(messaging.drain_sock_raw(sock))
       msgs_and_power.append((power, iteration_msg_counts))
 

@@ -10,19 +10,19 @@ _emoji_font: ImageFont.FreeTypeFont | None = None
 _cache: dict[str, rl.Texture] = {}
 
 EMOJI_REGEX = re.compile(
-"""[\U0001F600-\U0001F64F
-\U0001F300-\U0001F5FF
-\U0001F680-\U0001F6FF
-\U0001F1E0-\U0001F1FF
-\U00002700-\U000027BF
-\U0001F900-\U0001F9FF
-\U00002600-\U000026FF
-\U00002300-\U000023FF
-\U00002B00-\U00002BFF
-\U0001FA70-\U0001FAFF
-\U0001F700-\U0001F77F
+  """[\U0001f600-\U0001f64f
+\U0001f300-\U0001f5ff
+\U0001f680-\U0001f6ff
+\U0001f1e0-\U0001f1ff
+\U00002700-\U000027bf
+\U0001f900-\U0001f9ff
+\U00002600-\U000026ff
+\U00002300-\U000023ff
+\U00002b00-\U00002bff
+\U0001fa70-\U0001faff
+\U0001f700-\U0001f77f
 \u2640-\u2642
-\u2600-\u2B55
+\u2600-\u2b55
 \u200d
 \u23cf
 \u23e9
@@ -30,8 +30,9 @@ EMOJI_REGEX = re.compile(
 \ufe0f
 \u3030
 ]+""".replace("\n", ""),
-  flags=re.UNICODE
+  flags=re.UNICODE,
 )
+
 
 def _load_emoji_font() -> ImageFont.FreeTypeFont | None:
   global _emoji_font
@@ -39,8 +40,10 @@ def _load_emoji_font() -> ImageFont.FreeTypeFont | None:
     _emoji_font = ImageFont.truetype(str(FONT_DIR.joinpath("NotoColorEmoji.ttf")), 109)
   return _emoji_font
 
+
 def find_emoji(text):
   return [(m.start(), m.end(), m.group()) for m in EMOJI_REGEX.finditer(text)]
+
 
 def emoji_tex(emoji):
   if emoji not in _cache:

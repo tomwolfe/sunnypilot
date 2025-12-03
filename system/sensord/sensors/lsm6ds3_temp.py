@@ -3,6 +3,7 @@ import time
 from cereal import log
 from openpilot.system.sensord.sensors.i2c_sensor import Sensor
 
+
 # https://content.arduino.cc/assets/st_imu_lsm6ds3_datasheet.pdf
 class LSM6DS3_Temp(Sensor):
   @property

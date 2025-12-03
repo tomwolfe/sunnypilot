@@ -2,6 +2,7 @@ import os
 
 GENERATED_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'generated'))
 
+
 class ObservationKind:
   UNKNOWN = 0
   NO_OBSERVATION = 1
@@ -66,7 +67,6 @@ class ObservationKind:
     'GLONASS pseudorange rate',
     'pseudorange',
     'pseudorange rate',
-
     'Road Frame x,y speed',
     'Road Frame yaw rate',
     'Steer Angle',
@@ -86,7 +86,4 @@ class ObservationKind:
     return cls.names[kind]
 
 
-SAT_OBS = [ObservationKind.PSEUDORANGE_GPS,
-           ObservationKind.PSEUDORANGE_RATE_GPS,
-           ObservationKind.PSEUDORANGE_GLONASS,
-           ObservationKind.PSEUDORANGE_RATE_GLONASS]
+SAT_OBS = [ObservationKind.PSEUDORANGE_GPS, ObservationKind.PSEUDORANGE_RATE_GPS, ObservationKind.PSEUDORANGE_GLONASS, ObservationKind.PSEUDORANGE_RATE_GLONASS]

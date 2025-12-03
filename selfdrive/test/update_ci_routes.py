@@ -12,12 +12,10 @@ from openpilot.selfdrive.test.process_replay.test_processes import source_segmen
 from openpilot.tools.lib.azure_container import AzureContainer
 from openpilot.tools.lib.openpilotcontainers import DataCIContainer, DataProdContainer, OpenpilotCIContainer
 
-SOURCES: list[AzureContainer] = [
-  DataProdContainer,
-  DataCIContainer
-]
+SOURCES: list[AzureContainer] = [DataProdContainer, DataCIContainer]
 
 DEST = OpenpilotCIContainer
+
 
 def upload_route(path: str, exclude_patterns: Iterable[str] = None) -> None:
   if exclude_patterns is None:

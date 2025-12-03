@@ -6,6 +6,7 @@ from openpilot.system.hardware.base import HardwareBase, LPABase
 NetworkType = log.DeviceState.NetworkType
 NetworkStrength = log.DeviceState.NetworkStrength
 
+
 class Pc(HardwareBase):
   def get_os_version(self):
     return None
@@ -32,13 +33,7 @@ class Pc(HardwareBase):
     return NetworkType.wifi
 
   def get_sim_info(self):
-    return {
-      'sim_id': '',
-      'mcc_mnc': None,
-      'network_type': ["Unknown"],
-      'sim_state': ["ABSENT"],
-      'data_connected': False
-    }
+    return {'sim_id': '', 'mcc_mnc': None, 'network_type': ["Unknown"], 'sim_state': ["ABSENT"], 'data_connected': False}
 
   def get_sim_lpa(self) -> LPABase:
     raise NotImplementedError("SIM LPA not implemented for PC")
@@ -69,7 +64,6 @@ class Pc(HardwareBase):
 
   def get_modem_temperatures(self):
     return []
-
 
   def initialize_hardware(self):
     pass

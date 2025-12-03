@@ -3,6 +3,7 @@ import sys
 
 from typing import no_type_check
 
+
 class FdRedirect:
   def __init__(self, file_prefix: str, fd: int):
     fname = os.path.join("/tmp", f"{file_prefix}.{fd}")
@@ -37,11 +38,12 @@ class ProcessOutputCapture:
     self.stdout_redirect.purge()
     self.stderr_redirect.purge()
 
-  @no_type_check # ipython classes have incompatible signatures
+  @no_type_check  # ipython classes have incompatible signatures
   def link_with_current_proc(self) -> None:
     try:
       # prevent ipykernel from redirecting stdout/stderr of python subprocesses
       from ipykernel.iostream import OutStream
+
       if isinstance(sys.stdout, OutStream):
         sys.stdout = sys.__stdout__
       if isinstance(sys.stderr, OutStream):

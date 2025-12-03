@@ -31,6 +31,7 @@ class FakeLogHandler(logging.Handler):
     except Exception:
       pass
 
+
 log_handler = FakeLogHandler()
 cloudlog.addHandler(log_handler)
 

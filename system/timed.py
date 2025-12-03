@@ -26,11 +26,11 @@ def set_time(new_time):
 
 def main() -> NoReturn:
   """
-    timed has two responsibilities:
-    - getting the current time from GPS
-    - publishing the time in the logs
+  timed has two responsibilities:
+  - getting the current time from GPS
+  - publishing the time in the logs
 
-    AGNOS will also use NTP to update the time.
+  AGNOS will also use NTP to update the time.
   """
 
   params = Params()
@@ -47,7 +47,7 @@ def main() -> NoReturn:
     pm.send('clocks', msg)
 
     gps = sm[gps_location_service]
-    gps_time = datetime.datetime.fromtimestamp(gps.unixTimestampMillis / 1000.)
+    gps_time = datetime.datetime.fromtimestamp(gps.unixTimestampMillis / 1000.0)
     if not sm.updated[gps_location_service] or (time.monotonic() - sm.logMonoTime[gps_location_service] / 1e9) > 2.0:
       continue
     if not gps.hasFix:
@@ -57,6 +57,7 @@ def main() -> NoReturn:
 
     set_time(gps_time)
     time.sleep(10)
+
 
 if __name__ == "__main__":
   main()

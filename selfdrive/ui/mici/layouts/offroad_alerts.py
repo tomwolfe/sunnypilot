@@ -31,6 +31,7 @@ class AlertData:
 class AlertItem(Widget):
   # TODO: click should always go somewhere: home or specific settings pane
   """Individual alert item widget with background image and text."""
+
   ALERT_WIDTH = 520
   ALERT_HEIGHT_SMALL = 212
   ALERT_HEIGHT_MED = 240
@@ -58,13 +59,25 @@ class AlertItem(Widget):
     self._icon_red = gui_app.texture("icons_mici/offroad_alerts/red_warning.png", self.ICON_SIZE, self.ICON_SIZE)
     self._icon_green = gui_app.texture("icons_mici/offroad_alerts/green_wheel.png", self.ICON_SIZE, self.ICON_SIZE)
 
-    self._title_label = UnifiedLabel(text="", font_size=32, font_weight=FontWeight.SEMI_BOLD, text_color=self.TEXT_COLOR,
-                                     alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-                                     alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP, line_height=0.95)
+    self._title_label = UnifiedLabel(
+      text="",
+      font_size=32,
+      font_weight=FontWeight.SEMI_BOLD,
+      text_color=self.TEXT_COLOR,
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_TOP,
+      line_height=0.95,
+    )
 
-    self._body_label = UnifiedLabel(text="", font_size=28, font_weight=FontWeight.ROMAN, text_color=self.TEXT_COLOR,
-                                    alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-                                    alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM, line_height=0.95)
+    self._body_label = UnifiedLabel(
+      text="",
+      font_size=28,
+      font_weight=FontWeight.ROMAN,
+      text_color=self.TEXT_COLOR,
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_BOTTOM,
+      line_height=0.95,
+    )
 
     self._title_text = ""
     self._body_text = ""
@@ -78,8 +91,8 @@ class AlertItem(Widget):
     match = re.search(r'[.!?](?:\s+|$)', text)
     if match:
       # Found a sentence boundary - split at the end of the sentence
-      title = text[:match.start()].strip()
-      body = text[match.end():].strip()
+      title = text[: match.start()].strip()
+      body = text[match.end() :].strip()
       return title, body
     else:
       # No sentence boundary found, return full text as title
@@ -199,9 +212,14 @@ class MiciOffroadAlerts(Widget):
     self._scroller = Scroller([], horizontal=False, spacing=12, pad_start=0, pad_end=0, snap_items=False)
 
     # Create empty state label
-    self._empty_label = UnifiedLabel(tr("no alerts"), 65, FontWeight.DISPLAY, rl.WHITE,
-                                     alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
-                                     alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    self._empty_label = UnifiedLabel(
+      tr("no alerts"),
+      65,
+      FontWeight.DISPLAY,
+      rl.WHITE,
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_CENTER,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    )
 
     # Build initial alert list
     self._build_alerts()

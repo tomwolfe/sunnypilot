@@ -4,6 +4,7 @@ Copyright (c) 2021-, Haibin Wen, sunnypilot, and a number of other contributors.
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
+
 import time
 
 from cereal import custom, car
@@ -35,10 +36,10 @@ PRE_ACTIVE_GUARD_PERIOD = {
 SPEED_LIMIT_CHANGED_HOLD_PERIOD = 1  # secs. Time to wait after speed limit change before switching to preActive.
 
 LIMIT_MIN_ACC = -1.5  # m/s^2 Maximum deceleration allowed for limit controllers to provide.
-LIMIT_MAX_ACC = 1.0   # m/s^2 Maximum acceleration allowed for limit controllers to provide while active.
+LIMIT_MAX_ACC = 1.0  # m/s^2 Maximum acceleration allowed for limit controllers to provide while active.
 LIMIT_MIN_SPEED = 8.33  # m/s, Minimum speed limit to provide as solution on limit controllers.
-LIMIT_SPEED_OFFSET_TH = -1.  # m/s Maximum offset between speed limit and current speed for adapting state.
-V_CRUISE_UNSET = 255.
+LIMIT_SPEED_OFFSET_TH = -1.0  # m/s Maximum offset between speed limit and current speed for adapting state.
+V_CRUISE_UNSET = 255.0
 
 CRUISE_BUTTONS_PLUS = (ButtonType.accelCruise, ButtonType.resumeCruise)
 CRUISE_BUTTONS_MINUS = (ButtonType.decelCruise, ButtonType.setCruise)
@@ -67,30 +68,30 @@ class SpeedLimitAssist:
     self.is_enabled = False
     self.is_active = False
     self.output_v_target = V_CRUISE_UNSET
-    self.output_a_target = 0.
-    self.v_ego = 0.
-    self.a_ego = 0.
-    self.v_offset = 0.
+    self.output_a_target = 0.0
+    self.v_ego = 0.0
+    self.a_ego = 0.0
+    self.v_offset = 0.0
     self.target_set_speed_conv = 0
     self.prev_target_set_speed_conv = 0
-    self.v_cruise_cluster = 0.
-    self.v_cruise_cluster_prev = 0.
+    self.v_cruise_cluster = 0.0
+    self.v_cruise_cluster_prev = 0.0
     self.v_cruise_cluster_conv = 0
     self.prev_v_cruise_cluster_conv = 0
     self._has_speed_limit = False
-    self._speed_limit = 0.
-    self._speed_limit_final_last = 0.
-    self.speed_limit_prev = 0.
+    self._speed_limit = 0.0
+    self._speed_limit_final_last = 0.0
+    self.speed_limit_prev = 0.0
     self.speed_limit_final_last_conv = 0
     self.prev_speed_limit_final_last_conv = 0
-    self._distance = 0.
+    self._distance = 0.0
     self.state = SpeedLimitAssistState.disabled
     self._state_prev = SpeedLimitAssistState.disabled
     self.pcm_op_long = CP.openpilotLongitudinalControl and CP.pcmCruise
 
-    self._plus_hold = 0.
-    self._minus_hold = 0.
-    self._last_carstate_ts = 0.
+    self._plus_hold = 0.0
+    self._minus_hold = 0.0
+    self._last_carstate_ts = 0.0
 
     # TODO-SP: SLA's own output_a_target for planner
     # Solution functions mapped to respective states
@@ -159,17 +160,17 @@ class SpeedLimitAssist:
   def _get_button_release(self, req_plus: bool, req_minus: bool) -> bool:
     now = time.monotonic()
     if req_plus and now <= self._plus_hold:
-      self._plus_hold = 0.
+      self._plus_hold = 0.0
       return True
     elif req_minus and now <= self._minus_hold:
-      self._minus_hold = 0.
+      self._minus_hold = 0.0
       return True
 
     # expired
     if now > self._plus_hold:
-      self._plus_hold = 0.
+      self._plus_hold = 0.0
     if now > self._minus_hold:
-      self._minus_hold = 0.
+      self._minus_hold = 0.0
     return False
 
   def update_calculations(self, v_cruise_cluster: float) -> None:
@@ -183,8 +184,7 @@ class SpeedLimitAssist:
     self.v_cruise_cluster_conv = round(self.v_cruise_cluster * speed_conv)
 
     cst_low, cst_high = PCM_LONG_REQUIRED_MAX_SET_SPEED[self.is_metric]
-    pcm_long_required_max = cst_low if self._has_speed_limit and self.speed_limit_final_last_conv < CONFIRM_SPEED_THRESHOLD[self.is_metric] else \
-                            cst_high
+    pcm_long_required_max = cst_low if self._has_speed_limit and self.speed_limit_final_last_conv < CONFIRM_SPEED_THRESHOLD[self.is_metric] else cst_high
     pcm_long_required_max_set_speed_conv = round(pcm_long_required_max * speed_conv)
 
     self.target_set_speed_conv = pcm_long_required_max_set_speed_conv if self.pcm_op_long else self.speed_limit_final_last_conv
@@ -207,7 +207,7 @@ class SpeedLimitAssist:
     if self._distance > 0:
       # Calculate required acceleration to reach speed limit by the specified distance
       # Use kinematic equation: v_f^2 = v_i^2 + 2*a*d, solving for a: a = (v_f^2 - v_i^2) / (2*d)
-      required_accel = (self._speed_limit_final_last ** 2 - self.v_ego ** 2) / (2. * self._distance)
+      required_accel = (self._speed_limit_final_last**2 - self.v_ego**2) / (2.0 * self._distance)
       # Limit acceleration to reasonable bounds for comfort and safety
       return max(LIMIT_MIN_ACC, min(LIMIT_MAX_ACC, required_accel))
 
@@ -398,8 +398,19 @@ class SpeedLimitAssist:
         elif self.speed_limit_prev > 0 and self._speed_limit > 0:
           self.update_active_event(events_sp)
 
-  def update(self, long_enabled: bool, long_override: bool, v_ego: float, a_ego: float, v_cruise_cluster: float, speed_limit: float,
-             speed_limit_final_last: float, has_speed_limit: bool, distance: float, events_sp: EventsSP) -> None:
+  def update(
+    self,
+    long_enabled: bool,
+    long_override: bool,
+    v_ego: float,
+    a_ego: float,
+    v_cruise_cluster: float,
+    speed_limit: float,
+    speed_limit_final_last: float,
+    has_speed_limit: bool,
+    distance: float,
+    events_sp: EventsSP,
+  ) -> None:
     self.long_enabled = long_enabled
     self.v_ego = v_ego
     self.a_ego = a_ego

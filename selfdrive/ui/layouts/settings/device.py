@@ -48,22 +48,34 @@ class DeviceLayout(Widget):
     self._pair_device_btn = button_item(lambda: tr("Pair Device"), lambda: tr("PAIR"), lambda: tr(DESCRIPTIONS['pair_device']), callback=self._pair_device)
     self._pair_device_btn.set_visible(lambda: not ui_state.prime_state.is_paired())
 
-    self._reset_calib_btn = button_item(lambda: tr("Reset Calibration"), lambda: tr("RESET"), lambda: tr(DESCRIPTIONS['reset_calibration']),
-                                        callback=self._reset_calibration_prompt)
+    self._reset_calib_btn = button_item(
+      lambda: tr("Reset Calibration"), lambda: tr("RESET"), lambda: tr(DESCRIPTIONS['reset_calibration']), callback=self._reset_calibration_prompt
+    )
     self._reset_calib_btn.set_description_opened_callback(self._update_calib_description)
 
-    self._power_off_btn = dual_button_item(lambda: tr("Reboot"), lambda: tr("Power Off"),
-                                           left_callback=self._reboot_prompt, right_callback=self._power_off_prompt)
+    self._power_off_btn = dual_button_item(
+      lambda: tr("Reboot"), lambda: tr("Power Off"), left_callback=self._reboot_prompt, right_callback=self._power_off_prompt
+    )
 
     items = [
       text_item(lambda: tr("Dongle ID"), self._params.get("DongleId") or (lambda: tr("N/A"))),
       text_item(lambda: tr("Serial"), self._params.get("HardwareSerial") or (lambda: tr("N/A"))),
       self._pair_device_btn,
-      button_item(lambda: tr("Driver Camera"), lambda: tr("PREVIEW"), lambda: tr(DESCRIPTIONS['driver_camera']),
-                  callback=self._show_driver_camera, enabled=ui_state.is_offroad),
+      button_item(
+        lambda: tr("Driver Camera"),
+        lambda: tr("PREVIEW"),
+        lambda: tr(DESCRIPTIONS['driver_camera']),
+        callback=self._show_driver_camera,
+        enabled=ui_state.is_offroad,
+      ),
       self._reset_calib_btn,
-      button_item(lambda: tr("Review Training Guide"), lambda: tr("REVIEW"), lambda: tr(DESCRIPTIONS['review_guide']),
-                  self._on_review_training_guide, enabled=ui_state.is_offroad),
+      button_item(
+        lambda: tr("Review Training Guide"),
+        lambda: tr("REVIEW"),
+        lambda: tr(DESCRIPTIONS['review_guide']),
+        self._on_review_training_guide,
+        enabled=ui_state.is_offroad,
+      ),
       regulatory_btn := button_item(lambda: tr("Regulatory"), lambda: tr("VIEW"), callback=self._on_regulatory, enabled=ui_state.is_offroad),
       button_item(lambda: tr("Change Language"), lambda: tr("CHANGE"), callback=self._show_language_dialog),
       self._power_off_btn,
@@ -88,8 +100,9 @@ class DeviceLayout(Widget):
         self._update_calib_description()
       self._select_language_dialog = None
 
-    self._select_language_dialog = MultiOptionDialog(tr("Select a language"), multilang.languages, multilang.codes[multilang.language],
-                                                     option_font_weight=FontWeight.UNIFONT)
+    self._select_language_dialog = MultiOptionDialog(
+      tr("Select a language"), multilang.languages, multilang.codes[multilang.language], option_font_weight=FontWeight.UNIFONT
+    )
     gui_app.set_modal_overlay(self._select_language_dialog, callback=handle_language_selection)
 
   def _show_driver_camera(self):
@@ -130,8 +143,9 @@ class DeviceLayout(Widget):
         if calib.calStatus != log.LiveCalibrationData.Status.uncalibrated:
           pitch = math.degrees(calib.rpyCalib[1])
           yaw = math.degrees(calib.rpyCalib[2])
-          desc += tr(" Your device is pointed {:.1f}° {} and {:.1f}° {}.").format(abs(pitch), tr("down") if pitch > 0 else tr("up"),
-                                                                                  abs(yaw), tr("left") if yaw > 0 else tr("right"))
+          desc += tr(" Your device is pointed {:.1f}° {} and {:.1f}° {}.").format(
+            abs(pitch), tr("down") if pitch > 0 else tr("up"), abs(yaw), tr("left") if yaw > 0 else tr("right")
+          )
       except Exception:
         cloudlog.exception("invalid CalibrationParams")
 
@@ -162,8 +176,9 @@ class DeviceLayout(Widget):
         cloudlog.exception("invalid LiveTorqueParameters")
 
     desc += "<br><br>"
-    desc += tr("sunnypilot is continuously calibrating, resetting is rarely required. " +
-               "Resetting calibration will restart sunnypilot if the car is powered on.")
+    desc += tr(
+      "sunnypilot is continuously calibrating, resetting is rarely required. " + "Resetting calibration will restart sunnypilot if the car is powered on."
+    )
 
     self._reset_calib_btn.set_description(desc)
 
@@ -203,6 +218,7 @@ class DeviceLayout(Widget):
 
   def _on_review_training_guide(self):
     if not self._training_guide:
+
       def completed_callback():
         gui_app.set_modal_overlay(None)
 

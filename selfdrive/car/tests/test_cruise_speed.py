@@ -13,16 +13,16 @@ ButtonEvent = car.CarState.ButtonEvent
 ButtonType = car.CarState.ButtonEvent.Type
 
 
-def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
+def run_cruise_simulation(cruise, e2e, personality, t_end=20.0):
   man = Maneuver(
     '',
     duration=t_end,
-    initial_speed=max(cruise - 1., 0.0),
+    initial_speed=max(cruise - 1.0, 0.0),
     lead_relevancy=True,
     initial_distance_lead=100,
     cruise_values=[cruise],
     prob_lead_values=[0.0],
-    breakpoints=[0.],
+    breakpoints=[0.0],
     e2e=e2e,
     personality=personality,
   )
@@ -31,17 +31,21 @@ def run_cruise_simulation(cruise, e2e, personality, t_end=20.):
   return output[-1, 3]
 
 
-@parameterized_class(("e2e", "personality", "speed"), itertools.product(
-                      [True, False], # e2e
-                      log.LongitudinalPersonality.schema.enumerants, # personality
-                      [5,35])) # speed
+@parameterized_class(
+  ("e2e", "personality", "speed"),
+  itertools.product(
+    [True, False],  # e2e
+    log.LongitudinalPersonality.schema.enumerants,  # personality
+    [5, 35],
+  ),
+)  # speed
 class TestCruiseSpeed:
   def test_cruise_speed(self):
     print(f'Testing {self.speed} m/s')
     cruise_speed = float(self.speed)
 
     simulation_steady_state = run_cruise_simulation(cruise_speed, self.e2e, self.personality)
-    assert simulation_steady_state == pytest.approx(cruise_speed, abs=.01), f'Did not reach {self.speed} m/s'
+    assert simulation_steady_state == pytest.approx(cruise_speed, abs=0.01), f'Did not reach {self.speed} m/s'
 
 
 # TODO: test pcmCruise and pcmCruiseSpeed
@@ -84,9 +88,7 @@ class TestVCruiseHelper:
     """
 
     # NOTE: enabled is always one frame behind the result from button press in controlsd
-    for enabled, pressed in ((False, False),
-                             (False, True),
-                             (True, False)):
+    for enabled, pressed in ((False, False), (False, True), (True, False)):
       CS = car.CarState(cruiseState={"available": True})
       CS.buttonEvents = [ButtonEvent(type=ButtonType.decelCruise, pressed=pressed)]
       self.v_cruise_helper.update_v_cruise(CS, enabled=enabled, is_metric=False)

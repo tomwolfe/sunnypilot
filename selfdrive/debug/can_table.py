@@ -19,8 +19,7 @@ def can_table(dat):
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="Cabana-like table of bits for your terminal",
-                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser = argparse.ArgumentParser(description="Cabana-like table of bits for your terminal", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("addr", type=str, nargs=1)
   parser.add_argument("bus", type=int, default=0, nargs='?')
 

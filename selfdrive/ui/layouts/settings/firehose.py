@@ -108,8 +108,9 @@ class FirehoseLayout(Widget):
 
     # Contribution count (if available)
     if self.segment_count > 0:
-      contrib_text = trn("{} segment of your driving is in the training dataset so far.",
-                         "{} segments of your driving is in the training dataset so far.", self.segment_count).format(self.segment_count)
+      contrib_text = trn(
+        "{} segment of your driving is in the training dataset so far.", "{} segments of your driving is in the training dataset so far.", self.segment_count
+      ).format(self.segment_count)
       y = self._draw_wrapped_text(x, y, w, contrib_text, gui_app.font(FontWeight.BOLD), 52, rl.WHITE)
       y += 20 + 20
 

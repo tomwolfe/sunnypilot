@@ -83,7 +83,7 @@ class GuiScrollPanel2:
 
         dist = target - self.get_offset()
         self.set_offset(self.get_offset() + dist * factor)  # ease toward the edge
-        self._velocity *= (1.0 - factor)  # damp any leftover fling
+        self._velocity *= 1.0 - factor  # damp any leftover fling
 
         # Steady once we are close enough to the target
         if abs(dist) < 1 and abs(self._velocity) < MIN_VELOCITY:
@@ -100,8 +100,7 @@ class GuiScrollPanel2:
       alpha = 1 - (dt / (self._AUTO_SCROLL_TC + dt))
       self._velocity *= alpha
 
-  def _handle_mouse_event(self, mouse_event: MouseEvent, bounds: rl.Rectangle, bounds_size: float,
-                          content_size: float) -> None:
+  def _handle_mouse_event(self, mouse_event: MouseEvent, bounds: rl.Rectangle, bounds_size: float, content_size: float) -> None:
     out_of_bounds = self.get_offset() > 0 or self.get_offset() < (bounds_size - content_size)
     if DEBUG:
       print('Mouse event:', mouse_event)
@@ -145,12 +144,11 @@ class GuiScrollPanel2:
         if len(self._velocity_buffer) > 2:
           # We limit max to first half since final few velocities can surpass first few
           abs_velocity_buffer = [(abs(v), i) for i, v in enumerate(self._velocity_buffer)]
-          max_idx = max(abs_velocity_buffer[:len(abs_velocity_buffer) // 2])[1]
+          max_idx = max(abs_velocity_buffer[: len(abs_velocity_buffer) // 2])[1]
           min_idx = min(abs_velocity_buffer)[1]
           if DEBUG:
             print('min_idx:', min_idx, 'max_idx:', max_idx, 'velocity buffer:', self._velocity_buffer)
-          if (abs(self._velocity_buffer[min_idx]) * REJECT_DECELERATION_FACTOR < abs(self._velocity_buffer[max_idx]) and
-              max_idx < min_idx):
+          if abs(self._velocity_buffer[min_idx]) * REJECT_DECELERATION_FACTOR < abs(self._velocity_buffer[max_idx]) and max_idx < min_idx:
             if DEBUG:
               print('deceleration too high, going to STEADY')
             high_decel = True

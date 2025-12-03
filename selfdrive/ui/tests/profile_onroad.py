@@ -49,22 +49,19 @@ def patch_submaster(message_chunks):
         sm.recv_frame[service] = sm.frame
         sm.valid[service] = True
     sm.frame += 1
+
   ui_state.sm.update = mock_update
 
 
 if __name__ == "__main__":
   import argparse
+
   parser = argparse.ArgumentParser(description='Profile openpilot UI rendering and state updates')
-  parser.add_argument('route', type=str, nargs='?', default="302bab07c1511180/00000006--0b9a7005f1/3",
-                      help='Route to use for profiling')
-  parser.add_argument('--loop', type=int, default=1,
-                      help='Number of times to loop the log (default: 1)')
-  parser.add_argument('--output', type=str, default='cachegrind.out.ui',
-                      help='Output file prefix (default: cachegrind.out.ui)')
-  parser.add_argument('--max-seconds', type=float, default=None,
-                      help='Maximum seconds of messages to process (default: all)')
-  parser.add_argument('--headless', action='store_true',
-                      help='Run in headless mode without GPU (for CI/testing)')
+  parser.add_argument('route', type=str, nargs='?', default="302bab07c1511180/00000006--0b9a7005f1/3", help='Route to use for profiling')
+  parser.add_argument('--loop', type=int, default=1, help='Number of times to loop the log (default: 1)')
+  parser.add_argument('--output', type=str, default='cachegrind.out.ui', help='Output file prefix (default: cachegrind.out.ui)')
+  parser.add_argument('--max-seconds', type=float, default=None, help='Maximum seconds of messages to process (default: all)')
+  parser.add_argument('--headless', action='store_true', help='Run in headless mode without GPU (for CI/testing)')
   args = parser.parse_args()
 
   print(f"Loading log from {args.route}...")
@@ -74,7 +71,7 @@ if __name__ == "__main__":
   print("Chunking messages...")
   message_chunks = chunk_messages_by_time(messages)
   if args.max_seconds:
-    message_chunks = message_chunks[:int(args.max_seconds * FPS)]
+    message_chunks = message_chunks[: int(args.max_seconds * FPS)]
 
   print("Initializing UI with GPU rendering...")
 

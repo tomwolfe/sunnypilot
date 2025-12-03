@@ -10,18 +10,19 @@ POT_FILE = os.path.join(str(TRANSLATIONS_DIR), "app.pot")
 
 def update_translations():
   files = []
-  for root, _, filenames in chain(os.walk(SYSTEM_UI_DIR),
-                                  os.walk(os.path.join(UI_DIR, "widgets")),
-                                  os.walk(os.path.join(UI_DIR, "layouts")),
-                                  os.walk(os.path.join(UI_DIR, "onroad"))):
+  for root, _, filenames in chain(
+    os.walk(SYSTEM_UI_DIR), os.walk(os.path.join(UI_DIR, "widgets")), os.walk(os.path.join(UI_DIR, "layouts")), os.walk(os.path.join(UI_DIR, "onroad"))
+  ):
     for filename in filenames:
       if filename.endswith(".py"):
         files.append(os.path.relpath(os.path.join(root, filename), BASEDIR))
 
   # Create main translation file
-  cmd = ("xgettext -L Python --keyword=tr --keyword=trn:1,2 --keyword=tr_noop --from-code=UTF-8 " +
-         "--flag=tr:1:python-brace-format --flag=trn:1:python-brace-format --flag=trn:2:python-brace-format " +
-         f"-D {BASEDIR} -o {POT_FILE} {' '.join(files)}")
+  cmd = (
+    "xgettext -L Python --keyword=tr --keyword=trn:1,2 --keyword=tr_noop --from-code=UTF-8 "
+    + "--flag=tr:1:python-brace-format --flag=trn:1:python-brace-format --flag=trn:2:python-brace-format "
+    + f"-D {BASEDIR} -o {POT_FILE} {' '.join(files)}"
+  )
 
   ret = os.system(cmd)
   assert ret == 0

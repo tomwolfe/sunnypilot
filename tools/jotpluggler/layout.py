@@ -5,6 +5,7 @@ from openpilot.tools.jotpluggler.views import TimeSeriesPanel
 GRIP_SIZE = 4
 MIN_PANE_SIZE = 60
 
+
 class LayoutManager:
   def __init__(self, data_manager, playback_manager, worker_manager, scale: float = 1.0):
     self.data_manager = data_manager
@@ -21,15 +22,7 @@ class LayoutManager:
     self._next_tab_id = self.active_tab + 1
 
   def to_dict(self) -> dict:
-    return {
-      "tabs": {
-        str(tab_id): {
-          "name": tab_data["name"],
-          "panel_layout": tab_data["panel_layout"].to_dict()
-        }
-        for tab_id, tab_data in self.tabs.items()
-      }
-    }
+    return {"tabs": {str(tab_id): {"name": tab_data["name"], "panel_layout": tab_data["panel_layout"].to_dict()} for tab_id, tab_data in self.tabs.items()}}
 
   def clear_and_load_from_dict(self, data: dict):
     tab_ids_to_close = list(self.tabs.keys())
@@ -38,14 +31,8 @@ class LayoutManager:
 
     for tab_id_str, tab_data in data["tabs"].items():
       tab_id = int(tab_id_str)
-      panel_layout = PanelLayoutManager.load_from_dict(
-        tab_data["panel_layout"], self.data_manager, self.playback_manager,
-        self.worker_manager, self.scale
-      )
-      self.tabs[tab_id] = {
-        "name": tab_data["name"],
-        "panel_layout": panel_layout
-      }
+      panel_layout = PanelLayoutManager.load_from_dict(tab_data["panel_layout"], self.data_manager, self.playback_manager, self.worker_manager, self.scale)
+      self.tabs[tab_id] = {"name": tab_data["name"], "panel_layout": panel_layout}
 
     self.active_tab = min(self.tabs.keys()) if self.tabs else 0
     self._next_tab_id = max(self.tabs.keys()) + 1 if self.tabs else 1
@@ -101,7 +88,7 @@ class LayoutManager:
     self.switch_tab(self._next_tab_id)
     self._next_tab_id += 1
 
-  def close_tab(self, tab_id: int, force = False):
+  def close_tab(self, tab_id: int, force=False):
     if len(self.tabs) <= 1 and not force:
       return  # don't allow closing the last tab
 
@@ -113,7 +100,7 @@ class LayoutManager:
         dpg.delete_item(tag)
     del self.tabs[tab_id]
 
-    if self.active_tab == tab_id and self.tabs: # switch to another tab if we closed the active one
+    if self.active_tab == tab_id and self.tabs:  # switch to another tab if we closed the active one
       self.active_tab = next(iter(self.tabs.keys()))
       self._switch_tab_content()
       dpg.bind_item_theme(f"tab_window_{self.active_tab}", "active_tab_theme")
@@ -145,6 +132,7 @@ class LayoutManager:
   def on_viewport_resize(self):
     self.tabs[self.active_tab]["panel_layout"].on_viewport_resize()
 
+
 class PanelLayoutManager:
   def __init__(self, data_manager: DataManager, playback_manager, worker_manager, scale: float = 1.0):
     self.data_manager = data_manager
@@ -167,16 +155,13 @@ class PanelLayoutManager:
 
   def _layout_to_dict(self, layout: dict) -> dict:
     if layout["type"] == "panel":
-      return {
-        "type": "panel",
-        "panel": layout["panel"].to_dict()
-      }
+      return {"type": "panel", "panel": layout["panel"].to_dict()}
     else:  # split
       return {
         "type": "split",
         "orientation": layout["orientation"],
         "proportions": layout["proportions"],
-        "children": [self._layout_to_dict(child) for child in layout["children"]]
+        "children": [self._layout_to_dict(child) for child in layout["children"]],
       }
 
   @classmethod
@@ -189,9 +174,7 @@ class PanelLayoutManager:
     if data["type"] == "panel":
       panel_data = data["panel"]
       if panel_data["type"] == "timeseries":
-        panel = TimeSeriesPanel.load_from_dict(
-          panel_data, self.data_manager, self.playback_manager, self.worker_manager
-        )
+        panel = TimeSeriesPanel.load_from_dict(panel_data, self.data_manager, self.playback_manager, self.worker_manager)
         return {"type": "panel", "panel": panel}
       else:
         # Handle future panel types here or make a general mapping
@@ -201,7 +184,7 @@ class PanelLayoutManager:
         "type": "split",
         "orientation": data["orientation"],
         "proportions": data["proportions"],
-        "children": [self._dict_to_layout(child) for child in data["children"]]
+        "children": [self._dict_to_layout(child) for child in data["children"]],
       }
 
   def create_ui(self):

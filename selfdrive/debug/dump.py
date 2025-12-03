@@ -11,20 +11,20 @@ from openpilot.tools.lib.live_logreader import raw_live_logreader
 
 codecs.register_error("strict", codecs.backslashreplace_errors)
 
+
 def hexdump(msg):
   m = str.upper(msg.hex())
-  m = [m[i:i+2] for i in range(0,len(m),2)]
-  m = [m[i:i+16] for i in range(0,len(m),16)]
-  for row,dump in enumerate(m):
-    addr = '%08X:' % (row*16)
+  m = [m[i : i + 2] for i in range(0, len(m), 2)]
+  m = [m[i : i + 16] for i in range(0, len(m), 16)]
+  for row, dump in enumerate(m):
+    addr = '%08X:' % (row * 16)
     raw = ' '.join(dump[:8]) + '  ' + ' '.join(dump[8:])
     space = ' ' * (48 - len(raw))
-    asci = ''.join(chr(int(x,16)) if 0x20 <= int(x,16) <= 0x7E else '.' for x in dump)
+    asci = ''.join(chr(int(x, 16)) if 0x20 <= int(x, 16) <= 0x7E else '.' for x in dump)
     print(f'{addr} {raw} {space} {asci}')
 
 
 if __name__ == "__main__":
-
   parser = argparse.ArgumentParser(description='Dump communication sockets. See cereal/services.py for a complete list of available sockets.')
   parser.add_argument('--pipe', action='store_true')
   parser.add_argument('--raw', action='store_true')

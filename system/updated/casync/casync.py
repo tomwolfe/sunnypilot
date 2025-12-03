@@ -16,10 +16,10 @@ from Crypto.Hash import SHA512
 from openpilot.system.updated.casync import tar
 from openpilot.system.updated.casync.common import create_casync_tar_package
 
-CA_FORMAT_INDEX = 0x96824d9c7b129ff9
-CA_FORMAT_TABLE = 0xe75b9e112f17417d
-CA_FORMAT_TABLE_TAIL_MARKER = 0xe75b9e112f17417
-FLAGS = 0xb000000000000000
+CA_FORMAT_INDEX = 0x96824D9C7B129FF9
+CA_FORMAT_TABLE = 0xE75B9E112F17417D
+CA_FORMAT_TABLE_TAIL_MARKER = 0xE75B9E112F17417
+FLAGS = 0xB000000000000000
 
 CA_HEADER_LEN = 48
 CA_TABLE_HEADER_LEN = 16
@@ -37,12 +37,12 @@ ChunkDict = dict[bytes, Chunk]
 
 class ChunkReader(ABC):
   @abstractmethod
-  def read(self, chunk: Chunk) -> bytes:
-    ...
+  def read(self, chunk: Chunk) -> bytes: ...
 
 
 class BinaryChunkReader(ChunkReader):
   """Reads chunks from a local file"""
+
   def __init__(self, file_like: IO[bytes]) -> None:
     super().__init__()
     self.f = file_like
@@ -165,16 +165,12 @@ def build_chunk_dict(chunks: list[Chunk]) -> ChunkDict:
   return r
 
 
-def extract(target: list[Chunk],
-            sources: list[tuple[str, ChunkReader, ChunkDict]],
-            out_path: str,
-            progress: Callable[[int], None] = None):
+def extract(target: list[Chunk], sources: list[tuple[str, ChunkReader, ChunkDict]], out_path: str, progress: Callable[[int], None] = None):
   stats: dict[str, int] = defaultdict(int)
 
   mode = 'rb+' if os.path.exists(out_path) else 'wb'
   with open(out_path, mode) as out:
     for cur_chunk in target:
-
       # Find source for desired chunk
       for name, chunk_reader, store_chunks in sources:
         if cur_chunk.sha in store_chunks:
@@ -204,11 +200,9 @@ def extract(target: list[Chunk],
   return stats
 
 
-def extract_directory(target: list[Chunk],
-            sources: list[tuple[str, ChunkReader, ChunkDict]],
-            out_path: str,
-            tmp_file: str,
-            progress: Callable[[int], None] = None):
+def extract_directory(
+  target: list[Chunk], sources: list[tuple[str, ChunkReader, ChunkDict]], out_path: str, tmp_file: str, progress: Callable[[int], None] = None
+):
   """extract a directory stored as a casync tar archive"""
 
   stats = extract(target, sources, tmp_file, progress)

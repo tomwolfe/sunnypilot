@@ -56,8 +56,9 @@ class ItemAction(Widget, ABC):
 
 
 class ToggleAction(ItemAction):
-  def __init__(self, initial_state: bool = False, width: int = TOGGLE_WIDTH, enabled: bool | Callable[[], bool] = True,
-               callback: Callable[[bool], None] | None = None):
+  def __init__(
+    self, initial_state: bool = False, width: int = TOGGLE_WIDTH, enabled: bool | Callable[[], bool] = True, callback: Callable[[bool], None] | None = None
+  ):
     super().__init__(width, enabled)
     self.toggle = Toggle(initial_state=initial_state, callback=callback)
 
@@ -134,9 +135,15 @@ class ButtonAction(ItemAction):
     value_text = self.value
     if value_text:
       value_rect = rl.Rectangle(rect.x, rect.y, rect.width - BUTTON_WIDTH - TEXT_PADDING, rect.height)
-      gui_label(value_rect, value_text, font_size=ITEM_TEXT_FONT_SIZE, color=ITEM_TEXT_VALUE_COLOR,
-                font_weight=FontWeight.NORMAL, alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
-                alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+      gui_label(
+        value_rect,
+        value_text,
+        font_size=ITEM_TEXT_FONT_SIZE,
+        color=ITEM_TEXT_VALUE_COLOR,
+        font_weight=FontWeight.NORMAL,
+        alignment=rl.GuiTextAlignment.TEXT_ALIGN_LEFT,
+        alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+      )
 
     # TODO: just use the generic Widget click callbacks everywhere, no returning from render
     pressed = self._pressed
@@ -163,9 +170,15 @@ class TextAction(ItemAction):
     return text_width + TEXT_PADDING
 
   def _render(self, rect: rl.Rectangle) -> bool:
-    gui_label(self._rect, self.text, font_size=ITEM_TEXT_FONT_SIZE, color=self.color,
-              font_weight=FontWeight.NORMAL, alignment=rl.GuiTextAlignment.TEXT_ALIGN_RIGHT,
-              alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE)
+    gui_label(
+      self._rect,
+      self.text,
+      font_size=ITEM_TEXT_FONT_SIZE,
+      color=self.color,
+      font_weight=FontWeight.NORMAL,
+      alignment=rl.GuiTextAlignment.TEXT_ALIGN_RIGHT,
+      alignment_vertical=rl.GuiTextAlignmentVertical.TEXT_ALIGN_MIDDLE,
+    )
     return False
 
   def set_text(self, text: str | Callable[[], str]):
@@ -173,8 +186,14 @@ class TextAction(ItemAction):
 
 
 class DualButtonAction(ItemAction):
-  def __init__(self, left_text: str | Callable[[], str], right_text: str | Callable[[], str], left_callback: Callable = None,
-               right_callback: Callable = None, enabled: bool | Callable[[], bool] = True):
+  def __init__(
+    self,
+    left_text: str | Callable[[], str],
+    right_text: str | Callable[[], str],
+    left_callback: Callable = None,
+    right_callback: Callable = None,
+    enabled: bool | Callable[[], bool] = True,
+  ):
     super().__init__(width=0, enabled=enabled)  # Width 0 means use full width
     self.left_button = Button(left_text, click_callback=left_callback, button_style=ButtonStyle.NORMAL, text_padding=0)
     self.right_button = Button(right_text, click_callback=right_callback, button_style=ButtonStyle.DANGER, text_padding=0)
@@ -269,9 +288,15 @@ class MultipleButtonAction(ItemAction):
 
 
 class ListItem(Widget):
-  def __init__(self, title: str | Callable[[], str] = "", icon: str | None = None, description: str | Callable[[], str] | None = None,
-               description_visible: bool = False, callback: Callable | None = None,
-               action_item: ItemAction | None = None):
+  def __init__(
+    self,
+    title: str | Callable[[], str] = "",
+    icon: str | None = None,
+    description: str | Callable[[], str] | None = None,
+    description_visible: bool = False,
+    callback: Callable | None = None,
+    action_item: ItemAction | None = None,
+  ):
     super().__init__()
     self._title = title
     self.set_icon(icon)
@@ -284,8 +309,7 @@ class ListItem(Widget):
     self.set_rect(rl.Rectangle(0, 0, ITEM_BASE_WIDTH, ITEM_BASE_HEIGHT))
     self._font = gui_app.font(FontWeight.NORMAL)
 
-    self._html_renderer = HtmlRenderer(text="", text_size={ElementType.P: ITEM_DESC_FONT_SIZE},
-                                       text_color=ITEM_DESC_TEXT_COLOR)
+    self._html_renderer = HtmlRenderer(text="", text_size={ElementType.P: ITEM_DESC_FONT_SIZE}, text_color=ITEM_DESC_TEXT_COLOR)
     self._parse_description(self.description)
 
     # Cached properties for performance
@@ -342,8 +366,7 @@ class ListItem(Widget):
       return
 
     # Don't draw items that are not in parent's viewport
-    if ((self._rect.y + self.rect.height) <= self._parent_rect.y or
-      self._rect.y >= (self._parent_rect.y + self._parent_rect.height)):
+    if (self._rect.y + self.rect.height) <= self._parent_rect.y or self._rect.y >= (self._parent_rect.y + self._parent_rect.height):
       return
 
     content_x = self._rect.x + ITEM_PADDING
@@ -365,12 +388,7 @@ class ListItem(Widget):
     if self.description_visible:
       content_width = int(self._rect.width - ITEM_PADDING * 2)
       description_height = self._html_renderer.get_total_height(content_width)
-      description_rect = rl.Rectangle(
-        self._rect.x + ITEM_PADDING,
-        self._rect.y + ITEM_DESC_V_OFFSET,
-        content_width,
-        description_height
-      )
+      description_rect = rl.Rectangle(self._rect.x + ITEM_PADDING, self._rect.y + ITEM_DESC_V_OFFSET, content_width, description_height)
       self._html_renderer.render(description_rect)
 
     # Draw right item if present
@@ -417,8 +435,7 @@ class ListItem(Widget):
 
     right_width = self.action_item.get_width_hint()
     if right_width == 0:  # Full width action (like DualButtonAction)
-      return rl.Rectangle(item_rect.x + ITEM_PADDING, item_rect.y,
-                          item_rect.width - (ITEM_PADDING * 2), ITEM_BASE_HEIGHT)
+      return rl.Rectangle(item_rect.x + ITEM_PADDING, item_rect.y, item_rect.width - (ITEM_PADDING * 2), ITEM_BASE_HEIGHT)
 
     # Clip width to available space, never overlapping this Item's title
     content_width = item_rect.width - (ITEM_PADDING * 2)
@@ -435,31 +452,60 @@ def simple_item(title: str | Callable[[], str], callback: Callable | None = None
   return ListItem(title=title, callback=callback)
 
 
-def toggle_item(title: str | Callable[[], str], description: str | Callable[[], str] | None = None, initial_state: bool = False,
-                callback: Callable | None = None, icon: str = "", enabled: bool | Callable[[], bool] = True) -> ListItem:
+def toggle_item(
+  title: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  initial_state: bool = False,
+  callback: Callable | None = None,
+  icon: str = "",
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItem:
   action = ToggleAction(initial_state=initial_state, enabled=enabled, callback=callback)
   return ListItem(title=title, description=description, action_item=action, icon=icon)
 
 
-def button_item(title: str | Callable[[], str], button_text: str | Callable[[], str], description: str | Callable[[], str] | None = None,
-                callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItem:
+def button_item(
+  title: str | Callable[[], str],
+  button_text: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  callback: Callable | None = None,
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItem:
   action = ButtonAction(text=button_text, enabled=enabled)
   return ListItem(title=title, description=description, action_item=action, callback=callback)
 
 
-def text_item(title: str | Callable[[], str], value: str | Callable[[], str], description: str | Callable[[], str] | None = None,
-              callback: Callable | None = None, enabled: bool | Callable[[], bool] = True) -> ListItem:
+def text_item(
+  title: str | Callable[[], str],
+  value: str | Callable[[], str],
+  description: str | Callable[[], str] | None = None,
+  callback: Callable | None = None,
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItem:
   action = TextAction(text=value, color=ITEM_TEXT_VALUE_COLOR, enabled=enabled)
   return ListItem(title=title, description=description, action_item=action, callback=callback)
 
 
-def dual_button_item(left_text: str | Callable[[], str], right_text: str | Callable[[], str], left_callback: Callable = None, right_callback: Callable = None,
-                     description: str | Callable[[], str] | None = None, enabled: bool | Callable[[], bool] = True) -> ListItem:
+def dual_button_item(
+  left_text: str | Callable[[], str],
+  right_text: str | Callable[[], str],
+  left_callback: Callable = None,
+  right_callback: Callable = None,
+  description: str | Callable[[], str] | None = None,
+  enabled: bool | Callable[[], bool] = True,
+) -> ListItem:
   action = DualButtonAction(left_text, right_text, left_callback, right_callback, enabled)
   return ListItem(title="", description=description, action_item=action)
 
 
-def multiple_button_item(title: str | Callable[[], str], description: str | Callable[[], str], buttons: list[str | Callable[[], str]], selected_index: int,
-                         button_width: int = BUTTON_WIDTH, callback: Callable = None, icon: str = ""):
+def multiple_button_item(
+  title: str | Callable[[], str],
+  description: str | Callable[[], str],
+  buttons: list[str | Callable[[], str]],
+  selected_index: int,
+  button_width: int = BUTTON_WIDTH,
+  callback: Callable = None,
+  icon: str = "",
+):
   action = MultipleButtonAction(buttons, button_width, selected_index, callback=callback)
   return ListItem(title=title, description=description, icon=icon, action_item=action)

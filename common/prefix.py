@@ -8,6 +8,7 @@ from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.hardware.hw import DEFAULT_DOWNLOAD_CACHE_ROOT
 
+
 class OpenpilotPrefix:
   def __init__(self, prefix: str = None, create_dirs_on_enter: bool = True, clean_dirs_on_exit: bool = True, shared_download_cache: bool = False):
     self.prefix = prefix if prefix else str(uuid.uuid4().hex[0:15])

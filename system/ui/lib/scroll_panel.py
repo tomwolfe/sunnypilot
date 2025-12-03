@@ -6,16 +6,16 @@ from openpilot.common.filter_simple import FirstOrderFilter
 
 # Scroll constants for smooth scrolling behavior
 MOUSE_WHEEL_SCROLL_SPEED = 50
-BOUNCE_RETURN_RATE = 5              # ~0.92 at 60fps
-MIN_VELOCITY = 2                    # px/s, changes from auto scroll to steady state
+BOUNCE_RETURN_RATE = 5  # ~0.92 at 60fps
+MIN_VELOCITY = 2  # px/s, changes from auto scroll to steady state
 MIN_VELOCITY_FOR_CLICKING = 2 * 60  # px/s, accepts clicks while auto scrolling below this velocity
-DRAG_THRESHOLD = 12                 # pixels of movement to consider it a drag, not a click
+DRAG_THRESHOLD = 12  # pixels of movement to consider it a drag, not a click
 
 DEBUG = False
 
 
 class ScrollState(IntEnum):
-  IDLE = 0              # Not dragging, content may be bouncing or scrolling with inertia
+  IDLE = 0  # Not dragging, content may be bouncing or scrolling with inertia
   DRAGGING_CONTENT = 1  # User is actively dragging the content
 
 
@@ -56,7 +56,7 @@ class GuiScrollPanel:
       if abs(self._velocity_filter_y.x) > MIN_VELOCITY:
         # Faster decay if bouncing back from out of bounds
         friction = math.exp(-BOUNCE_RETURN_RATE * 1 / gui_app.target_fps)
-        self._velocity_filter_y.x *= friction ** 2 if (above_bounds or below_bounds) else friction
+        self._velocity_filter_y.x *= friction**2 if (above_bounds or below_bounds) else friction
       else:
         self._velocity_filter_y.x = 0.0
 
