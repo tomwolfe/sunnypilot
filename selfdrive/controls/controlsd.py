@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import os
 import threading
 import time
 import numpy as np
@@ -833,6 +834,14 @@ class Controls(ControlsExt):
                     critical_situation = True
                     break
 
+        # GPU governor path - check if it exists before attempting to write
+        gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
+
+        # Check if the GPU governor file exists before attempting to write
+        if not os.path.exists(gpu_governor_path):
+            # If the file doesn't exist, we're on different hardware, skip GPU management
+            return
+
         # If in critical situation and if we have thermal headroom, temporarily boost performance
         if critical_situation and 'deviceState' in sm and sm.valid['deviceState']:
             thermal_status = sm['deviceState'].thermalStatus
@@ -842,41 +851,56 @@ class Controls(ControlsExt):
             if thermal_status <= ThermalStatus.yellow and thermal_pwr >= 80:  # Only boost if green/yellow and at least 80% thermal performance
                 # Temporarily switch GPU to performance mode for critical operations
                 # This helps reduce latency during critical driving situations
-                with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
-                    f.write("performance")
+                try:
+                    with open(gpu_governor_path, "w") as f:
+                        f.write("performance")
 
-                # Log the temporary performance boost for monitoring
-                cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. "
-                               f"Thermal: {thermal_status}, Power: {thermal_pwr}%")
+                    # Log the temporary performance boost for monitoring
+                    cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. "
+                                   f"Thermal: {thermal_status}, Power: {thermal_pwr}%")
 
-                # Set a flag to switch back to ondemand after a short period
-                if not hasattr(self, '_temp_perf_end_time'):
-                    self._temp_perf_end_time = time.monotonic() + 2.0  # Revert after 2 seconds
+                    # Set a flag to switch back to ondemand after a short period
+                    if not hasattr(self, '_temp_perf_end_time'):
+                        self._temp_perf_end_time = time.monotonic() + 2.0  # Revert after 2 seconds
+                except (OSError, IOError) as e:
+                    # If we can't write the governor file, log an error but continue
+                    cloudlog.error(f"Failed to set GPU governor to performance mode: {e}")
             else:
                 # If not in critical situation or thermal limits, make sure we're in ondemand
-                with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
-                    f.write("ondemand")
+                try:
+                    with open(gpu_governor_path, "w") as f:
+                        f.write("ondemand")
+                except (OSError, IOError) as e:
+                    cloudlog.error(f"Failed to set GPU governor to ondemand: {e}")
         else:
             # If not in critical situation, ensure we're using ondemand for thermal management
-            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
-                f.write("ondemand")
+            try:
+                with open(gpu_governor_path, "w") as f:
+                    f.write("ondemand")
+            except (OSError, IOError) as e:
+                cloudlog.error(f"Failed to set GPU governor to ondemand: {e}")
 
         # Check if we need to revert from temporary performance mode
         if hasattr(self, '_temp_perf_end_time') and time.monotonic() > self._temp_perf_end_time:
             # Revert to ondemand governor after critical situation passes
-            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
-                f.write("ondemand")
-            cloudlog.debug("Reverted GPU governor to ondemand after critical situation")
-            delattr(self, '_temp_perf_end_time')
+            try:
+                with open(gpu_governor_path, "w") as f:
+                    f.write("ondemand")
+                cloudlog.debug("Reverted GPU governor to ondemand after critical situation")
+                delattr(self, '_temp_perf_end_time')
+            except (OSError, IOError) as e:
+                cloudlog.error(f"Failed to revert GPU governor to ondemand: {e}")
     except Exception as e:
         # If we encounter an error in GPU management, continue with current operation
         cloudlog.error(f"Error in adaptive GPU management: {e}")
         # Still try to ensure ondemand governor in case of error
-        try:
-            with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:
-                f.write("ondemand")
-        except:
-            pass  # If we can't write the governor, continue anyway
+        gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
+        if os.path.exists(gpu_governor_path):
+            try:
+                with open(gpu_governor_path, "w") as f:
+                    f.write("ondemand")
+            except (OSError, IOError) as e:
+                cloudlog.error(f"Failed to set GPU governor to ondemand in error handling: {e}")
 
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
