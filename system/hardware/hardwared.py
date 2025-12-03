@@ -38,14 +38,7 @@ ThermalBand = namedtuple("ThermalBand", ['min_temp', 'max_temp'])
 HardwareState = namedtuple("HardwareState", ['network_type', 'network_info', 'network_strength', 'network_stats',
                                              'network_metered', 'modem_temps'])
 
-# List of thermal bands. We will stay within this region as long as we are within the bounds.
-# When exiting the bounds, we'll jump to the lower or higher band. Bands are ordered in the dict.
-THERMAL_BANDS = OrderedDict({
-  ThermalStatus.green: ThermalBand(None, 80.0),
-  ThermalStatus.yellow: ThermalBand(75.0, 96.0),
-  ThermalStatus.red: ThermalBand(88.0, 107.),
-  ThermalStatus.danger: ThermalBand(94.0, None),
-})
+
 
 # Override to highest thermal band when offroad and above this temp
 OFFROAD_DANGER_TEMP = 75
@@ -208,6 +201,47 @@ def hardware_thread(end_event, hw_queue) -> None:
 
   HARDWARE.initialize_hardware()
   thermal_config = HARDWARE.get_thermal_config()
+
+  # Dynamically define THERMAL_BANDS based on thermal_config.thresholds
+  dynamic_thermal_bands = OrderedDict()
+
+  # Default fallback values (similar to original hardcoded values for robustness)
+  DEFAULT_GREEN_MAX = 80.0
+  DEFAULT_YELLOW_MIN = 75.0
+  DEFAULT_YELLOW_MAX = 96.0
+  DEFAULT_RED_MIN = 88.0
+  DEFAULT_RED_MAX = 107.0
+  DEFAULT_DANGER_MIN = 94.0
+
+  if hasattr(thermal_config, 'thresholds') and thermal_config.thresholds:
+      # Use thresholds to dynamically define thermal bands.
+      # A more sophisticated mapping might be needed based on real-world testing.
+      # For now, we'll map them conceptually.
+      green_max = thermal_config.thresholds.get("som_max", DEFAULT_GREEN_MAX)
+      yellow_min = thermal_config.thresholds.get("som_max", DEFAULT_YELLOW_MIN) # Start yellow at som_max or default
+      yellow_max = thermal_config.thresholds.get("gpu_critical", DEFAULT_YELLOW_MAX)
+      red_min = thermal_config.thresholds.get("gpu_critical", DEFAULT_RED_MIN) # Start red at gpu_critical or default
+      red_max = thermal_config.thresholds.get("cpu_critical", DEFAULT_RED_MAX)
+      danger_min = thermal_config.thresholds.get("cpu_critical", DEFAULT_DANGER_MIN) # Start danger at cpu_critical or default
+
+      dynamic_thermal_bands[ThermalStatus.green] = ThermalBand(None, green_max)
+      dynamic_thermal_bands[ThermalStatus.yellow] = ThermalBand(yellow_min, yellow_max)
+      dynamic_thermal_bands[ThermalStatus.red] = ThermalBand(red_min, red_max)
+      dynamic_thermal_bands[ThermalStatus.danger] = ThermalBand(danger_min, None)
+  else:
+      cloudlog.warning("Hardware throttling thresholds not available, using default thermal bands.")
+      # Fallback to original hardcoded values if thresholds are not present
+      dynamic_thermal_bands = OrderedDict({
+        ThermalStatus.green: ThermalBand(None, DEFAULT_GREEN_MAX),
+        ThermalStatus.yellow: ThermalBand(DEFAULT_YELLOW_MIN, DEFAULT_YELLOW_MAX),
+        ThermalStatus.red: ThermalBand(DEFAULT_RED_MIN, DEFAULT_RED_MAX),
+        ThermalStatus.danger: ThermalBand(DEFAULT_DANGER_MIN, None),
+      })
+
+  THERMAL_BANDS = dynamic_thermal_bands
+
+  # Override to highest thermal band when offroad and above this temp
+  OFFROAD_DANGER_TEMP = 75
 
   fan_controller = None
 
