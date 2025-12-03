@@ -263,6 +263,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     validated_v = v.copy()
     validated_a = a.copy()
 
+    # Store original acceleration values for consistency calculations before any modifications
+    original_acceleration_values = a.copy()
+
     # Store previous validation results for consistency checking
     if not hasattr(self, '_prev_validated_x'):
         self._prev_validated_x = validated_x.copy()
@@ -345,17 +348,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
             if original_a != validated_a[i]:
                 cloudlog.warning(f"Acceleration clamped for safety: {original_a} -> {validated_a[i]}")
 
-        # Check for acceleration consistency with velocity
+        # Check for acceleration consistency with velocity - using the original acceleration before any modifications
         if i < len(validated_v) and i < len(self._prev_validated_v):
             # Calculate expected acceleration based on velocity change (assuming 0.05s between frames)
             dt = 0.05  # Approximate frame time
             velocity_based_accel = (validated_v[i] - self._prev_validated_v[i]) / dt
 
+            # Use the original acceleration values that were stored at the start of the method
+            original_acceleration_for_consistency = original_acceleration_values[i] if i < len(original_acceleration_values) else validated_a[i]
+
             # Check if the reported acceleration is consistent with the velocity change
-            if abs(validated_a[i] - velocity_based_accel) > 20.0:  # Large discrepancy
-                cloudlog.warning(f"Acceleration-velocity inconsistency detected: reported={validated_a[i]:.2f}, calculated={velocity_based_accel:.2f}")
-                # Use a weighted average of both for safety
-                validated_a[i] = 0.6 * validated_a[i] + 0.4 * velocity_based_accel
+            if abs(original_acceleration_for_consistency - velocity_based_accel) > 20.0:  # Large discrepancy using original acceleration
+                cloudlog.warning(f"Acceleration-velocity inconsistency detected: reported_original={original_acceleration_for_consistency:.2f}, calculated={velocity_based_accel:.2f}")
+                # Use a weighted average of both for safety, but be careful about the logic
+                # Use original acceleration value in the weighted average calculation
+                validated_a[i] = 0.6 * original_acceleration_for_consistency + 0.4 * velocity_based_accel
                 validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # Ensure bounds after adjustment
 
         # Enhanced validation: Check for sustained extreme acceleration that is physically unlikely
@@ -427,7 +434,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # 3. Track age and consistency - longer tracked objects are more reliable
       # Enhanced track age calculation with better logic
       track_age_factor = 1.0
-      if hasattr(lead_radar, 'aLeadTau') and lead_radar.aLeadTau > 0:
+      if hasattr(lead_radar, 'aLeadTau') and lead_radar.aLeadTau is not None and isinstance(lead_radar.aLeadTau, (int, float)) and lead_radar.aLeadTau > 0:
         # aLeadTau appears to represent the time constant associated with lead acceleration
         # Lower values indicate more recent, stable tracking
         track_age_factor = max(0.1, min(1.0, 2.0 / max(0.1, lead_radar.aLeadTau)))
@@ -435,23 +442,24 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # 4. Track stability based on available parameters
       track_stability_factor = 1.0
-      if hasattr(lead_radar, 'age') and lead_radar.age > 0:
+      if hasattr(lead_radar, 'age') and lead_radar.age is not None and isinstance(lead_radar.age, (int, float)) and lead_radar.age > 0:
         # Older, stable tracks are more reliable than new ones
         track_stability_factor = min(1.0, lead_radar.age / 10.0)  # Stabilizes after 10 cycles
         reliability *= (0.7 + 0.3 * track_stability_factor)
-      elif hasattr(lead_radar, 'newLead') and not lead_radar.newLead:
+      elif hasattr(lead_radar, 'newLead') and lead_radar.newLead is not None and isinstance(lead_radar.newLead, (bool, int, float)) and not lead_radar.newLead:
         # If this is not a new lead (has been tracked before), increase reliability
         reliability *= 1.1  # Slight boost for established tracks
 
       # 5. Enhanced consistency check: Very high relative velocities might indicate unreliable measurements
       velocity_factor = 1.0
-      if abs(lead_radar.vRel) > 50:  # If relative velocity is extremely high, reduce reliability
+      if hasattr(lead_radar, 'vRel') and lead_radar.vRel is not None and isinstance(lead_radar.vRel, (int, float)) and abs(lead_radar.vRel) > 50:  # If relative velocity is extremely high, reduce reliability
         velocity_factor = 0.1  # Significant reduction for potentially erroneous high-velocity measurements
         reliability *= velocity_factor
 
       # 6. Enhanced distance-rate consistency check
       consistency_factor = 1.0
-      if hasattr(lead_radar, 'dRel') and hasattr(lead_radar, 'vRel'):
+      if (hasattr(lead_radar, 'dRel') and lead_radar.dRel is not None and isinstance(lead_radar.dRel, (int, float)) and
+          hasattr(lead_radar, 'vRel') and lead_radar.vRel is not None and isinstance(lead_radar.vRel, (int, float))):
         # Check if the relationship between distance and velocity is physically plausible
         # Calculate if the current velocity would result in collision in an unreasonably short time
         time_to_collision = lead_radar.dRel / max(abs(lead_radar.vRel), 0.1) if lead_radar.vRel < 0 else float('inf')
@@ -464,18 +472,20 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
       # 7. Additional validation: Check if relative acceleration is physically plausible
       acceleration_factor = 1.0
-      if hasattr(lead_radar, 'aLeadK') and abs(lead_radar.aLeadK) > 15.0:  # Acceleration > 15 m/s² is unlikely
+      if hasattr(lead_radar, 'aLeadK') and lead_radar.aLeadK is not None and isinstance(lead_radar.aLeadK, (int, float)) and abs(lead_radar.aLeadK) > 15.0:  # Acceleration > 15 m/s² is unlikely
         acceleration_factor = 0.2
         reliability *= acceleration_factor
 
       # 8. Angle validation: Check for Doppler angle ambiguity issues
       angle_factor = 1.0
-      if hasattr(lead_radar, 'yRel') and hasattr(lead_radar, 'dRel'):
+      if (hasattr(lead_radar, 'yRel') and lead_radar.yRel is not None and isinstance(lead_radar.yRel, (int, float)) and
+          hasattr(lead_radar, 'dRel') and lead_radar.dRel is not None and isinstance(lead_radar.dRel, (int, float))):
         # Calculate relative angle - if angle is too wide, reduce reliability
-        relative_angle = math.atan2(lead_radar.yRel, lead_radar.dRel) if lead_radar.dRel > 0 else 0
-        if abs(relative_angle) > math.radians(45):  # Beyond 45 degrees, reduce reliability
-          angle_factor = max(0.1, 1.0 - (abs(relative_angle) - math.radians(45)) / math.radians(45))
-          reliability *= angle_factor
+        if lead_radar.dRel > 0:  # Only calculate if dRel is positive to avoid division issues
+          relative_angle = math.atan2(lead_radar.yRel, lead_radar.dRel)
+          if abs(relative_angle) > math.radians(45):  # Beyond 45 degrees, reduce reliability
+            angle_factor = max(0.1, 1.0 - (abs(relative_angle) - math.radians(45)) / math.radians(45))
+            reliability *= angle_factor
 
       # 9. Apply safety floor to ensure some minimum reliability for valid leads
       reliability = max(0.1, min(1.0, reliability))  # Ensure 0.1 <= reliability <= 1.0
