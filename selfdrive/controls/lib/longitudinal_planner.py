@@ -167,6 +167,135 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # Use enhanced fused data instead of raw model data
     self.mpc.update(sm['radarState'], v_cruise, enhanced_x, enhanced_v, enhanced_a, j, personality=sm['selfdriveState'].personality)
 
+    self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
+    self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
+    self.j_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC[:-1], self.mpc.j_solution)
+
+    # Enhanced forward collision warning with multiple indicators
+    # Use multiple thresholds based on speed and distance
+    lead_one = sm['radarState'].leadOne
+    v_ego = sm['carState'].vEgo
+    a_ego = sm['carState'].aEgo
+
+    # Calculate time to collision based on current trajectories
+
+    time_to_collision = float('inf')
+
+    distance_to_collision = float('inf')
+
+    relative_speed = 0.0
+    if lead_one.status and lead_one.dRel > 0:
+      relative_speed = v_ego - lead_one.vRel  # vRel is negative when approaching
+      if relative_speed > 0:  # Approaching lead vehicle
+        time_to_collision = lead_one.dRel / relative_speed
+        distance_to_collision = lead_one.dRel
+      elif lead_one.vRel > 0:  # Lead vehicle accelerating away
+        # Calculate when we'd catch up if they maintain speed
+        # Use a more noise-resistant approach by applying filtering to acceleration values
+        relative_accel = a_ego - lead_one.aLeadK
+
+        # Apply noise filtering to relative acceleration to prevent false triggers
+        # Check if acceleration values are reliable before using them
+        acceleration_reliable = abs(relative_accel) > 0.5  # Only use if acceleration difference is significant
+        relative_accel_filtered = relative_accel if acceleration_reliable else 0.0
+
+        if relative_accel_filtered > 0.1 and relative_speed > 0.5:  # Only calculate if conditions are stable
+          # Apply a safety check to prevent unrealistic calculations from noisy data
+          # Limit time to collision to a reasonable range to prevent spikes
+          raw_time_to_collision = relative_speed / relative_accel_filtered
+          # Cap the calculated time to prevent extreme values from noise
+          time_to_collision = min(raw_time_to_collision, 5.0)  # Cap at 5 seconds to prevent noise-induced false positives
+
+    # Enhanced FCW logic with speed-adaptive thresholds
+    mpc_crash_warning = self.mpc.crash_cnt > 2
+
+    # Dynamic thresholds based on speed and driving context
+    if v_ego < 5:  # Very low speeds (stationary or slow moving)
+      emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
+      distance_threshold = 8  # meters
+    elif v_ego < 15:  # City speeds (~54 km/h)
+      emergency_brake_threshold = 2.0
+      distance_threshold = 15  # meters
+    elif v_ego < 25:  # Highway speeds (~54-90 km/h)
+      emergency_brake_threshold = 2.5
+      distance_threshold = 30  # meters
+    else:  # High speeds (>90 km/h)
+      emergency_brake_threshold = 2.8
+      distance_threshold = 45  # meters
+
+    # Enhanced FCW logic - trigger based on multiple criteria
+    # 1. Time to collision with immediate braking requirement
+    imminent_collision = time_to_collision < emergency_brake_threshold and relative_speed > 0.5
+
+    # 2. Distance-based warning for low-speed situations where time-based may not work well
+    distance_collision = distance_to_collision < distance_threshold and relative_speed > 0.5 and v_ego < 10
+
+    # 3. Lead vehicle emergency braking detection
+    lead_braking_emergency = lead_one.aLeadK - a_ego > 2.5 and lead_one.dRel < 40 and v_ego > 5
+
+    # 4. Combined MPC and sensor-based warnings
+    mpc_and_sensors_warning = mpc_crash_warning and not sm['carState'].standstill and relative_speed > 1.0
+
+    # 5. Enhanced model-based prediction with additional safety checks
+    model_fcw = (
+      sm['modelV2'].meta.hardBrakePredicted
+      and not sm['carState'].brakePressed
+      and v_ego > 3
+      and distance_to_collision < 50  # Only if close enough to be relevant
+      and sm['carState'].aEgo < -1.25
+    )  # Re-added safeguard: prevent FCW during strong acceleration (original value)
+
+    # 6. Additional safety criterion: Predictive collision assessment using multiple lead vehicles
+    extended_collision_risk = False
+    if (
+      sm['radarState'].leadTwo.status
+      and lead_one.dRel < 60.0
+      and sm['radarState'].leadTwo.dRel < lead_one.dRel + 20.0  # Second lead is close behind first
+      and sm['radarState'].leadTwo.vRel < -2.0
+    ):  # Second lead is approaching rapidly
+      extended_collision_risk = True
+
+    # Combine all FCW triggers
+    self.fcw = (
+      imminent_collision or distance_collision or lead_braking_emergency or mpc_and_sensors_warning or (model_fcw and v_ego > 5) or extended_collision_risk
+    )
+
+    # Additional safety logic: consider relative acceleration
+    # NOTE: This trigger is potentially aggressive and may cause false positives during lane changes or merging.
+    # Extensive real-world testing is required before deployment in production systems.
+    # Disabling this for now based on critical review.
+    # if lead_one.status and lead_one.dRel < 50:  # Only consider when close to lead vehicle
+    #   relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
+    #   if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
+    #     self.fcw = True
+
+    if self.fcw:
+      cloudlog.warning(f"FCW triggered: TTC={time_to_collision:.2f}s, distance={distance_to_collision:.1f}m, rel_speed={relative_speed:.2f}m/s")
+
+    # Interpolate 0.05 seconds and save as starting point for next iteration
+    a_prev = self.a_desired
+    self.a_desired = float(np.interp(self.dt, CONTROL_N_T_IDX, self.a_desired_trajectory))
+    self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.a_desired + a_prev) / 2.0
+
+    action_t = self.CP.longitudinalActuatorDelay + DT_MDL
+    output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(
+      self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX, action_t=action_t, vEgoStopping=self.CP.vEgoStopping
+    )
+    output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
+    output_should_stop_e2e = sm['modelV2'].action.shouldStop
+
+    if mode == 'acc' or not self.mlsim:
+      output_a_target = output_a_target_mpc
+      self.output_should_stop = output_should_stop_mpc
+    else:
+      output_a_target = min(output_a_target_mpc, output_a_target_e2e)
+      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+
+    for idx in range(2):
+      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
+    self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
+    self.prev_accel_clip = accel_clip
+
   def _fuse_radar_camera_data(self, sm, model_x, model_v, model_a):
     """
     Enhanced radar-camera fusion to improve lead vehicle detection and tracking.
