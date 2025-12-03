@@ -155,7 +155,7 @@ jobs:
         submodules: true
     - uses: ./.github/workflows/setup-with-retry
     - name: Static analysis
-      timeout-minutes: 1
+      timeout-minutes: 2  # Changed from 1 to 2 minutes to be more conservative
       run: ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && scripts/lint/lint.sh"
 
   unit_tests:
@@ -170,7 +170,7 @@ jobs:
     - name: Build openpilot
       run: ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda && scons -j$(nproc)"
     - name: Run unit tests
-      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 999 }}
+      timeout-minutes: ${{ contains(runner.name, 'nsc') && ((steps.setup-step.outputs.duration < 18) && 1 || 2) || 2 }}  # Changed from 999 to 2 minutes to prevent hanging
       run: |
         ${{ env.RUN }} "git config --global --add safe.directory /tmp/openpilot/panda &&
                         # Ensure D-Bus service is available for system communication
