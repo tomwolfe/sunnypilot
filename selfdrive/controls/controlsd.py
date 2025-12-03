@@ -11,7 +11,7 @@ WEATHER_THRESHOLD_TEMP_FREEZING = 2.0  # Temperature (in Celsius) below which sn
 WEATHER_THRESHOLD_TEMP_RAIN = 4.0     # Temperature (in Celsius) above which rain is more likely
 CURVY_ROAD_CURVATURE_THRESHOLD = 0.0005 # Curvature threshold for detecting curvy roads
 TRAFFIC_DISTANCE_THRESHOLD = 50.0       # Distance (in meters) to consider lead vehicles as "close"
-SYSTEM_LOAD_THRESHOLD = 0.8             # System load factor above which vision model may be skipped
+
 SCENE_COMPLEXITY_RELATIVE_CHANGE = 0.15 # Relative change in scene complexity to trigger model run
 SCENE_COMPLEXITY_ABSOLUTE_CHANGE = 30   # Absolute change in scene complexity to trigger model run
 
@@ -839,7 +839,7 @@ class Controls(ControlsExt):
             thermal_pwr = sm['deviceState'].thermalPerc
 
             # Only boost if we're not already in thermal danger
-            if thermal_status < 2 and thermal_pwr < 70:  # Not in red/yellow thermal state and under 70% thermal
+            if thermal_status <= ThermalStatus.yellow and thermal_pwr >= 80:  # Only boost if green/yellow and at least 80% thermal performance
                 # Temporarily switch GPU to performance mode for critical operations
                 # This helps reduce latency during critical driving situations
                 with open("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w") as f:

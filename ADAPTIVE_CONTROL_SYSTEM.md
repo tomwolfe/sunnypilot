@@ -15,15 +15,15 @@ This system implements advanced adaptive control features for the openpilot cont
 - Combines radar measurements with vision model outputs for improved accuracy
 - Includes reliability scoring and validation of fused data
 
-### 3. Vision Model Optimization
-- Intelligently skips vision model execution based on system load and scene complexity
-- Maintains temporal consistency when using cached outputs
-- Critical situation detection prevents skipping when safety is required
+### 3. Vision Model Execution
+- The vision model now *always runs* to prioritize safety and eliminate unreliable skipping logic.
+- Previous optimizations based on system load and scene complexity were removed due to safety concerns and unreliability.
+- This ensures continuous, real-time perception for critical driving functions.
 
 ### 4. Hardware Thermal Management
-- Optimized thermal thresholds for Snapdragon 845 SoC
-- Dynamic GPU/memory governor configuration
-- Custom throttling parameters
+- Thermal bands for system components are *dynamically configured* based on hardware-specific throttling thresholds (e.g., for Snapdragon 845 SoC).
+- Dynamic GPU/memory governor configuration, including adaptive switching between 'ondemand' and 'performance' based on thermal state and critical driving situations.
+- Custom throttling parameters are now used to define the dynamic thermal bands.
 
 ## Safety Measures and Risk Mitigation
 
