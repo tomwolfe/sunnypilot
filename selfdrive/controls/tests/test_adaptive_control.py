@@ -9,7 +9,7 @@ Tests the new enhancements to openpilot control system including:
 """
 
 import numpy as np
-from unittest.mock import Mock
+from unittest.mock import Mock  # noqa: TID251
 
 
 def test_weather_detection_with_wipers():

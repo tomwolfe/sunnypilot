@@ -4,7 +4,7 @@ Comprehensive tests for the improvements made to the adaptive control system.
 Tests the fixes for all issues identified in the critical review.
 """
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock  # noqa: TID251
 import time
 import math
 
