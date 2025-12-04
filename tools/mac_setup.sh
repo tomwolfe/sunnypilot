@@ -52,7 +52,9 @@ brew "libusb"
 brew "libtool"
 brew "llvm"
 brew "openssl@3.0"
+brew "pkg-config"
 brew "qt@5"
+brew "raylib"
 brew "zeromq"
 # gcc-arm-embedded is already installed separately above
 brew "portaudio"
@@ -74,6 +76,11 @@ export LDFLAGS="$LDFLAGS -L${BREW_PREFIX}/opt/openssl@3/lib"
 export CPPFLAGS="$CPPFLAGS -I${BREW_PREFIX}/opt/openssl@3/include"
 export PYCURL_CURL_CONFIG=/usr/bin/curl-config
 export PYCURL_SSL_LIBRARY=openssl
+
+# raylib dependencies
+export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:${BREW_PREFIX}/opt/raylib/lib/pkgconfig"
+export LDFLAGS="$LDFLAGS -L${BREW_PREFIX}/opt/raylib/lib"
+export CPPFLAGS="$CPPFLAGS -I${BREW_PREFIX}/opt/raylib/include"
 
 # install python dependencies
 $DIR/install_python_dependencies.sh
