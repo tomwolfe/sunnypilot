@@ -1159,7 +1159,7 @@ class Controls(ControlsExt):
           thermal_state = 1.0 # Max thermal state for safety
 
         # Get adaptive gains based on thermal state and vehicle speed
-        adaptive_gains = self.gain_scheduler.get_adaptive_gains(self.sm['carState'].vEgo, thermal_state)
+        self.gain_scheduler.get_adaptive_gains(self.sm['carState'].vEgo, thermal_state)
 
         # Adaptive control rate based on thermal stress
         # Calculate rates based on thermal stress (0.0 = no stress, 1.0 = maximum stress)
@@ -1228,7 +1228,6 @@ class Controls(ControlsExt):
           self.sm.update(15)
 
         # Monitor timing with thermal awareness and add thermal performance adjustments
-        timing_start = time.monotonic()
         rk.monitor_time()
 
     finally:
