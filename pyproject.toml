@@ -136,6 +136,33 @@ Homepage = "https://github.com/commaai/openpilot"
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+# Configure package discovery to avoid multi-package discovery issue
+# Use find directive to explicitly include only the packages we want
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["openpilot*", "sunnypilot*", "selfdrive*", "common*", "system*", "cereal*", "tools*", "scripts*"]
+exclude = [
+    # Repository directories that should not be installed as packages
+    "panda*",
+    "opendbc*",
+    "rednose*",
+    "tinygrad*",
+    "teleoprtc*",
+    "msgq*",
+    "opendbc_repo*",
+    "rednose_repo*",
+    "tinygrad_repo*",
+    "teleoprtc_repo*",
+    "msgq_repo*",
+    "third_party*",
+    "release*",
+    "tests*",
+    # Also exclude other directories that may be present
+    "build*",
+    "site_scons*",
+]
+
 
 [tool.pytest.ini_options]
 minversion = "6.0"
