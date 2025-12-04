@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import av
 import os
 import sys
 import argparse
@@ -7,10 +6,15 @@ import numpy as np
 import multiprocessing
 import time
 import signal
+import platform
 
 
 import cereal.messaging as messaging
 from msgq.visionipc import VisionIpcServer, VisionStreamType
+
+# Import av library conditionally since it's not available on macOS
+if platform.system() != "Darwin":
+  import av
 
 V4L2_BUF_FLAG_KEYFRAME = 8
 
@@ -41,6 +45,9 @@ def decoder(addr, vipc_server, vst, nvidia, W, H, debug=False):
     nvDwn_yuv = nvc.PySurfaceDownloader(W, H, nvc.PixelFormat.YUV420, 0)
     img_yuv = np.ndarray((H * W // 2 * 3), dtype=np.uint8)
   else:
+    # Only create av codec if av is available (not on macOS)
+    if platform.system() == "Darwin":
+      raise NotImplementedError("Compressed video streaming not supported on macOS due to av library incompatibility")
     codec = av.CodecContext.create("hevc", "r")
 
   os.environ["ZMQ"] = "1"
@@ -72,7 +79,8 @@ def decoder(addr, vipc_server, vst, nvidia, W, H, debug=False):
         if nvidia:
           nvDec.DecodeSurfaceFromPacket(np.frombuffer(evta.header, dtype=np.uint8))
         else:
-          codec.decode(av.packet.Packet(evta.header))
+          if platform.system() != "Darwin":
+            codec.decode(av.packet.Packet(evta.header))
         seen_iframe = True
 
       if nvidia:
@@ -84,6 +92,8 @@ def decoder(addr, vipc_server, vst, nvidia, W, H, debug=False):
         convSurface = conv_yuv.Execute(rawSurface, cc1)
         nvDwn_yuv.DownloadSingleSurface(convSurface, img_yuv)
       else:
+        if platform.system() == "Darwin":
+          raise NotImplementedError("Compressed video streaming not supported on macOS due to av library incompatibility")
         frames = codec.decode(av.packet.Packet(evta.data))
         if len(frames) == 0:
           if debug:

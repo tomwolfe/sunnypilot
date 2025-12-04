@@ -1,9 +1,18 @@
-import av
 import cv2 as cv
+import platform
+
+
+# Import av library conditionally since it's not available on macOS
+if platform.system() != "Darwin":
+  import av
 
 
 class Camera:
   def __init__(self, cam_type_state, stream_type, camera_id):
+    # Check if av is available (not on macOS)
+    if platform.system() == "Darwin":
+      raise NotImplementedError("Webcam streaming not supported on macOS due to av library incompatibility")
+
     try:
       camera_id = int(camera_id)
     except ValueError:  # allow strings, ex: /dev/video0
@@ -25,6 +34,9 @@ class Camera:
 
   @classmethod
   def bgr2nv12(self, bgr):
+    # Only use av if available (not on macOS)
+    if platform.system() == "Darwin":
+      raise NotImplementedError("Webcam streaming not supported on macOS due to av library incompatibility")
     frame = av.VideoFrame.from_ndarray(bgr, format='bgr24')
     return frame.reformat(format='nv12').to_ndarray()
 

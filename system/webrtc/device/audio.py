@@ -1,10 +1,14 @@
 import asyncio
 import io
+import platform
 
 import aiortc
-import av
 import numpy as np
 import pyaudio
+
+# Import av library conditionally since it's not available on macOS
+if platform.system() != "Darwin":
+  import av
 
 
 class AudioInputStreamTrack(aiortc.mediastreams.AudioStreamTrack):
@@ -19,6 +23,10 @@ class AudioInputStreamTrack(aiortc.mediastreams.AudioStreamTrack):
   def __init__(self, audio_format: int = pyaudio.paInt16, rate: int = 16000, channels: int = 1, packet_time: float = 0.020, device_index: int = None):
     super().__init__()
 
+    # Check if av is available (not on macOS)
+    if platform.system() == "Darwin":
+      raise NotImplementedError("Audio streaming not supported on macOS due to av library incompatibility")
+
     self.p = pyaudio.PyAudio()
     chunk_size = int(packet_time * rate)
     self.stream = self.p.open(format=audio_format, channels=channels, rate=rate, frames_per_buffer=chunk_size, input=True, input_device_index=device_index)
@@ -30,6 +38,10 @@ class AudioInputStreamTrack(aiortc.mediastreams.AudioStreamTrack):
     self.pts = 0
 
   async def recv(self):
+    # Check if av is available (not on macOS)
+    if platform.system() == "Darwin":
+      raise NotImplementedError("Audio streaming not supported on macOS due to av library incompatibility")
+
     mic_data = self.stream.read(self.chunk_size)
     mic_array = np.frombuffer(mic_data, dtype=np.int16)
     mic_array = np.expand_dims(mic_array, axis=0)
