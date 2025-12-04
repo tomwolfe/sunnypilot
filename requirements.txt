@@ -1,6 +1,6 @@
 aiohttp
 aiortc
-av
+av; platform_system != 'Darwin'
 azure-identity
 azure-storage-blob
 casadi >=3.6.6
@@ -37,7 +37,7 @@ pycapnp==2.1.0
 pycryptodome
 pygame
 PyJWT
-pyopencl; platform_machine != 'aarch64'
+pyopencl; platform_machine != 'aarch64' and platform_system != 'Darwin'
 pyopenssl < 24.3.0
 pyprof2calltree
 pyserial

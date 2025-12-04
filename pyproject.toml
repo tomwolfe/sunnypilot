@@ -104,7 +104,7 @@ testing = [
 ]
 
 dev = [
-  "av",
+  "av; platform_system != 'Darwin'", # broken on macOS due to ffmpeg incompatibility
   "azure-identity",
   "azure-storage-blob",
   "dbus-next", # TODO: remove once we moved everything to jeepney
@@ -115,7 +115,7 @@ dev = [
   "parameterized >=0.8, <0.9",
   "pyautogui",
   "pygame",
-  "pyopencl; platform_machine != 'aarch64'", # broken on arm64
+  "pyopencl; platform_machine != 'aarch64' and platform_system != 'Darwin'", # broken on arm64 and macOS
   "pytools < 2024.1.11; platform_machine != 'aarch64'", # pyopencl use a broken version
   "pywinctl",
   "pyprof2calltree",
