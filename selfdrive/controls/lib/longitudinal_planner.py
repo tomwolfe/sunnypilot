@@ -317,7 +317,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       radar_state = sm['radarState']
       model_v2 = sm['modelV2']
 
-      # Apply lightweight fusion focusing on the most critical lead
+      # Apply computationally efficient fusion by prioritizing the most critical lead vehicle
+      # This approach uses simple weighted averaging based on sensor reliability rather than
+      # complex multi-sensor data association algorithms, reducing computational overhead
       enhanced_x = model_x.copy()
       enhanced_v = model_v.copy()
       enhanced_a = model_a.copy()
@@ -438,8 +440,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           cloudlog.warning(f"Physically inconsistent lead behavior detected: d={validated_x[i]:.1f}, v={validated_v[i]:.1f}, a={validated_a[i]:.1f}")
           # Reduce acceleration to more conservative value
           validated_a[i] = min(validated_a[i], 3.0)
-        # Additionally, ensure the value is still within bounds after smoothing
+        # Additionally, ensure the values are still within bounds after smoothing
         validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
+        validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)
+        validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)
 
     for i in range(len(validated_v)):
       # Validate velocity (realistic relative velocities for lead vehicles)

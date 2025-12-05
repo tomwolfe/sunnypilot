@@ -16,6 +16,50 @@ class AdaptiveGainsController:
   def __init__(self):
     self._prev_adaptive_gains = None
 
+  def _validate_context_dict(self, context: dict[str, Any]) -> dict[str, Any]:
+    """
+    Validate the context dictionary to ensure expected keys exist and are of proper types.
+
+    Args:
+        context: Driving context information dictionary
+
+    Returns:
+        dict: A validated context dictionary with proper defaults for missing keys
+    """
+    validated_context = {}
+
+    # Validate 'is_curvy_road' key
+    is_curvy_road = context.get('is_curvy_road', False)
+    validated_context['is_curvy_road'] = bool(is_curvy_road) if is_curvy_road is not None else False
+
+    # Validate 'traffic_density' key
+    traffic_density = context.get('traffic_density', 'low')
+    if not isinstance(traffic_density, str):
+      traffic_density = str(traffic_density)
+    # Only allow expected values, default to 'low' if unexpected
+    if traffic_density not in ['low', 'medium', 'high']:
+      traffic_density = 'low'
+    validated_context['traffic_density'] = traffic_density
+
+    # Validate 'weather_condition' key
+    weather_condition = context.get('weather_condition', 'normal')
+    if not isinstance(weather_condition, str):
+      weather_condition = str(weather_condition)
+    # Only allow expected values, default to 'normal' if unexpected
+    if weather_condition not in ['normal', 'rain', 'snow', 'fog', 'wind']:
+      weather_condition = 'normal'
+    validated_context['weather_condition'] = weather_condition
+
+    # Log validation warnings for any missing or invalid keys
+    if 'is_curvy_road' not in context:
+      cloudlog.warning("Context key 'is_curvy_road' missing, using default: False")
+    if 'traffic_density' not in context:
+      cloudlog.warning("Context key 'traffic_density' missing, using default: 'low'")
+    if 'weather_condition' not in context:
+      cloudlog.warning("Context key 'weather_condition' missing, using default: 'normal'")
+
+    return validated_context
+
   def calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: dict[str, Any]) -> dict[str, Any]:
     """
     Calculate adaptive gains based on vehicle speed, thermal state and driving context.
@@ -51,22 +95,25 @@ class AdaptiveGainsController:
     # Reduce gains by up to 20% when thermal stress is at maximum (thermal_state = 1.0) to reduce computational load
     thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
 
+    # Validate the context dictionary to ensure required keys exist
+    validated_context = self._validate_context_dict(context)
+
     # Context-based adjustments - simplified
     context_adjustment = 1.0
 
     # Reduce gains on curvy roads for smoother steering
     # Factor 0.85 justification: Reduce gains by 15% to provide smoother, more conservative steering on curvy roads
-    if context.get('is_curvy_road', False):
+    if validated_context.get('is_curvy_road', False):
       context_adjustment *= 0.85
 
     # Increase caution in high traffic
     # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
-    if context.get('traffic_density', 'low') == 'high':
+    if validated_context.get('traffic_density', 'low') == 'high':
       context_adjustment *= 0.9
 
     # Reduce gains in poor weather (if we can detect it)
     # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
-    if context.get('weather_condition', 'normal') != 'normal':
+    if validated_context.get('weather_condition', 'normal') != 'normal':
       context_adjustment *= 0.9
 
     # Apply combined adjustments
@@ -77,8 +124,8 @@ class AdaptiveGainsController:
       f"Adaptive gains calculation: v_ego={v_ego:.2f}, thermal={thermal_state:.2f}, "
       + f"speed_factor={speed_factor:.3f}, thermal_adj={thermal_adjustment:.3f}, "
       + f"context_adj={context_adjustment:.3f}, combined_adj={combined_adjustment:.3f}, "
-      + f"curvy_road={context.get('is_curvy_road', False)}, traffic={context.get('traffic_density', 'low')}, "
-      + f"weather={context.get('weather_condition', 'normal')}"
+      + f"curvy_road={validated_context.get('is_curvy_road', False)}, traffic={validated_context.get('traffic_density', 'low')}, "
+      + f"weather={validated_context.get('weather_condition', 'normal')}"
     )
 
     # Apply adjustments to base gains
