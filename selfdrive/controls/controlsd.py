@@ -787,70 +787,35 @@ class Controls(ControlsExt):
         # Get adaptive gains based on thermal state and vehicle speed
         self.gain_scheduler.get_adaptive_gains(self.sm['carState'].vEgo, thermal_state)
 
-        # Adaptive control rate based on thermal stress
-        # Calculate rates based on thermal stress (0.0 = no stress, 1.0 = maximum stress)
-        stress_factor = thermal_state  # Using actual thermal state instead of performance_compensation_factor
+        # Optimized thermal-aware control rate
+        # Calculate simpler thermal-based throttling with reduced computation
+        stress_factor = thermal_state
 
-        # Define base rate and minimum rates
+        # Simplified control rate calculation
         base_rate = 100  # 100Hz base rate
-        min_critical_rate = 50  # Minimum rate for critical functions
-        min_standard_rate = 10  # Minimum rate for standard functions
+        current_rate = max(20, base_rate * (1.0 - stress_factor * 0.7))  # More responsive throttling
 
-        # Calculate adaptive rates based on thermal stress
-        # Critical functions: reduce less aggressively
-        critical_factor = max(0.5, 1.0 - stress_factor * 0.3)  # Less reduction for critical functions
-        critical_rate = max(min_critical_rate, base_rate * critical_factor)
+        # More efficient frame processing based on thermal state
+        if not hasattr(self, 'thermal_frame_counter'):
+          self.thermal_frame_counter = 0
 
-        # Standard functions: reduce more aggressively
-        standard_factor = max(0.1, 1.0 - stress_factor * 0.9)  # More reduction for standard functions
-        standard_rate = max(min_standard_rate, base_rate * standard_factor)
+        self.thermal_frame_counter += 1
+        frame_process_threshold = max(1, base_rate / current_rate)  # Calculate how often to process
 
-        # Calculate current rate based on thermal state (interpolate between standard and critical rates)
-        current_rate = base_rate * (1.0 - stress_factor * 0.5)  # Moderate throttling
+        # Process control cycle based on thermal-adjusted rate
+        if self.thermal_frame_counter >= frame_process_threshold:
+          self.thermal_frame_counter = 0  # Reset counter
 
-        # Frame skipping counter for thermal throttling
-        if not hasattr(self, 'thermal_adjusted_frame'):
-          self.thermal_adjusted_frame = 0
-
-        # Process every frame when at full rate, every other frame when at reduced rate
-        frame_skip_threshold = base_rate / max(current_rate, 1)  # Prevent division by zero
-        self.thermal_adjusted_frame += 1
-
-        # Only perform full control cycle if we're not skipping this frame due to thermal constraints
-        if self.thermal_adjusted_frame >= frame_skip_threshold:
-          self.thermal_adjusted_frame = 0  # Reset counter
-
-          # Update message subscriptions based on priority during thermal stress
-          # Critical functions get higher priority update rates
-          if thermal_state > 0.5:  # Under thermal stress (0.5 is medium stress threshold)
-            # Update critical functions at higher rate
-            self.sm.update(100)  # Always update critical messages at high rate
-
-            # Perform thermal-aware control operations
-            # In this context, we use the normal control cycle but with thermal-aware adaptive gains
-            self.update()
-            CC, lac_log = self.state_control()  # Using the state_control method with thermal awareness
-          else:
-            # Normal operation
-            self.update()
-            CC, lac_log = self.state_control()
+          # Normal control execution
+          self.update()
+          CC, lac_log = self.state_control()
 
           self.publish(CC, lac_log)
           self.get_params_sp(self.sm)
           self.run_ext(self.sm, self.pm)
-
-          # Enhanced thermal monitoring and logging with stress level information
-          if thermal_state > 0.1:  # Only log if there's some thermal stress
-            cloudlog.debug(
-                f"Thermal throttling active: thermal_state={thermal_state:.2f}, " +
-                f"rate={current_rate:.1f}Hz, " +
-                f"critical_rate={critical_rate:.1f}Hz, standard_rate={standard_rate:.1f}Hz"
-            )
         else:
-          # Still update the message subsystem regularly to maintain message flow
-          # This 15Hz update rate is chosen to ensure critical communication (e.g., carState, radarState)
-          # is maintained even when the main control loop is thermally throttled and frames are skipped,
-          # without adding significant computational load during these skipped cycles.
+          # Update message subsystem regularly to maintain message flow
+          # Use lower rate during thermal throttling to reduce CPU load
           self.sm.update(15)
 
         # Monitor timing with thermal awareness and add thermal performance adjustments
