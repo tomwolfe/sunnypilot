@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Unit tests for Adaptive Gains Controller.
 
@@ -6,15 +5,14 @@ This module tests the safety and robustness improvements made to the adaptive ga
 including handling of missing context keys and boundary conditions.
 """
 
-import unittest
 import numpy as np
-from selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
+from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
 
 
-class TestAdaptiveGainsController(unittest.TestCase):
+class TestAdaptiveGainsController:
     """Test suite for the AdaptiveGainsController class."""
 
-    def setUp(self):
+    def setup_method(self):
         """Set up test fixtures before each test method."""
         self.controller = AdaptiveGainsController()
 
@@ -49,7 +47,7 @@ class TestAdaptiveGainsController(unittest.TestCase):
         expected_lateral_steer_kp = expected_base_gains['lateral']['steer_kp'] * combined_adjustment
         expected_lateral_steer_ki = expected_base_gains['lateral']['steer_ki'] * combined_adjustment
         expected_lateral_steer_kd = expected_base_gains['lateral']['steer_kd'] * combined_adjustment
-        
+
         expected_long_accel_kp = expected_base_gains['longitudinal']['accel_kp'] * combined_adjustment
         expected_long_accel_ki = expected_base_gains['longitudinal']['accel_ki'] * combined_adjustment
 
@@ -216,35 +214,34 @@ class TestAdaptiveGainsController(unittest.TestCase):
         self.assertGreater(gains_low_speed['longitudinal']['accel_kp'], gains_high_speed['longitudinal']['accel_kp'])
 
 
-class TestLongitudinalPlannerValidation(unittest.TestCase):
+class TestLongitudinalPlannerValidation:
     """Test validation functions in longitudinal planner."""
-    
+
     def test_np_clip_bounds_validation(self):
         """Test that np.clip is properly applied to sensor data."""
         # This test would be implemented in the longitudinal planner test file
         # For now, we verify that the logic is correctly implemented
-        import numpy as np
-        
+
         # Simulate the validation logic that was added
         validated_x = np.array([300.0, -5.0, 50.0])  # One value too high, one too low
         validated_v = np.array([60.0, -60.0, 10.0])  # Values outside bounds
         validated_a = np.array([10.0, -20.0, 2.0])  # Values outside bounds
-        
+
         # Apply the same clipping bounds as in the updated code
         for i in range(len(validated_x)):
             validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
             validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)
             validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)
-        
+
         # Check that values are now within bounds
-        self.assertGreaterEqual(min(validated_x), 0.1)
-        self.assertLessEqual(max(validated_x), 200.0)
-        self.assertGreaterEqual(min(validated_v), -50.0)
-        self.assertLessEqual(max(validated_v), 50.0)
-        self.assertGreaterEqual(min(validated_a), -15.0)
-        self.assertLessEqual(max(validated_a), 8.0)
+        assert min(validated_x) >= 0.1
+        assert max(validated_x) <= 200.0
+        assert min(validated_v) >= -50.0
+        assert max(validated_v) <= 50.0
+        assert min(validated_a) >= -15.0
+        assert max(validated_a) <= 8.0
 
 
 if __name__ == '__main__':
     print("Running Adaptive Gains Controller tests...")
-    unittest.main(verbosity=2)
+    # Use python -m pytest to run this file directly
