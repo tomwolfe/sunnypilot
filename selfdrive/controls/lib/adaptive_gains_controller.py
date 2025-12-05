@@ -108,11 +108,17 @@ class AdaptiveGainsController:
 
     # Increase caution in high traffic
     # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
+    # NOTE: Traffic density classification ('low', 'medium', 'high') is determined by an upstream system.
+    # The threshold for 'high' traffic is not defined in this module but should be based on factors like
+    # vehicle density, distance to surrounding vehicles, and relative velocities from sensor fusion.
     if validated_context.get('traffic_density', 'low') == 'high':
       context_adjustment *= 0.9
 
     # Reduce gains in poor weather (if we can detect it)
     # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
+    # NOTE: Weather detection currently relies on an upstream system providing weather_condition values.
+    # This could be from vehicle sensors, external weather APIs, or vision-based detection algorithms.
+    # The system assumes that if weather_condition is not 'normal', appropriate detection has occurred.
     if validated_context.get('weather_condition', 'normal') != 'normal':
       context_adjustment *= 0.9
 
