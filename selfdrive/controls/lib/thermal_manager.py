@@ -97,6 +97,7 @@ class ThermalManager:
   def apply_gpu_management(self, sm, CS):
     """
     Apply GPU management based on thermal state and driving conditions.
+    Enhanced with predictive thermal management and performance optimization.
 
     Args:
         sm: SubMaster instance with sensor data
@@ -110,6 +111,26 @@ class ThermalManager:
     if not device_state:
       return
 
+    # Get current thermal metrics if available
+    current_temp = getattr(device_state, 'gpuTemp', None)
+    thermal_percent = getattr(device_state, 'thermalPerc', None)
+
+    # Predictive thermal management based on current load and trends
+    if hasattr(sm, 'deviceState') and sm.recv_frame.get('deviceState', 0) > 0:
+      # Calculate thermal trend if we have history
+      if not hasattr(self, '_prev_gpu_temp') or self._prev_gpu_temp is None:
+        self._prev_gpu_temp = current_temp if current_temp is not None else 0
+        temp_trend = 0
+      else:
+        temp_trend = (current_temp - self._prev_gpu_temp) if current_temp is not None else 0
+        self._prev_gpu_temp = current_temp if current_temp is not None else self._prev_gpu_temp
+
+      # Predict next thermal state based on trend
+      predicted_temp = current_temp + temp_trend if current_temp is not None else None
+    else:
+      temp_trend = 0
+      predicted_temp = current_temp
+
     # Based on thermal status, apply appropriate GPU management
     if self.thermal_status == log.DeviceState.ThermalStatus.danger:
       # In danger state, force thermal-safe GPU mode
@@ -118,6 +139,10 @@ class ThermalManager:
     elif self.thermal_status == log.DeviceState.ThermalStatus.red:
       # In red state, use ondemand governor to preserve thermal safety
       self._apply_gpu_ondemand_mode()
+    elif self.thermal_status == log.DeviceState.ThermalStatus.yellow and predicted_temp and predicted_temp > self.gpu_max * 0.9:
+      # If thermal status is yellow and we're predicting thermal issues, be proactive
+      self._apply_gpu_ondemand_mode()
+      cloudlog.debug(f"Proactive thermal management - predicted temp: {predicted_temp:.1f}°C")
     else:
       # Check vehicle speed and standstill status safely, handling Mock objects
       try:
@@ -146,9 +171,13 @@ class ThermalManager:
         # At low speeds or standstill, use ondemand governor for thermal safety
         self._apply_gpu_ondemand_mode()
       else:
-        # At higher speeds in safe thermal conditions,
+        # At higher speeds in safe thermal conditions with good thermal trend,
         # we can use performance mode for critical operations
-        self._apply_gpu_performance_mode_if_safe(sm)
+        if temp_trend <= 0:  # Temperature is stable or decreasing
+          self._apply_gpu_performance_mode_if_safe(sm)
+        else:
+          # Temperature rising, use conservative approach
+          self._apply_gpu_ondemand_mode()
 
   def _apply_gpu_ondemand_mode(self):
     """Apply ondemand GPU governor for thermal safety."""

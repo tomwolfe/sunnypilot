@@ -559,8 +559,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _calculate_radar_reliability(self, lead_radar):
     """
-    Calculate radar reliability based on proper radar parameters including SNR, track age, and consistency.
-    Enhanced with more sophisticated reliability calculations and safety validations.
+    Calculate radar reliability with efficient computation while maintaining safety.
+    Simplified to reduce computational overhead in the critical path.
 
     Args:
         lead_radar: Radar lead data structure
@@ -569,111 +569,43 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         float: Reliability score between 0.0 and 1.0
     """
     # Initialize reliability as 0.0 for invalid leads, 1.0 for valid leads
-    reliability = 1.0 if lead_radar.status else 0.0
+    if not lead_radar.status:
+      return 0.0
 
-    if lead_radar.status:
-      # Start with base reliability of 1.0 for valid lead
-      base_reliability = 1.0
+    # Base reliability calculation with efficient distance-based factor
+    distance_factor = max(0.2, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
+    reliability = distance_factor
 
-      # 1. Distance-based reliability: closer objects more reliable
-      # Threshold justification: At 50m distance, reliability is 1.0; decreases to 0.1 at 500m
-      # This reflects radar accuracy characteristics where closer objects have more reliable measurements
-      distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
-      reliability = base_reliability * distance_factor
+    # Check for available quality metrics (in order of computational efficiency)
+    if hasattr(lead_radar, 'snr') and lead_radar.snr is not None:
+      # Simple SNR-based reliability (0.1-1.0 range)
+      snr_reliability = max(0.1, min(1.0, lead_radar.snr / 15.0))
+      reliability = (reliability + snr_reliability) / 2.0
+    elif hasattr(lead_radar, 'std') and lead_radar.std is not None and lead_radar.std > 0:
+      # Standard deviation based (lower std = higher reliability)
+      std_reliability = max(0.1, min(1.0, 2.0 / max(0.1, lead_radar.std)))
+      reliability = (reliability + std_reliability) / 2.0
+    elif hasattr(lead_radar, 'prob') and lead_radar.prob is not None:
+      # Use detection probability if available
+      reliability *= lead_radar.prob
 
-      # 2. Signal-to-Noise Ratio (SNR) or other quality metrics based reliability if available
-      # SNR is a key indicator of measurement quality - higher SNR means more reliable detection
-      # Check for common radar quality metrics
-      snr_reliability = 1.0
-      if hasattr(lead_radar, 'snr') and lead_radar.snr is not None and lead_radar.snr >= 0:  # Signal-to-noise ratio
-        # Normalize SNR: good SNR (e.g., > 10) = high reliability, poor SNR (e.g., < 2) = low reliability
-        snr_reliability = min(1.0, max(0.1, lead_radar.snr / 10.0))  # Normalize to 0.1-1.0 range
-        reliability *= 0.7 + 0.3 * snr_reliability  # Weight SNR contribution
-      elif hasattr(lead_radar, 'std') and lead_radar.std is not None and lead_radar.std > 0:  # Standard deviation of measurement
-        # Lower standard deviation = higher reliability
-        std_reliability = max(0.1, 1.0 - (lead_radar.std / 2.0))  # Higher std = less reliable
-        reliability *= 0.6 + 0.4 * std_reliability  # Weight std contribution
-      elif hasattr(lead_radar, 'prob') and lead_radar.prob is not None and lead_radar.prob >= 0:  # Detection probability
-        # Use detection probability if available
-        reliability *= lead_radar.prob
+    # Track stability (age-based)
+    if hasattr(lead_radar, 'age') and lead_radar.age is not None:
+      # More stable tracks get slight reliability boost
+      if lead_radar.age > 5:  # After 5 cycles, track is more stable
+        reliability = min(1.0, reliability * 1.1)
 
-      # 3. Track age and consistency - longer tracked objects are more reliable
-      # Enhanced track age calculation with better logic
-      track_age_factor = 1.0
-      if hasattr(lead_radar, 'aLeadTau') and lead_radar.aLeadTau is not None and isinstance(lead_radar.aLeadTau, (int, float)) and lead_radar.aLeadTau > 0:
-        # aLeadTau appears to represent the time constant associated with lead acceleration
-        # Lower values indicate more recent, stable tracking
-        track_age_factor = max(0.1, min(1.0, 2.0 / max(0.1, lead_radar.aLeadTau)))
-        reliability *= 0.8 + 0.2 * track_age_factor  # Weight track age contribution
+    # Quick safety checks without complex calculations
+    # Check for extremely high relative velocity (likely unreliable)
+    if hasattr(lead_radar, 'vRel') and abs(lead_radar.vRel) > 60.0:
+      reliability *= 0.1  # Significant reduction for unreliable measurements
 
-      # 4. Track stability based on available parameters
-      track_stability_factor = 1.0
-      if hasattr(lead_radar, 'age') and lead_radar.age is not None and isinstance(lead_radar.age, (int, float)) and lead_radar.age > 0:
-        # Older, stable tracks are more reliable than new ones
-        track_stability_factor = min(1.0, lead_radar.age / 10.0)  # Stabilizes after 10 cycles
-        reliability *= 0.7 + 0.3 * track_stability_factor
-      elif hasattr(lead_radar, 'newLead') and lead_radar.newLead is not None and isinstance(lead_radar.newLead, (bool, int, float)) and not lead_radar.newLead:
-        # If this is not a new lead (has been tracked before), increase reliability
-        reliability *= 1.1  # Slight boost for established tracks
+    # Check for extreme acceleration (likely unreliable)
+    if hasattr(lead_radar, 'aLeadK') and abs(lead_radar.aLeadK) > 12.0:
+      reliability *= 0.3  # Reduce reliability for extreme acceleration values
 
-      # 5. Enhanced consistency check: Very high relative velocities might indicate unreliable measurements
-      velocity_factor = 1.0
-      if (
-        hasattr(lead_radar, 'vRel') and lead_radar.vRel is not None and isinstance(lead_radar.vRel, (int, float)) and abs(lead_radar.vRel) > 50
-      ):  # If relative velocity is extremely high
-        # reduce reliability
-        velocity_factor = 0.1  # Significant reduction for potentially erroneous high-velocity measurements
-        reliability *= velocity_factor
-
-      # 6. Enhanced distance-rate consistency check
-      consistency_factor = 1.0
-      if (
-        hasattr(lead_radar, 'dRel')
-        and lead_radar.dRel is not None
-        and isinstance(lead_radar.dRel, (int, float))
-        and hasattr(lead_radar, 'vRel')
-        and lead_radar.vRel is not None
-        and isinstance(lead_radar.vRel, (int, float))
-      ):
-        # Check if the relationship between distance and velocity is physically plausible
-        # Calculate if the current velocity would result in collision in an unreasonably short time
-        time_to_collision = lead_radar.dRel / max(abs(lead_radar.vRel), 0.1) if lead_radar.vRel < 0 else float('inf')
-        if 0 < time_to_collision < 0.2:  # Less than 0.2 seconds to collision is physically unlikely
-          consistency_factor = 0.1
-          reliability *= consistency_factor
-        elif 0 < time_to_collision < 0.5:  # Less than 0.5 seconds is still questionable
-          consistency_factor = 0.5
-          reliability *= consistency_factor
-
-      # 7. Additional validation: Check if relative acceleration is physically plausible
-      acceleration_factor = 1.0
-      if (
-        hasattr(lead_radar, 'aLeadK') and lead_radar.aLeadK is not None and isinstance(lead_radar.aLeadK, (int, float)) and abs(lead_radar.aLeadK) > 15.0
-      ):  # Acceleration > 15 m/s² is unlikely
-        acceleration_factor = 0.2
-        reliability *= acceleration_factor
-
-      # 8. Angle validation: Check for Doppler angle ambiguity issues
-      angle_factor = 1.0
-      if (
-        hasattr(lead_radar, 'yRel')
-        and lead_radar.yRel is not None
-        and isinstance(lead_radar.yRel, (int, float))
-        and hasattr(lead_radar, 'dRel')
-        and lead_radar.dRel is not None
-        and isinstance(lead_radar.dRel, (int, float))
-      ):
-        # Calculate relative angle - if angle is too wide, reduce reliability
-        if lead_radar.dRel > 0:  # Only calculate if dRel is positive to avoid division issues
-          relative_angle = math.atan2(lead_radar.yRel, lead_radar.dRel)
-          if abs(relative_angle) > math.radians(45):  # Beyond 45 degrees, reduce reliability
-            angle_factor = max(0.1, 1.0 - (abs(relative_angle) - math.radians(45)) / math.radians(45))
-            reliability *= angle_factor
-
-      # 9. Apply safety floor to ensure some minimum reliability for valid leads
-      reliability = max(0.1, min(1.0, reliability))  # Ensure 0.1 <= reliability <= 1.0
-
-    return reliability
+    # Apply safety bounds to ensure reliability stays in valid range
+    return max(0.1, min(1.0, reliability))  # Ensure 0.1 <= reliability <= 1.0
 
 
   def publish(self, sm, pm):

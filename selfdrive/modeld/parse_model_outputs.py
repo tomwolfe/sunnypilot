@@ -56,10 +56,8 @@ class TemporalConsistencyFilter:
     Returns:
       The smoothed driving plan.
     """
-    start_time = time.monotonic()
     if len(self.plan_buffer) == 0:
       self.plan_buffer.append(current_plan.copy())
-      cloudlog.debug(f"smooth_plan took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_plan
 
     # Calculate the difference from previous plan
@@ -82,7 +80,6 @@ class TemporalConsistencyFilter:
 
     # Store in buffer and return smoothed plan
     self.plan_buffer.append(smoothed_plan.copy())
-    cloudlog.debug(f"smooth_plan took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_plan
 
   def smooth_lane_lines(self, current_lane_lines):
@@ -96,10 +93,8 @@ class TemporalConsistencyFilter:
     Returns:
       The smoothed lane line predictions.
     """
-    start_time = time.monotonic()
     if len(self.lane_line_buffer) == 0:
       self.lane_line_buffer.append(current_lane_lines.copy())
-      cloudlog.debug(f"smooth_lane_lines took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_lane_lines
 
     prev_lines = self.lane_line_buffer[-1]
@@ -108,7 +103,6 @@ class TemporalConsistencyFilter:
     smoothed_lines = prev_lines * (1 - smoothing_factor) + current_lane_lines * smoothing_factor
 
     self.lane_line_buffer.append(smoothed_lines.copy())
-    cloudlog.debug(f"smooth_lane_lines took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_lines
 
   def smooth_lead(self, current_lead):
@@ -123,10 +117,8 @@ class TemporalConsistencyFilter:
     Returns:
       The smoothed lead vehicle detection.
     """
-    start_time = time.monotonic()
     if len(self.lead_buffer) == 0:
       self.lead_buffer.append(current_lead.copy())
-      cloudlog.debug(f"smooth_lead took {(time.monotonic() - start_time) * 1000:.2f} ms (initial)")
       return current_lead
 
     prev_lead = self.lead_buffer[-1]
@@ -143,7 +135,6 @@ class TemporalConsistencyFilter:
       smoothed_lead = current_lead
 
     self.lead_buffer.append(smoothed_lead.copy())
-    cloudlog.debug(f"smooth_lead took {(time.monotonic() - start_time) * 1000:.2f} ms")
     return smoothed_lead
 
 

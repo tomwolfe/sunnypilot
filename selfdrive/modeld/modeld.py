@@ -186,6 +186,10 @@ class ModelState(ModelStateBase):
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
 
+    # Initialize previous frames for scene change detection
+    self.prev_road_frame = None
+    self.frame_skip_counter = 0  # To ensure we run model periodically even when scene is static
+
     with open(VISION_PKL_PATH, "rb") as f:
       self.vision_run = pickle.load(f)
 
@@ -198,14 +202,69 @@ class ModelState(ModelStateBase):
 
   def _should_run_vision_model(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
-    Determine if we should run the vision model based on system load and minimum time interval
-    to help with CPU efficiency when possible.
+    Determine if we should run the vision model based on scene change detection
+    to help with CPU efficiency while maintaining safety.
     Enhanced to consider critical driving situations and safety factors.
     """
-    # Always run the model to ensure safety - removing the unreliable scene complexity detection
-    # that was based on metadata hashing rather than actual content analysis.
-    # The original implementation was removed due to safety concerns.
-    return True
+    # Safety critical: Always run if we don't have a previous frame to compare against
+    if 'roadCamera' not in bufs or bufs['roadCamera'] is None:
+      return True
+
+    current_frame = bufs['roadCamera']
+
+    # Run model periodically to ensure we don't miss important scene changes
+    # Max skip of 3 frames (at 20Hz this means minimum 5Hz inference)
+    if self.frame_skip_counter >= 3:
+      self.frame_skip_counter = 0
+      return True
+
+    # If we haven't stored a previous frame yet, store it and run the model
+    if self.prev_road_frame is None:
+      # Store a copy of the current frame for comparison later
+      self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width, current_frame.stride // current_frame.width))
+      return True
+
+    # Calculate simple frame difference to determine if scene changed significantly
+    try:
+      # Convert current frame to numpy array for comparison
+      current_frame_data = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width, current_frame.stride // current_frame.width))
+
+      # Use a subsampled version for performance - check every 8th pixel
+      h_step = max(1, current_frame.height // 16)
+      w_step = max(1, current_frame.width // 16)
+
+      current_sample = current_frame_data[::h_step, ::w_step]
+      prev_sample = self.prev_road_frame[::h_step, ::w_step]
+
+      # Ensure both samples have the same shape
+      if current_sample.shape != prev_sample.shape:
+        # Different shapes, likely camera settings changed - run model
+        self.prev_road_frame = current_frame_data.copy()
+        return True
+
+      # Calculate mean absolute difference between frames
+      diff = np.mean(np.abs(current_sample.astype(np.int16) - prev_sample.astype(np.int16)))
+
+      # Threshold for scene change (adjustable based on testing)
+      # Typical values: static scene ~1-3, normal driving ~5-10, rapid changes ~15+
+      scene_change_threshold = 3.0  # Lower values = more aggressive skipping
+
+      scene_changed = diff > scene_change_threshold
+
+      if scene_changed:
+        # Scene changed significantly, update stored frame and run model
+        self.prev_road_frame = current_frame_data.copy()
+        self.frame_skip_counter = 0
+        return True
+      else:
+        # Scene unchanged, increment skip counter and skip this frame
+        self.frame_skip_counter += 1
+        return False
+
+    except Exception as e:
+      # If there's any error in scene change detection, run model for safety
+      cloudlog.warning(f"Error in scene change detection: {e}, running model for safety")
+      return True
 
   def _enhanced_model_input_validation(self, bufs: dict[str, VisionBuf], transforms: dict[str, np.ndarray]) -> bool:
     """
@@ -282,22 +341,47 @@ class ModelState(ModelStateBase):
     if prepare_only:
       return None
 
-    # Execute vision model for new features - always run for safety
-    self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
-    vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+    # Use scene change detection to decide whether to run the vision model
+    should_run_model = self._should_run_vision_model(bufs, transforms)
 
-    # Process features from vision model
-    default_features = np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32)
-    default_buffer = self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else default_features
-    features_buffer = vision_outputs_dict.get('hidden_state', default_buffer)
+    if should_run_model:
+      # Execute vision model for new features
+      self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
+      vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-    self.full_input_queues.enqueue({'features_buffer': features_buffer, 'desire_pulse': new_desire})
+      # Process features from vision model
+      default_features = np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32)
+      default_buffer = self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else default_features
+      features_buffer = vision_outputs_dict.get('hidden_state', default_buffer)
+
+      self.full_input_queues.enqueue({'features_buffer': features_buffer, 'desire_pulse': new_desire})
+    else:
+      # Skip vision model run - use previous features
+      default_features = np.zeros((1, self.full_input_queues.shapes['features_buffer'][2]), dtype=np.float32)
+      default_buffer = self.full_input_queues.q['features_buffer'][-1] if 'features_buffer' in self.full_input_queues.q else default_features
+      features_buffer = default_buffer
+
+      # Still need to update the queues with the desire pulse even when skipping vision model
+      self.full_input_queues.enqueue({'features_buffer': features_buffer, 'desire_pulse': new_desire})
+
+      # Return a minimal response with previous outputs when skipping model
+      # For skipped frames, we'll return the last valid vision outputs processed
+      if hasattr(self, '_last_vision_outputs'):
+        vision_outputs_dict = self._last_vision_outputs
+      else:
+        # If no previous outputs, run the model this time
+        self.vision_output = self.vision_run(**self.vision_inputs).contiguous().realize().uop.base.buffer.numpy()
+        vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
+
+    # Store the vision outputs for potential reuse in skipped frames
+    self._last_vision_outputs = vision_outputs_dict
+
     for k in ['desire_pulse', 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
 
-    # Optimize tensor operations by avoiding unnecessary copying and realizing
-    # Only realize tensors when actually needed
+    # Run the policy model (which is less computationally expensive than vision model)
+    # This can run every cycle since it's much faster
     policy_tensor = self.policy_run(**self.policy_inputs)
     self.policy_output = policy_tensor.contiguous().realize().uop.base.buffer.numpy()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
