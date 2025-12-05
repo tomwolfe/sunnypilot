@@ -26,10 +26,26 @@ class TestAdaptiveControlImprovements:
     self.controls.CP.wheelbase = 2.7
     self.controls.VM = Mock()
     self.controls.VM.calc_curvature = lambda steer_angle, v_ego, roll: math.tan(steer_angle) / self.controls.CP.wheelbase
-    # Initialize the circuit breakers system
-    self.controls._init_circuit_breakers()
+    # Initialize the circuit breakers system by creating a simplified version since the real one requires full initialization
+    from openpilot.selfdrive.controls.lib.circuit_breaker_manager import CircuitBreakerManager
+    self.controls.circuit_breaker_manager = CircuitBreakerManager()
     # Initialize other needed attributes for _adaptive_gpu_management
     self.controls.last_device_state_update_time = 0.0
+    # Initialize adaptive gains controller
+    from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
+    self.controls.adaptive_gains_controller = AdaptiveGainsController()
+    # Initialize thermal manager
+    from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
+    self.controls.thermal_manager = ThermalManager()
+    # Initialize context analyzer
+    from openpilot.selfdrive.controls.lib.driving_context import DrivingContextAnalyzer
+    self.controls.context_analyzer = DrivingContextAnalyzer()
+    # Initialize self._prev_adaptive_gains to avoid AttributeError
+    self.controls._prev_adaptive_gains = {}
+    # Initialize sm (SubMaster) mock
+    self.controls.sm = Mock()
+    # Call the method to initialize _circuit_breakers attribute
+    self.controls._init_circuit_breakers()
 
   def test_curvature_dependency_fix(self):
     """Test that _calculate_driving_context doesn't depend on self.curvature."""
@@ -41,11 +57,25 @@ class TestAdaptiveControlImprovements:
     mock_cs.aEgo = 1.0
     mock_cs.windshieldWiper = 0.0  # Added to prevent TypeError in _detect_weather_conditions
 
-    # Mock the submaster to have liveParameters
-    self.controls.sm = Mock()
-    self.controls.sm.__getitem__ = lambda _, key: mock_sm_item if key == 'liveParameters' else Mock()
+    # Mock the submaster to have liveParameters and carState
+    # Create a proper mock setup that the _detect_weather_conditions method can use
+    mock_car_state = Mock()
+    mock_car_state.windshieldWiper = 0.0  # Default to no rain
+    mock_car_state.wiperState = 0  # Default to no rain
     mock_sm_item = Mock()
     mock_sm_item.angleOffsetDeg = 0.0
+
+    # Create a side_effect function for the mocked __getitem__
+    def sm_getitem_function(key):
+        if key == 'liveParameters':
+            return mock_sm_item
+        elif key == 'carState':
+            return mock_car_state
+        else:
+            return Mock()
+
+    # Set up the Mock's __getitem__ method properly using side_effect
+    self.controls.sm.__getitem__ = Mock(side_effect=sm_getitem_function)
 
     # Mock the VM to return a known curvature
     self.controls.VM = Mock()
@@ -254,7 +284,12 @@ class TestAdaptiveControlImprovements:
           self.controls._adaptive_gpu_management(mock_cs, mock_sm)
 
           # Verify that we at least tried to set the governor (to ondemand, not performance)
-          mock_open_func.assert_called_with("/sys/class/kgsl/kgsl-3d0/devfreq/governor", "w")
+          # Check if the expected call was made among all the calls since thermal checks also make calls
+          expected_call_made = any(
+            call_args[0][0] == "/sys/class/kgsl/kgsl-3d0/devfreq/governor" and call_args[0][1] == "w"
+            for call_args in mock_open_func.call_args_list
+          )
+          assert expected_call_made, f"Expected call to open GPU governor file was not made. Actual calls: {mock_open_func.call_args_list}"
           # The write call should have happened (with either "performance" or "ondemand")
           assert mock_file.write.called
 

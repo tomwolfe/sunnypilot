@@ -60,6 +60,19 @@ class TestIntegrationAdaptiveControl:
     mock_sm.__getitem__ = mock_getitem
     controls_instance.sm = mock_sm
 
+    # Initialize required components to avoid AttributeError
+    from openpilot.selfdrive.controls.lib.circuit_breaker_manager import CircuitBreakerManager
+    controls_instance.circuit_breaker_manager = CircuitBreakerManager()
+    from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
+    controls_instance.adaptive_gains_controller = AdaptiveGainsController()
+    from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
+    controls_instance.thermal_manager = ThermalManager()
+    from openpilot.selfdrive.controls.lib.driving_context import DrivingContextAnalyzer
+    controls_instance.context_analyzer = DrivingContextAnalyzer()
+
+    # Initialize the circuit breakers system
+    controls_instance._init_circuit_breakers()
+
     # Create a basic function that mimics the interaction between context and gains
     def test_context_gain_interaction():
       # Simulate different contexts and verify that gains change appropriately
