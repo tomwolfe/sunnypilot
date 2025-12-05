@@ -221,19 +221,67 @@ class ModelState(ModelStateBase):
     # If we haven't stored a previous frame yet, store it and run the model
     if self.prev_road_frame is None:
       # Store a copy of the current frame for comparison later
-      self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width, current_frame.stride // current_frame.width))
+      try:
+        # Calculate the number of channels based on stride and dimensions
+        expected_size = current_frame.height * current_frame.width
+        if hasattr(current_frame, 'stride') and current_frame.stride > 0:
+          calculated_channels = current_frame.stride // current_frame.width
+          # Validate calculated channels makes sense
+          if calculated_channels > 0 and expected_size * calculated_channels == len(current_frame.data):
+            frame_shape = (current_frame.height, current_frame.width, calculated_channels)
+          else:
+            # Fallback to assuming 3 channels (RGB) if stride calculation doesn't make sense
+            frame_shape = (current_frame.height, current_frame.width, 3)
+        else:
+          # If no stride info, assume 3 channels (RGB) as default
+          frame_shape = (current_frame.height, current_frame.width, 3)
+
+        self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8).reshape(frame_shape)
+      except (ValueError, AttributeError):
+        # If reshaping fails, try common formats or use a simple validation approach
+        # First, try assuming 3-channel RGB
+        try:
+          self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width, 3))
+        except ValueError:
+          # If that fails, try 1-channel grayscale
+          try:
+            self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width))
+          except ValueError:
+            # If all reshaping fails, just store the flat array - we'll handle comparison differently later
+            self.prev_road_frame = np.frombuffer(current_frame.data, dtype=np.uint8)
       return True
 
     # Calculate simple frame difference to determine if scene changed significantly
     try:
       # Convert current frame to numpy array for comparison
-      current_frame_data = np.frombuffer(current_frame.data, dtype=np.uint8).reshape((current_frame.height, current_frame.width, current_frame.stride // current_frame.width))
+      # Calculate the number of channels based on stride and dimensions
+      expected_size = current_frame.height * current_frame.width
+      if hasattr(current_frame, 'stride') and current_frame.stride > 0:
+        calculated_channels = current_frame.stride // current_frame.width
+        # Validate calculated channels makes sense
+        if calculated_channels > 0 and expected_size * calculated_channels == len(current_frame.data):
+          frame_shape = (current_frame.height, current_frame.width, calculated_channels)
+        else:
+          # Fallback to assuming 3 channels (RGB) if stride calculation doesn't make sense
+          frame_shape = (current_frame.height, current_frame.width, 3)
+      else:
+        # If no stride info, assume 3 channels (RGB) as default
+        frame_shape = (current_frame.height, current_frame.width, 3)
+
+      current_frame_data = np.frombuffer(current_frame.data, dtype=np.uint8).reshape(frame_shape)
 
       # Use a subsampled version for performance - check every 8th pixel
       h_step = max(1, current_frame.height // 16)
       w_step = max(1, current_frame.width // 16)
 
       current_sample = current_frame_data[::h_step, ::w_step]
+
+      # Handle the case where prev_road_frame might have a different shape or be flat
+      if self.prev_road_frame.ndim != current_frame_data.ndim or self.prev_road_frame.shape != current_frame_data.shape:
+        # Different shapes, likely camera settings changed - run model
+        self.prev_road_frame = current_frame_data.copy()
+        return True
+
       prev_sample = self.prev_road_frame[::h_step, ::w_step]
 
       # Ensure both samples have the same shape
@@ -259,6 +307,10 @@ class ModelState(ModelStateBase):
       else:
         # Scene unchanged, increment skip counter and skip this frame
         self.frame_skip_counter += 1
+        # Check if we've reached max skip count
+        if self.frame_skip_counter >= 3:
+          self.frame_skip_counter = 0  # Reset counter
+          return True  # Run model after reaching max skip
         return False
 
     except Exception as e:
