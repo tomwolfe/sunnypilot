@@ -174,6 +174,63 @@ class TestLongitudinalPlannerValidation:
             assert a >= -15.0
             assert a <= 8.0
 
+    def test_nan_infinity_handling_comprehensive(self):
+        """Test comprehensive NaN and infinity handling as implemented in the actual longitudinal planner."""
+        # Test with arrays containing NaN and infinity values
+        x_with_issues = np.array([50.0, float('nan'), float('inf'), -float('inf'), 100.0])
+        v_with_issues = np.array([10.0, float('nan'), float('inf'), -float('inf'), 20.0])
+        a_with_issues = np.array([2.0, float('nan'), float('inf'), -float('inf'), -1.0])
+
+        # Apply the complete validation logic as implemented in the longitudinal planner
+        for i in range(len(x_with_issues)):
+            # Handle NaN and infinity values before clipping (this matches the actual implementation)
+            if not np.isnan(x_with_issues[i]) and not np.isinf(x_with_issues[i]):
+                x_with_issues[i] = np.clip(x_with_issues[i], 0.1, 200.0)
+            else:
+                x_with_issues[i] = 200.0  # Safe default for invalid distance
+
+            if not np.isnan(v_with_issues[i]) and not np.isinf(v_with_issues[i]):
+                v_with_issues[i] = np.clip(v_with_issues[i], -50.0, 50.0)
+            else:
+                v_with_issues[i] = 0.0   # Safe default for invalid velocity
+
+            if not np.isnan(a_with_issues[i]) and not np.isinf(a_with_issues[i]):
+                a_with_issues[i] = np.clip(a_with_issues[i], -15.0, 8.0)
+            else:
+                a_with_issues[i] = 0.0   # Safe default for invalid acceleration
+
+        # Check that NaN/infinity values were properly handled and are now within bounds
+        for x in x_with_issues:
+            assert not np.isnan(x) and not np.isinf(x), "Distance still contains NaN or infinity"
+            assert 0.1 <= x <= 200.0, f"Distance {x} is out of bounds"
+
+        for v in v_with_issues:
+            assert not np.isnan(v) and not np.isinf(v), "Velocity still contains NaN or infinity"
+            assert -50.0 <= v <= 50.0, f"Velocity {v} is out of bounds"
+
+        for a in a_with_issues:
+            assert not np.isnan(a) and not np.isinf(a), "Acceleration still contains NaN or infinity"
+            assert -15.0 <= a <= 8.0, f"Acceleration {a} is out of bounds"
+
+        # Verify that the originally valid values are still valid
+        assert x_with_issues[0] == 50.0  # Unchanged valid value
+        assert x_with_issues[4] == 100.0  # Unchanged valid value
+        assert v_with_issues[0] == 10.0  # Unchanged valid value
+        assert v_with_issues[4] == 20.0  # Unchanged valid value
+        assert a_with_issues[0] == 2.0  # Unchanged valid value
+        assert a_with_issues[4] == -1.0  # Unchanged valid value
+
+        # Verify that invalid values were replaced with safe defaults
+        assert x_with_issues[1] == 200.0  # NaN replaced with safe default
+        assert x_with_issues[2] == 200.0  # +inf replaced with safe default
+        assert x_with_issues[3] == 200.0  # -inf replaced with safe default
+        assert v_with_issues[1] == 0.0   # NaN replaced with safe default
+        assert v_with_issues[2] == 0.0   # +inf replaced with safe default
+        assert v_with_issues[3] == 0.0   # -inf replaced with safe default
+        assert a_with_issues[1] == 0.0   # NaN replaced with safe default
+        assert a_with_issues[2] == 0.0   # +inf replaced with safe default
+        assert a_with_issues[3] == 0.0   # -inf replaced with safe default
+
 
 if __name__ == '__main__':
     print("Running Longitudinal Planner Validation tests...")

@@ -441,9 +441,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Reduce acceleration to more conservative value
           validated_a[i] = min(validated_a[i], 3.0)
         # Additionally, ensure the values are still within bounds after smoothing
-        validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
-        validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)
-        validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)
+        # Handle NaN and infinity values before clipping
+        if not np.isnan(validated_x[i]) and not np.isinf(validated_x[i]):
+          validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
+        else:
+          validated_x[i] = 200.0  # Safe default for invalid distance
+        if not np.isnan(validated_v[i]) and not np.isinf(validated_v[i]):
+          validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)
+        else:
+          validated_v[i] = 0.0   # Safe default for invalid velocity
+        if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
+          validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)
+        else:
+          validated_a[i] = 0.0   # Safe default for invalid acceleration
 
     for i in range(len(validated_v)):
       # Validate velocity (realistic relative velocities for lead vehicles)
@@ -507,7 +517,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Use a weighted average of both for safety, but be careful about the logic
           # Use original acceleration value in the weighted average calculation
           validated_a[i] = 0.6 * original_acceleration_for_consistency + 0.4 * velocity_based_accel
-          validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # Ensure bounds after adjustment
+          # Ensure NaN/inf values are handled after the calculation
+          if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
+            validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # Ensure bounds after adjustment
+          else:
+            validated_a[i] = 0.0  # Safe default if calculations resulted in invalid values
 
       # Enhanced validation: Check for sustained extreme acceleration that is physically unlikely
       if hasattr(self, '_acceleration_history') and len(self._acceleration_history) > 0:
@@ -516,14 +530,22 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         if abs(recent_accel_avg) > 6.0 and abs(validated_a[i]) > 6.0:  # Both sustained and current are extreme
           # Apply more conservative validation
           validated_a[i] = 0.8 * validated_a[i] + 0.2 * 0.0  # Pull toward zero acceleration
+          # Handle NaN/inf values after the weighted calculation
+          if np.isnan(validated_a[i]) or np.isinf(validated_a[i]):
+            validated_a[i] = 0.0  # Safe default if calculations resulted in invalid values
           cloudlog.warning(f"Sustained extreme acceleration detected, moderated: {validated_a[i]:.2f}")
 
     # Update acceleration history for sustained acceleration detection
     if not hasattr(self, '_acceleration_history'):
       self._acceleration_history = []
-    # Add current acceleration values to history
+    # Add current acceleration values to history, but validate first to avoid NaN/inf in history
     for i in range(len(validated_a)):
-      self._acceleration_history.append(validated_a[i])
+      # Only add valid values to history
+      if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
+        self._acceleration_history.append(validated_a[i])
+      else:
+        # Add safe default if invalid
+        self._acceleration_history.append(0.0)
     # Keep only last 20 values to maintain reasonable history
     if len(self._acceleration_history) > 20:
       self._acceleration_history = self._acceleration_history[-20:]
