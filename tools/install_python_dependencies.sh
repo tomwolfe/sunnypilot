@@ -27,9 +27,9 @@ source .venv/bin/activate
 if [ -f "$ROOT/requirements.txt" ]; then
   echo "installing additional packages from requirements.txt..."
   if [[ "$(uname)" == 'Darwin' ]]; then
-    # On macOS, filter out av package due to ffmpeg compatibility issues
-    # Create a temporary file with the av package line commented out
-    sed 's/^av;/# av;/' "$ROOT/requirements.txt" > /tmp/requirements_filtered.txt
+    # On macOS, filter out av and aiortc packages due to ffmpeg compatibility issues
+    # Create a temporary file with the problematic package lines commented out
+    sed 's/^av;/# av;/' "$ROOT/requirements.txt" | sed 's/^aiortc/# aiortc/' > /tmp/requirements_filtered.txt
     pip install -r /tmp/requirements_filtered.txt
     rm -f /tmp/requirements_filtered.txt
   else

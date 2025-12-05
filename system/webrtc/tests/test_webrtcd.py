@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 import json
+import platform
 
 # for aiortc and its dependencies
 import warnings
@@ -10,7 +11,9 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)  # TODO: remove this 
 
 from openpilot.system.webrtc.webrtcd import get_stream
 
-import aiortc
+# Import aiortc conditionally since it's not available on macOS
+if platform.system() != "Darwin":
+  import aiortc
 from teleoprtc import WebRTCOfferBuilder
 from parameterized import parameterized_class
 
@@ -34,6 +37,10 @@ class TestWebrtcdProc:
       pytest.fail("Timeout while waiting for awaitable to complete")
 
   async def test_webrtcd(self, mocker):
+    # Skip this test on macOS since aiortc is not available
+    if platform.system() == "Darwin":
+      pytest.skip("WebRTC tests require aiortc which is not available on macOS")
+
     mock_request = mocker.MagicMock()
 
     async def connect(offer):

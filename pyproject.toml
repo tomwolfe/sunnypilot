@@ -31,7 +31,7 @@ dependencies = [
 
   # body / webrtcd
   "aiohttp",
-  "aiortc",
+  "aiortc; platform_system != 'Darwin'",  # broken on macOS due to ffmpeg incompatibility (av dependency)
   # aiortc does not put an upper bound on pyopenssl and is now incompatible
   # with the latest release
   "pyopenssl < 24.3.0",
