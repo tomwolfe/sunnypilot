@@ -609,6 +609,9 @@ def main(demo=False):
         if not hasattr(model, 'sync_quality_history'):
           model.sync_quality_history = []
         model.sync_quality_history.append(best_time_diff / 1e6)  # Store in ms
+        model.sync_quality_history = model.sync_quality_history[-20:]  # Keep last 20 measurements
+        if len(model.sync_quality_history) > 0:
+          model.avg_frame_sync_quality = sum(model.sync_quality_history) / len(model.sync_quality_history) / 10.0  # Normalize
 
         # Check sync quality and log if frames are significantly out of sync
         if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold
