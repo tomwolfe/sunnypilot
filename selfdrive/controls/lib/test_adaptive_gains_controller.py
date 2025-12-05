@@ -9,6 +9,26 @@ import numpy as np
 from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
 
 
+def assert_almost_equal(actual, expected, places=7):
+    """Helper function to compare floating point values with a given precision."""
+    assert abs(actual - expected) < (10 ** -places), f"{actual} != {expected} within {places} decimal places"
+
+
+def assert_greater(value1, value2):
+    """Helper function to assert that value1 is greater than value2."""
+    assert value1 > value2, f"{value1} is not greater than {value2}"
+
+
+def assert_greater_equal(value1, value2):
+    """Helper function to assert that value1 is greater than or equal to value2."""
+    assert value1 >= value2, f"{value1} is not greater than or equal to {value2}"
+
+
+def assert_less_equal(value1, value2):
+    """Helper function to assert that value1 is less than or equal to value2."""
+    assert value1 <= value2, f"{value1} is not less than or equal to {value2}"
+
+
 class TestAdaptiveGainsController:
     """Test suite for the AdaptiveGainsController class."""
 
@@ -51,11 +71,11 @@ class TestAdaptiveGainsController:
         expected_long_accel_kp = expected_base_gains['longitudinal']['accel_kp'] * combined_adjustment
         expected_long_accel_ki = expected_base_gains['longitudinal']['accel_ki'] * combined_adjustment
 
-        self.assertAlmostEqual(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
+        assert_almost_equal(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
 
     def test_partial_context_keys(self):
         """Test handling of partially complete context."""
@@ -80,11 +100,11 @@ class TestAdaptiveGainsController:
         expected_long_accel_kp = 1.0 * combined_adjustment
         expected_long_accel_ki = 0.1 * combined_adjustment
 
-        self.assertAlmostEqual(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
+        assert_almost_equal(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
 
     def test_context_key_type_validation(self):
         """Test that context keys are properly validated for type."""
@@ -101,11 +121,11 @@ class TestAdaptiveGainsController:
         )
 
         # The values should still be valid and should use appropriate defaults
-        self.assertIsInstance(gains['lateral']['steer_kp'], (int, float))
-        self.assertIsInstance(gains['lateral']['steer_ki'], (int, float))
-        self.assertIsInstance(gains['lateral']['steer_kd'], (int, float))
-        self.assertIsInstance(gains['longitudinal']['accel_kp'], (int, float))
-        self.assertIsInstance(gains['longitudinal']['accel_ki'], (int, float))
+        assert isinstance(gains['lateral']['steer_kp'], (int, float)), f"Expected steer_kp to be int or float, got {type(gains['lateral']['steer_kp'])}"
+        assert isinstance(gains['lateral']['steer_ki'], (int, float)), f"Expected steer_ki to be int or float, got {type(gains['lateral']['steer_ki'])}"
+        assert isinstance(gains['lateral']['steer_kd'], (int, float)), f"Expected steer_kd to be int or float, got {type(gains['lateral']['steer_kd'])}"
+        assert isinstance(gains['longitudinal']['accel_kp'], (int, float)), f"Expected accel_kp to be int or float, got {type(gains['longitudinal']['accel_kp'])}"
+        assert isinstance(gains['longitudinal']['accel_ki'], (int, float)), f"Expected accel_ki to be int or float, got {type(gains['longitudinal']['accel_ki'])}"
 
     def test_invalid_context_values(self):
         """Test handling of invalid context values."""
@@ -134,11 +154,11 @@ class TestAdaptiveGainsController:
         expected_long_accel_kp = 1.0 * combined_adjustment
         expected_long_accel_ki = 0.1 * combined_adjustment
 
-        self.assertAlmostEqual(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
-        self.assertAlmostEqual(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
-        self.assertAlmostEqual(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kp'], expected_lateral_steer_kp, places=5)
+        assert_almost_equal(gains['lateral']['steer_ki'], expected_lateral_steer_ki, places=5)
+        assert_almost_equal(gains['lateral']['steer_kd'], expected_lateral_steer_kd, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_kp'], expected_long_accel_kp, places=5)
+        assert_almost_equal(gains['longitudinal']['accel_ki'], expected_long_accel_ki, places=5)
 
     def test_gain_bounds_validation(self):
         """Test that gains stay within safe bounds."""
@@ -153,17 +173,17 @@ class TestAdaptiveGainsController:
         )
 
         # Check that gains are within expected bounds
-        self.assertGreaterEqual(gains['lateral']['steer_kp'], 0.1)  # MIN_STEER_KP
-        self.assertLessEqual(gains['lateral']['steer_kp'], 3.0)  # MAX_STEER_KP
-        self.assertGreaterEqual(gains['lateral']['steer_ki'], 0.01)  # MIN_STEER_KI
-        self.assertLessEqual(gains['lateral']['steer_ki'], 1.0)  # MAX_STEER_KI
-        self.assertGreaterEqual(gains['lateral']['steer_kd'], 0.0)  # MIN_STEER_KD
-        self.assertLessEqual(gains['lateral']['steer_kd'], 0.1)  # MAX_STEER_KD
+        assert_greater_equal(gains['lateral']['steer_kp'], 0.1)  # MIN_STEER_KP
+        assert_less_equal(gains['lateral']['steer_kp'], 3.0)  # MAX_STEER_KP
+        assert_greater_equal(gains['lateral']['steer_ki'], 0.01)  # MIN_STEER_KI
+        assert_less_equal(gains['lateral']['steer_ki'], 1.0)  # MAX_STEER_KI
+        assert_greater_equal(gains['lateral']['steer_kd'], 0.0)  # MIN_STEER_KD
+        assert_less_equal(gains['lateral']['steer_kd'], 0.1)  # MAX_STEER_KD
 
-        self.assertGreaterEqual(gains['longitudinal']['accel_kp'], 0.1)  # MIN_ACCEL_KP
-        self.assertLessEqual(gains['longitudinal']['accel_kp'], 2.0)  # MAX_ACCEL_KP
-        self.assertGreaterEqual(gains['longitudinal']['accel_ki'], 0.01)  # MIN_ACCEL_KI
-        self.assertLessEqual(gains['longitudinal']['accel_ki'], 1.0)  # MAX_ACCEL_KI
+        assert_greater_equal(gains['longitudinal']['accel_kp'], 0.1)  # MIN_ACCEL_KP
+        assert_less_equal(gains['longitudinal']['accel_kp'], 2.0)  # MAX_ACCEL_KP
+        assert_greater_equal(gains['longitudinal']['accel_ki'], 0.01)  # MIN_ACCEL_KI
+        assert_less_equal(gains['longitudinal']['accel_ki'], 1.0)  # MAX_ACCEL_KI
 
     def test_thermal_state_impact(self):
         """Test that thermal state affects gains properly."""
@@ -186,8 +206,8 @@ class TestAdaptiveGainsController:
         # With thermal stress, gains should be reduced (thermal_adjustment = 1.0 - (1.0 * 0.2) = 0.8)
         # While with no thermal stress, thermal_adjustment = 1.0
         # So gains with thermal stress should be smaller
-        self.assertGreater(gains_normal['lateral']['steer_kp'], gains_thermal['lateral']['steer_kp'])
-        self.assertGreater(gains_normal['longitudinal']['accel_kp'], gains_thermal['longitudinal']['accel_kp'])
+        assert_greater(gains_normal['lateral']['steer_kp'], gains_thermal['lateral']['steer_kp'])
+        assert_greater(gains_normal['longitudinal']['accel_kp'], gains_thermal['longitudinal']['accel_kp'])
 
     def test_high_speed_adjustment(self):
         """Test that high speeds reduce gains for stability."""
@@ -210,8 +230,8 @@ class TestAdaptiveGainsController:
         # With low speed (5 m/s), speed factor = min(1.0, 5.0/30.0) = 0.167
         # speed_adjustment = 1.0 - (0.3 * 0.167) = ~0.95
         # So gains at high speed should be smaller than gains at low speed
-        self.assertGreater(gains_low_speed['lateral']['steer_kp'], gains_high_speed['lateral']['steer_kp'])
-        self.assertGreater(gains_low_speed['longitudinal']['accel_kp'], gains_high_speed['longitudinal']['accel_kp'])
+        assert_greater(gains_low_speed['lateral']['steer_kp'], gains_high_speed['lateral']['steer_kp'])
+        assert_greater(gains_low_speed['longitudinal']['accel_kp'], gains_high_speed['longitudinal']['accel_kp'])
 
 
 class TestLongitudinalPlannerValidation:
