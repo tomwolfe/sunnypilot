@@ -3,7 +3,7 @@ Unit tests for the refactored control system components.
 This ensures each module works correctly and maintains the original functionality.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch  # noqa: TID251
 
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
 from openpilot.selfdrive.controls.lib.driving_context import DrivingContextAnalyzer
