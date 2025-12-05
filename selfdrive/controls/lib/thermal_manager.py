@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Thermal Management System for Controls.
 
@@ -7,10 +6,9 @@ This module handles thermal state calculations and thermal-aware control adjustm
 
 import time
 import os
-from typing import Dict, Any
+from typing import Any
 
 from cereal import log
-from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
 ThermalStatus = log.DeviceState.ThermalStatus
@@ -29,7 +27,7 @@ DEVICE_STATE_STALE_THRESHOLD = 3.0  # seconds
 
 class ThermalManager:
   """Manages thermal state and provides thermal-aware control adjustments."""
-  
+
   def __init__(self):
     self.last_device_state_update_time = 0.0
     self._temp_perf_end_time = None
@@ -37,16 +35,16 @@ class ThermalManager:
   def calculate_thermal_state(self, device_state) -> float:
     """
     Calculate normalized thermal state (0.0-1.0) based on device state.
-    
+
     Args:
         device_state: Device state message from messaging system
-    
+
     Returns:
         float: Normalized thermal state (0.0 = no stress, 1.0 = maximum stress)
     """
     # Calculate thermal state based on thermal status and percentage
-    thermal_status = device_state.thermalStatus
-    thermal_pwr = device_state.thermalPerc
+    thermal_status: int = device_state.thermalStatus
+    thermal_pwr: float = device_state.thermalPerc
 
     # Base thermal state from percentage (0-100% -> 0.0-1.0)
     base_thermal = thermal_pwr / 100.0
@@ -65,7 +63,7 @@ class ThermalManager:
       # Normal state, return base thermal
       return min(1.0, base_thermal)
 
-  def get_thermal_state_with_fallback(self, sm: Dict[str, Any], current_time: float) -> float:
+  def get_thermal_state_with_fallback(self, sm: dict[str, Any], current_time: float) -> float:
     """
     Get current thermal state with stale data fallback.
 
@@ -87,14 +85,14 @@ class ThermalManager:
 
     return 0.0  # Default to no thermal stress if within staleness threshold
 
-  def adaptive_control_rate(self, thermal_state: float, base_rate: float = 100) -> Dict[str, float]:
+  def adaptive_control_rate(self, thermal_state: float, base_rate: float = 100) -> dict[str, float]:
     """
     Calculate adaptive control rates based on thermal state.
-    
+
     Args:
         thermal_state: Current thermal state (0.0-1.0)
         base_rate: Base control rate in Hz
-    
+
     Returns:
         Dict: Dictionary containing critical_rate, standard_rate, and current_rate
     """
@@ -107,7 +105,7 @@ class ThermalManager:
     critical_factor = max(0.5, 1.0 - thermal_state * 0.3)  # Less reduction for critical functions
     critical_rate = max(min_critical_rate, base_rate * critical_factor)
 
-    # Standard functions: reduce more aggressively  
+    # Standard functions: reduce more aggressively
     standard_factor = max(0.1, 1.0 - thermal_state * 0.9)  # More reduction for standard functions
     standard_rate = max(min_standard_rate, base_rate * standard_factor)
 
@@ -116,11 +114,11 @@ class ThermalManager:
 
     return {
       'critical_rate': critical_rate,
-      'standard_rate': standard_rate, 
+      'standard_rate': standard_rate,
       'current_rate': current_rate
     }
 
-  def apply_gpu_management(self, sm: Dict[str, Any], CS) -> None:
+  def apply_gpu_management(self, sm: dict[str, Any], CS) -> None:
     """
     Adaptive GPU management to temporarily increase performance when needed for safety-critical operations.
     This addresses the thermal management trade-off by allowing temporary performance boosts when needed.
@@ -137,7 +135,7 @@ class ThermalManager:
       return
 
     # If in critical situation and if we have thermal headroom, temporarily boost performance
-    if critical_situation and 'deviceState' in sm and sm.valid['deviceState']:
+    if critical_situation and 'deviceState' in sm and getattr(sm, 'valid', {}).get('deviceState'):
       thermal_status = sm['deviceState'].thermalStatus
       thermal_pwr = sm['deviceState'].thermalPerc
 
@@ -190,10 +188,10 @@ class ThermalManager:
 
     # Enhanced check for lead vehicle emergency situations with better safety validation
     critical_situation = critical_situation or self._check_emergency_situation(sm, CS)
-    
+
     # Additional critical situation check: curve ahead detection
     critical_situation = critical_situation or self._check_curve_situation(sm)
-    
+
     return critical_situation
 
   def _check_emergency_situation(self, sm, CS) -> bool:

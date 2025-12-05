@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Adaptive Gains Controller for Controls.
 
@@ -6,22 +5,18 @@ This module handles adaptive gain calculations based on driving context and ther
 """
 
 import math
-import time
-from typing import Dict, Any
+from typing import Any
 
-import numpy as np
-
-from cereal import log
 from openpilot.common.swaglog import cloudlog
 
 
 class AdaptiveGainsController:
   """Manages adaptive gain calculation and validation based on driving context and thermal state."""
-  
+
   def __init__(self):
     self._prev_adaptive_gains = None
 
-  def calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: Dict[str, Any]) -> Dict[str, Any]:
+  def calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: dict[str, Any]) -> dict[str, Any]:
     """
     Calculate adaptive gains based on vehicle speed, thermal state and driving context.
 
@@ -112,7 +107,8 @@ class AdaptiveGainsController:
 
     return adaptive_gains
 
-  def _validate_adaptive_gains(self, adaptive_gains: Dict[str, Any]) -> Dict[str, Any]:
+
+  def _validate_adaptive_gains(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
     """
     Validate adaptive gains to prevent dangerous values that could lead to instability or unsafe behavior.
 

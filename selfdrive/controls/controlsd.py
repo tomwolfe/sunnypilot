@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
 import math
-import os
 import threading
 import time
-from typing import Dict, Any
+from typing import Any
 import numpy as np
 
 from numbers import Number
@@ -34,7 +32,6 @@ from openpilot.sunnypilot.selfdrive.controls.controlsd_ext import ControlsExt
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
 from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager
-from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor
 from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
 from openpilot.selfdrive.controls.lib.driving_context import DrivingContextAnalyzer
@@ -619,7 +616,7 @@ class Controls(ControlsExt):
     """Trigger a circuit breaker due to an error."""
     self.circuit_breaker_manager.trigger_circuit_breaker(breaker_name, error_msg, error_type)
 
-  def _calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: Dict[str, Any]) -> Dict[str, Any]:
+  def _calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: dict[str, Any]) -> dict[str, Any]:
     """
     Calculate adaptive gains based on vehicle speed, thermal state and driving context.
 

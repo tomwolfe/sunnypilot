@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Circuit Breaker Manager for Controls.
 
@@ -6,18 +5,18 @@ This module handles circuit breaking functionality to prevent cascading failures
 """
 
 import time
-from typing import Dict, Any
+from typing import Any
 
 from openpilot.common.swaglog import cloudlog
 
 
 class CircuitBreakerManager:
   """Manages circuit breakers to prevent cascading failures in control systems."""
-  
+
   def __init__(self):
     self._circuit_breakers = self._init_circuit_breakers()
 
-  def _init_circuit_breakers(self) -> Dict[str, Any]:
+  def _init_circuit_breakers(self) -> dict[str, Any]:
     """Initialize circuit breakers to prevent cascading failures."""
     return {
       'adaptive_gains': {
@@ -76,7 +75,7 @@ class CircuitBreakerManager:
       else:
         return False  # Still in cooldown, circuit breaker is disabled
 
-    return cb['enabled']
+    return bool(cb['enabled'])
 
   def trigger_circuit_breaker(self, breaker_name: str, error_msg: str, error_type: str = None) -> None:
     """Trigger a circuit breaker due to an error with enhanced root cause tracking."""

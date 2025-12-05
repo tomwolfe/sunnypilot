@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Driving Context Analyzer for Controls.
 
@@ -7,15 +6,9 @@ for adaptive control systems.
 """
 
 import math
-from typing import Dict, Any
+from typing import Any
 
-import numpy as np
-
-from cereal import log
 from openpilot.common.swaglog import cloudlog
-from openpilot.common.constants import CV
-from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
-from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 
 # Adaptive control system constants
 WEATHER_THRESHOLD_TEMP_FREEZING = 2.0  # Temperature (in Celsius) below which snow is more likely
@@ -26,11 +19,11 @@ TRAFFIC_DISTANCE_THRESHOLD = 50.0  # Distance (in meters) to consider lead vehic
 
 class DrivingContextAnalyzer:
   """Analyzes driving context based on vehicle state, road conditions, and environment."""
-  
+
   def __init__(self):
     self._curvature_history = []
 
-  def calculate_driving_context(self, CS, sm: Dict[str, Any], VM) -> Dict[str, Any]:
+  def calculate_driving_context(self, CS, sm: dict[str, Any], VM) -> dict[str, Any]:
     """
     Calculate driving context based on vehicle state, road conditions, and environment.
 
@@ -81,10 +74,10 @@ class DrivingContextAnalyzer:
     self._curvature_history.append(current_curvature)
     if len(self._curvature_history) > 100:
       self._curvature_history.pop(0)
-    
-    return np.mean(np.abs(self._curvature_history)) if self._curvature_history else current_curvature
 
-  def _update_traffic_density(self, sm: Dict[str, Any], context: Dict[str, Any]) -> None:
+    return sum(abs(x) for x in self._curvature_history) / len(self._curvature_history) if self._curvature_history else current_curvature
+
+  def _update_traffic_density(self, sm: dict[str, Any], context: dict[str, Any]) -> None:
     """Update traffic density based on radar data."""
     try:
       # Use the safest approach for Mock objects in tests
@@ -112,7 +105,7 @@ class DrivingContextAnalyzer:
       # skip radar-based traffic density calculation
       pass
 
-  def _detect_weather_conditions(self, sm: Dict[str, Any]) -> str:
+  def _detect_weather_conditions(self, sm: dict[str, Any]) -> str:
     """
     Detect weather conditions based on simple, reliable sensor data.
     Simplified to use only wiper status as the primary indicator of adverse weather.
@@ -153,5 +146,5 @@ class DrivingContextAnalyzer:
       except TypeError:
         # If comparison fails (e.g., with Mock), assume it's not active
         wipers_active = False
-    
+
     return wipers_active
