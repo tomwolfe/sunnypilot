@@ -5,6 +5,7 @@ This test ensures that the vision model skipping mechanism works safely
 while providing the expected performance improvements.
 """
 
+import numpy as np
 import pytest
 from unittest.mock import Mock, patch
 from openpilot.selfdrive.modeld.modeld import ModelState
@@ -27,7 +28,7 @@ class MockVisionBuf:
 
 class TestSceneChangeDetection:
   """Test suite for scene change detection validation"""
-  
+
   def setup_method(self):
     """Set up test fixtures before each test method"""
     # Create a minimal mock object with just the methods and properties needed for scene detection tests
@@ -38,8 +39,12 @@ class TestSceneChangeDetection:
 
     # Get the actual methods from the ModelState class, handling differences in Python versions
     # In Python 3.12+, we need to handle the case where the method might already be a function
-    should_run_method = ModelState._should_run_vision_model.__func__ if hasattr(ModelState._should_run_vision_model, '__func__') else ModelState._should_run_vision_model
-    validation_method = ModelState._enhanced_model_input_validation.__func__ if hasattr(ModelState._enhanced_model_input_validation, '__func__') else ModelState._enhanced_model_input_validation
+    should_run_method = (ModelState._should_run_vision_model.__func__
+                         if hasattr(ModelState._should_run_vision_model, '__func__')
+                         else ModelState._should_run_vision_model)
+    validation_method = (ModelState._enhanced_model_input_validation.__func__
+                         if hasattr(ModelState._enhanced_model_input_validation, '__func__')
+                         else ModelState._enhanced_model_input_validation)
 
     # Create method types for our mock
     self.model_state._should_run_vision_model = types.MethodType(should_run_method, self.model_state)
@@ -54,7 +59,7 @@ class TestSceneChangeDetection:
     """Create a test frame with a specific value"""
     frame_data = np.full((height, width, 3), value, dtype=np.uint8)
     return MockVisionBuf(width=width, height=height, data=frame_data)
-  
+
   def test_initial_frame_handling(self):
     """Test that the first frame always runs the model"""
     bufs = {'roadCamera': self.create_test_frame(100)}
@@ -200,8 +205,12 @@ class TestModelExecutionWithSceneDetection:
 
     # Get the actual methods from the ModelState class, handling differences in Python versions
     # In Python 3.12+, we need to handle the case where the method might already be a function
-    should_run_method = ModelState._should_run_vision_model.__func__ if hasattr(ModelState._should_run_vision_model, '__func__') else ModelState._should_run_vision_model
-    validation_method = ModelState._enhanced_model_input_validation.__func__ if hasattr(ModelState._enhanced_model_input_validation, '__func__') else ModelState._enhanced_model_input_validation
+    should_run_method = (ModelState._should_run_vision_model.__func__
+                         if hasattr(ModelState._should_run_vision_model, '__func__')
+                         else ModelState._should_run_vision_model)
+    validation_method = (ModelState._enhanced_model_input_validation.__func__
+                         if hasattr(ModelState._enhanced_model_input_validation, '__func__')
+                         else ModelState._enhanced_model_input_validation)
 
     # Create method types for our mock
     self.model_state._should_run_vision_model = types.MethodType(should_run_method, self.model_state)
@@ -261,7 +270,6 @@ class TestModelExecutionWithSceneDetection:
         assert result is None, "Prepare only mode should return None"
     except Exception as e:
       pytest.fail(f"Prepare only execution failed with exception: {e}")
-
 
 if __name__ == "__main__":
   raise RuntimeError("pytest.main is banned, run with `pytest {__file__}` instead")

@@ -180,58 +180,62 @@ class TestThermalManagementValidation:
 
       # In danger state, ondemand mode should be used
       mock_ondemand.assert_called_once()
-  
+
+
   def test_red_state_override(self):
     """Test that red state uses ondemand mode regardless of trends"""
     device_state = self.create_mock_device_state(
       thermal_status=log.DeviceState.ThermalStatus.red,
       gpu_temp=80.0  # High
     )
-    
+
     # Set up cooling trend (should be ignored in red)
     self.thermal_manager._prev_gpu_temp = 85.0  # Previous was higher
-    
+
     sm = self.create_mock_submaster(device_state)
     CS = Mock()
-    
+
+
     with patch.object(self.thermal_manager, '_apply_gpu_ondemand_mode') as mock_ondemand, \
          patch.object(self.thermal_manager, '_apply_gpu_performance_mode_if_safe') as mock_performance:
-      
+
+
       self.thermal_manager.apply_gpu_management(sm, CS)
-      
+
       # In red state, ondemand mode should be used
       mock_ondemand.assert_called_once()
       mock_performance.assert_not_called()
-  
+
+
   def test_no_device_state_handling(self):
     """Test handling when device state is not available"""
     sm = Mock()
     sm.recv_frame = {}
     sm.updated = {'deviceState': False}
     CS = Mock()
-    
+
     # This should not crash and should handle missing device state gracefully
     try:
       self.thermal_manager.apply_gpu_management(sm, CS)
     except Exception as e:
       pytest.fail(f"apply_gpu_management failed with device state missing: {e}")
-  
+
   def test_none_gpu_temp_handling(self):
     """Test handling when GPU temperature is None"""
     device_state = self.create_mock_device_state(
       thermal_status=log.DeviceState.ThermalStatus.green,
       gpu_temp=None  # GPU temp is not available
     )
-    
+
     sm = self.create_mock_submaster(device_state)
     CS = Mock()
-    
+
     # This should not crash when GPU temp is None
     try:
       self.thermal_manager.apply_gpu_management(sm, CS)
     except Exception as e:
       pytest.fail(f"apply_gpu_management failed with None GPU temp: {e}")
-  
+
   def test_predictive_logic_with_future_temp(self):
     """Test the predictive logic for future temperature"""
     # Mock thermal management with specific conditions
@@ -239,21 +243,21 @@ class TestThermalManagementValidation:
       thermal_status=log.DeviceState.ThermalStatus.yellow,
       gpu_temp=75.0  # Close to red zone
     )
-    
+
     # Simulate previous temperature was lower, creating a rising trend
     self.thermal_manager._prev_gpu_temp = 70.0
-    
+
     # Set gpu_max to something reasonable, say 85°C
     self.thermal_manager.gpu_max = 85.0
-    
+
     sm = self.create_mock_submaster(device_state)
     CS = Mock()
-    
+
     with patch.object(self.thermal_manager, '_apply_gpu_ondemand_mode') as mock_ondemand:
-      # With yellow status and predicted temp (75+5=80) > 0.9 * 85 = 76.5, 
+      # With yellow status and predicted temp (75+5=80) > 0.9 * 85 = 76.5,
       # proactive thermal management should be triggered
       self.thermal_manager.apply_gpu_management(sm, CS)
-      
+
       # Proactive thermal management should call ondemand mode
       mock_ondemand.assert_called_once()
 
@@ -263,20 +267,20 @@ class TestThermalMonitoring(TestThermalManagementValidation):
 
   def setup_method(self):
     self.thermal_manager = ThermalManager()
-  
+
   def test_prediction_accuracy_logging(self):
     """Test that prediction accuracy is tracked"""
     # This test verifies that the system calculates prediction accuracy
     # We'll check the internal behavior by testing that trends are calculated properly
-    
+
     device_state1 = self.create_mock_device_state(
       thermal_status=log.DeviceState.ThermalStatus.green,
       gpu_temp=60.0
     )
-    
+
     sm1 = self.create_mock_submaster(device_state1)
     CS = Mock()
-    
+
     # First call initializes
     self.thermal_manager.apply_gpu_management(sm1, CS)
 
@@ -285,13 +289,13 @@ class TestThermalMonitoring(TestThermalManagementValidation):
       thermal_status=log.DeviceState.ThermalStatus.green,
       gpu_temp=65.0
     )
-    
+
     sm2 = self.create_mock_submaster(device_state2)
     # Reset for test
     self.thermal_manager._prev_gpu_temp = 60.0
-    
+
     self.thermal_manager.apply_gpu_management(sm2, CS)
-    
+
     # Verify that the previous temp was updated correctly
     assert self.thermal_manager._prev_gpu_temp == 65.0
 

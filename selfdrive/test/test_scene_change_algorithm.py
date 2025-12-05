@@ -5,7 +5,6 @@ Testing the core algorithm in isolation to validate safety and performance.
 """
 
 import numpy as np
-import pytest
 
 
 def scene_change_algorithm(current_frame, prev_frame, frame_skip_counter=0):

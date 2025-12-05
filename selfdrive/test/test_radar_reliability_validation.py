@@ -4,7 +4,6 @@ Test suite for validating the simplified radar reliability calculation in longit
 This test ensures that the simplified model maintains safety while providing performance benefits.
 """
 
-import pytest
 from opendbc.car.honda.values import CAR
 from opendbc.car.honda.interface import CarInterface
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
