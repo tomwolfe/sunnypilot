@@ -97,7 +97,7 @@ class ThermalManager:
   def apply_gpu_management(self, sm, CS):
     """
     Apply GPU management based on thermal state and driving conditions.
-    
+
     Args:
         sm: SubMaster instance with sensor data
         CS: CarState instance
