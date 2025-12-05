@@ -589,6 +589,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # Use detection probability if available
       reliability *= lead_radar.prob
 
+    # Check for angle-based reliability (lateral position validation)
+    # Wider angles (higher absolute yRel) indicate less reliable detections
+    if hasattr(lead_radar, 'yRel') and lead_radar.yRel is not None:
+      # Calculate angle-based reliability: closer to center (yRel ~ 0) = higher reliability
+      # Use a function that decreases reliability as angle increases
+      # Assuming angle threshold of 45 degrees is reasonable (in meters at typical distances)
+      angle_threshold = 45.0  # meters (corresponds to 45 degree angle at 50m)
+      angle_factor = max(0.1, min(1.0, 1.0 - abs(lead_radar.yRel) / angle_threshold))
+      reliability = (reliability + angle_factor) / 2.0
+
     # Track stability (age-based)
     if hasattr(lead_radar, 'age') and lead_radar.age is not None:
       # More stable tracks get slight reliability boost

@@ -40,9 +40,14 @@ class TestSceneChangeDetection:
     from openpilot.selfdrive.modeld.modeld import ModelState
     import types
 
-    # Get the actual methods from the ModelState class
-    self.model_state._should_run_vision_model = types.MethodType(ModelState._should_run_vision_model.__func__, self.model_state)
-    self.model_state._enhanced_model_input_validation = types.MethodType(ModelState._enhanced_model_input_validation.__func__, self.model_state)
+    # Get the actual methods from the ModelState class, handling differences in Python versions
+    # In Python 3.12+, we need to handle the case where the method might already be a function
+    should_run_method = ModelState._should_run_vision_model.__func__ if hasattr(ModelState._should_run_vision_model, '__func__') else ModelState._should_run_vision_model
+    validation_method = ModelState._enhanced_model_input_validation.__func__ if hasattr(ModelState._enhanced_model_input_validation, '__func__') else ModelState._enhanced_model_input_validation
+
+    # Create method types for our mock
+    self.model_state._should_run_vision_model = types.MethodType(should_run_method, self.model_state)
+    self.model_state._enhanced_model_input_validation = types.MethodType(validation_method, self.model_state)
 
     # Initialize the necessary attributes for the scene detection logic
     self.model_state.prev_road_frame = None
@@ -201,9 +206,14 @@ class TestModelExecutionWithSceneDetection:
     from openpilot.selfdrive.modeld.modeld import ModelState
     import types
 
-    # Get the actual methods from the ModelState class
-    self.model_state._should_run_vision_model = types.MethodType(ModelState._should_run_vision_model.__func__, self.model_state)
-    self.model_state._enhanced_model_input_validation = types.MethodType(ModelState._enhanced_model_input_validation.__func__, self.model_state)
+    # Get the actual methods from the ModelState class, handling differences in Python versions
+    # In Python 3.12+, we need to handle the case where the method might already be a function
+    should_run_method = ModelState._should_run_vision_model.__func__ if hasattr(ModelState._should_run_vision_model, '__func__') else ModelState._should_run_vision_model
+    validation_method = ModelState._enhanced_model_input_validation.__func__ if hasattr(ModelState._enhanced_model_input_validation, '__func__') else ModelState._enhanced_model_input_validation
+
+    # Create method types for our mock
+    self.model_state._should_run_vision_model = types.MethodType(should_run_method, self.model_state)
+    self.model_state._enhanced_model_input_validation = types.MethodType(validation_method, self.model_state)
 
     # Initialize the necessary attributes for the scene detection logic
     self.model_state.prev_road_frame = None
