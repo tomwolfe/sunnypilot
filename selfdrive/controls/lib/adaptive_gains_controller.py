@@ -26,29 +26,29 @@ class AdaptiveGainsController:
     Returns:
         dict: A validated context dictionary with proper defaults for missing keys
     """
-    validated_context = {}
+    validated_context: dict[str, Any] = {}
 
-    # Validate 'is_curvy_road' key
-    is_curvy_road = context.get('is_curvy_road', False)
-    validated_context['is_curvy_road'] = bool(is_curvy_road) if is_curvy_road is not None else False
+    # Validate 'is_curvy_road' key - should be boolean
+    is_curvy_road_raw = context.get('is_curvy_road', False)
+    validated_context['is_curvy_road'] = bool(is_curvy_road_raw) if is_curvy_road_raw is not None else False
 
-    # Validate 'traffic_density' key
-    traffic_density = context.get('traffic_density', 'low')
-    if not isinstance(traffic_density, str):
-      traffic_density = str(traffic_density)
+    # Validate 'traffic_density' key - should be string
+    traffic_density_raw = context.get('traffic_density', 'low')
+    if not isinstance(traffic_density_raw, str):
+      traffic_density_raw = str(traffic_density_raw)
     # Only allow expected values, default to 'low' if unexpected
-    if traffic_density not in ['low', 'medium', 'high']:
-      traffic_density = 'low'
-    validated_context['traffic_density'] = traffic_density
+    if traffic_density_raw not in ['low', 'medium', 'high']:
+      traffic_density_raw = 'low'
+    validated_context['traffic_density'] = traffic_density_raw
 
-    # Validate 'weather_condition' key
-    weather_condition = context.get('weather_condition', 'normal')
-    if not isinstance(weather_condition, str):
-      weather_condition = str(weather_condition)
+    # Validate 'weather_condition' key - should be string
+    weather_condition_raw = context.get('weather_condition', 'normal')
+    if not isinstance(weather_condition_raw, str):
+      weather_condition_raw = str(weather_condition_raw)
     # Only allow expected values, default to 'normal' if unexpected
-    if weather_condition not in ['normal', 'rain', 'snow', 'fog', 'wind']:
-      weather_condition = 'normal'
-    validated_context['weather_condition'] = weather_condition
+    if weather_condition_raw not in ['normal', 'rain', 'snow', 'fog', 'wind']:
+      weather_condition_raw = 'normal'
+    validated_context['weather_condition'] = weather_condition_raw
 
     # Log validation warnings for any missing or invalid keys
     if 'is_curvy_road' not in context:

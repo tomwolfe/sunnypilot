@@ -121,11 +121,17 @@ class TestAdaptiveGainsController:
         )
 
         # The values should still be valid and should use appropriate defaults
-        assert isinstance(gains['lateral']['steer_kp'], (int, float)), f"Expected steer_kp to be int or float, got {type(gains['lateral']['steer_kp'])}"
-        assert isinstance(gains['lateral']['steer_ki'], (int, float)), f"Expected steer_ki to be int or float, got {type(gains['lateral']['steer_ki'])}"
-        assert isinstance(gains['lateral']['steer_kd'], (int, float)), f"Expected steer_kd to be int or float, got {type(gains['lateral']['steer_kd'])}"
-        assert isinstance(gains['longitudinal']['accel_kp'], (int, float)), f"Expected accel_kp to be int or float, got {type(gains['longitudinal']['accel_kp'])}"
-        assert isinstance(gains['longitudinal']['accel_ki'], (int, float)), f"Expected accel_ki to be int or float, got {type(gains['longitudinal']['accel_ki'])}"
+        msg_kp = f"Expected steer_kp to be int or float, got {type(gains['lateral']['steer_kp'])}"
+        msg_ki = f"Expected steer_ki to be int or float, got {type(gains['lateral']['steer_ki'])}"
+        msg_kd = f"Expected steer_kd to be int or float, got {type(gains['lateral']['steer_kd'])}"
+        msg_accel_kp = f"Expected accel_kp to be int or float, got {type(gains['longitudinal']['accel_kp'])}"
+        msg_accel_ki = f"Expected accel_ki to be int or float, got {type(gains['longitudinal']['accel_ki'])}"
+
+        assert isinstance(gains['lateral']['steer_kp'], (int, float)), msg_kp
+        assert isinstance(gains['lateral']['steer_ki'], (int, float)), msg_ki
+        assert isinstance(gains['lateral']['steer_kd'], (int, float)), msg_kd
+        assert isinstance(gains['longitudinal']['accel_kp'], (int, float)), msg_accel_kp
+        assert isinstance(gains['longitudinal']['accel_ki'], (int, float)), msg_accel_ki
 
     def test_invalid_context_values(self):
         """Test handling of invalid context values."""
