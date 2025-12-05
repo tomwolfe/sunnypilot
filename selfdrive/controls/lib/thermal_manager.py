@@ -5,7 +5,6 @@ This module provides advanced thermal management for the adaptive control system
 to ensure hardware safety under varying thermal conditions.
 """
 
-import time
 from cereal import log
 from openpilot.common.swaglog import cloudlog
 
@@ -15,7 +14,7 @@ class ThermalManager:
     self.thermal_status = log.DeviceState.ThermalStatus.green
     self._last_thermal_check = 0
     self.gpu_management_enabled = True
-    
+
     # Thermal thresholds for Snapdragon 845 (as mentioned in the review)
     self.cpu_max = 75.0  # Start thermal management
     self.cpu_critical = 85.0  # Critical threshold
@@ -23,7 +22,7 @@ class ThermalManager:
     self.gpu_critical = 82.0  # GPU critical threshold
     self.som_max = 70.0  # SoM max temperature
     self.som_critical = 80.0  # SoM critical threshold
-    
+
     # Throttling parameters
     self.cpu_freq_step = 100  # MHz reduction step
     self.gpu_freq_step = 50   # MHz reduction step
@@ -167,7 +166,7 @@ class ThermalManager:
           with __import__('builtins').open(gpu_governor_path, 'w') as f:
             f.write('ondemand')
         cloudlog.debug("GPU governor set to ondemand for thermal safety")
-      except (IOError, OSError, PermissionError):
+      except (OSError, PermissionError):
         # If we can't write to the file (e.g., not on Android), just log
         cloudlog.debug("GPU governor set to ondemand for thermal safety (simulated)")
 
@@ -184,7 +183,7 @@ class ThermalManager:
             with __import__('builtins').open(gpu_governor_path, 'w') as f:
               f.write('performance')
           cloudlog.debug("GPU governor set to performance mode for critical operations")
-        except (IOError, OSError, PermissionError):
+        except (OSError, PermissionError):
           # If we can't write to the file (e.g., not on Android), just log
           cloudlog.debug("GPU governor set to performance mode (simulated)")
       else:
@@ -203,14 +202,14 @@ class ThermalManager:
         with __import__('builtins').open(gpu_governor_path, 'w') as f:
           f.write('conservative')  # Use conservative mode for thermal safety
       cloudlog.debug("GPU forced to thermal-safe mode")
-    except (IOError, OSError, PermissionError):
+    except (OSError, PermissionError):
       # If we can't write to the file (e.g., not on Android), just log
       cloudlog.debug("GPU forced to thermal-safe mode (simulated)")
 
   def get_hw_throttling_thresholds(self):
     """
     Get hardware-specific throttling thresholds optimized for Snapdragon 845.
-    
+
     Returns:
         dict: Hardware-specific thermal thresholds
     """
@@ -226,3 +225,4 @@ class ThermalManager:
       'fan_speed_min': self.fan_speed_min,
       'fan_speed_max': self.fan_speed_max,
     }
+

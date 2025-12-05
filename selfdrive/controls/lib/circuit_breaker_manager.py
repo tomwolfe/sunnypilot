@@ -147,7 +147,7 @@ class CircuitBreakerManager:
     cb = self._circuit_breakers[breaker_name]
     if cb['root_cause_analysis']:
       error_types = [e['error_type'] for e in cb['root_cause_analysis']]
-      error_counts = {}
+      error_counts: dict[str, int] = {}
       for et in error_types:
         error_counts[et] = error_counts.get(et, 0) + 1
 
@@ -155,5 +155,5 @@ class CircuitBreakerManager:
         f"Comprehensive error summary for {breaker_name}: "
         + f"Total errors: {len(cb['root_cause_analysis'])}, "
         + f"Error types: {error_counts}, "
-        + f"Most frequent: {max(error_counts, key=error_counts.get) if error_counts else 'none'}"
+        + f"Most frequent: {max(error_counts, key=lambda x: error_counts[x]) if error_counts else 'none'}"
       )
