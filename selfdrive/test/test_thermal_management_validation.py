@@ -5,7 +5,7 @@ This test ensures that the thermal management system works proactively and safel
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch  # noqa: TID251
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
 from cereal import log
 

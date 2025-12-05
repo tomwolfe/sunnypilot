@@ -5,7 +5,7 @@ for the optimized algorithms in sunnypilot.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch  # noqa: TID251
 from opendbc.car.honda.values import CAR
 from opendbc.car.honda.interface import CarInterface
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
