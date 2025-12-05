@@ -83,10 +83,9 @@ class AdaptiveGainsController:
     return adaptive_gains
 
 
-  def _validate_adaptive_gains_optimized(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
+  def _validate_adaptive_gains(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
     """
-    Lightweight validation of adaptive gains with reduced computational overhead.
-    Includes critical sudden gain change detection for safety.
+    Validate adaptive gains to prevent dangerous values that could lead to instability or unsafe behavior.
 
     Args:
         adaptive_gains: Dictionary containing lateral and longitudinal gains
@@ -95,22 +94,23 @@ class AdaptiveGainsController:
         dict: Validated and potentially corrected adaptive gain parameters
     """
     # Define safe bounds for gains
-    MIN_STEER_KP = 0.1
-    MAX_STEER_KP = 3.0
-    MIN_STEER_KI = 0.01
-    MAX_STEER_KI = 1.0
-    MIN_STEER_KD = 0.0
-    MAX_STEER_KD = 0.1
-    MIN_ACCEL_KP = 0.1
-    MAX_ACCEL_KP = 2.0
-    MIN_ACCEL_KI = 0.01
-    MAX_ACCEL_KI = 1.0
+    MIN_STEER_KP = 0.1  # Minimum steering proportional gain
+    MAX_STEER_KP = 3.0  # Maximum steering proportional gain
+    MIN_STEER_KI = 0.01  # Minimum steering integral gain
+    MAX_STEER_KI = 1.0  # Maximum steering integral gain
+    MIN_STEER_KD = 0.0  # Minimum steering derivative gain
+    MAX_STEER_KD = 0.1  # Maximum steering derivative gain
 
-    # Check for excessive gain changes between consecutive calls (safety validation)
+    MIN_ACCEL_KP = 0.1  # Minimum acceleration proportional gain
+    MAX_ACCEL_KP = 2.0  # Maximum acceleration proportional gain
+    MIN_ACCEL_KI = 0.01  # Minimum acceleration integral gain
+    MAX_ACCEL_KI = 1.0  # Maximum acceleration integral gain
+
+    # Additional safety validation - check for sudden changes in gains that might indicate sensor errors
     if self._prev_adaptive_gains:
       prev_gains = self._prev_adaptive_gains
 
-      # Check for sudden changes that might indicate sensor errors
+      # Check for excessive gain changes between consecutive calls
       for gain_type in adaptive_gains:
         if gain_type in prev_gains:
           for gain_name in adaptive_gains[gain_type]:
@@ -119,65 +119,97 @@ class AdaptiveGainsController:
               new_val = adaptive_gains[gain_type][gain_name]
               gain_change = abs(new_val - old_val)
 
-              # If the gain changed by more than 50% of its previous value, limit the change
+              # If the gain changed by more than 50% of its previous value, log a warning
               if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
+                cloudlog.warning(f"Sudden gain change detected: {gain_name} changed from {old_val} to {new_val}")
                 # Apply a smoother transition to prevent abrupt control changes
                 adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
-                cloudlog.warning(f"Sudden gain change detected and smoothed: {gain_name} changed from {old_val} to {new_val}, adjusted to {adaptive_gains[gain_type][gain_name]}")
+                cloudlog.info(f"Smoothed {gain_name} to {adaptive_gains[gain_type][gain_name]}")
 
-    # Simple validation without complex change detection
+    # Validate lateral gains
     if 'lateral' in adaptive_gains:
       lateral = adaptive_gains['lateral']
-      if 'steer_kp' in lateral:
-        lateral['steer_kp'] = max(MIN_STEER_KP, min(MAX_STEER_KP, lateral['steer_kp']))
-      if 'steer_ki' in lateral:
-        lateral['steer_ki'] = max(MIN_STEER_KI, min(MAX_STEER_KI, lateral['steer_ki']))
-      if 'steer_kd' in lateral:
-        lateral['steer_kd'] = max(MIN_STEER_KD, min(MAX_STEER_KD, lateral['steer_kd']))
 
+      # Check and bound steering KP
+      if 'steer_kp' in lateral:
+        original_kp = lateral['steer_kp']
+        lateral['steer_kp'] = max(MIN_STEER_KP, min(MAX_STEER_KP, lateral['steer_kp']))
+        if original_kp != lateral['steer_kp']:
+          cloudlog.warning(f"Steering KP gain adjusted from {original_kp} to {lateral['steer_kp']} for safety")
+
+      # Check and bound steering KI
+      if 'steer_ki' in lateral:
+        original_ki = lateral['steer_ki']
+        lateral['steer_ki'] = max(MIN_STEER_KI, min(MAX_STEER_KI, lateral['steer_ki']))
+        if original_ki != lateral['steer_ki']:
+          cloudlog.warning(f"Steering KI gain adjusted from {original_ki} to {lateral['steer_ki']} for safety")
+
+      # Check and bound steering KD
+      if 'steer_kd' in lateral:
+        original_kd = lateral['steer_kd']
+        lateral['steer_kd'] = max(MIN_STEER_KD, min(MAX_STEER_KD, lateral['steer_kd']))
+        if original_kd != lateral['steer_kd']:
+          cloudlog.warning(f"Steering KD gain adjusted from {original_kd} to {lateral['steer_kd']} for safety")
+
+      # Additional safety: Check for gain balance to prevent instability
+      # The ratio of KI/KP should not be too large to prevent integral windup
+      if 'steer_kp' in lateral and 'steer_ki' in lateral:
+        if lateral['steer_kp'] > 0 and (lateral['steer_ki'] / lateral['steer_kp']) > 0.5:
+          # Reduce KI if it's too large relative to KP
+          lateral['steer_ki'] = lateral['steer_kp'] * 0.5
+          cloudlog.warning(f"Reduced steering KI to maintain stability: {lateral['steer_ki']}")
+
+    # Validate longitudinal gains
     if 'longitudinal' in adaptive_gains:
       longitudinal = adaptive_gains['longitudinal']
-      if 'accel_kp' in longitudinal:
-        longitudinal['accel_kp'] = max(MIN_ACCEL_KP, min(MAX_ACCEL_KP, longitudinal['accel_kp']))
-      if 'accel_ki' in longitudinal:
-        longitudinal['accel_ki'] = max(MIN_ACCEL_KI, min(MAX_ACCEL_KI, longitudinal['accel_ki']))
 
-    # Basic NaN/Infinity checks - do this BEFORE sudden change detection to ensure valid values
+      # Check and bound acceleration KP
+      if 'accel_kp' in longitudinal:
+        original_kp = longitudinal['accel_kp']
+        longitudinal['accel_kp'] = max(MIN_ACCEL_KP, min(MAX_ACCEL_KP, longitudinal['accel_kp']))
+        if original_kp != longitudinal['accel_kp']:
+          cloudlog.warning(f"Acceleration KP gain adjusted from {original_kp} to {longitudinal['accel_kp']} for safety")
+
+      # Check and bound acceleration KI
+      if 'accel_ki' in longitudinal:
+        original_ki = longitudinal['accel_ki']
+        longitudinal['accel_ki'] = max(MIN_ACCEL_KI, min(MAX_ACCEL_KI, longitudinal['accel_ki']))
+        if original_ki != longitudinal['accel_ki']:
+          cloudlog.warning(f"Acceleration KI gain adjusted from {original_ki} to {longitudinal['accel_ki']} for safety")
+
+      # Additional safety: Check for longitudinal gain balance
+      if 'accel_kp' in longitudinal and 'accel_ki' in longitudinal:
+        if longitudinal['accel_kp'] > 0 and (longitudinal['accel_ki'] / longitudinal['accel_kp']) > 0.5:
+          # Reduce KI if it's too large relative to KP
+          longitudinal['accel_ki'] = longitudinal['accel_kp'] * 0.5
+          cloudlog.warning(f"Reduced acceleration KI to maintain stability: {longitudinal['accel_ki']}")
+
+    # Additional safety check - ensure gains are not NaN or infinity
     for gain_type in adaptive_gains:
       for gain_name, gain_value in adaptive_gains[gain_type].items():
-        if not math.isfinite(gain_value):
-          # Set to safe default
+        if not isinstance(gain_value, (int, float)) or not math.isfinite(gain_value):
+          cloudlog.error(f"Invalid gain value detected: {gain_name} = {gain_value}, setting to safe default")
+          # Set to a safe default based on the gain type
           if 'steer' in gain_name:
-            adaptive_gains[gain_type][gain_name] = 1.0
+            adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for steering
           elif 'accel' in gain_name:
-            adaptive_gains[gain_type][gain_name] = 1.0
+            adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for acceleration
 
-    # Check for excessive gain changes between consecutive calls (safety validation)
-    if self._prev_adaptive_gains:
-      prev_gains = self._prev_adaptive_gains
-
-      # Check for sudden changes that might indicate sensor errors
-      for gain_type in adaptive_gains:
-        if gain_type in prev_gains:
-          for gain_name in adaptive_gains[gain_type]:
-            if gain_name in prev_gains[gain_type]:
-              old_val = prev_gains[gain_type][gain_name]
-              new_val = adaptive_gains[gain_type][gain_name]
-              gain_change = abs(new_val - old_val)
-
-              # If the gain changed by more than 50% of its previous value, limit the change
-              if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
-                # Apply a smoother transition to prevent abrupt control changes
-                adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
-                cloudlog.warning(f"Sudden gain change detected and smoothed: {gain_name} changed from {old_val} to {new_val}, adjusted to {adaptive_gains[gain_type][gain_name]}")
-
-    # Store for next iteration (minimal processing)
+    # Store current gains for next iteration comparison
     self._prev_adaptive_gains = adaptive_gains.copy()
+
+    # Add comprehensive logging for debugging
+    cloudlog.debug(
+      f"Adaptive gains validated - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
+      + f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
+      + f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
+      + f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}"
+    )
 
     return adaptive_gains
 
-  def _validate_adaptive_gains(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
+  def _validate_adaptive_gains_optimized(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
     """
-    Legacy validation function kept for compatibility (calls the optimized version).
+    Legacy validation function kept for compatibility (calls the main validation version).
     """
-    return self._validate_adaptive_gains_optimized(adaptive_gains)
+    return self._validate_adaptive_gains(adaptive_gains)

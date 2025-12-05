@@ -206,8 +206,71 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Cap the calculated time to prevent extreme values from noise
           time_to_collision = min(raw_time_to_collision, 5.0)  # Cap at 5 seconds to prevent noise-induced false positives
 
-    # Optimized Forward Collision Warning (FCW) with reduced computational overhead
-    self.fcw = self._calculate_optimized_fcw(sm, lead_one, v_ego, a_ego)
+    # Enhanced FCW logic with speed-adaptive thresholds
+    mpc_crash_warning = self.mpc.crash_cnt > 2
+
+    # Dynamic thresholds based on speed and driving context
+    if v_ego < 5:  # Very low speeds (stationary or slow moving)
+      emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
+      distance_threshold = 8  # meters
+    elif v_ego < 15:  # City speeds (~54 km/h)
+      emergency_brake_threshold = 2.0
+      distance_threshold = 15  # meters
+    elif v_ego < 25:  # Highway speeds (~54-90 km/h)
+      emergency_brake_threshold = 2.5
+      distance_threshold = 30  # meters
+    else:  # High speeds (>90 km/h)
+      emergency_brake_threshold = 2.8
+      distance_threshold = 45  # meters
+
+    # Enhanced FCW logic - trigger based on multiple criteria
+    # 1. Time to collision with immediate braking requirement
+    imminent_collision = time_to_collision < emergency_brake_threshold and relative_speed > 0.5
+
+    # 2. Distance-based warning for low-speed situations where time-based may not work well
+    distance_collision = distance_to_collision < distance_threshold and relative_speed > 0.5 and v_ego < 10
+
+    # 3. Lead vehicle emergency braking detection
+    lead_braking_emergency = lead_one.aLeadK - a_ego > 2.5 and lead_one.dRel < 40 and v_ego > 5
+
+    # 4. Combined MPC and sensor-based warnings
+    mpc_and_sensors_warning = mpc_crash_warning and not sm['carState'].standstill and relative_speed > 1.0
+
+    # 5. Enhanced model-based prediction with additional safety checks
+    model_fcw = (
+      sm['modelV2'].meta.hardBrakePredicted
+      and not sm['carState'].brakePressed
+      and v_ego > 3
+      and distance_to_collision < 50  # Only if close enough to be relevant
+      and sm['carState'].aEgo < -1.25
+    )  # Re-added safeguard: prevent FCW during strong acceleration (original value)
+
+    # 6. Additional safety criterion: Predictive collision assessment using multiple lead vehicles
+    extended_collision_risk = False
+    if (
+      sm['radarState'].leadTwo.status
+      and lead_one.dRel < 60.0
+      and sm['radarState'].leadTwo.dRel < lead_one.dRel + 20.0  # Second lead is close behind first
+      and sm['radarState'].leadTwo.vRel < -2.0
+    ):  # Second lead is approaching rapidly
+      extended_collision_risk = True
+
+    # Combine all FCW triggers
+    self.fcw = (
+      imminent_collision or distance_collision or lead_braking_emergency or mpc_and_sensors_warning or (model_fcw and v_ego > 5) or extended_collision_risk
+    )
+
+    # Additional safety logic: consider relative acceleration
+    # NOTE: This trigger is potentially aggressive and may cause false positives during lane changes or merging.
+    # Extensive real-world testing is required before deployment in production systems.
+    # Disabling this for now based on critical review.
+    # if lead_one.status and lead_one.dRel < 50:  # Only consider when close to lead vehicle
+    #   relative_acceleration = a_ego - lead_one.aLeadK  # Positive if we're accelerating more than lead
+    #   if relative_acceleration > 2.0 and lead_one.dRel < 20:  # If we're accelerating much faster toward a close vehicle
+    #     self.fcw = True
+
+    if self.fcw:
+      cloudlog.warning(f"FCW triggered: TTC={time_to_collision:.2f}s, distance={distance_to_collision:.1f}m, rel_speed={relative_speed:.2f}m/s")
 
     # Interpolate 0.05 seconds and save as starting point for next iteration
     a_prev = self.a_desired
@@ -314,8 +377,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _validate_fused_sensor_data(self, x, v, a):
     """
-    Lightweight validation of fused sensor data to ensure physical plausibility and safety.
-    Reduced computational overhead while maintaining essential safety checks.
+    Validate fused sensor data to ensure physical plausibility and safety.
+    Enhanced with more sophisticated validation and safety mechanisms.
 
     Args:
         x: Fused distance values
@@ -330,11 +393,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     validated_v = v.copy()
     validated_a = a.copy()
 
+    # Store original acceleration values for consistency calculations before any modifications
+    original_acceleration_values = a.copy()
+
     # Store previous validation results for consistency checking
     if not hasattr(self, '_prev_validated_x'):
       self._prev_validated_x = validated_x.copy()
       self._prev_validated_v = validated_v.copy()
       self._prev_validated_a = validated_a.copy()
+
+    # Store the frame counter to track temporal consistency
+    if not hasattr(self, '_frame_counter'):
+      self._frame_counter = 0
+    self._frame_counter += 1
 
     for i in range(len(validated_x)):
       # Validate distance (positive, realistic range)
@@ -352,6 +423,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           # Use a weighted average to smooth sudden changes
           validated_x[i] = 0.7 * self._prev_validated_x[i] + 0.3 * validated_x[i]
           cloudlog.warning(f"Sudden distance change detected and smoothed: {self._prev_validated_x[i]} -> {x[i]} adjusted to {validated_x[i]}")
+
+      # Enhanced validation: Check for physically impossible scenarios
+      if i < len(validated_v) and i < len(validated_a):
+        # Check if distance is getting smaller but relative velocity suggests the lead is moving away rapidly
+        if (
+          validated_x[i] < self._prev_validated_x[i]  # Getting closer
+          and validated_v[i] > 5.0  # Lead moving away quickly
+          and validated_a[i] > 3.0
+        ):  # Lead accelerating away rapidly
+          # This is physically inconsistent - apply more conservative validation
+          cloudlog.warning(f"Physically inconsistent lead behavior detected: d={validated_x[i]:.1f}, v={validated_v[i]:.1f}, a={validated_a[i]:.1f}")
+          # Reduce acceleration to more conservative value
+          validated_a[i] = min(validated_a[i], 3.0)
         # Additionally, ensure the value is still within bounds after smoothing
         validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
 
@@ -372,6 +456,15 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           validated_v[i] = 0.8 * self._prev_validated_v[i] + 0.2 * validated_v[i]
           cloudlog.warning(f"Extreme velocity change detected and smoothed: {self._prev_validated_v[i]:.2f} -> {validated_v[i]:.2f}")
 
+      # Enhanced velocity validation: Check for extreme velocity values that are unlikely
+      if abs(validated_v[i]) > 35.0:  # >125 km/h relative velocity is unusual
+        # Apply more conservative limits based on common scenarios
+        if validated_v[i] > 0:  # Lead moving away very fast
+          validated_v[i] = 30.0  # Cap at 30 m/s (108 km/h)
+        else:  # Lead approaching very fast
+          validated_v[i] = -30.0  # Cap at -30 m/s
+        cloudlog.warning(f"Extreme velocity clamped: {validated_v[i]:.2f}")
+
     for i in range(len(validated_a)):
       # Validate acceleration (realistic acceleration values)
       if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
@@ -389,6 +482,46 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         if original_a != validated_a[i]:
           cloudlog.warning(f"Acceleration clamped for safety: {original_a} -> {validated_a[i]}")
 
+      # Check for acceleration consistency with velocity - using the original acceleration before any modifications
+      if i < len(validated_v) and i < len(self._prev_validated_v):
+        # Calculate expected acceleration based on velocity change (assuming 0.05s between frames)
+        dt = 0.05  # Approximate frame time
+        velocity_based_accel = (validated_v[i] - self._prev_validated_v[i]) / dt
+
+        # Use the original acceleration values that were stored at the start of the method
+        original_acceleration_for_consistency = original_acceleration_values[i] if i < len(original_acceleration_values) else validated_a[i]
+
+        # Check if the reported acceleration is consistent with the velocity change
+        if abs(original_acceleration_for_consistency - velocity_based_accel) > 20.0:  # Large discrepancy
+          msg = (
+            f"Acceleration-velocity inconsistency detected: reported_original={original_acceleration_for_consistency:.2f}, "
+            + f"calculated={velocity_based_accel:.2f}"
+          )
+          cloudlog.warning(msg)
+          # Use a weighted average of both for safety, but be careful about the logic
+          # Use original acceleration value in the weighted average calculation
+          validated_a[i] = 0.6 * original_acceleration_for_consistency + 0.4 * velocity_based_accel
+          validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # Ensure bounds after adjustment
+
+      # Enhanced validation: Check for sustained extreme acceleration that is physically unlikely
+      if hasattr(self, '_acceleration_history') and len(self._acceleration_history) > 0:
+        # Track acceleration patterns to detect unlikely sustained accelerations
+        recent_accel_avg = np.mean(self._acceleration_history[-5:]) if len(self._acceleration_history[-5:]) > 0 else 0.0
+        if abs(recent_accel_avg) > 6.0 and abs(validated_a[i]) > 6.0:  # Both sustained and current are extreme
+          # Apply more conservative validation
+          validated_a[i] = 0.8 * validated_a[i] + 0.2 * 0.0  # Pull toward zero acceleration
+          cloudlog.warning(f"Sustained extreme acceleration detected, moderated: {validated_a[i]:.2f}")
+
+    # Update acceleration history for sustained acceleration detection
+    if not hasattr(self, '_acceleration_history'):
+      self._acceleration_history = []
+    # Add current acceleration values to history
+    for i in range(len(validated_a)):
+      self._acceleration_history.append(validated_a[i])
+    # Keep only last 20 values to maintain reasonable history
+    if len(self._acceleration_history) > 20:
+      self._acceleration_history = self._acceleration_history[-20:]
+
     # Update stored previous values
     self._prev_validated_x = validated_x.copy()
     self._prev_validated_v = validated_v.copy()
@@ -398,8 +531,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _calculate_radar_reliability(self, lead_radar):
     """
-    Simplified radar reliability calculation for performance.
-    Reduced computational overhead while maintaining basic reliability assessment.
+    Calculate radar reliability based on proper radar parameters including SNR, track age, and consistency.
+    Enhanced with more sophisticated reliability calculations and safety validations.
 
     Args:
         lead_radar: Radar lead data structure
@@ -407,110 +540,113 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     Returns:
         float: Reliability score between 0.0 and 1.0
     """
-    if not lead_radar.status:
-      return 0.0
+    # Initialize reliability as 0.0 for invalid leads, 1.0 for valid leads
+    reliability = 1.0 if lead_radar.status else 0.0
 
-    # Simplified reliability calculation with basic factors
-    reliability = 1.0
+    if lead_radar.status:
+      # Start with base reliability of 1.0 for valid lead
+      base_reliability = 1.0
 
-    # Distance-based reliability (basic implementation)
-    distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
-    reliability *= distance_factor
+      # 1. Distance-based reliability: closer objects more reliable
+      # Threshold justification: At 50m distance, reliability is 1.0; decreases to 0.1 at 500m
+      # This reflects radar accuracy characteristics where closer objects have more reliable measurements
+      distance_factor = max(0.1, min(1.0, 50.0 / max(1.0, lead_radar.dRel)))
+      reliability = base_reliability * distance_factor
 
-    # Basic velocity validity check
-    if hasattr(lead_radar, 'vRel') and abs(lead_radar.vRel) > 50:  # Unusually high velocity
-      reliability *= 0.3  # Reduce reliability significantly
-    elif hasattr(lead_radar, 'vRel') and abs(lead_radar.vRel) > 30:  # High but possible velocity
-      reliability *= 0.7  # Moderate reduction
+      # 2. Signal-to-Noise Ratio (SNR) or other quality metrics based reliability if available
+      # SNR is a key indicator of measurement quality - higher SNR means more reliable detection
+      # Check for common radar quality metrics
+      snr_reliability = 1.0
+      if hasattr(lead_radar, 'snr') and lead_radar.snr is not None and lead_radar.snr >= 0:  # Signal-to-noise ratio
+        # Normalize SNR: good SNR (e.g., > 10) = high reliability, poor SNR (e.g., < 2) = low reliability
+        snr_reliability = min(1.0, max(0.1, lead_radar.snr / 10.0))  # Normalize to 0.1-1.0 range
+        reliability *= 0.7 + 0.3 * snr_reliability  # Weight SNR contribution
+      elif hasattr(lead_radar, 'std') and lead_radar.std is not None and lead_radar.std > 0:  # Standard deviation of measurement
+        # Lower standard deviation = higher reliability
+        std_reliability = max(0.1, 1.0 - (lead_radar.std / 2.0))  # Higher std = less reliable
+        reliability *= 0.6 + 0.4 * std_reliability  # Weight std contribution
+      elif hasattr(lead_radar, 'prob') and lead_radar.prob is not None and lead_radar.prob >= 0:  # Detection probability
+        # Use detection probability if available
+        reliability *= lead_radar.prob
 
-    # Basic acceleration validity check
-    if hasattr(lead_radar, 'aLeadK') and abs(lead_radar.aLeadK) > 10:  # High acceleration
-      reliability *= 0.5  # Reduce reliability
+      # 3. Track age and consistency - longer tracked objects are more reliable
+      # Enhanced track age calculation with better logic
+      track_age_factor = 1.0
+      if hasattr(lead_radar, 'aLeadTau') and lead_radar.aLeadTau is not None and isinstance(lead_radar.aLeadTau, (int, float)) and lead_radar.aLeadTau > 0:
+        # aLeadTau appears to represent the time constant associated with lead acceleration
+        # Lower values indicate more recent, stable tracking
+        track_age_factor = max(0.1, min(1.0, 2.0 / max(0.1, lead_radar.aLeadTau)))
+        reliability *= 0.8 + 0.2 * track_age_factor  # Weight track age contribution
 
-    # Apply basic bounds
-    reliability = max(0.1, min(1.0, reliability))
+      # 4. Track stability based on available parameters
+      track_stability_factor = 1.0
+      if hasattr(lead_radar, 'age') and lead_radar.age is not None and isinstance(lead_radar.age, (int, float)) and lead_radar.age > 0:
+        # Older, stable tracks are more reliable than new ones
+        track_stability_factor = min(1.0, lead_radar.age / 10.0)  # Stabilizes after 10 cycles
+        reliability *= 0.7 + 0.3 * track_stability_factor
+      elif hasattr(lead_radar, 'newLead') and lead_radar.newLead is not None and isinstance(lead_radar.newLead, (bool, int, float)) and not lead_radar.newLead:
+        # If this is not a new lead (has been tracked before), increase reliability
+        reliability *= 1.1  # Slight boost for established tracks
+
+      # 5. Enhanced consistency check: Very high relative velocities might indicate unreliable measurements
+      velocity_factor = 1.0
+      if (
+        hasattr(lead_radar, 'vRel') and lead_radar.vRel is not None and isinstance(lead_radar.vRel, (int, float)) and abs(lead_radar.vRel) > 50
+      ):  # If relative velocity is extremely high
+        # reduce reliability
+        velocity_factor = 0.1  # Significant reduction for potentially erroneous high-velocity measurements
+        reliability *= velocity_factor
+
+      # 6. Enhanced distance-rate consistency check
+      consistency_factor = 1.0
+      if (
+        hasattr(lead_radar, 'dRel')
+        and lead_radar.dRel is not None
+        and isinstance(lead_radar.dRel, (int, float))
+        and hasattr(lead_radar, 'vRel')
+        and lead_radar.vRel is not None
+        and isinstance(lead_radar.vRel, (int, float))
+      ):
+        # Check if the relationship between distance and velocity is physically plausible
+        # Calculate if the current velocity would result in collision in an unreasonably short time
+        time_to_collision = lead_radar.dRel / max(abs(lead_radar.vRel), 0.1) if lead_radar.vRel < 0 else float('inf')
+        if 0 < time_to_collision < 0.2:  # Less than 0.2 seconds to collision is physically unlikely
+          consistency_factor = 0.1
+          reliability *= consistency_factor
+        elif 0 < time_to_collision < 0.5:  # Less than 0.5 seconds is still questionable
+          consistency_factor = 0.5
+          reliability *= consistency_factor
+
+      # 7. Additional validation: Check if relative acceleration is physically plausible
+      acceleration_factor = 1.0
+      if (
+        hasattr(lead_radar, 'aLeadK') and lead_radar.aLeadK is not None and isinstance(lead_radar.aLeadK, (int, float)) and abs(lead_radar.aLeadK) > 15.0
+      ):  # Acceleration > 15 m/s² is unlikely
+        acceleration_factor = 0.2
+        reliability *= acceleration_factor
+
+      # 8. Angle validation: Check for Doppler angle ambiguity issues
+      angle_factor = 1.0
+      if (
+        hasattr(lead_radar, 'yRel')
+        and lead_radar.yRel is not None
+        and isinstance(lead_radar.yRel, (int, float))
+        and hasattr(lead_radar, 'dRel')
+        and lead_radar.dRel is not None
+        and isinstance(lead_radar.dRel, (int, float))
+      ):
+        # Calculate relative angle - if angle is too wide, reduce reliability
+        if lead_radar.dRel > 0:  # Only calculate if dRel is positive to avoid division issues
+          relative_angle = math.atan2(lead_radar.yRel, lead_radar.dRel)
+          if abs(relative_angle) > math.radians(45):  # Beyond 45 degrees, reduce reliability
+            angle_factor = max(0.1, 1.0 - (abs(relative_angle) - math.radians(45)) / math.radians(45))
+            reliability *= angle_factor
+
+      # 9. Apply safety floor to ensure some minimum reliability for valid leads
+      reliability = max(0.1, min(1.0, reliability))  # Ensure 0.1 <= reliability <= 1.0
+
     return reliability
 
-  def _calculate_optimized_fcw(self, sm, lead_one, v_ego, a_ego):
-    """
-    Optimized Forward Collision Warning with reduced computational overhead.
-    Restored critical collision detection mechanisms for safety.
-
-    Args:
-        sm: SubMaster instance
-        lead_one: Primary lead from radar state
-        v_ego: Ego vehicle velocity
-        a_ego: Ego vehicle acceleration
-
-    Returns:
-        bool: True if FCW condition is met
-    """
-    if not lead_one.status:
-        return False
-
-    # Calculate time to collision based on current trajectories
-    relative_speed = v_ego - lead_one.vRel
-    time_to_collision = float('inf')
-    distance_to_collision = lead_one.dRel
-
-    if relative_speed > 0 and lead_one.dRel > 0:  # Approaching lead vehicle
-      time_to_collision = lead_one.dRel / relative_speed
-
-    # Enhanced FCW logic with speed-adaptive thresholds
-    mpc_crash_warning = self.mpc.crash_cnt > 2
-
-    # Dynamic thresholds based on speed and driving context
-    if v_ego < 5:  # Very low speeds (stationary or slow moving)
-      emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
-      distance_threshold = 8  # meters
-    elif v_ego < 15:  # City speeds (~54 km/h)
-      emergency_brake_threshold = 2.0
-      distance_threshold = 15  # meters
-    elif v_ego < 25:  # Highway speeds (~54-90 km/h)
-      emergency_brake_threshold = 2.5
-      distance_threshold = 30  # meters
-    else:  # High speeds (>90 km/h)
-      emergency_brake_threshold = 2.8
-      distance_threshold = 45  # meters
-
-    # Enhanced FCW logic - trigger based on multiple criteria
-    # 1. Time to collision with immediate braking requirement
-    imminent_collision = time_to_collision < emergency_brake_threshold and relative_speed > 0.5
-
-    # 2. Distance-based warning for low-speed situations where time-based may not work well
-    distance_collision = distance_to_collision < distance_threshold and relative_speed > 0.5 and v_ego < 10
-
-    # 3. Lead vehicle emergency braking detection
-    lead_braking_emergency = lead_one.aLeadK - a_ego > 2.5 and lead_one.dRel < 40 and v_ego > 5
-
-    # 4. Combined MPC and sensor-based warnings
-    mpc_and_sensors_warning = mpc_crash_warning and not sm['carState'].standstill and relative_speed > 1.0
-
-    # 5. Enhanced model-based prediction with additional safety checks
-    model_fcw = (
-      sm['modelV2'].meta.hardBrakePredicted
-      and not sm['carState'].brakePressed
-      and v_ego > 3
-      and distance_to_collision < 50  # Only if close enough to be relevant
-      and sm['carState'].aEgo < -1.25
-    )
-
-    # 6. Additional safety criterion: Predictive collision assessment using multiple lead vehicles
-    extended_collision_risk = False
-    if (
-      sm['radarState'].leadTwo.status
-      and lead_one.dRel < 60.0
-      and sm['radarState'].leadTwo.dRel < lead_one.dRel + 20.0  # Second lead is close behind first
-      and sm['radarState'].leadTwo.vRel < -2.0
-    ):  # Second lead is approaching rapidly
-      extended_collision_risk = True
-
-    # Combine all FCW triggers
-    self.fcw = (
-      imminent_collision or distance_collision or lead_braking_emergency or mpc_and_sensors_warning or (model_fcw and v_ego > 5) or extended_collision_risk
-    )
-
-    return self.fcw
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')

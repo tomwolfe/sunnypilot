@@ -775,6 +775,11 @@ class Controls(ControlsExt):
       rk = Ratekeeper(100, print_delay_threshold=None)  # Base rate is 100Hz
 
       while True:
+        self.update()
+        CC, lac_log = self.state_control()
+        self.publish(CC, lac_log)
+        self.run_ext(self.sm, self.pm)
+
         # Calculate thermal state and adaptive gains for thermal management
         current_time = time.monotonic()
         thermal_state = self.thermal_manager.get_thermal_state_with_fallback(self.sm, current_time)
