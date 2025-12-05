@@ -263,31 +263,49 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       if radar_state.leadOne.status and len(model_v2.leadsV3) > 0:
         lead_radar = radar_state.leadOne
 
-        # Get the most confident lead from vision model (simple approach)
-        vision_lead = model_v2.leadsV3[0]  # Take the first (most confident) detection
+        # Get the most relevant lead from vision model (closest or most concerning)
+        closest_vision_lead = None
+        for lead_vision in model_v2.leadsV3:
+          if lead_vision.prob > 0.5:  # Only consider confident detections
+            if closest_vision_lead is None or lead_vision.dRel < closest_vision_lead.dRel:
+              closest_vision_lead = lead_vision
 
-        # Only apply fusion if vision lead is confident enough
-        if vision_lead.prob > 0.6:  # Lower confidence threshold for efficiency
-          # Use simple fixed weights instead of complex reliability calculation
-          radar_weight = 0.4  # Fixed weight for radar reliability
-          vision_weight = 0.6  # Fixed weight for vision confidence
+        # If we have both radar and vision leads, perform simple weighted fusion
+        if closest_vision_lead is not None:
+          # Calculate simple reliability measures for performance
+          radar_reliability = self._calculate_radar_reliability(lead_radar)
+          vision_reliability = closest_vision_lead.prob  # Vision probability
 
-          # Simple weighted fusion
-          fused_dRel = lead_radar.dRel * radar_weight + vision_lead.dRel * vision_weight
-          fused_vRel = lead_radar.vRel * radar_weight + vision_lead.vRel * vision_weight
+          # Simple weighted fusion based on reliability
+          total_reliability = radar_reliability + vision_reliability
+          if total_reliability > 0:
+            radar_weight = radar_reliability / total_reliability
+            vision_weight = vision_reliability / total_reliability
 
-          # Handle acceleration fusion
-          radar_aLead = lead_radar.aLeadK
-          vision_aLead = getattr(vision_lead, 'aRel', 0.0)
-          fused_aLead = radar_aLead * radar_weight + vision_aLead * vision_weight
+            # Fuse distance, velocity, and acceleration with simple weighted average
+            fused_dRel = lead_radar.dRel * radar_weight + closest_vision_lead.dRel * vision_weight
+            fused_vRel = lead_radar.vRel * radar_weight + closest_vision_lead.vRel * vision_weight
 
-          # Apply efficient validation
-          if len(enhanced_x) > 0:
-            enhanced_x[0] = np.clip(fused_dRel, 2.0, 150.0)
-          if len(enhanced_v) > 0:
-            enhanced_v[0] = np.clip(fused_vRel, -50.0, 50.0)
-          if len(enhanced_a) > 0:
-            enhanced_a[0] = np.clip(fused_aLead, -10.0, 8.0)
+            # Handle acceleration fusion appropriately
+            radar_aLead = lead_radar.aLeadK  # Radar acceleration should already be relative
+            vision_aLead = getattr(closest_vision_lead, 'aRel', 0.0)  # Default to 0 if not available
+            fused_aLead = radar_aLead * radar_weight + vision_aLead * vision_weight
+
+            # Apply basic validation to ensure fused values are physically plausible
+            fused_dRel = max(2.0, min(150.0, fused_dRel))  # Keep distance within safe bounds
+            fused_vRel = max(-50.0, min(50.0, fused_vRel))  # Max +/- 50 m/s relative velocity
+            fused_aLead = max(-10.0, min(8.0, fused_aLead))  # Max -10 to +8 m/s^2
+
+            # Update the lead data used by the planner with fused values
+            if len(enhanced_x) > 0:
+              enhanced_x[0] = fused_dRel
+            if len(enhanced_v) > 0:
+              enhanced_v[0] = fused_vRel
+            if len(enhanced_a) > 0:
+              enhanced_a[0] = fused_aLead
+
+      # Apply physical plausibility validation to ensure fused values are within realistic bounds
+      enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
 
       return enhanced_x, enhanced_v, enhanced_a
     except Exception:
@@ -312,17 +330,69 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     validated_v = v.copy()
     validated_a = a.copy()
 
+    # Store previous validation results for consistency checking
+    if not hasattr(self, '_prev_validated_x'):
+      self._prev_validated_x = validated_x.copy()
+      self._prev_validated_v = validated_v.copy()
+      self._prev_validated_a = validated_a.copy()
+
     for i in range(len(validated_x)):
-      # Basic validation: clip to realistic range
-      validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)  # 0.1m to 200m range
+      # Validate distance (positive, realistic range)
+      if not np.isnan(validated_x[i]) and not np.isinf(validated_x[i]):
+        validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)  # 0.1m to 200m range
+      else:
+        # If invalid, use a safe default (far distance)
+        validated_x[i] = 200.0
+
+      # Additional safety check: Check for sudden changes that might indicate sensor fusion errors
+      if i < len(self._prev_validated_x):
+        distance_change = abs(validated_x[i] - self._prev_validated_x[i])
+        # If the distance changed dramatically between frames, apply smoothing
+        if distance_change > 10.0:  # Changed by more than 10m in one frame
+          # Use a weighted average to smooth sudden changes
+          validated_x[i] = 0.7 * self._prev_validated_x[i] + 0.3 * validated_x[i]
+          cloudlog.warning(f"Sudden distance change detected and smoothed: {self._prev_validated_x[i]} -> {x[i]} adjusted to {validated_x[i]}")
+        # Additionally, ensure the value is still within bounds after smoothing
+        validated_x[i] = np.clip(validated_x[i], 0.1, 200.0)
 
     for i in range(len(validated_v)):
-      # Basic velocity validation
-      validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)  # -50 to +50 m/s
+      # Validate velocity (realistic relative velocities for lead vehicles)
+      if not np.isnan(validated_v[i]) and not np.isinf(validated_v[i]):
+        validated_v[i] = np.clip(validated_v[i], -50.0, 50.0)  # -50 to +50 m/s (about -180 to +180 km/h)
+      else:
+        # If invalid, use a safe default (stationary relative to ego)
+        validated_v[i] = 0.0
+
+      # Additional safety check for velocity changes
+      if i < len(self._prev_validated_v):
+        velocity_change = abs(validated_v[i] - self._prev_validated_v[i])
+        # If the velocity changed dramatically, apply smoothing (max ~4g acceleration)
+        if velocity_change > 40.0:  # Changed by more than 40 m/s in one frame (impossible)
+          # Use a weighted average to smooth sudden changes
+          validated_v[i] = 0.8 * self._prev_validated_v[i] + 0.2 * validated_v[i]
+          cloudlog.warning(f"Extreme velocity change detected and smoothed: {self._prev_validated_v[i]:.2f} -> {validated_v[i]:.2f}")
 
     for i in range(len(validated_a)):
-      # Basic acceleration validation
-      validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # -15 to +8 m/s^2
+      # Validate acceleration (realistic acceleration values)
+      if not np.isnan(validated_a[i]) and not np.isinf(validated_a[i]):
+        validated_a[i] = np.clip(validated_a[i], -15.0, 8.0)  # -15 to +8 m/s^2 (extreme but possible)
+      else:
+        # If invalid, use a safe default (no acceleration)
+        validated_a[i] = 0.0
+
+      # Additional safety check for acceleration based on physics
+      # Acceleration shouldn't exceed what's physically possible
+      if abs(validated_a[i]) > 9.81 * 0.8:  # 0.8g limit (typical maximum for vehicles)
+        # Apply a more conservative acceleration limit for safety
+        original_a = validated_a[i]
+        validated_a[i] = np.clip(validated_a[i], -8.0, 3.0)  # More conservative limits
+        if original_a != validated_a[i]:
+          cloudlog.warning(f"Acceleration clamped for safety: {original_a} -> {validated_a[i]}")
+
+    # Update stored previous values
+    self._prev_validated_x = validated_x.copy()
+    self._prev_validated_v = validated_v.copy()
+    self._prev_validated_a = validated_a.copy()
 
     return validated_x, validated_v, validated_a
 
@@ -364,6 +434,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
   def _calculate_optimized_fcw(self, sm, lead_one, v_ego, a_ego):
     """
     Optimized Forward Collision Warning with reduced computational overhead.
+    Restored critical collision detection mechanisms for safety.
 
     Args:
         sm: SubMaster instance
@@ -377,40 +448,69 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if not lead_one.status:
         return False
 
-    # Simple time-to-collision calculation
+    # Calculate time to collision based on current trajectories
     relative_speed = v_ego - lead_one.vRel
+    time_to_collision = float('inf')
+    distance_to_collision = lead_one.dRel
+
     if relative_speed > 0 and lead_one.dRel > 0:  # Approaching lead vehicle
       time_to_collision = lead_one.dRel / relative_speed
-    else:
-      time_to_collision = float('inf')
 
-    # Speed-adaptive thresholds
-    if v_ego < 5:  # Very low speeds
-      time_threshold = 1.5
-      distance_threshold = 10
-    elif v_ego < 15:  # City speeds
-      time_threshold = 2.0
-      distance_threshold = 20
-    else:  # Highway speeds
-      time_threshold = 2.5
-      distance_threshold = 40
-
-    # Simple FCW conditions
-    imminent_collision = (time_to_collision < time_threshold and
-                         relative_speed > 0.5 and
-                         lead_one.dRel < distance_threshold)
-
-    # MPC crash warning
+    # Enhanced FCW logic with speed-adaptive thresholds
     mpc_crash_warning = self.mpc.crash_cnt > 2
-    mpc_warning = mpc_crash_warning and not sm['carState'].standstill
 
-    # Model-based FCW
-    model_warning = (sm['modelV2'].meta.hardBrakePredicted and
-                    not sm['carState'].brakePressed and
-                    v_ego > 3 and
-                    lead_one.dRel < 50)
+    # Dynamic thresholds based on speed and driving context
+    if v_ego < 5:  # Very low speeds (stationary or slow moving)
+      emergency_brake_threshold = 1.8  # Lower threshold for parking/low-speed scenarios
+      distance_threshold = 8  # meters
+    elif v_ego < 15:  # City speeds (~54 km/h)
+      emergency_brake_threshold = 2.0
+      distance_threshold = 15  # meters
+    elif v_ego < 25:  # Highway speeds (~54-90 km/h)
+      emergency_brake_threshold = 2.5
+      distance_threshold = 30  # meters
+    else:  # High speeds (>90 km/h)
+      emergency_brake_threshold = 2.8
+      distance_threshold = 45  # meters
 
-    return imminent_collision or mpc_warning or model_warning
+    # Enhanced FCW logic - trigger based on multiple criteria
+    # 1. Time to collision with immediate braking requirement
+    imminent_collision = time_to_collision < emergency_brake_threshold and relative_speed > 0.5
+
+    # 2. Distance-based warning for low-speed situations where time-based may not work well
+    distance_collision = distance_to_collision < distance_threshold and relative_speed > 0.5 and v_ego < 10
+
+    # 3. Lead vehicle emergency braking detection
+    lead_braking_emergency = lead_one.aLeadK - a_ego > 2.5 and lead_one.dRel < 40 and v_ego > 5
+
+    # 4. Combined MPC and sensor-based warnings
+    mpc_and_sensors_warning = mpc_crash_warning and not sm['carState'].standstill and relative_speed > 1.0
+
+    # 5. Enhanced model-based prediction with additional safety checks
+    model_fcw = (
+      sm['modelV2'].meta.hardBrakePredicted
+      and not sm['carState'].brakePressed
+      and v_ego > 3
+      and distance_to_collision < 50  # Only if close enough to be relevant
+      and sm['carState'].aEgo < -1.25
+    )
+
+    # 6. Additional safety criterion: Predictive collision assessment using multiple lead vehicles
+    extended_collision_risk = False
+    if (
+      sm['radarState'].leadTwo.status
+      and lead_one.dRel < 60.0
+      and sm['radarState'].leadTwo.dRel < lead_one.dRel + 20.0  # Second lead is close behind first
+      and sm['radarState'].leadTwo.vRel < -2.0
+    ):  # Second lead is approaching rapidly
+      extended_collision_risk = True
+
+    # Combine all FCW triggers
+    self.fcw = (
+      imminent_collision or distance_collision or lead_braking_emergency or mpc_and_sensors_warning or (model_fcw and v_ego > 5) or extended_collision_risk
+    )
+
+    return self.fcw
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')

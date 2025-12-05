@@ -86,6 +86,7 @@ class AdaptiveGainsController:
   def _validate_adaptive_gains_optimized(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
     """
     Lightweight validation of adaptive gains with reduced computational overhead.
+    Includes critical sudden gain change detection for safety.
 
     Args:
         adaptive_gains: Dictionary containing lateral and longitudinal gains
@@ -105,6 +106,25 @@ class AdaptiveGainsController:
     MIN_ACCEL_KI = 0.01
     MAX_ACCEL_KI = 1.0
 
+    # Check for excessive gain changes between consecutive calls (safety validation)
+    if self._prev_adaptive_gains:
+      prev_gains = self._prev_adaptive_gains
+
+      # Check for sudden changes that might indicate sensor errors
+      for gain_type in adaptive_gains:
+        if gain_type in prev_gains:
+          for gain_name in adaptive_gains[gain_type]:
+            if gain_name in prev_gains[gain_type]:
+              old_val = prev_gains[gain_type][gain_name]
+              new_val = adaptive_gains[gain_type][gain_name]
+              gain_change = abs(new_val - old_val)
+
+              # If the gain changed by more than 50% of its previous value, limit the change
+              if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
+                # Apply a smoother transition to prevent abrupt control changes
+                adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
+                cloudlog.warning(f"Sudden gain change detected and smoothed: {gain_name} changed from {old_val} to {new_val}, adjusted to {adaptive_gains[gain_type][gain_name]}")
+
     # Simple validation without complex change detection
     if 'lateral' in adaptive_gains:
       lateral = adaptive_gains['lateral']
@@ -122,7 +142,7 @@ class AdaptiveGainsController:
       if 'accel_ki' in longitudinal:
         longitudinal['accel_ki'] = max(MIN_ACCEL_KI, min(MAX_ACCEL_KI, longitudinal['accel_ki']))
 
-    # Basic NaN/Infinity checks
+    # Basic NaN/Infinity checks - do this BEFORE sudden change detection to ensure valid values
     for gain_type in adaptive_gains:
       for gain_name, gain_value in adaptive_gains[gain_type].items():
         if not math.isfinite(gain_value):
@@ -131,6 +151,25 @@ class AdaptiveGainsController:
             adaptive_gains[gain_type][gain_name] = 1.0
           elif 'accel' in gain_name:
             adaptive_gains[gain_type][gain_name] = 1.0
+
+    # Check for excessive gain changes between consecutive calls (safety validation)
+    if self._prev_adaptive_gains:
+      prev_gains = self._prev_adaptive_gains
+
+      # Check for sudden changes that might indicate sensor errors
+      for gain_type in adaptive_gains:
+        if gain_type in prev_gains:
+          for gain_name in adaptive_gains[gain_type]:
+            if gain_name in prev_gains[gain_type]:
+              old_val = prev_gains[gain_type][gain_name]
+              new_val = adaptive_gains[gain_type][gain_name]
+              gain_change = abs(new_val - old_val)
+
+              # If the gain changed by more than 50% of its previous value, limit the change
+              if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
+                # Apply a smoother transition to prevent abrupt control changes
+                adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
+                cloudlog.warning(f"Sudden gain change detected and smoothed: {gain_name} changed from {old_val} to {new_val}, adjusted to {adaptive_gains[gain_type][gain_name]}")
 
     # Store for next iteration (minimal processing)
     self._prev_adaptive_gains = adaptive_gains.copy()
