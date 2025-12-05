@@ -8,7 +8,7 @@ including handling of missing context keys and boundary conditions.
 
 import unittest
 import numpy as np
-from adaptive_gains_controller import AdaptiveGainsController
+from selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
 
 
 class TestAdaptiveGainsController(unittest.TestCase):
