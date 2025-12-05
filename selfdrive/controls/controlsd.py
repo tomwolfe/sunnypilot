@@ -7,15 +7,6 @@ import numpy as np
 
 from numbers import Number
 
-# Adaptive control system constants
-WEATHER_THRESHOLD_TEMP_FREEZING = 2.0  # Temperature (in Celsius) below which snow is more likely
-WEATHER_THRESHOLD_TEMP_RAIN = 4.0  # Temperature (in Celsius) above which rain is more likely
-CURVY_ROAD_CURVATURE_THRESHOLD = 0.0005  # Curvature threshold for detecting curvy roads
-TRAFFIC_DISTANCE_THRESHOLD = 50.0  # Distance (in meters) to consider lead vehicles as "close"
-
-SCENE_COMPLEXITY_RELATIVE_CHANGE = 0.15  # Relative change in scene complexity to trigger model run
-SCENE_COMPLEXITY_ABSOLUTE_CHANGE = 30  # Absolute change in scene complexity to trigger model run
-
 from cereal import car, log
 import cereal.messaging as messaging
 from openpilot.common.constants import CV
@@ -40,18 +31,17 @@ from openpilot.selfdrive.controls.lib.edge_case_handler import EdgeCaseHandler
 from openpilot.selfdrive.controls.lib.self_learning_safety import SafeSelfLearningManager
 from openpilot.selfdrive.monitoring.lite_monitoring import LightweightSystemMonitor
 from openpilot.selfdrive.controls.lib.lite_control import LightweightAdaptiveGainScheduler
+from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
+from openpilot.selfdrive.controls.lib.driving_context import DrivingContextAnalyzer
+from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
+from openpilot.selfdrive.controls.lib.circuit_breaker_manager import CircuitBreakerManager
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
 LaneChangeDirection = log.LaneChangeDirection
 
 ThermalStatus = log.DeviceState.ThermalStatus
-
 ACTUATOR_FIELDS = tuple(car.CarControl.Actuators.schema.fields.keys())
-
-# Define a threshold for how long deviceState can be considered stale before
-# defaulting to a high thermal state for safety.
-DEVICE_STATE_STALE_THRESHOLD = 3.0  # seconds
 
 
 class Controls(ControlsExt):
@@ -107,10 +97,13 @@ class Controls(ControlsExt):
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CP_SP, self.CI, DT_CTRL)
 
-    # Initialize lightweight system monitor and adaptive gain scheduler
-    self.system_monitor = LightweightSystemMonitor()
+    # Initialize system components
+    self.thermal_manager = ThermalManager()
+    self.context_analyzer = DrivingContextAnalyzer()
+    self.adaptive_gains_controller = AdaptiveGainsController()
+    self.circuit_breaker_manager = CircuitBreakerManager()
+
     self.gain_scheduler = LightweightAdaptiveGainScheduler(self.CP)
-    self.last_device_state_update_time = 0.0  # Track last update time for deviceState
 
     # Initialize safety manager for advanced safety features
     self.safety_manager = SafetyManager()
@@ -120,114 +113,6 @@ class Controls(ControlsExt):
 
     # Initialize self-learning manager for adaptive driving behavior
     self.self_learning_manager = SafeSelfLearningManager(self.CP, self.CP_SP)
-
-    # Initialize safety circuit breakers to prevent cascading failures
-    self._init_circuit_breakers()
-
-  def _init_circuit_breakers(self):
-    """Initialize circuit breakers to prevent cascading failures."""
-    self._circuit_breakers = {
-      'adaptive_gains': {
-        'enabled': True,
-        'error_count': 0,
-        'max_errors': 3,  # Reduced from 5 to prevent potential abuse
-        'last_error_time': 0,
-        'last_error_reset_time': 0,  # Time when error count was last reset
-        'cooldown_period': 10.0,  # Increased cooldown to 10 seconds to allow for root cause analysis
-        'root_cause_analysis': [],  # Store recent error patterns for analysis
-      },
-      'radar_camera_fusion': {
-        'enabled': True,
-        'error_count': 0,
-        'max_errors': 3,
-        'last_error_time': 0,
-        'last_error_reset_time': 0,
-        'cooldown_period': 15.0,  # Increased for fusion which is critical
-        'root_cause_analysis': [],  # Store recent error patterns for analysis
-      },
-      'vision_model_optimization': {
-        'enabled': True,
-        'error_count': 0,
-        'max_errors': 5,  # Reduced from 10 to prevent abuse
-        'last_error_time': 0,
-        'last_error_reset_time': 0,
-        'cooldown_period': 45.0,  # Increased to 45 seconds for vision model
-        'root_cause_analysis': [],  # Store recent error patterns for analysis
-      },
-    }
-
-  def _check_circuit_breaker(self, breaker_name):
-    """Check if a circuit breaker is enabled and handle cooldown periods."""
-    cb = self._circuit_breakers[breaker_name]
-
-    # Check if we're in cooldown period after an error
-    current_time = time.monotonic()
-    if not cb['enabled']:
-      # Calculate time since the last error occurred
-      time_since_last_error = current_time - cb['last_error_time']
-
-      # Check if cooldown period has passed since the last error
-      if time_since_last_error > cb['cooldown_period']:
-        # For the breaker to reset, we need to have waited not just the cooldown period,
-        # but also a "stable" period (half the cooldown period) since the last error
-        # This prevents the breaker from resetting too soon after the last error,
-        # requiring a period of stability before re-enabling the feature
-        required_total_wait_time = cb['cooldown_period'] + (cb['cooldown_period'] / 2)
-        if time_since_last_error >= required_total_wait_time:
-          cb['enabled'] = True
-          cb['error_count'] = 0  # Reset error count on successful recovery
-          cb['last_error_reset_time'] = current_time
-          cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown and stable period")
-        else:
-          return False  # Not yet ready to reset - need to wait for stable period after the error
-      else:
-        return False  # Still in cooldown, circuit breaker is disabled
-
-    return cb['enabled']
-
-  def _trigger_circuit_breaker(self, breaker_name, error_msg, error_type=None):
-    """Trigger a circuit breaker due to an error with enhanced root cause tracking."""
-    cb = self._circuit_breakers[breaker_name]
-    cb['error_count'] += 1
-    cb['enabled'] = False
-    cb['last_error_time'] = time.monotonic()
-
-    # Add error to root cause analysis
-    if error_type is None:
-      error_type = "unknown"
-    cb['root_cause_analysis'].append(
-      {'timestamp': cb['last_error_time'], 'error_type': error_type, 'error_msg': error_msg, 'error_count_at_time': cb['error_count']}
-    )
-
-    # Keep only the most recent 10 errors for analysis
-    if len(cb['root_cause_analysis']) > 10:
-      cb['root_cause_analysis'] = cb['root_cause_analysis'][-10:]
-
-    cloudlog.error(
-      f"Circuit breaker {breaker_name} triggered due to error: {error_msg} "
-      + f"(type: {error_type}). Error count: {cb['error_count']}/{cb['max_errors']} "
-      + f"at time {cb['last_error_time']:.2f}"
-    )
-
-    # Log detailed root cause analysis if we have multiple errors
-    if cb['error_count'] > 1 and len(cb['root_cause_analysis']) > 1:
-      # Analyze error patterns
-      recent_errors = cb['root_cause_analysis'][-5:]  # Look at last 5 errors
-      error_types = [e['error_type'] for e in recent_errors]
-      time_diffs = [recent_errors[i + 1]['timestamp'] - recent_errors[i]['timestamp'] for i in range(len(recent_errors) - 1)] if len(recent_errors) > 1 else []
-
-      if len(set(error_types)) == 1:
-        # All recent errors are the same type - potential systematic issue
-        cloudlog.warning(f"Circuit breaker {breaker_name}: Repeated {error_types[0]} errors detected - possible systematic issue")
-      if time_diffs and all(td < 2.0 for td in time_diffs):
-        # Errors happening in rapid succession - potential cascade
-        cloudlog.warning(f"Circuit breaker {breaker_name}: Rapid error sequence detected - possible cascade failure")
-
-    if cb['error_count'] >= cb['max_errors']:
-      cloudlog.critical(
-        f"Circuit breaker {breaker_name} permanently disabled due to excessive errors. "
-        + f"Root cause analysis: {cb['root_cause_analysis'][-3:] if cb['root_cause_analysis'] else []}"
-      )
 
   def update(self):
     """
@@ -251,24 +136,17 @@ class Controls(ControlsExt):
     CS = self.sm['carState']
 
     # Calculate thermal state and adaptive gains
-    thermal_state = 0.0
     current_time = time.monotonic()
-    if 'deviceState' in self.sm and self.sm.valid['deviceState']:
-      self.last_device_state_update_time = current_time
-      thermal_state = self.system_monitor.calculate_thermal_state(self.sm['deviceState'])
-    elif (current_time - self.last_device_state_update_time) > DEVICE_STATE_STALE_THRESHOLD:
-      # If deviceState is stale, assume high thermal stress for safety
-      cloudlog.warning(f"deviceState is stale (last update {current_time - self.last_device_state_update_time:.2f}s ago). Assuming high thermal state.")
-      thermal_state = 1.0  # Max thermal state for safety
+    thermal_state = self.thermal_manager.get_thermal_state_with_fallback(self.sm, current_time)
 
     # Enhanced adaptive gains calculation considering multiple factors
-    if self._check_circuit_breaker('adaptive_gains'):
+    if self.circuit_breaker_manager.check_circuit_breaker('adaptive_gains'):
       try:
-        driving_context = self._calculate_driving_context(CS)
-        adaptive_gains = self._calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
+        driving_context = self.context_analyzer.calculate_driving_context(CS, self.sm, self.VM)
+        adaptive_gains = self.adaptive_gains_controller.calculate_contextual_adaptive_gains(CS.vEgo, thermal_state, driving_context)
       except Exception as e:
         cloudlog.error(f"Error in adaptive gains calculation: {e}")
-        self._trigger_circuit_breaker('adaptive_gains', str(e), error_type='adaptive_gains_calculation')
+        self.circuit_breaker_manager.trigger_circuit_breaker('adaptive_gains', str(e), error_type='adaptive_gains_calculation')
         # Fall back to very conservative gains to ensure safety in all scenarios
         adaptive_gains = {
           'lateral': {
@@ -429,7 +307,7 @@ class Controls(ControlsExt):
     actuators.steeringAngleDeg = float(steeringAngleDeg)
 
     # Apply adaptive GPU management to balance thermal concerns with performance needs
-    self._adaptive_gpu_management(CS, self.sm)
+    self.thermal_manager.apply_gpu_management(self.sm, CS)
 
     # Enhanced finite value checks with recovery mechanism
     for p in ACTUATOR_FIELDS:
@@ -590,408 +468,6 @@ class Controls(ControlsExt):
 
     return context
 
-  def _detect_weather_conditions(self):
-    """
-    Detect weather conditions based on simple, reliable sensor data.
-    Simplified to use only wiper status as the primary indicator of adverse weather.
-
-    Returns:
-        str: Weather condition ('normal', 'rain')
-    """
-    # Use reliable sensor data from carState for simple weather detection
-    CS = self.sm['carState']
-
-    # Check for windshield wiper usage as the primary indicator of adverse weather
-    # This is more reliable than complex temperature-based heuristics
-    wipers_active = False
-    if hasattr(CS, 'windshieldWiper') and CS.windshieldWiper is not None:
-      # Handle case where CS.windshieldWiper might be a Mock object (for testing)
-      try:
-        wipers_active = CS.windshieldWiper > 0.0
-      except TypeError:
-        # If comparison fails (e.g., with Mock), assume it's not active
-        wipers_active = False
-    elif hasattr(CS, 'wiperState') and CS.wiperState is not None:
-      try:
-        wipers_active = CS.wiperState > 0
-      except TypeError:
-        # If comparison fails (e.g., with Mock), assume it's not active
-        wipers_active = False
-
-    # Simple logic: if wipers are active, there's adverse weather (likely rain)
-    # This removes the complex temperature and sensor fusion logic that was fragile
-    if wipers_active:
-      return 'rain'  # Default to rain as the most common adverse weather condition
-
-    # If no wipers are active, return normal conditions
-    return 'normal'
-
-  def _calculate_contextual_adaptive_gains(self, v_ego, thermal_state, context):
-    """
-    Calculate adaptive gains based on vehicle speed, thermal state and driving context.
-
-    NOTE: This function is protected by a circuit breaker (see _init_circuit_breakers).
-    If errors occur repeatedly, the adaptive gains system will be disabled temporarily
-    to prevent cascading failures, falling back to safe default gains.
-
-    Args:
-        v_ego: Vehicle speed in m/s
-        thermal_state: Thermal stress factor (0.0-1.0)
-        context: Driving context information
-
-    Returns:
-        dict: Adaptive gain parameters
-    """
-    # Base gains that get adjusted based on context
-    base_gains = {
-      'lateral': {
-        'steer_kp': 1.0,
-        'steer_ki': 0.1,
-        'steer_kd': 0.01,
-      },
-      'longitudinal': {
-        'accel_kp': 1.0,
-        'accel_ki': 0.1,
-      },
-    }
-
-    # Speed-dependent adjustments
-    # Threshold justification: Normalize to 30 m/s (about 108 km/h) as reference high-speed point
-    speed_factor = min(1.0, v_ego / 30.0)
-    # Reduce gains by up to 30% at high speeds (when speed_factor = 1.0) for enhanced stability
-    speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
-
-    # Thermal adjustments
-    # Reduce gains by up to 20% when thermal stress is at maximum (thermal_state = 1.0) to reduce computational load
-    thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
-
-    # Context-based adjustments
-    context_adjustment = 1.0
-
-    # Reduce gains on curvy roads for smoother steering
-    # Factor 0.85 justification: Reduce gains by 15% to provide smoother, more conservative steering on curvy roads
-    if context['is_curvy_road']:
-      context_adjustment *= 0.85
-
-    # Increase caution in high traffic
-    # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
-    if context['traffic_density'] == 'high':
-      context_adjustment *= 0.9
-
-    # Reduce gains in poor weather (if we can detect it)
-    # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
-    if context['weather_condition'] != 'normal':
-      context_adjustment *= 0.9
-
-    # Apply combined adjustments
-    combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
-
-    # Log detailed information for debugging
-    cloudlog.debug(
-      f"Adaptive gains calculation: v_ego={v_ego:.2f}, thermal={thermal_state:.2f}, "
-      + f"speed_factor={speed_factor:.3f}, thermal_adj={thermal_adjustment:.3f}, "
-      + f"context_adj={context_adjustment:.3f}, combined_adj={combined_adjustment:.3f}, "
-      + f"curvy_road={context['is_curvy_road']}, traffic={context['traffic_density']}, "
-      + f"weather={context['weather_condition']}"
-    )
-
-    # Apply adjustments to base gains
-    adaptive_gains = {
-      'lateral': {
-        'steer_kp': base_gains['lateral']['steer_kp'] * combined_adjustment,
-        'steer_ki': base_gains['lateral']['steer_ki'] * combined_adjustment,
-        'steer_kd': base_gains['lateral']['steer_kd'] * combined_adjustment,
-      },
-      'longitudinal': {
-        'accel_kp': base_gains['longitudinal']['accel_kp'] * combined_adjustment,
-        'accel_ki': base_gains['longitudinal']['accel_ki'] * combined_adjustment,
-      },
-    }
-
-    # Add validation mechanism to ensure adaptive gains are within safe bounds
-    adaptive_gains = self._validate_adaptive_gains(adaptive_gains)
-
-    # Log final adaptive gains for debugging
-    cloudlog.debug(
-      f"Final adaptive gains - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
-      + f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
-      + f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
-      + f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}"
-    )
-
-    return adaptive_gains
-
-  def _validate_adaptive_gains(self, adaptive_gains):
-    """
-    Validate adaptive gains to prevent dangerous values that could lead to instability or unsafe behavior.
-
-    Args:
-        adaptive_gains: Dictionary containing lateral and longitudinal gains
-
-    Returns:
-        dict: Validated and potentially corrected adaptive gain parameters
-    """
-    # Define safe bounds for gains
-    MIN_STEER_KP = 0.1  # Minimum steering proportional gain
-    MAX_STEER_KP = 3.0  # Maximum steering proportional gain
-    MIN_STEER_KI = 0.01  # Minimum steering integral gain
-    MAX_STEER_KI = 1.0  # Maximum steering integral gain
-    MIN_STEER_KD = 0.0  # Minimum steering derivative gain
-    MAX_STEER_KD = 0.1  # Maximum steering derivative gain
-
-    MIN_ACCEL_KP = 0.1  # Minimum acceleration proportional gain
-    MAX_ACCEL_KP = 2.0  # Maximum acceleration proportional gain
-    MIN_ACCEL_KI = 0.01  # Minimum acceleration integral gain
-    MAX_ACCEL_KI = 1.0  # Maximum acceleration integral gain
-
-    # Additional safety validation - check for sudden changes in gains that might indicate sensor errors
-    if hasattr(self, '_prev_adaptive_gains'):
-      prev_gains = self._prev_adaptive_gains
-
-      # Check for excessive gain changes between consecutive calls
-      for gain_type in adaptive_gains:
-        if gain_type in prev_gains:
-          for gain_name in adaptive_gains[gain_type]:
-            if gain_name in prev_gains[gain_type]:
-              old_val = prev_gains[gain_type][gain_name]
-              new_val = adaptive_gains[gain_type][gain_name]
-              gain_change = abs(new_val - old_val)
-
-              # If the gain changed by more than 50% of its previous value, log a warning
-              if old_val != 0 and (gain_change / abs(old_val)) > 0.5:
-                cloudlog.warning(f"Sudden gain change detected: {gain_name} changed from {old_val} to {new_val}")
-                # Apply a smoother transition to prevent abrupt control changes
-                adaptive_gains[gain_type][gain_name] = old_val + (gain_change * 0.3)  # Only apply 30% of the change
-                cloudlog.info(f"Smoothed {gain_name} to {adaptive_gains[gain_type][gain_name]}")
-
-    # Validate lateral gains
-    if 'lateral' in adaptive_gains:
-      lateral = adaptive_gains['lateral']
-
-      # Check and bound steering KP
-      if 'steer_kp' in lateral:
-        original_kp = lateral['steer_kp']
-        lateral['steer_kp'] = max(MIN_STEER_KP, min(MAX_STEER_KP, lateral['steer_kp']))
-        if original_kp != lateral['steer_kp']:
-          cloudlog.warning(f"Steering KP gain adjusted from {original_kp} to {lateral['steer_kp']} for safety")
-
-      # Check and bound steering KI
-      if 'steer_ki' in lateral:
-        original_ki = lateral['steer_ki']
-        lateral['steer_ki'] = max(MIN_STEER_KI, min(MAX_STEER_KI, lateral['steer_ki']))
-        if original_ki != lateral['steer_ki']:
-          cloudlog.warning(f"Steering KI gain adjusted from {original_ki} to {lateral['steer_ki']} for safety")
-
-      # Check and bound steering KD
-      if 'steer_kd' in lateral:
-        original_kd = lateral['steer_kd']
-        lateral['steer_kd'] = max(MIN_STEER_KD, min(MAX_STEER_KD, lateral['steer_kd']))
-        if original_kd != lateral['steer_kd']:
-          cloudlog.warning(f"Steering KD gain adjusted from {original_kd} to {lateral['steer_kd']} for safety")
-
-      # Additional safety: Check for gain balance to prevent instability
-      # The ratio of KI/KP should not be too large to prevent integral windup
-      if 'steer_kp' in lateral and 'steer_ki' in lateral:
-        if lateral['steer_kp'] > 0 and (lateral['steer_ki'] / lateral['steer_kp']) > 0.5:
-          # Reduce KI if it's too large relative to KP
-          lateral['steer_ki'] = lateral['steer_kp'] * 0.5
-          cloudlog.warning(f"Reduced steering KI to maintain stability: {lateral['steer_ki']}")
-
-    # Validate longitudinal gains
-    if 'longitudinal' in adaptive_gains:
-      longitudinal = adaptive_gains['longitudinal']
-
-      # Check and bound acceleration KP
-      if 'accel_kp' in longitudinal:
-        original_kp = longitudinal['accel_kp']
-        longitudinal['accel_kp'] = max(MIN_ACCEL_KP, min(MAX_ACCEL_KP, longitudinal['accel_kp']))
-        if original_kp != longitudinal['accel_kp']:
-          cloudlog.warning(f"Acceleration KP gain adjusted from {original_kp} to {longitudinal['accel_kp']} for safety")
-
-      # Check and bound acceleration KI
-      if 'accel_ki' in longitudinal:
-        original_ki = longitudinal['accel_ki']
-        longitudinal['accel_ki'] = max(MIN_ACCEL_KI, min(MAX_ACCEL_KI, longitudinal['accel_ki']))
-        if original_ki != longitudinal['accel_ki']:
-          cloudlog.warning(f"Acceleration KI gain adjusted from {original_ki} to {longitudinal['accel_ki']} for safety")
-
-      # Additional safety: Check for longitudinal gain balance
-      if 'accel_kp' in longitudinal and 'accel_ki' in longitudinal:
-        if longitudinal['accel_kp'] > 0 and (longitudinal['accel_ki'] / longitudinal['accel_kp']) > 0.5:
-          # Reduce KI if it's too large relative to KP
-          longitudinal['accel_ki'] = longitudinal['accel_kp'] * 0.5
-          cloudlog.warning(f"Reduced acceleration KI to maintain stability: {longitudinal['accel_ki']}")
-
-    # Additional safety check - ensure gains are not NaN or infinity
-    for gain_type in adaptive_gains:
-      for gain_name, gain_value in adaptive_gains[gain_type].items():
-        if not isinstance(gain_value, (int, float)) or not math.isfinite(gain_value):
-          cloudlog.error(f"Invalid gain value detected: {gain_name} = {gain_value}, setting to safe default")
-          # Set to a safe default based on the gain type
-          if 'steer' in gain_name:
-            adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for steering
-          elif 'accel' in gain_name:
-            adaptive_gains[gain_type][gain_name] = 1.0  # Default safe value for acceleration
-
-    # Store current gains for next iteration comparison
-    self._prev_adaptive_gains = adaptive_gains.copy()
-
-    # Add comprehensive logging for debugging
-    cloudlog.debug(
-      f"Adaptive gains validated - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
-      + f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
-      + f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
-      + f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}"
-    )
-
-    return adaptive_gains
-
-  def _adaptive_gpu_management(self, CS, sm):
-    """
-    Adaptive GPU management to temporarily increase performance when needed for safety-critical operations.
-    This addresses the thermal management trade-off by allowing temporary performance boosts when needed.
-    Enhanced with additional safety checks and validation.
-    """
-    try:
-      # Check if we're in a critical situation that may require higher GPU performance
-      critical_situation = False
-      try:
-        # Only proceed if this appears to be a real SubMaster (not a Mock in tests)
-        if hasattr(sm, '_subscription') and hasattr(getattr(sm, '_subscription', None), 'messages'):
-          # Access modelV2 safely, assuming this is a real SubMaster
-          model_v2 = sm['modelV2']
-          if hasattr(model_v2, 'meta') and hasattr(model_v2.meta, 'hardBrakePredicted'):
-            critical_situation = model_v2.meta.hardBrakePredicted
-      except (TypeError, AttributeError, KeyError):
-        # If there are any issues (e.g. Mock objects in tests), default to False
-        critical_situation = False
-
-      # Enhanced check for lead vehicle emergency situations with better safety validation
-      # Only proceed if this looks like a real SubMaster (has real subscription structure) to avoid Mock issues
-      has_real_submaster = (
-        hasattr(sm, '_subscription')
-        and hasattr(getattr(sm, '_subscription', None), 'messages')
-        and hasattr(sm, '__class__')
-        and sm.__class__.__name__ != 'Mock'
-        and sm.__class__.__name__ != 'MagicMock'
-      )
-
-      if has_real_submaster:
-        try:
-          # Safely check for radar state in real SubMaster
-          sm_valid = getattr(sm, 'valid', {})
-          if isinstance(sm_valid, dict) and 'radarState' in sm_valid and sm_valid['radarState']:
-            radar_state = sm['radarState']
-            for lead in [radar_state.leadOne, radar_state.leadTwo]:
-              if (
-                lead.status
-                and lead.aLeadK < -3.0  # Lead vehicle braking hard
-                and lead.dRel < 50.0  # Close distance
-                and CS.vEgo > 5.0
-              ):  # Moving at significant speed
-                # Additional safety validation: only consider if the situation is physically plausible
-                if hasattr(lead, 'vRel') and (lead.vRel < -5.0 or lead.dRel < 20.0):  # Very close or fast approaching
-                  critical_situation = True
-                  break
-        except (TypeError, AttributeError, KeyError):
-          # If there are issues with radar state (e.g. Mock objects), skip this logic
-          pass
-
-      # Additional critical situation check: curve ahead detection
-      # Only proceed if this looks like a real SubMaster to avoid Mock issues
-      if has_real_submaster and isinstance(getattr(sm, 'valid', {}), dict):
-        try:
-          sm_valid = getattr(sm, 'valid', {})
-          if 'modelV2' in sm_valid and sm_valid['modelV2'] and hasattr(sm['modelV2'], 'meta'):
-            # Check if model predicts upcoming hard braking or sharp curves
-            if hasattr(sm['modelV2'].meta, 'desiredCurvature') and abs(sm['modelV2'].meta.desiredCurvature) > 0.002:
-              # High curvature prediction indicating sharp turn ahead
-              critical_situation = True
-        except (TypeError, AttributeError, KeyError):
-          # If there are issues with modelV2 (e.g. Mock objects), skip this logic
-          pass
-
-      # GPU governor path - check if it exists before attempting to write
-      gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
-
-      # Check if the GPU governor file exists before attempting to write
-      if not os.path.exists(gpu_governor_path):
-        # If the file doesn't exist, we're on different hardware, skip GPU management
-        return
-
-      # If in critical situation and if we have thermal headroom, temporarily boost performance
-      if critical_situation and 'deviceState' in sm and sm.valid['deviceState']:
-        thermal_status = sm['deviceState'].thermalStatus
-        thermal_pwr = sm['deviceState'].thermalPerc
-
-        # Enhanced thermal safety check: only boost if thermal state is safe
-        if thermal_status <= ThermalStatus.yellow and thermal_pwr >= 75 and thermal_pwr <= 90:  # More precise thermal window
-          # Temporarily switch GPU to performance mode for critical operations
-          # This helps reduce latency during critical driving situations
-          try:
-            with open(gpu_governor_path, "w") as f:
-              f.write("performance")
-
-            # Log the temporary performance boost for monitoring
-            cloudlog.debug(f"Temporary GPU performance boost activated for critical situation. Thermal: {thermal_status}, Power: {thermal_pwr}%")
-
-            # Set a flag to switch back to ondemand after a short period
-            if not hasattr(self, '_temp_perf_end_time'):
-              self._temp_perf_end_time = time.monotonic() + 2.0  # Revert after 2 seconds
-          except OSError as e:
-            # If we can't write the governor file, log an error but continue
-            cloudlog.error(f"Failed to set GPU governor to performance mode: {e}")
-        else:
-          # If not in critical situation or thermal limits exceeded, make sure we're in ondemand
-          try:
-            with open(gpu_governor_path, "w") as f:
-              f.write("ondemand")
-          except OSError as e:
-            cloudlog.error(f"Failed to set GPU governor to ondemand: {e}")
-      else:
-        # If not in critical situation, ensure we're using ondemand for thermal management
-        try:
-          with open(gpu_governor_path, "w") as f:
-            f.write("ondemand")
-        except OSError as e:
-          cloudlog.error(f"Failed to set GPU governor to ondemand: {e}")
-
-      # Check if we need to revert from temporary performance mode
-      if hasattr(self, '_temp_perf_end_time') and time.monotonic() > self._temp_perf_end_time:
-        # Revert to ondemand governor after critical situation passes
-        try:
-          with open(gpu_governor_path, "w") as f:
-            f.write("ondemand")
-          cloudlog.debug("Reverted GPU governor to ondemand after critical situation")
-          delattr(self, '_temp_perf_end_time')
-        except OSError as e:
-          cloudlog.error(f"Failed to revert GPU governor to ondemand: {e}")
-
-      # Additional safety: Monitor GPU temperature if available and enforce limits
-      gpu_thermal_path = "/sys/class/kgsl/kgsl-3d0/device/kgsl/kgsl-3d0/temperature"
-      if os.path.exists(gpu_thermal_path):
-        try:
-          with open(gpu_thermal_path) as f:
-            gpu_temp = float(f.read().strip()) / 1000.0  # Convert from millidegrees if needed
-            # If GPU temperature is too high, force ondemand regardless of situation
-            if gpu_temp > 75.0:  # Force thermal safety above 75°C
-              with open(gpu_governor_path, "w") as f:
-                f.write("ondemand")
-              cloudlog.warning(f"GPU temperature too high ({gpu_temp}°C), forced ondemand mode")
-        except (OSError, ValueError):
-          # If we can't read GPU temperature, continue with current operation
-          pass
-    except Exception as e:
-      # If we encounter an error in GPU management, continue with current operation
-      cloudlog.error(f"Error in adaptive GPU management: {e}")
-      # Still try to ensure ondemand governor in case of error
-      gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
-      if os.path.exists(gpu_governor_path):
-        try:
-          with open(gpu_governor_path, "w") as f:
-            f.write("ondemand")
-        except OSError as e:
-          cloudlog.error(f"Failed to set GPU governor to ondemand in error handling: {e}")
 
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
@@ -1148,15 +624,8 @@ class Controls(ControlsExt):
         self.run_ext(self.sm, self.pm)
 
         # Calculate thermal state and adaptive gains for thermal management
-        thermal_state = 0.0
         current_time = time.monotonic()
-        if 'deviceState' in self.sm and self.sm.valid['deviceState']:
-          self.last_device_state_update_time = current_time
-          thermal_state = self.system_monitor.calculate_thermal_state(self.sm['deviceState'])
-        elif (current_time - self.last_device_state_update_time) > DEVICE_STATE_STALE_THRESHOLD:
-          # If deviceState is stale, assume high thermal stress for safety
-          cloudlog.warning(f"deviceState is stale (last update {current_time - self.last_device_state_update_time:.2f}s ago). Assuming high thermal state.")
-          thermal_state = 1.0 # Max thermal state for safety
+        thermal_state = self.thermal_manager.get_thermal_state_with_fallback(self.sm, current_time)
 
         # Get adaptive gains based on thermal state and vehicle speed
         self.gain_scheduler.get_adaptive_gains(self.sm['carState'].vEgo, thermal_state)
