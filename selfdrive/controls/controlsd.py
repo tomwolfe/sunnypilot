@@ -187,6 +187,38 @@ class Controls(ControlsExt):
       }
       cloudlog.warning("Using safe default gains - adaptive gains circuit breaker is active")
 
+    # Perform comprehensive safety check before applying controls
+    safety_ok, safety_violation_reason = self.safety_manager.check_safety_violations(
+      CS,
+      car.CarControl.Actuators(steer=0.0, accel=0.0),  # Use safe defaults for initial check
+      self.sm['modelV2'] if 'modelV2' in self.sm else None
+    )
+
+    if not safety_ok:
+      cloudlog.warning(f"System safety check failed: {safety_violation_reason}")
+      # Apply additional safety measures based on risk level
+      risk_level = self.safety_manager.assess_comprehensive_risk(
+        CS,
+        car.CarControl.Actuators(steer=0.0, accel=0.0),
+        self.sm['modelV2'] if 'modelV2' in self.sm else None,
+        self.sm['radarState'] if 'radarState' in self.sm else None
+      )
+
+      safety_response = self.safety_manager.get_graduated_safety_response(risk_level)
+
+      if safety_response['disengage']:
+        # Emergency disengagement
+        CC = car.CarControl.new_message()
+        CC.enabled = False
+        CC.hudControl.visualAlert = log.ControlsState.AlertStatus.critical
+        CC.cruiseControl.cancel = True
+
+        cloudlog.event("Emergency disengagement due to safety violation",
+                      risk_level=risk_level, violation_reason=safety_violation_reason,
+                      vEgo=CS.vEgo, steerAngle=CS.steeringAngleDeg)
+
+        return CC, None
+
     # Update VehicleModel
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
@@ -395,6 +427,28 @@ class Controls(ControlsExt):
       model_confidence=model_confidence,
       model_prediction_error=model_prediction_error,
     )
+
+    # Check for immediate danger before processing control
+    immediate_danger, danger_desc = self.safety_manager.check_immediate_danger(
+      CS,
+      self.sm['modelV2'] if 'modelV2' in self.sm else None,
+      self.sm['radarState'] if 'radarState' in self.sm else None
+    )
+
+    if immediate_danger:
+      cloudlog.error(f"IMMEDIATE DANGER DETECTED: {danger_desc}")
+      # Immediately disengage and return safe control message
+      CC = car.CarControl.new_message()
+      CC.enabled = False
+      CC.hudControl.visualAlert = log.ControlsState.AlertStatus.critical
+      CC.cruiseControl.cancel = True
+
+      # Log the emergency disengagement
+      cloudlog.event("Emergency disengagement due to immediate danger", danger_description=danger_desc,
+                     vEgo=CS.vEgo, steerAngle=CS.steeringAngleDeg,
+                     aEgo=CS.aEgo if hasattr(CS, 'aEgo') else 0)
+
+      return CC, lac_log
 
     return CC, lac_log
 

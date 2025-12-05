@@ -70,12 +70,26 @@ class CircuitBreakerManager:
           cb['error_count'] = 0  # Reset error count on successful recovery
           cb['last_error_reset_time'] = current_time
           cloudlog.info(f"Circuit breaker {breaker_name} reset after cooldown and stable period")
+          # Clear root cause analysis after successful reset
+          cb['root_cause_analysis'] = []
         else:
           return False  # Not yet ready to reset - need to wait for stable period after the error
       else:
         return False  # Still in cooldown, circuit breaker is disabled
 
     return bool(cb['enabled'])
+
+  def reset_circuit_breaker(self, breaker_name: str) -> bool:
+    """Manually reset a circuit breaker (for testing or special conditions)."""
+    if breaker_name in self._circuit_breakers:
+      cb = self._circuit_breakers[breaker_name]
+      cb['enabled'] = True
+      cb['error_count'] = 0
+      cb['last_error_reset_time'] = time.monotonic()
+      cb['root_cause_analysis'] = []  # Clear error history
+      cloudlog.info(f"Circuit breaker {breaker_name} manually reset")
+      return True
+    return False
 
   def trigger_circuit_breaker(self, breaker_name: str, error_msg: str, error_type: str = None) -> None:
     """Trigger a circuit breaker due to an error with enhanced root cause tracking."""
@@ -115,8 +129,31 @@ class CircuitBreakerManager:
         # Errors happening in rapid succession - potential cascade
         cloudlog.warning(f"Circuit breaker {breaker_name}: Rapid error sequence detected - possible cascade failure")
 
+      # Enhanced analysis: Check for systematic issues
+      error_frequency = len([e for e in recent_errors if e['error_type'] == error_type])
+      if error_frequency >= 3:
+        cloudlog.critical(f"Circuit breaker {breaker_name}: High frequency of {error_type} errors - potential systematic issue")
+
     if cb['error_count'] >= cb['max_errors']:
       cloudlog.critical(
         f"Circuit breaker {breaker_name} permanently disabled due to excessive errors. "
         + f"Root cause analysis: {cb['root_cause_analysis'][-3:] if cb['root_cause_analysis'] else []}"
+      )
+      # Log a more comprehensive summary of the issue
+      self._log_comprehensive_error_summary(breaker_name)
+
+  def _log_comprehensive_error_summary(self, breaker_name: str) -> None:
+    """Log a comprehensive error summary for debugging and analysis."""
+    cb = self._circuit_breakers[breaker_name]
+    if cb['root_cause_analysis']:
+      error_types = [e['error_type'] for e in cb['root_cause_analysis']]
+      error_counts = {}
+      for et in error_types:
+        error_counts[et] = error_counts.get(et, 0) + 1
+
+      cloudlog.critical(
+        f"Comprehensive error summary for {breaker_name}: "
+        + f"Total errors: {len(cb['root_cause_analysis'])}, "
+        + f"Error types: {error_counts}, "
+        + f"Most frequent: {max(error_counts, key=error_counts.get) if error_counts else 'none'}"
       )

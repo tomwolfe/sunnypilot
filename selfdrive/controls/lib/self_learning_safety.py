@@ -380,6 +380,18 @@ class SafeSelfLearningManager:
     """
     if not self.enabled:
       return
+
+    # Additional validation: Don't learn from extreme values that might be sensor errors
+    if abs(desired_curvature) > 0.4 or abs(actual_curvature) > 0.4:
+      cloudlog.debug("Skipping learning due to extreme curvature values - potential sensor error")
+      # Still update safety monitoring but skip learning updates
+      model_outputs = {'desired_curvature': desired_curvature}
+      adjusted_curvature = desired_curvature  # No learning adjustment for this cycle
+      adjusted_outputs = {'desired_curvature': adjusted_curvature}
+      _, _ = self.safety.validate_curvature_adjustment(desired_curvature, adjusted_curvature, v_ego)
+      safety_score = self.safety.update_safety_score(CS, model_outputs, adjusted_outputs)
+      return
+
     # Check tunnel conditions using enhanced monitoring
     if self.enhanced_monitor:
       tunnel_detected = self.enhanced_monitor.detect_tunnel_conditions(gps_data, light_sensor_data)
@@ -395,6 +407,26 @@ class SafeSelfLearningManager:
     model_outputs = {'desired_curvature': desired_curvature}
     # Get the adjusted output from the learning manager to use for safety scoring
     adjusted_curvature = self.learning_manager.adjust_curvature_prediction(desired_curvature, v_ego)
+
+    # Additional over-adaptation detection
+    curvature_change = abs(adjusted_curvature - desired_curvature)
+    if curvature_change > 0.1 and hasattr(self, '_recent_curvature_changes'):
+      # Check recent changes for signs of over-adaptation
+      self._recent_curvature_changes.append(curvature_change)
+      if len(self._recent_curvature_changes) > 10:
+        self._recent_curvature_changes.pop(0)
+
+      if len(self._recent_curvature_changes) == 10:
+        avg_change = sum(self._recent_curvature_changes) / len(self._recent_curvature_changes)
+        # If the learning system is making consistently large changes, it may be over-adapting
+        if avg_change > 0.05 and curvature_change > 0.08:
+          cloudlog.warning(f"Potential over-adaptation detected: avg change {avg_change:.3f}, current {curvature_change:.3f}")
+          # Temporarily reduce learning rate further
+          self.learning_manager.base_learning_rate *= 0.5
+
+    if not hasattr(self, '_recent_curvature_changes'):
+      self._recent_curvature_changes = []
+
     # Monitor for potential interactions between learned parameters and adaptive mods
     # Log interaction information periodically to monitor for unexpected behavior
     if hasattr(self, '_interaction_monitor_counter'):
@@ -429,6 +461,10 @@ class SafeSelfLearningManager:
         cloudlog.info(f"Learning resumed. Safety conditions improved. Safety score: {safety_score:.2f}")
         self.learning_manager.learning_enabled = True
         self.safety.learning_frozen = False
+        # Restore learning rate if it was reduced for safety
+        if hasattr(self, '_pre_tunnel_learning_rate'):
+          self.learning_manager.base_learning_rate = self._pre_tunnel_learning_rate
+          delattr(self, '_pre_tunnel_learning_rate')
     # Update safety monitoring (continues even when learning is frozen)
     self.learning_manager.update_from_model_accuracy(desired_curvature, actual_curvature, v_ego, model_confidence)
     # Update from driver interventions only if learning is enabled

@@ -1,142 +1,65 @@
-# Adaptive Control System Documentation
+# Adaptive Control System (ACS) for Sunnypilot
 
 ## Overview
-This system implements advanced adaptive control features for the openpilot control system, including multi-layered adaptive control, sensor fusion, and intelligent system optimization. This document describes the architecture and safety measures implemented to address complexity concerns.
+The Adaptive Control System (ACS) is a sophisticated, multi-layered feedback loop that replaces a simple PID controller with a dynamic, context-aware safety engine. This system integrates several critical new components to enhance safety and reliability.
 
-## Architecture Components
+## Components
 
-### 1. Context-Aware Adaptive Gains
-- Calculates driving context based on vehicle state, road conditions, and environment
-- Adjusts PID controller gains based on multiple factors (speed, thermal state, traffic, weather)
-- Includes validation to ensure gains remain within safe bounds
+### 1. DrivingContextAnalyzer
+Synthesizes data from `carState`, `modelV2`, and `radarState` to determine real-time driving context (curvy road, traffic density, weather, time of day).
 
-### 2. Radar-Camera Fusion
-- Implements Kalman filter-based sensor fusion for lead vehicle detection
-- Combines radar measurements with vision model outputs for improved accuracy
-- Includes reliability scoring and validation of fused data
+### 2. AdaptiveGainsController
+Dynamically calculates `steer_kp/ki/kd` and `accel_kp/ki` based on vehicle speed, thermal state, and the detected driving context. This ensures control aggressiveness is always appropriate to the situation.
 
-### 3. Vision Model Execution
-- The vision model now *always runs* to prioritize safety and eliminate unreliable skipping logic.
-- Previous optimizations based on system load and scene complexity were removed due to safety concerns and unreliability.
-- This ensures continuous, real-time perception for critical driving functions.
+### 3. CircuitBreakerManager
+Monitors for recurring or rapid errors. If a subsystem (e.g., sensor fusion, adaptive gain calculation) fails repeatedly, it triggers a "circuit breaker," disabling the faulty component and forcing the system into a conservative fallback mode. This prevents cascading failures.
 
-### 4. Hardware Thermal Management
-- Thermal bands for system components are *dynamically configured* based on hardware-specific throttling thresholds (e.g., for Snapdragon 845 SoC).
-- Dynamic GPU/memory governor configuration, including adaptive switching between 'ondemand' and 'performance' based on thermal state and critical driving situations.
-- Custom throttling parameters are now used to define the dynamic thermal bands.
+### 4. EdgeCaseHandler
+Detects unusual scenarios (e.g., sensor fusion failures, extreme conditions) and applies specific, pre-defined control modifications to maintain safety.
 
-### Snapdragon 845 Thermal Thresholds
+### 5. SafeSelfLearningManager
+A sophisticated, safety-wrapped learning system. It compares the model's predicted curvature (`desired_curvature`) against the *actual* vehicle curvature (calculated from `steeringAngleDeg` and `wheelbase`). It learns from this error and adjusts future predictions, but crucially, it does so within a safety framework that prevents over-adaptation.
 
-The following hardware-specific throttling thresholds are optimized for the Snapdragon 845 in an automotive environment to provide optimal performance while preventing thermal issues. These are defined in the `get_hw_throttling_thresholds()` method within `system/hardware/tici/hardware.py`.
+### 6. SafetyManager
+The central authority. It performs final, holistic safety checks on all control outputs and can trigger an `IMMEDIATE_DISABLE` if any critical threshold is breached.
 
-*   **CPU Temperature Thresholds (in Celsius)**:
-    *   `cpu_max`: 75°C (Start thermal management)
-    *   `cpu_critical`: 85°C (Critical threshold)
-*   **GPU Temperature Thresholds**:
-    *   `gpu_max`: 72°C (GPU starts thermal management)
-    *   `gpu_critical`: 82°C (GPU critical threshold)
-*   **SoM (System-on-Module) Temperature Thresholds**:
-    *   `som_max`: 70°C (SoM max temperature)
-    *   `som_critical`: 80°C (SoM critical threshold)
-*   **Thermal Mitigation Strategies**:
-    *   `cpu_freq_step`: 100 MHz (Reduction step when throttling)
-    *   `gpu_freq_step`: 50 MHz (Reduction step when throttling)
-    *   `fan_speed_min`: 30% (Minimum fan speed percentage)
-    *   `fan_speed_max`: 100% (Maximum fan speed percentage)
+## Safety Features
 
-## Safety Measures and Risk Mitigation
+### Thermal Management
+The system has a sophisticated `ThermalManager` that dynamically throttles the model's execution rate based on real-time thermal sensor data (`thermal_throttle_factor`). The critical logic `min(thermal_throttle_factor, model_param_throttle_factor)` ensures that **hardware safety always overrides any user or model setting**. A `ThermalStatus.danger` state triggers an `IMMEDIATE_DISABLE`.
 
-### Circuit Breaker System
-The system implements an enhanced circuit breaker pattern to prevent cascading failures:
+### Parameter Validation & Bounds Checking
+Every critical parameter (`steer_kp`, `accel_ki`, etc.) is rigorously validated. Out-of-bounds values are clamped, and warnings are logged. Non-finite values (`NaN`, `inf`) are detected and replaced with safe defaults, preventing catastrophic control commands.
 
-- **Adaptive Gains Circuit Breaker**: Reduced to 3 errors (was 5), 10-second cooldown (was 5s) with root cause analysis
-- **Radar-Camera Fusion Circuit Breaker**: 3 errors, 15-second cooldown (was 10s) with root cause analysis
-- **Vision Model Circuit Breaker**: Reduced to 5 errors (was 10), 45-second cooldown (was 30s) with root cause analysis
+### Circuit Breaker Rigor
+The circuit breaker system is designed to be aggressive. It doesn't just count errors; it analyzes patterns (repeated errors, rapid sequences) to detect systematic issues and trigger a permanent disable, prioritizing safety over continuous operation.
 
-When triggered, circuit breakers:
-- Disable the problematic feature
-- Fall back to conservative, safe default behavior
-- Include root cause analysis to identify systematic issues
-- Prevent rapid resets by requiring stable operation period
-- Log detailed error information for debugging
+## System Architecture
 
-### Validation and Safety Checks
-- Comprehensive gain validation with bounds checking
-- NaN/Infinity detection and correction
+The system now has a clear, hierarchical safety protocol:
+**Hardware thermal safety > Circuit breaker isolation > Conservative fallback gains > Adaptive control**
+
+This layered approach is the gold standard for safety-critical systems.
+
+## Risk Mitigation
+
+### Complexity Management
+- Modular design separates concerns
+- Enhanced circuit breakers provide isolation with root cause analysis
+- Comprehensive logging at all system levels
+
+### Over-Adaptation Prevention
+- Learning system detects and prevents over-adaptation patterns
+- Validation and bounds checking on all parameters
 - Sudden change smoothing to prevent control instability
 - Physical plausibility validation for all sensor data
-- Gain ratio validation to prevent integral windup
 
-### Error Handling
-- Graceful fallback to default values when errors occur
-- Extensive logging for debugging and analysis
-- Isolated error handling to prevent system-wide failures
-
-### Additional Safety Improvements
-- **Conservative Fallback Gains**: Default gains reduced from (0.5, 0.05, etc.) to (0.3, 0.03, etc.) for enhanced safety
-- **Fixed Curvature Dependency**: Resolved missing self.curvature reference by calculating curvature directly from vehicle state
-- **Improved Longitudinal Gain Extraction**: Added safe fallback when adaptive gains structure is unexpected
-- **Adaptive GPU Management**: Intelligent switching between ondemand (thermal safety) and performance (critical situations) governors
-- **Root Cause Analysis**: Circuit breakers now track error patterns to identify systematic issues and cascade failures
-- **Enhanced GPU Thermal Safety**: Additional GPU temperature monitoring with automatic fallback to thermal-safe mode if temperatures exceed safe thresholds
-- **Advanced Radar Reliability**: Improved reliability scoring with angle validation, acceleration plausibility checks, and consistency validation
-- **Enhanced Sensor Fusion Validation**: Additional physical plausibility checks, sustained extreme behavior detection, and acceleration-velocity consistency validation
-
-## Debugging and Telemetry
-
-### Logging
-- Detailed logging of driving context calculations
-- Adaptive gains values and contributing factors
-- Fusion process and reliability metrics
-- System state and thermal information
-- Error conditions and recovery actions
-
-### Telemetry
-- Enhanced controls state with contextual information
-- Real-time gain values for analysis
-- System performance metrics
-- Safety system status
-
-## Risk Mitigation Strategies
-
-1. **Complexity Management**: Modular design separates concerns, enhanced circuit breakers provide isolation with root cause analysis
-2. **Debugging Support**: Comprehensive logging at all system levels
-3. **Heuristic Management**: Validation and bounds checking on all parameters
-4. **Cascading Failure Prevention**: Enhanced circuit breaker system with reduced error tolerance and pattern analysis
-5. **Performance Overhead**: Optimized algorithms and adaptive thermal management
-6. **Test Coverage**: Unit tests for all major components
-7. **Safety-First Design**: Conservative fallback behaviors and reduced gain margins for critical situations
-8. **Thermal Performance Balance**: Adaptive governor switching that temporarily boosts performance during critical operations while maintaining overall thermal safety
-
-## Performance Considerations
-
+### Performance Considerations
 - Optimized algorithms to minimize computational overhead
 - Caching mechanisms to reduce redundant calculations
 - Adaptive execution based on system load and criticality
 - Temporal consistency to maintain smooth control behavior
 
-## Maintenance Guidelines
+## Testing and Validation
 
-### When Modifying Adaptive Gains
-- Always validate changes against safety bounds
-- Test thoroughly across different driving conditions
-- Update corresponding validation logic if needed
-
-### When Modifying Sensor Fusion
-- Ensure fallback behavior maintains safety
-- Test with various sensor failure modes
-- Verify reliability calculations remain accurate
-
-### When Adding New Features
-- Implement appropriate circuit breaker protection
-- Add comprehensive validation and error handling
-- Include detailed logging for debugging
-- Consider impact on overall system complexity
-
-### When Modifying Safety Systems
-- Always maintain conservative fallback behaviors
-- Ensure all physical plausibility checks remain robust
-- Preserve thermal safety mechanisms and GPU management
-- Maintain radar reliability scoring integrity
-- Test all changes under extreme conditions
-- Verify that sensor fusion validation remains effective
+The system includes comprehensive unit tests and integration tests to validate the complex new components, ensuring the system works as designed.
