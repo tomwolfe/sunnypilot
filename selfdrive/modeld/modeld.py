@@ -187,7 +187,8 @@ class ModelState(ModelStateBase):
     self.parser = Parser()
 
     # Initialize previous frames for scene change detection
-    self.prev_road_frame = None
+    self.prev_road_frame = None  # type: np.ndarray | None
+    self._last_vision_outputs = None  # type: dict[str, np.ndarray] | None
     self.frame_skip_counter = 0  # To ensure we run model periodically even when scene is static
 
     with open(VISION_PKL_PATH, "rb") as f:
@@ -418,7 +419,7 @@ class ModelState(ModelStateBase):
 
       # Return a minimal response with previous outputs when skipping model
       # For skipped frames, we'll return the last valid vision outputs processed
-      if hasattr(self, '_last_vision_outputs'):
+      if self._last_vision_outputs is not None:
         vision_outputs_dict = self._last_vision_outputs
       else:
         # If no previous outputs, run the model this time

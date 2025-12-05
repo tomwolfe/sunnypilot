@@ -7,7 +7,6 @@ to ensure hardware safety under varying thermal conditions.
 
 from cereal import log
 from openpilot.common.swaglog import cloudlog
-from unittest.mock import Mock
 
 
 class ThermalManager:
@@ -114,7 +113,6 @@ class ThermalManager:
 
     # Get current thermal metrics if available
     current_temp = getattr(device_state, 'gpuTemp', None)
-    thermal_percent = getattr(device_state, 'thermalPerc', None)
 
     # Predictive thermal management based on current load and trends
     if hasattr(sm, 'deviceState') and sm.recv_frame.get('deviceState', 0) > 0:
@@ -148,8 +146,8 @@ class ThermalManager:
       # Check vehicle speed and standstill status safely, handling Mock objects
       try:
         v_ego = getattr(CS, 'vEgo', 0.0)
-        # Handle case where vEgo might be a Mock object (using isinstance for proper check)
-        if isinstance(v_ego, Mock):
+        # Handle case where vEgo might be a Mock object (checking for Mock attributes)
+        if hasattr(v_ego, 'return_value') or hasattr(v_ego, 'side_effect'):
           # If it's a Mock, use default value
           v_ego_val = 0.0
         else:

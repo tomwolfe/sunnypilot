@@ -4,9 +4,8 @@ Test suite for monitoring, safety checks, and fallback mechanisms
 for the optimized algorithms in sunnypilot.
 """
 
-import numpy as np
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from opendbc.car.honda.values import CAR
 from opendbc.car.honda.interface import CarInterface
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
@@ -15,13 +14,13 @@ from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
 
 class TestSafetyMonitoring:
   """Test safety monitoring and anomaly detection"""
-  
+
   def test_radar_reliability_anomaly_detection(self):
     """Test for detecting anomalies in radar reliability calculations"""
     CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
     CP_SP = CarInterface.get_non_essential_params_sp(CP, CAR.HONDA_CIVIC)
     planner = LongitudinalPlanner(CP, CP_SP)
-    
+
     # Test for extremely inconsistent reliability values
     # In normal operation, similar leads should have similar reliability
     lead1 = Mock()
@@ -31,9 +30,9 @@ class TestSafetyMonitoring:
     lead1.aLeadK = 0.0
     lead1.snr = 10.0
     lead1.age = 10
-    
+
     reliability1 = planner._calculate_radar_reliability(lead1)
-    
+
     # Same lead with tiny variation should have similar reliability
     lead2 = Mock()
     lead2.status = True
@@ -42,12 +41,12 @@ class TestSafetyMonitoring:
     lead2.aLeadK = 0.1
     lead2.snr = 10.1
     lead2.age = 10
-    
+
     reliability2 = planner._calculate_radar_reliability(lead2)
-    
+
     # The difference should not be too drastic for similar inputs
     assert abs(reliability1 - reliability2) < 0.5, "Similar leads should have reasonably similar reliability values"
-    
+
   def test_thermal_management_safety_validation(self):
     """Test validation of thermal management decisions"""
     thermal_manager = ThermalManager()
@@ -64,7 +63,7 @@ class TestSafetyMonitoring:
     ]
 
     # Just verify we can handle all statuses without errors
-    for status, expected_behavior in test_statuses:
+    for status, _expected_behavior in test_statuses:
       device_state = Mock()
       device_state.thermalStatus = status
       device_state.gpuTemp = 60.0  # Set a proper numeric value, not a Mock
@@ -85,13 +84,13 @@ class TestSafetyMonitoring:
 
 class TestFallbackMechanisms:
   """Test fallback mechanisms for safety-critical systems"""
-  
+
   def test_radar_reliability_fallback(self):
     """Test fallback when radar data is invalid or missing"""
     CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
     CP_SP = CarInterface.get_non_essential_params_sp(CP, CAR.HONDA_CIVIC)
     planner = LongitudinalPlanner(CP, CP_SP)
-    
+
     # Test with completely missing attributes (should handle gracefully)
     invalid_lead = Mock()
     invalid_lead.status = False  # This should make it return 0.0 immediately
@@ -103,8 +102,8 @@ class TestFallbackMechanisms:
       assert reliability == 0.0, f"Invalid leads should return 0.0, got {reliability}"
     except Exception as e:
       pytest.fail(f"Radar reliability calculation should handle invalid leads gracefully: {e}")
-  
-  
+
+
   def test_thermal_management_error_handling(self):
     """Test thermal management error handling"""
     thermal_manager = ThermalManager()
@@ -130,15 +129,15 @@ class TestFallbackMechanisms:
 
 class TestPerformanceMonitoring:
   """Test performance monitoring capabilities"""
-  
+
   def test_calculation_performance_tracking(self):
     """Test that we can track performance improvements"""
     CP = CarInterface.get_non_essential_params(CAR.HONDA_CIVIC)
     CP_SP = CarInterface.get_non_essential_params_sp(CP, CAR.HONDA_CIVIC)
     planner = LongitudinalPlanner(CP, CP_SP)
-    
+
     import time
-    
+
     # Create a standard test lead
     test_lead = Mock()
     test_lead.status = True
@@ -147,20 +146,20 @@ class TestPerformanceMonitoring:
     test_lead.aLeadK = 1.0
     test_lead.snr = 15.0
     test_lead.age = 8
-    
+
     # Time the calculation
     start_time = time.perf_counter()
     for _ in range(1000):
-      reliability = planner._calculate_radar_reliability(test_lead)
+      planner._calculate_radar_reliability(test_lead)
     end_time = time.perf_counter()
-    
+
     total_time = end_time - start_time
     avg_time = total_time / 1000
-    
+
     # Should complete in reasonable time (performance test)
     # This is more of a regression test to ensure it doesn't become too slow
     assert avg_time < 0.001, f"Calculation should be fast (<1ms), took {avg_time*1000:.2f}ms"
-  
+
   def test_thermal_prediction_tracking(self):
     """Test thermal prediction accuracy tracking"""
     thermal_manager = ThermalManager()
@@ -190,7 +189,7 @@ class TestPerformanceMonitoring:
 
 class TestSystemIntegration:
   """Test integration between different optimized components"""
-  
+
   def test_combined_system_behavior(self):
     """Test that all systems work together safely"""
     # This test verifies that the two main optimized systems can work together
@@ -228,7 +227,7 @@ class TestSystemIntegration:
       thermal_manager.apply_gpu_management(sm, CS)
     except Exception as e:
       pytest.fail(f"Thermal management failed: {e}")
-  
+
   def test_safety_consistency_across_systems(self):
     """Test that safety behavior is consistent across systems"""
     # All systems should default to safe behavior when uncertain
@@ -264,4 +263,4 @@ class TestSystemIntegration:
 
 
 if __name__ == "__main__":
-  pytest.main([__file__])
+  raise RuntimeError("pytest.main is banned, run with `pytest {__file__}` instead")

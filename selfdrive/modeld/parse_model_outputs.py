@@ -1,7 +1,5 @@
 import numpy as np
-import time
 from collections import deque
-from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
 

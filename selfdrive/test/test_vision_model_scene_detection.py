@@ -5,20 +5,19 @@ This test ensures that the vision model skipping mechanism works safely
 while providing the expected performance improvements.
 """
 
-import numpy as np
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 from openpilot.selfdrive.modeld.modeld import ModelState
 
 
 class MockVisionBuf:
   """Mock VisionBuf for testing"""
-  
+
   def __init__(self, width=640, height=480, stride=640, data=None):
     self.width = width
     self.height = height
     self.stride = stride
-    
+
     if data is None:
       # Create a simple test pattern
       self.data = np.zeros((height, width, 3), dtype=np.uint8)
@@ -31,13 +30,10 @@ class TestSceneChangeDetection:
   
   def setup_method(self):
     """Set up test fixtures before each test method"""
-    from unittest.mock import Mock
-
     # Create a minimal mock object with just the methods and properties needed for scene detection tests
     self.model_state = Mock()
 
     # Add the scene detection methods directly to the mock instance
-    from openpilot.selfdrive.modeld.modeld import ModelState
     import types
 
     # Get the actual methods from the ModelState class, handling differences in Python versions
@@ -53,7 +49,7 @@ class TestSceneChangeDetection:
     self.model_state.prev_road_frame = None
     self.model_state.frame_skip_counter = 0
     self.model_state._last_vision_outputs = None
-  
+
   def create_test_frame(self, value=100, width=640, height=480):
     """Create a test frame with a specific value"""
     frame_data = np.full((height, width, 3), value, dtype=np.uint8)
@@ -66,7 +62,7 @@ class TestSceneChangeDetection:
     
     # First call should run model since there's no previous frame
     should_run = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run == True, "First frame should always run the model"
+    assert should_run, "First frame should always run the model"
   
   def test_static_scene_skipping(self):
     """Test that static scenes enable frame skipping"""
@@ -75,19 +71,19 @@ class TestSceneChangeDetection:
     
     # First call - should run
     should_run_1 = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run_1 == True, "First frame should run"
-    
+    assert should_run_1, "First frame should run"
+
     # Second call with same frame - should skip
     should_run_2 = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run_2 == False, "Static scene should skip"
-    
+    assert not should_run_2, "Static scene should skip"
+
     # Third call with same frame - should skip
     should_run_3 = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run_3 == False, "Static scene should skip"
-    
+    assert not should_run_3, "Static scene should skip"
+
     # Fourth call with same frame - should run (max skip reached)
     should_run_4 = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run_4 == True, "Max skip reached, should run model"
+    assert should_run_4, "Max skip reached, should run model"
   
   def test_different_scenes_run_model(self):
     """Test that different scenes always run the model"""
@@ -97,15 +93,15 @@ class TestSceneChangeDetection:
     
     # First call
     should_run_1 = self.model_state._should_run_vision_model(bufs1, transforms)
-    assert should_run_1 == True, "First frame should run"
-    
+    assert should_run_1, "First frame should run"
+
     # Different scene should run
     should_run_2 = self.model_state._should_run_vision_model(bufs2, transforms)
-    assert should_run_2 == True, "Different scene should run model"
-    
+    assert should_run_2, "Different scene should run model"
+
     # Same scene as second should skip
     should_run_3 = self.model_state._should_run_vision_model(bufs2, transforms)
-    assert should_run_3 == False, "Same scene should skip"
+    assert not should_run_3, "Same scene should skip"
   
   def test_scene_change_threshold_sensitivity(self):
     """Test the sensitivity of scene change detection"""
@@ -119,11 +115,11 @@ class TestSceneChangeDetection:
     
     # First call
     should_run_1 = self.model_state._should_run_vision_model(bufs1, transforms)
-    assert should_run_1 == True, "First frame should run"
-    
+    assert should_run_1, "First frame should run"
+
     # Similar frame - threshold is 3.0, difference is 2.0, so should skip
     should_run_2 = self.model_state._should_run_vision_model(bufs2, transforms)
-    assert should_run_2 == False, "Similar scenes should skip (diff < threshold)"
+    assert not should_run_2, "Similar scenes should skip (diff < threshold)"
   
   def test_no_camera_buffer_safety(self):
     """Test that missing camera buffer defaults to running model for safety"""
@@ -131,7 +127,7 @@ class TestSceneChangeDetection:
     transforms = {}
     
     should_run = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run == True, "Missing camera buffer should run model for safety"
+    assert should_run, "Missing camera buffer should run model for safety"
   
   def test_missing_road_camera_safety(self):
     """Test that missing road camera defaults to running model for safety"""
@@ -139,7 +135,7 @@ class TestSceneChangeDetection:
     transforms = {}
     
     should_run = self.model_state._should_run_vision_model(bufs, transforms)
-    assert should_run == True, "Missing road camera should run model for safety"
+    assert should_run, "Missing road camera should run model for safety"
   
   def test_error_handling(self):
     """Test that errors in scene detection default to running model for safety"""
@@ -164,11 +160,11 @@ class TestSceneChangeDetection:
     
     # First call
     should_run_1 = self.model_state._should_run_vision_model(bufs1, transforms)
-    assert should_run_1 == True, "First frame should run"
-    
+    assert should_run_1, "First frame should run"
+
     # Different sized frame - should run for safety
     should_run_2 = self.model_state._should_run_vision_model(bufs2, transforms)
-    assert should_run_2 == True, "Different frame sizes should run model"
+    assert should_run_2, "Different frame sizes should run model"
   
   def test_skip_logic_reset_after_change(self):
     """Test that skip counter resets after scene change"""
@@ -181,8 +177,7 @@ class TestSceneChangeDetection:
     
     # Skip a few frames
     self.model_state._should_run_vision_model(bufs1, transforms)  # Skip
-    self.model_state._should_run_vision_model(bufs1, transforms)  # Skip 
-    skip_count_after_skips = self.model_state.frame_skip_counter
+    self.model_state._should_run_vision_model(bufs1, transforms)  # Skip
     
     # Scene change - should run and reset counter
     self.model_state._should_run_vision_model(bufs2, transforms)
@@ -197,13 +192,10 @@ class TestModelExecutionWithSceneDetection:
 
   def setup_method(self):
     """Set up test fixtures before each test method"""
-    from unittest.mock import Mock
-
     # Create a minimal mock object with just the methods and properties needed for scene detection tests
     self.model_state = Mock()
 
     # Add the scene detection methods directly to the mock instance
-    from openpilot.selfdrive.modeld.modeld import ModelState
     import types
 
     # Get the actual methods from the ModelState class, handling differences in Python versions
@@ -272,4 +264,4 @@ class TestModelExecutionWithSceneDetection:
 
 
 if __name__ == "__main__":
-  pytest.main([__file__])
+  raise RuntimeError("pytest.main is banned, run with `pytest {__file__}` instead")

@@ -4,7 +4,6 @@ Test suite for validating the predictive thermal management in thermal_manager.p
 This test ensures that the thermal management system works proactively and safely.
 """
 
-import numpy as np
 import pytest
 from unittest.mock import Mock, patch
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
@@ -13,13 +12,13 @@ from cereal import log
 
 class TestThermalManagementValidation:
   """Test suite for predictive thermal management validation"""
-  
+
   def setup_method(self):
     """Set up test fixtures before each test method"""
     self.thermal_manager = ThermalManager()
     # Initialize internal state
     self.thermal_manager._prev_gpu_temp = None
-  
+
   def create_mock_device_state(self, thermal_status, gpu_temp=None, thermal_perc=None):
     """Create a mock device state for testing"""
     device_state = Mock()
@@ -30,7 +29,7 @@ class TestThermalManagementValidation:
     device_state.thermalPerc = thermal_perc
 
     return device_state
-  
+
   def create_mock_submaster(self, device_state):
     """Create a mock SubMaster for testing"""
     sm = Mock()
@@ -41,7 +40,7 @@ class TestThermalManagementValidation:
     sm.get = Mock(return_value=device_state)
     sm.__getitem__ = Mock(return_value=device_state)
     return sm
-  
+
   def test_predictive_thermal_management_yellow_zone(self):
     """Test that predictive thermal management works in yellow zone"""
     # Set up a scenario where we're in yellow zone but temperature is trending up
@@ -49,49 +48,49 @@ class TestThermalManagementValidation:
       thermal_status=log.DeviceState.ThermalStatus.yellow,
       gpu_temp=75.0  # High but not in red zone
     )
-    
+
     # Simulate previous temperature was lower (trending up)
     self.thermal_manager._prev_gpu_temp = 70.0
-    
+
     sm = self.create_mock_submaster(device_state)
     CS = Mock()  # CarState - not used in this function
-    
+
     # Patch the apply methods to verify they're called correctly
     with patch.object(self.thermal_manager, '_apply_gpu_ondemand_mode') as mock_ondemand:
       # This should trigger proactive thermal management
       # Since thermal status is yellow AND predicted temp > 0.9 * gpu_max
       self.thermal_manager.apply_gpu_management(sm, CS)
-      
+
       # We expect ondemand mode to be applied
       mock_ondemand.assert_called_once()
-  
+
   def test_thermal_trend_calculation(self):
     """Test that thermal trend calculation works correctly"""
     # First call - should initialize trend to 0
     device_state = self.create_mock_device_state(thermal_status=log.DeviceState.ThermalStatus.green, gpu_temp=60.0)
     sm = self.create_mock_submaster(device_state)
     CS = Mock()
-    
+
     # We need to call apply_gpu_management to trigger the trend calculation
     # but we'll need to access the internal logic to test the trend calculation
     self.thermal_manager.apply_gpu_management(sm, CS)
-    
+
     # Check that previous temp is set
     assert self.thermal_manager._prev_gpu_temp == 60.0
-    
+
     # Second call with higher temp - should calculate positive trend
     device_state2 = self.create_mock_device_state(thermal_status=log.DeviceState.ThermalStatus.green, gpu_temp=65.0)
     sm2 = self.create_mock_submaster(device_state2)
     # Reset the previous temp to our expected value
     self.thermal_manager._prev_gpu_temp = 60.0
-    
+
     # Call apply_gpu_management again to calculate trend
     self.thermal_manager.apply_gpu_management(sm2, CS)
-    
+
     # The trend should be positive (65.0 - 60.0 = 5.0)
     # This is tested internally in the method; we'll check the _prev_gpu_temp was updated
     assert self.thermal_manager._prev_gpu_temp == 65.0
-  
+
   def test_performance_mode_when_cooling(self):
     """Test that performance mode is used when temperature is stable or decreasing"""
     device_state = self.create_mock_device_state(
@@ -138,30 +137,30 @@ class TestThermalManagementValidation:
       # Performance mode should be called, ondemand should not
       mock_performance.assert_called_once()
       mock_ondemand.assert_not_called()
-  
+
   def test_ondemand_mode_when_heating(self):
     """Test that ondemand mode is used when temperature is rising"""
     device_state = self.create_mock_device_state(
       thermal_status=log.DeviceState.ThermalStatus.green,
       gpu_temp=65.0
     )
-    
+
     # Set up increasing temperature trend
     self.thermal_manager._prev_gpu_temp = 60.0  # Previous was lower
-    
+
     sm = self.create_mock_submaster(device_state)
     CS = Mock()
-    
+
     with patch.object(self.thermal_manager, '_apply_gpu_performance_mode_if_safe') as mock_performance, \
          patch.object(self.thermal_manager, '_apply_gpu_ondemand_mode') as mock_ondemand:
-      
+
       # Temperature trend is positive (heating), so ondemand mode should be used
       self.thermal_manager.apply_gpu_management(sm, CS)
-      
+
       # Ondemand mode should be called, performance should not
       mock_ondemand.assert_called_once()
       mock_performance.assert_not_called()
-  
+
   def test_danger_state_override(self):
     """Test that danger state always uses safe mode regardless of trends"""
     device_state = self.create_mock_device_state(
@@ -280,8 +279,7 @@ class TestThermalMonitoring(TestThermalManagementValidation):
     
     # First call initializes
     self.thermal_manager.apply_gpu_management(sm1, CS)
-    initial_prev_temp = self.thermal_manager._prev_gpu_temp
-    
+
     # Second call with different temp calculates trend
     device_state2 = self.create_mock_device_state(
       thermal_status=log.DeviceState.ThermalStatus.green,
@@ -299,4 +297,4 @@ class TestThermalMonitoring(TestThermalManagementValidation):
 
 
 if __name__ == "__main__":
-  pytest.main([__file__])
+  raise RuntimeError("pytest.main is banned, run with `pytest {__file__}` instead")
