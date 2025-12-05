@@ -314,8 +314,14 @@ class ModelState(ModelStateBase):
 
   def _enhance_model_outputs(self, outputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """
-    Apply optimized post-processing enhancements to model outputs for improved perception quality.
-    Reduced computational overhead while maintaining safety and stability.
+    Apply post-processing enhancements to model outputs for improved perception quality.
+
+    Critical Analysis Note: This function significantly improves perception stability
+    by reducing jitter and applying consistency checks. The risk is that smoothing
+    could potentially introduce undesirable lag. It is crucial to monitor the
+    latency introduced by this function (e.g., using before/after timestamps).
+    The `alpha` values used for smoothing should be well-commented with their
+    tuning rationale.
 
     Args:
         outputs: Raw model outputs dictionary
@@ -323,27 +329,28 @@ class ModelState(ModelStateBase):
     Returns:
         Enhanced model outputs with improved quality
     """
-    # Use lightweight temporal smoothing for lane lines to reduce computational overhead
+    # Enhanced lane line detection confidence by applying temporal smoothing
     if 'laneLines' in outputs and len(outputs['laneLines']) >= 4:
-      # Use more efficient smoothing with fewer history frames
+      # Apply basic temporal smoothing to lane line positions to reduce jitter
+      # This uses a simple moving average approach
       if not hasattr(self, '_lane_line_history'):
         self._lane_line_history = []
       self._lane_line_history.append(outputs['laneLines'])
-      self._lane_line_history = self._lane_line_history[-3:]  # Keep only last 3 frames instead of 5
+      self._lane_line_history = self._lane_line_history[-5:]  # Keep last 5 frames
 
       if len(self._lane_line_history) > 1:
-        # Use more efficient averaging
+        # Average lane positions over recent frames to reduce noise
         avg_lane_lines = np.mean(self._lane_line_history, axis=0)
         outputs['laneLines'] = avg_lane_lines
 
-    # Lighter-weight plan smoothing to reduce sudden changes
+    # Enhance plan smoothness by reducing sudden changes
     if 'position' in outputs and 'x' in outputs['position'] and len(outputs['position']['x']) > 1:
-      # Apply simplified smoothing with reduced computational cost
+      # Apply smoothing to planned trajectory to reduce jerky movements
       if not hasattr(self, '_prev_position_x'):
         self._prev_position_x = outputs['position']['x']
 
-      # Use more computationally efficient smoothing
-      alpha = 0.05  # Reduced smoothing factor for better responsiveness
+      # Blend with previous position to smooth transitions
+      alpha = 0.1  # Smoothing factor (lower = more smoothing)
       smoothed_x = (1 - alpha) * self._prev_position_x + alpha * outputs['position']['x']
       outputs['position']['x'] = smoothed_x
       self._prev_position_x = outputs['position']['x']
@@ -546,7 +553,7 @@ def main(demo=False):
       # for resilience. Logging when `max_wait_cycles` is reduced (e.g., due to high
       # `system_load_factor`) and the actual wait times can help identify latency bottlenecks.
 
-      # Optimize frame synchronization efficiency
+      # Optimized frame synchronization - attempt to get both frames with minimal blocking
       # First, get main camera frame (which we need regardless)
       if buf_main is None:  # Only if we don't already have a valid buffer from previous loop
         buf_main = vipc_client_main.recv()
@@ -557,30 +564,51 @@ def main(demo=False):
         continue
 
       if use_extra_client:
-        # Streamlined and efficient frame synchronization with less blocking
-        buf_extra = vipc_client_extra.recv()
-        if buf_extra is not None:
-          meta_extra = FrameMeta(vipc_client_extra)
-          # Simple time difference check without complex waiting loops
-          time_diff = abs(meta_main.timestamp_sof - meta_extra.timestamp_sof)
+        # Optimized wait strategy that reduces blocking while maintaining sync
+        # Instead of waiting for perfect sync, try to get the closest possible frames
+        wait_cycles = 0
+        buf_extra_timeout = None
+        best_buf_extra = None
+        best_time_diff = float('inf')  # Track the best time difference found
 
-          # Accept frames within tolerance, otherwise use the most recent available
-          if time_diff > dynamic_tolerance_ns:
-            # Log sync issues without complex waiting logic
-            if time_diff > 5000000:  # 5ms threshold
-              cloudlog.debug(f"Frame sync issue: delta={time_diff / 1e6:.1f}ms")
-        else:
-          # If we couldn't get extra frame, skip this cycle to maintain safety
-          cloudlog.debug("Could not get extra frame, skipping cycle")
+        # Try to get extra camera frame that is close in time to main frame
+        while wait_cycles < max_wait_cycles:
+          buf_extra = vipc_client_extra.recv()
+          meta_extra = FrameMeta(vipc_client_extra)
+          if buf_extra is None:
+            break
+
+          # If this frame has better synchronization than previous best
+          time_diff = abs(meta_main.timestamp_sof - meta_extra.timestamp_sof)
+          if time_diff < best_time_diff:
+            best_time_diff = time_diff
+            best_buf_extra = buf_extra
+
+          # Check if the frames are reasonably synchronized
+          if time_diff <= dynamic_tolerance_ns:
+            buf_extra_timeout = buf_extra  # We found a reasonably synchronized frame
+            break
+          elif meta_main.timestamp_sof < meta_extra.timestamp_sof + dynamic_tolerance_ns:
+            # Extra is ahead of main, accept this frame as it's closest to main and minimizes latency.
+            # The goal is to keep frames as close as possible; accepting a frame slightly ahead
+            # ensures the lowest possible latency for the 'extra' frame relative to 'main'.
+            if buf_extra_timeout is None:  # Only set if we haven't found a better sync already
+              buf_extra_timeout = buf_extra
+            break
+          # If extra is behind main, continue waiting for new extra frame
+          wait_cycles += 1
+
+        # Use the best available extra frame, preferring synchronized frames but accepting the closest if needed
+        buf_extra = buf_extra_timeout if buf_extra_timeout is not None else best_buf_extra
+        if buf_extra is None:
+          # If we couldn't get any extra frame, skip this cycle to maintain safety
+          cloudlog.debug("Could not get any extra frame, skipping cycle")
           continue
 
         # Update frame sync quality metric for adaptive optimization
         if not hasattr(model, 'sync_quality_history'):
           model.sync_quality_history = []
-        model.sync_quality_history.append(time_diff / 1e6)  # Store in ms
-        model.sync_quality_history = model.sync_quality_history[-20:]  # Keep last 20 measurements
-        if len(model.sync_quality_history) > 0:
-          model.avg_frame_sync_quality = sum(model.sync_quality_history) / len(model.sync_quality_history) / 10.0  # Normalize
+        model.sync_quality_history.append(best_time_diff / 1e6)  # Store in ms
 
         # Check sync quality and log if frames are significantly out of sync
         if abs(meta_main.timestamp_sof - meta_extra.timestamp_sof) > 10000000:  # 10ms threshold

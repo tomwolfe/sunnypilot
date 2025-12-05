@@ -298,8 +298,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _fuse_radar_camera_data(self, sm, model_x, model_v, model_a):
     """
-    Optimized radar-camera fusion to improve lead vehicle detection and tracking.
-    Significantly reduced computational overhead while maintaining safety.
+    Enhanced radar-camera fusion to improve lead vehicle detection and tracking.
+    Simplified implementation to reduce computational overhead while maintaining safety.
 
     Combines radar measurements with vision model outputs to create more robust
     and accurate lead vehicle tracking.
@@ -371,8 +371,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       enhanced_x, enhanced_v, enhanced_a = self._validate_fused_sensor_data(enhanced_x, enhanced_v, enhanced_a)
 
       return enhanced_x, enhanced_v, enhanced_a
-    except Exception:
-      # Return original data as safe fallback without error logging to reduce overhead
+    except Exception as e:
+      # Log error and return original model data without fusion (safe fallback)
+      cloudlog.error(f"Error in radar-camera fusion: {e}")
+      cloudlog.warning("Falling back to original model data without fusion")
       return model_x, model_v, model_a  # Safe fallback: return original values
 
   def _validate_fused_sensor_data(self, x, v, a):

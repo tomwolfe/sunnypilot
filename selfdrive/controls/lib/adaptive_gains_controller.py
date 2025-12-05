@@ -18,8 +18,7 @@ class AdaptiveGainsController:
 
   def calculate_contextual_adaptive_gains(self, v_ego: float, thermal_state: float, context: dict[str, Any]) -> dict[str, Any]:
     """
-    Calculate optimized adaptive gains based on vehicle speed, thermal state and driving context.
-    Reduced computational overhead while maintaining safety.
+    Calculate adaptive gains based on vehicle speed, thermal state and driving context.
 
     Args:
         v_ego: Vehicle speed in m/s
@@ -43,26 +42,44 @@ class AdaptiveGainsController:
     }
 
     # Speed-dependent adjustments
+    # Threshold justification: Normalize to 30 m/s (about 108 km/h) as reference high-speed point
     speed_factor = min(1.0, v_ego / 30.0)
-    # Reduce gains by up to 30% at high speeds for enhanced stability
-    speed_adjustment = 1.0 - (0.3 * speed_factor)
+    # Reduce gains by up to 30% at high speeds (when speed_factor = 1.0) for enhanced stability
+    speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
 
-    # Thermal adjustments - reduced impact to maintain performance
-    thermal_adjustment = 1.0 - (thermal_state * 0.15)  # Slightly less reduction
+    # Thermal adjustments
+    # Reduce gains by up to 20% when thermal stress is at maximum (thermal_state = 1.0) to reduce computational load
+    thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
 
     # Context-based adjustments - simplified
     context_adjustment = 1.0
 
     # Reduce gains on curvy roads for smoother steering
+    # Factor 0.85 justification: Reduce gains by 15% to provide smoother, more conservative steering on curvy roads
     if context.get('is_curvy_road', False):
       context_adjustment *= 0.85
 
-    # Reduce gains in high traffic or poor weather
-    if context.get('traffic_density', 'low') == 'high' or context.get('weather_condition', 'normal') != 'normal':
+    # Increase caution in high traffic
+    # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
+    if context.get('traffic_density', 'low') == 'high':
+      context_adjustment *= 0.9
+
+    # Reduce gains in poor weather (if we can detect it)
+    # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
+    if context.get('weather_condition', 'normal') != 'normal':
       context_adjustment *= 0.9
 
     # Apply combined adjustments
     combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
+
+    # Log detailed information for debugging
+    cloudlog.debug(
+      f"Adaptive gains calculation: v_ego={v_ego:.2f}, thermal={thermal_state:.2f}, "
+      + f"speed_factor={speed_factor:.3f}, thermal_adj={thermal_adjustment:.3f}, "
+      + f"context_adj={context_adjustment:.3f}, combined_adj={combined_adjustment:.3f}, "
+      + f"curvy_road={context.get('is_curvy_road', False)}, traffic={context.get('traffic_density', 'low')}, "
+      + f"weather={context.get('weather_condition', 'normal')}"
+    )
 
     # Apply adjustments to base gains
     adaptive_gains = {
@@ -77,8 +94,16 @@ class AdaptiveGainsController:
       },
     }
 
-    # Apply lightweight validation
-    adaptive_gains = self._validate_adaptive_gains_optimized(adaptive_gains)
+    # Add validation mechanism to ensure adaptive gains are within safe bounds
+    adaptive_gains = self._validate_adaptive_gains(adaptive_gains)
+
+    # Log final adaptive gains for debugging
+    cloudlog.debug(
+      f"Final adaptive gains - Lateral: KP={adaptive_gains['lateral']['steer_kp']:.3f}, "
+      + f"KI={adaptive_gains['lateral']['steer_ki']:.3f}, KD={adaptive_gains['lateral']['steer_kd']:.3f}; "
+      + f"Longitudinal: KP={adaptive_gains['longitudinal']['accel_kp']:.3f}, "
+      + f"KI={adaptive_gains['longitudinal']['accel_ki']:.3f}"
+    )
 
     return adaptive_gains
 
@@ -208,8 +233,3 @@ class AdaptiveGainsController:
 
     return adaptive_gains
 
-  def _validate_adaptive_gains_optimized(self, adaptive_gains: dict[str, Any]) -> dict[str, Any]:
-    """
-    Legacy validation function kept for compatibility (calls the main validation version).
-    """
-    return self._validate_adaptive_gains(adaptive_gains)
