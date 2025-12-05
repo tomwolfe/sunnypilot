@@ -35,6 +35,7 @@ class TestSafetyEnhancements:
     mock_lead.aLeadK = 20.0  # Very high acceleration
     mock_lead.snr = 1.0  # Low SNR
     mock_lead.std = 5.0  # High standard deviation
+    mock_lead.age = 10  # Mock age as integer so it can be compared
 
     # Calculate reliability
     reliability = self.planner._calculate_radar_reliability(mock_lead)
@@ -52,6 +53,7 @@ class TestSafetyEnhancements:
     mock_lead.vRel = 5.0  # Normal relative velocity
     mock_lead.aLeadK = 2.0  # Normal acceleration
     mock_lead.snr = 20.0  # Good SNR
+    mock_lead.age = 3  # Mock age as integer so it can be compared
 
     # Calculate reliability (with angle validation)
     self.planner._calculate_radar_reliability(mock_lead)

@@ -207,12 +207,28 @@ class TestAdaptiveControlImprovements:
     mock_device_state = Mock()
     mock_device_state.thermalStatus = 1  # Yellow (not red/danger)
     mock_device_state.thermalPerc = 60  # 60% thermal
+    mock_device_state.gpuTemp = 60.0  # Set gpuTemp as actual number, not Mock
+    mock_device_state.cpuTemp = 50.0  # Set cpuTemp as actual number, not Mock
 
     mock_radar_state = Mock()
     mock_radar_state.leadOne = Mock()
     mock_radar_state.leadOne.status = False
+    mock_radar_state.leadOne.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadOne.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.snr = None  # Set appropriately
+    mock_radar_state.leadOne.std = None  # Set appropriately
+    mock_radar_state.leadOne.prob = None  # Set appropriately
     mock_radar_state.leadTwo = Mock()
     mock_radar_state.leadTwo.status = False
+    mock_radar_state.leadTwo.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadTwo.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.snr = None  # Set appropriately
+    mock_radar_state.leadTwo.std = None  # Set appropriately
+    mock_radar_state.leadTwo.prob = None  # Set appropriately
 
     mock_model = Mock()
     mock_model.meta = MagicMock(hardBrakePredicted=False)
@@ -220,8 +236,12 @@ class TestAdaptiveControlImprovements:
     # Set up sm with the defined mock objects
     mock_sm = Mock()
     mock_sm.__getitem__ = lambda _, key: {'modelV2': mock_model, 'deviceState': mock_device_state, 'radarState': mock_radar_state}.get(key, Mock())
+    mock_sm.get = lambda key, default: {'modelV2': mock_model, 'deviceState': mock_device_state, 'radarState': mock_radar_state}.get(key, default)
     # Also mock sm.valid to avoid Mock recursion
     mock_sm.valid = {'deviceState': True, 'modelV2': True, 'radarState': True}
+    # Set up recv_frame to avoid Mock comparison errors
+    mock_sm.recv_frame = {'deviceState': 1, 'modelV2': 1, 'radarState': 1}  # Use actual integers, not Mocks
+    mock_sm.updated = {'deviceState': True, 'modelV2': True, 'radarState': True}  # Add updated dict as well
 
     # Test normal situation (should use ondemand)
     # Mock file system check - simulate that GPU governor file exists
@@ -247,12 +267,28 @@ class TestAdaptiveControlImprovements:
     mock_device_state = Mock()
     mock_device_state.thermalStatus = 1  # Yellow (not red/danger)
     mock_device_state.thermalPerc = 60  # 60% thermal (below the 75% needed for performance boost)
+    mock_device_state.gpuTemp = 60.0  # Set gpuTemp as actual number, not Mock
+    mock_device_state.cpuTemp = 50.0  # Set cpuTemp as actual number, not Mock
 
     mock_radar_state = Mock()
     mock_radar_state.leadOne = Mock()
     mock_radar_state.leadOne.status = False
+    mock_radar_state.leadOne.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadOne.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.snr = None  # Set appropriately
+    mock_radar_state.leadOne.std = None  # Set appropriately
+    mock_radar_state.leadOne.prob = None  # Set appropriately
     mock_radar_state.leadTwo = Mock()
     mock_radar_state.leadTwo.status = False
+    mock_radar_state.leadTwo.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadTwo.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.snr = None  # Set appropriately
+    mock_radar_state.leadTwo.std = None  # Set appropriately
+    mock_radar_state.leadTwo.prob = None  # Set appropriately
 
     mock_model = Mock()
     mock_model.meta = MagicMock(hardBrakePredicted=False)  # Avoid critical situation
@@ -262,8 +298,12 @@ class TestAdaptiveControlImprovements:
     # Explicitly prevent the hasattr checks from causing Mock issues
     mock_sm.__class__.__name__ = 'Mock'  # This will cause the real SubMaster check to fail
     mock_sm.__getitem__ = lambda _, key: {'modelV2': mock_model, 'deviceState': mock_device_state, 'radarState': mock_radar_state}.get(key, Mock())
+    mock_sm.get = lambda key, default: {'modelV2': mock_model, 'deviceState': mock_device_state, 'radarState': mock_radar_state}.get(key, default)
     # Also mock sm.valid to avoid Mock recursion
     mock_sm.valid = {'deviceState': True, 'modelV2': True, 'radarState': True}
+    # Set up recv_frame to avoid Mock comparison errors
+    mock_sm.recv_frame = {'deviceState': 1, 'modelV2': 1, 'radarState': 1}  # Use actual integers, not Mocks
+    mock_sm.updated = {'deviceState': True, 'modelV2': True, 'radarState': True}  # Add updated dict as well
 
     # Reset any existing temp performance time to avoid state from previous test runs
     if hasattr(self.controls, '_temp_perf_end_time'):

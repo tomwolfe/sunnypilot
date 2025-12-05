@@ -49,7 +49,31 @@ class TestThermalManager:
     thermal_manager = ThermalManager()
 
     # Create mock parameters
+    mock_radar_state = Mock()
+    mock_radar_state.leadOne = Mock()
+    mock_radar_state.leadOne.status = False
+    mock_radar_state.leadOne.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadOne.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadOne.snr = None  # Set appropriately
+    mock_radar_state.leadOne.std = None  # Set appropriately
+    mock_radar_state.leadOne.prob = None  # Set appropriately
+    mock_radar_state.leadTwo = Mock()
+    mock_radar_state.leadTwo.status = False
+    mock_radar_state.leadTwo.age = 0  # Set to integer to avoid Mock comparison error
+    mock_radar_state.leadTwo.dRel = 100.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.vRel = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.aLeadK = 0.0  # Set to float to avoid Mock comparison error
+    mock_radar_state.leadTwo.snr = None  # Set appropriately
+    mock_radar_state.leadTwo.std = None  # Set appropriately
+    mock_radar_state.leadTwo.prob = None  # Set appropriately
+
     mock_sm = Mock()
+    mock_sm.get = lambda key, default: mock_radar_state if key == 'radarState' else default
+    mock_sm.__getitem__ = lambda key: mock_radar_state if key == 'radarState' else Mock()
+    mock_sm.recv_frame = {'deviceState': 1, 'radarState': 1}  # Use actual integers, not Mocks
+    mock_sm.updated = {'deviceState': True, 'radarState': True}  # Add updated dict as well
     mock_CS = Mock()
 
     with patch('os.path.exists', return_value=False):
