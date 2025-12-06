@@ -70,14 +70,17 @@ class SimplifiedCoordinatedController:
             reduction_factor = max(0.0, 1.0 - self.coordination_factor * (lat_accel / self.max_lat_accel))
             adjusted_accel = base_acceleration * reduction_factor  # Fixed: use base_acceleration
 
-            # Ensure we don't switch from acceleration to braking unnecessarily
-            # Only apply the gentle adjustment if the sign changes AND if the original was positive acceleration
-            if np.sign(adjusted_accel) != np.sign(base_acceleration) and base_acceleration > 0:
-                adjusted_accel = abs(base_acceleration) * 0.1  # Gentle acceleration/deceleration
-            elif np.sign(adjusted_accel) != np.sign(base_acceleration) and base_acceleration <= 0:
-                # If original was braking and now it would accelerate, keep it as breaking
-                adjusted_accel = -abs(base_acceleration) * 0.1
-
+            # Check if sign changed (meaning coordination caused acceleration to switch to braking or vice versa)
+            if np.sign(adjusted_accel) != np.sign(base_acceleration):
+                # If original was braking (negative) and coordination wants to accelerate, maintain braking intent
+                if base_acceleration <= 0:
+                    # Keep braking but with reduced magnitude based on coordination
+                    adjusted_accel = -max(abs(adjusted_accel), 0.3 * abs(base_acceleration))
+                # If original was accelerating (positive) and coordination wants to brake,
+                # allow the coordinated braking to take effect
+                elif base_acceleration > 0:
+                    # Allow braking but ensure it's not too gentle if the original intent was to brake
+                    adjusted_accel = min(adjusted_accel, -0.3 * abs(base_acceleration))
             return adjusted_accel
         else:
             # No significant lateral demand, use original acceleration
@@ -147,22 +150,30 @@ class SafetyLimiter:
         Returns:
             Final acceleration after safety limits applied
         """
-        # Calculate time to collision with lead vehicle
+        final_accel = adjusted_accel
+
+        # Check for potential collision with lead vehicle (TTC - Time To Collision)
         if lead_distance < float('inf') and lead_distance > 0:
             relative_velocity = speed - lead_velocity
             if relative_velocity > 0:
-                ttc = lead_distance / relative_velocity
-                if ttc < 2.5:  # Less than 2.5 seconds to collision
-                    # Prioritize safety over coordination
-                    return min(adjusted_accel, self.max_accel_for_braking)
+                ttc = lead_distance / relative_velocity  # Time to collision if no action taken
+                if ttc < 2.0:  # Less than 2.0 seconds to collision - immediate danger
+                    # Apply hard braking regardless of coordination
+                    return self.max_accel_for_braking
+                elif ttc < 3.0:  # Less than 3.0 seconds to collision - moderate danger
+                    # Prioritize safety over coordination, but allow some adjustment
+                    final_accel = min(adjusted_accel, self.max_accel_for_braking)
 
-        # If we're in a sharp curve and going fast, ensure we have some margin
-        if lat_accel > 3.0 and speed > 15.0:  # High lateral accel at high speed
-            # Reduce aggressive acceleration in curves
-            if adjusted_accel > 1.0:
-                return min(adjusted_accel, 1.0)
+        # Check for dangerous combination of high speed and high lateral acceleration in curves
+        if lat_accel > 3.5 and speed > 12.0:  # Very high lateral accel at moderate-high speed
+            # Limit excessive acceleration in dangerous curve scenarios
+            if final_accel > 0.5:
+                final_accel = min(final_accel, 0.5)
+            # Also ensure we don't prevent necessary braking in curves
+            if final_accel < self.max_accel_for_braking and base_accel <= 0:
+                final_accel = min(final_accel, self.max_accel_for_braking)
 
-        return adjusted_accel
+        return final_accel
 
 
 def create_coordinated_controller() -> Tuple[SimplifiedCoordinatedController, SafetyLimiter]:
