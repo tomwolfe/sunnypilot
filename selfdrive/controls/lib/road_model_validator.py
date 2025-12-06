@@ -294,7 +294,8 @@ class RoadModelValidator:
           actual_lat_accel = desired_curvature * (v_ego**2)
           max_lat_accel = max_safe_curvature * (v_ego**2)
 
-          cloudlog.warning(f"Desired curvature {desired_curvature:.4f} too high for speed {v_ego}m/s. Lateral accel: {actual_lat_accel:.2f}m/s² (max safe: {max_lat_accel:.2f}m/s²)")
+          cloudlog.warning(f"Desired curvature {desired_curvature:.4f} too high for speed {v_ego}m/s. "
+                          f"Lateral accel: {actual_lat_accel:.2f}m/s² (max safe: {max_lat_accel:.2f}m/s²)")
 
           # Apply correction with safety margin
           corrected_curvature = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))

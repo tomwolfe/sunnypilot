@@ -5,7 +5,8 @@ This module provides additional tests specifically for validating the safety fea
 of the enhanced autonomous driving system, focusing on edge cases and critical scenarios.
 """
 
-from unittest.mock import Mock
+import unittest.mock
+Mock = unittest.mock.Mock
 
 from cereal import log
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager

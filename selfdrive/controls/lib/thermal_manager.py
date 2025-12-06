@@ -225,14 +225,16 @@ class ThermalManager:
     if thermal_risk_level >= 4:  # Very high risk (equivalent to danger)
       # In very high risk state, force thermal-safe GPU mode
       self._apply_gpu_thermal_safe_mode()
-      cloudlog.warning(f"GPU forced to thermal-safe mode due to thermal risk. Predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+      cloudlog.warning(f"GPU forced to thermal-safe mode due to thermal risk. "
+                      f"Predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
     elif thermal_risk_level >= 3:  # High risk (equivalent to red)
       # In high risk, use ondemand governor to preserve thermal safety
       self._apply_gpu_ondemand_mode()
     elif thermal_risk_level >= 2:  # Medium risk (equivalent to yellow)
       # If in medium risk and we're predicting thermal issues, be proactive
       self._apply_gpu_ondemand_mode()
-      cloudlog.debug(f"Proactive thermal management - risk level: {thermal_risk_level}, predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+      cloudlog.debug(f"Proactive thermal management - risk level: {thermal_risk_level}, "
+                    f"predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
     else:  # Low risk (equivalent to green/yellow)
       # Check vehicle speed and standstill status safely, handling Mock objects
       try:
