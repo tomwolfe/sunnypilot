@@ -805,74 +805,89 @@ class Controls(ControlsExt):
         current_time = time.monotonic()
         thermal_state = self.thermal_manager.get_thermal_state_with_fallback(self.sm, current_time)
 
+        # Initialize adaptive rate control variables if not already set
+        if not hasattr(self, '_control_rate_params'):
+          self._control_rate_params = {
+            'base_rate': 100.0,  # Base control rate in Hz
+            'min_rate': 20.0,    # Minimum safe control rate
+            'max_rate': 100.0,   # Maximum control rate
+            'last_update_time': current_time,
+            'frame_count': 0,
+            'adaptive_factor': 1.0,
+            'context_multiplier': 1.0,  # Factor based on driving context
+          }
+
         # Get adaptive gains based on thermal state and vehicle speed
         self.gain_scheduler.get_adaptive_gains(self.sm['carState'].vEgo, thermal_state)
 
-        # Adaptive control rate based on thermal stress
-        # Calculate rates based on thermal stress (0.0 = no stress, 1.0 = maximum stress)
-        stress_factor = thermal_state  # Using actual thermal state instead of performance_compensation_factor
+        # Enhanced adaptive control rate based on multiple factors
+        # Calculate rates based on thermal stress, driving context, and system load (0.0 = no stress, 1.0 = maximum stress)
+        stress_factor = thermal_state  # Using actual thermal state
 
-        # Define base rate and minimum rates
-        base_rate = 100  # 100Hz base rate
-        min_critical_rate = 50  # Minimum rate for critical functions
-        min_standard_rate = 10  # Minimum rate for standard functions
+        # Determine driving context for context-aware rate adjustment
+        CS = self.sm['carState']
+        v_ego = CS.vEgo
+        a_ego = getattr(CS, 'aEgo', 0.0)  # Current acceleration
+        curvature = abs(self.desired_curvature) if hasattr(self, 'desired_curvature') else 0.0
 
-        # Calculate adaptive rates based on thermal stress
-        # Critical functions: reduce less aggressively
-        critical_factor = max(0.5, 1.0 - stress_factor * 0.3)  # Less reduction for critical functions
-        critical_rate = max(min_critical_rate, base_rate * critical_factor)
+        # Driving context factor: reduce rate in low-activity scenarios
+        if v_ego < 5.0:  # Stationary or very low speed
+          context_factor = 0.5  # Lower rate for parking/low speed scenarios
+        elif v_ego < 15.0 and abs(a_ego) < 0.5 and curvature < 0.001:  # Highway cruise
+          context_factor = 0.75  # Moderate reduction for steady highway driving
+        elif curvature > 0.002:  # High curvature (curvy roads)
+          context_factor = 1.2  # Higher rate for challenging maneuvers
+        else:  # Normal driving
+          context_factor = 1.0
 
-        # Standard functions: reduce more aggressively
-        standard_factor = max(0.1, 1.0 - stress_factor * 0.9)  # More reduction for standard functions
-        standard_rate = max(min_standard_rate, base_rate * standard_factor)
+        # Combine thermal, system load, and context factors
+        system_load_factor = getattr(self.thermal_manager, 'system_load_factor', 0.0) if hasattr(self.thermal_manager, 'system_load_factor') else 0.0
+        combined_factor = max(0.3, min(1.0, 1.0 - (stress_factor * 0.4 + system_load_factor * 0.3 + (1 - context_factor) * 0.3)))
 
-        # Calculate current rate based on thermal state (interpolate between standard and critical rates)
-        current_rate = base_rate * (1.0 - stress_factor * 0.5)  # Moderate throttling
+        # Calculate adaptive control rate
+        target_rate = self._control_rate_params['base_rate'] * combined_factor * context_factor
+        current_rate = max(self._control_rate_params['min_rate'], min(self._control_rate_params['max_rate'], target_rate))
 
-        # Frame skipping counter for thermal throttling
-        if not hasattr(self, 'thermal_adjusted_frame'):
-          self.thermal_adjusted_frame = 0
+        # Update context multiplier for logging
+        self._control_rate_params['context_multiplier'] = context_factor
 
-        # Process every frame when at full rate, every other frame when at reduced rate
-        frame_skip_threshold = base_rate / max(current_rate, 1)  # Prevent division by zero
-        self.thermal_adjusted_frame += 1
+        # Implement rate control using time-based approach for more precise control
+        time_elapsed = current_time - self._control_rate_params['last_update_time']
+        required_interval = 1.0 / current_rate if current_rate > 0 else 0.01  # 100Hz fallback
 
-        # Only perform full control cycle if we're not skipping this frame due to thermal constraints
-        if self.thermal_adjusted_frame >= frame_skip_threshold:
-          self.thermal_adjusted_frame = 0  # Reset counter
+        # Only run control cycle if enough time has passed for the current rate
+        if time_elapsed >= required_interval:
+          # Reset the update timer
+          self._control_rate_params['last_update_time'] = current_time
+          self._control_rate_params['frame_count'] += 1
 
-          # Update message subscriptions based on priority during thermal stress
-          # Critical functions get higher priority update rates
-          if thermal_state > 0.5:  # Under thermal stress (0.5 is medium stress threshold)
-            # Update critical functions at higher rate
-            self.sm.update(100)  # Always update critical messages at high rate
-
-            # Perform thermal-aware control operations
-            # In this context, we use the normal control cycle but with thermal-aware adaptive gains
-            self.update()
-            CC, lac_log = self.state_control()  # Using the state_control method with thermal awareness
+          # Update message subscriptions with context-aware frequency
+          if stress_factor > 0.5 or context_factor > 1.0:  # High stress or challenging driving
+            self.sm.update(100)  # Update at full rate for critical scenarios
           else:
-            # Normal operation
-            self.update()
-            CC, lac_log = self.state_control()
+            # Use variable update rate based on context
+            update_rate = max(20, int(current_rate * 0.8))  # Update at 80% of control rate
+            self.sm.update(update_rate)
+
+          self.update()
+          CC, lac_log = self.state_control()
 
           self.publish(CC, lac_log)
           self.get_params_sp(self.sm)
           self.run_ext(self.sm, self.pm)
 
-          # Enhanced thermal monitoring and logging with stress level information
-          if thermal_state > 0.1:  # Only log if there's some thermal stress
-            cloudlog.debug(
-                f"Thermal throttling active: thermal_state={thermal_state:.2f}, " +
-                f"rate={current_rate:.1f}Hz, " +
-                f"critical_rate={critical_rate:.1f}Hz, standard_rate={standard_rate:.1f}Hz"
-            )
+          # Enhanced thermal and performance monitoring
+          if stress_factor > 0.1 or context_factor != 1.0:  # Log when adjustments are active
+            if self._control_rate_params['frame_count'] % max(1, int(2 * current_rate)) == 0:  # Log ~every 2 seconds
+              cloudlog.debug(
+                  f"Adaptive control rate: target={current_rate:.1f}Hz, thermal={stress_factor:.2f}, " +
+                  f"context_factor={context_factor:.2f}, sys_load={system_load_factor:.2f}, " +
+                  f"vEgo={v_ego:.1f}m/s, curvature={curvature:.4f}"
+              )
         else:
           # Still update the message subsystem regularly to maintain message flow
-          # This 15Hz update rate is chosen to ensure critical communication (e.g., carState, radarState)
-          # is maintained even when the main control loop is thermally throttled and frames are skipped,
-          # without adding significant computational load during these skipped cycles.
-          self.sm.update(15)
+          # Use a lower update rate during skipped control cycles to maintain communication
+          self.sm.update(20)  # Reduced update rate during skipped cycles
 
         # Monitor timing with thermal awareness and add thermal performance adjustments
         rk.monitor_time()

@@ -123,6 +123,17 @@ class ThermalManager:
     if not hasattr(self, '_thermal_history'):
       self._thermal_history = []
 
+    # Initialize predictive thermal model
+    if not hasattr(self, '_thermal_predictor'):
+      self._thermal_predictor = {
+        'gpu_alpha': 0.3,  # Smoothing factor for GPU trend
+        'cpu_alpha': 0.3,  # Smoothing factor for CPU trend
+        'soc_alpha': 0.3,  # Smoothing factor for SoC trend
+        'prev_gpu_temp': None,
+        'prev_cpu_temp': None,
+        'prev_soc_temp': None,
+      }
+
     # Store the previous temperature values for backward compatibility and trend calculation
     prev_gpu_temp = getattr(self, '_prev_gpu_temp', None)
     prev_cpu_temp = getattr(self, '_prev_cpu_temp', None)
@@ -162,6 +173,16 @@ class ThermalManager:
       try:
         temp_val = float(current_temp)
         self._prev_gpu_temp = temp_val
+        # Update predictor with exponential smoothing
+        if self._thermal_predictor['prev_gpu_temp'] is not None:
+          # Calculate trend based on weighted average of recent changes
+          prev_smoothed = self._thermal_predictor['prev_gpu_temp']
+          current_smoothed = (1 - self._thermal_predictor['gpu_alpha']) * prev_smoothed + self._thermal_predictor['gpu_alpha'] * temp_val
+          # Update trend estimate
+          self._gpu_trend = current_smoothed - prev_smoothed
+        else:
+          self._gpu_trend = 0.0
+        self._thermal_predictor['prev_gpu_temp'] = temp_val
       except (TypeError, ValueError):
         # If conversion fails, don't update the prev temp
         pass
@@ -170,6 +191,14 @@ class ThermalManager:
       try:
         temp_val = float(cpu_temp)
         self._prev_cpu_temp = temp_val
+        # Update predictor with exponential smoothing
+        if self._thermal_predictor['prev_cpu_temp'] is not None:
+          prev_smoothed = self._thermal_predictor['prev_cpu_temp']
+          current_smoothed = (1 - self._thermal_predictor['cpu_alpha']) * prev_smoothed + self._thermal_predictor['cpu_alpha'] * temp_val
+          self._cpu_trend = current_smoothed - prev_smoothed
+        else:
+          self._cpu_trend = 0.0
+        self._thermal_predictor['prev_cpu_temp'] = temp_val
       except (TypeError, ValueError):
         pass
 
@@ -177,6 +206,14 @@ class ThermalManager:
       try:
         temp_val = float(soc_temp)
         self._prev_soc_temp = temp_val
+        # Update predictor with exponential smoothing
+        if self._thermal_predictor['prev_soc_temp'] is not None:
+          prev_smoothed = self._thermal_predictor['prev_soc_temp']
+          current_smoothed = (1 - self._thermal_predictor['soc_alpha']) * prev_smoothed + self._thermal_predictor['soc_alpha'] * temp_val
+          self._soc_trend = current_smoothed - prev_smoothed
+        else:
+          self._soc_trend = 0.0
+        self._thermal_predictor['prev_soc_temp'] = temp_val
       except (TypeError, ValueError):
         pass
 
@@ -184,16 +221,18 @@ class ThermalManager:
     if len(self._thermal_history) > 30:  # Assuming ~1Hz updates
       self._thermal_history = self._thermal_history[-30:]
 
-    # Calculate thermal trends using historical data
-    temp_trend = self._calculate_thermal_trend('gpu_temp')
-    cpu_trend = self._calculate_thermal_trend('cpu_temp')
-    soc_trend = self._calculate_thermal_trend('soc_temp')
+    # Efficient trend calculation using exponential moving average instead of full history analysis
+    # These values were updated in the section above with exponential smoothing
+    temp_trend = getattr(self, '_gpu_trend', 0.0)
+    cpu_trend = getattr(self, '_cpu_trend', 0.0)
+    soc_trend = getattr(self, '_soc_trend', 0.0)
 
-    # Predictive thermal management based on current load and trends
+    # Enhanced predictive thermal management based on current load and smoothed trends
     # Handle case where temperature values might be Mock objects (in tests)
     if current_temp is not None and not (hasattr(current_temp, 'return_value') or hasattr(current_temp, 'side_effect')):
       try:
         temp_val = float(current_temp)
+        # Use predictive model with exponential smoothing
         predicted_temp = temp_val + temp_trend
       except (TypeError, ValueError):
         predicted_temp = None
