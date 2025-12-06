@@ -333,9 +333,12 @@ class Controls(ControlsExt):
     max_lateral_accel = 3.0  # Maximum reasonable lateral acceleration
 
     # Adjust longitudinal acceleration limits based on lateral demand for stability
-    if lateral_demand_factor > 1.0:  # High lateral demand
+    # Threshold of 3.0 corresponds to approximately 3.0 m/s² of lateral acceleration (about 0.3g)
+    # which is a reasonable threshold for when tire load becomes significant
+    lateral_demand_threshold = 3.0  # Approximately 3.0 m/s² lateral acceleration
+    if lateral_demand_factor > lateral_demand_threshold:  # High lateral demand
       # Reduce longitudinal authority when high lateral demand exists
-      lat_influence_factor = min(0.8, 1.0 - (lateral_demand_factor - 1.0) / max_lateral_accel)
+      lat_influence_factor = min(0.8, 1.0 - (lateral_demand_factor - lateral_demand_threshold) / max_lateral_accel)
       # Modify the longitudinal limits based on lateral demand
       adjusted_accel_limits = (conservative_accel_limits[0] * lat_influence_factor,
                               conservative_accel_limits[1] * lat_influence_factor)

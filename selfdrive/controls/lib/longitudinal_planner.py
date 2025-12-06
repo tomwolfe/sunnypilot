@@ -485,7 +485,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
   def _predictive_filter_leads(self, matched_leads, v_ego):
     """
-    Apply predictive filtering to improve lead tracking.
+    Apply predictive filtering to improve lead tracking using historical data and Kalman-like filtering.
 
     Args:
         matched_leads: List of associated and fused leads
@@ -506,21 +506,75 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     current_time = time.time()
     current_targets = []
 
-    for lead in matched_leads:
-      # Predict position based on previous state
-      predicted_distance = lead['distance']
-      predicted_velocity = lead['velocity']
-      predicted_accel = lead['acceleration']
+    for i, lead in enumerate(matched_leads):
+      # Get the current measurement
+      current_distance = lead['distance']
+      current_velocity = lead['velocity']
+      current_accel = lead['acceleration']
+      current_confidence = lead.get('confidence', 0.5)
 
-      # Apply simple constant-acceleration prediction model
-      predicted_distance += predicted_velocity * dt
+      # Try to find matching target from history to update its state
+      historical_estimate = None
+      if len(self._lead_tracking_history) > 0:
+        # Look for the closest matching lead from the previous frame
+        # This is a simplified approach - in a production implementation,
+        # we'd use more sophisticated data association
+        prev_targets = self._lead_tracking_history[-1]['targets']
+        if i < len(prev_targets):
+          historical_estimate = prev_targets[i]
 
-      # Create target entry
+      # Apply Kalman-like filtering if historical data is available
+      if historical_estimate is not None:
+        # Kalman-like update with process noise and measurement noise
+        # Use the historical estimate as a prediction
+
+        # Predict next state from historical data
+        dt_since_last = current_time - historical_estimate['timestamp']
+        if dt_since_last > 0.1:  # Reset if too much time passed
+          dt_since_last = dt  # Use standard dt
+
+        # Predict state based on previous estimate
+        predicted_distance = historical_estimate['distance'] + historical_estimate['velocity'] * dt_since_last
+        predicted_velocity = historical_estimate['velocity'] + historical_estimate['acceleration'] * dt_since_last
+        predicted_accel = historical_estimate['acceleration']  # Assume constant acceleration
+
+        # Measurement uncertainty (lower for higher confidence measurements)
+        measurement_uncertainty = 1.0 / max(0.1, current_confidence) if current_confidence > 0 else 10.0
+        # Process uncertainty (how much we trust the prediction vs measurement)
+        process_uncertainty = 2.0  # Higher if motion is more unpredictable
+
+        # Calculate Kalman gain
+        kalman_gain_pos = process_uncertainty / (process_uncertainty + measurement_uncertainty)
+        kalman_gain_vel = process_uncertainty / (process_uncertainty + measurement_uncertainty * 2.0)  # Velocity has more noise
+        kalman_gain_acc = 0.1  # Acceleration is least reliable, so low gain
+
+        # Update estimates using Kalman filtering
+        filtered_distance = predicted_distance + kalman_gain_pos * (current_distance - predicted_distance)
+        filtered_velocity = predicted_velocity + kalman_gain_vel * (current_velocity - predicted_velocity)
+
+        # For acceleration, use even lower trust in measurements
+        filtered_accel = predicted_accel + kalman_gain_acc * (current_accel - predicted_accel)
+
+        # Apply physical constraints
+        # Ensure distance doesn't become negative
+        filtered_distance = max(0.1, filtered_distance)
+        # Constrain velocity changes to reasonable limits
+        filtered_velocity = max(-50.0, min(50.0, filtered_velocity))
+        # Constrain acceleration
+        filtered_accel = max(-15.0, min(8.0, filtered_accel))
+
+      else:
+        # No historical data, use current measurement with some smoothing
+        filtered_distance = current_distance
+        filtered_velocity = current_velocity
+        filtered_accel = current_accel
+
+      # Create target entry with filtered values
       target_entry = {
-        'distance': predicted_distance,
-        'velocity': predicted_velocity,
-        'acceleration': predicted_accel,
-        'confidence': lead.get('confidence', 0.5),
+        'distance': filtered_distance,
+        'velocity': filtered_velocity,
+        'acceleration': filtered_accel,
+        'confidence': current_confidence,
         'timestamp': current_time
       }
       current_targets.append(target_entry)
@@ -536,8 +590,6 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if len(self._lead_tracking_history) > 10:
       self._lead_tracking_history = self._lead_tracking_history[-10:]
 
-    # For now, return the current targets (the prediction step)
-    # In a more advanced implementation, we would use historical data to refine estimates
     return current_targets
 
   def _validate_fused_sensor_data(self, x, v, a):
