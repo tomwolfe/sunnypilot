@@ -6,24 +6,24 @@ This serves as the beginning of Phase 2: Validation and Testing.
 import numpy as np
 import time
 from typing import Dict, Any, Tuple
-from sunnypilot.modeld.scene_change_detection import (
-    LightweightSceneChangeDetector, 
+from sunnypilot.lightweight.scene_detection.detector import (
+    LightweightSceneChangeDetector,
     create_scene_change_detector
 )
-from sunnypilot.controls.lib.simplified_coordinated_control import (
-    SimplifiedCoordinatedController, 
+from sunnypilot.lightweight.coordinated_control.controller import (
+    SimplifiedCoordinatedController,
     SafetyLimiter,
     create_coordinated_controller
 )
-from sunnypilot.controls.lib.basic_edge_case_detection import (
+from sunnypilot.lightweight.edge_case_detection.detector import (
     BasicEdgeCaseDetector,
     DetectionResult,
     EdgeCaseType,
     create_edge_case_detector
 )
-from sunnypilot.integration.light_enhancement_integrator import (
-    LightEnhancementIntegrator,
-    create_light_enhancement_integrator
+from sunnypilot.lightweight.integration import (
+    LightweightIntegrator,
+    create_light_integrator
 )
 
 
@@ -217,8 +217,8 @@ def test_edge_case_detection_comprehensive():
 def test_integration_comprehensive():
     """Comprehensive test of the integration system."""
     print("=== Comprehensive Integration Test ===")
-    
-    integrator = create_light_enhancement_integrator()
+
+    integrator = create_light_integrator()
     
     # Simulate a sequence of frames and control decisions
     frames = [

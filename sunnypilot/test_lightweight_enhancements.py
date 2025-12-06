@@ -3,23 +3,23 @@ Basic tests for the lightweight enhancement components.
 """
 
 import numpy as np
-from sunnypilot.modeld.scene_change_detection import (
-    LightweightSceneChangeDetector, 
+from sunnypilot.lightweight.scene_detection.detector import (
+    LightweightSceneChangeDetector,
     create_scene_change_detector
 )
-from sunnypilot.controls.lib.simplified_coordinated_control import (
-    SimplifiedCoordinatedController, 
+from sunnypilot.lightweight.coordinated_control.controller import (
+    SimplifiedCoordinatedController,
     SafetyLimiter,
     create_coordinated_controller
 )
-from sunnypilot.controls.lib.basic_edge_case_detection import (
+from sunnypilot.lightweight.edge_case_detection.detector import (
     BasicEdgeCaseDetector,
     EdgeCaseType,
     create_edge_case_detector
 )
-from sunnypilot.integration.light_enhancement_integrator import (
-    LightEnhancementIntegrator,
-    create_light_enhancement_integrator
+from sunnypilot.lightweight.integration import (
+    LightweightIntegrator,
+    create_light_integrator
 )
 
 
@@ -117,8 +117,8 @@ def test_edge_case_detection():
 def test_integration():
     """Test the light enhancement integrator."""
     print("Testing Light Enhancement Integrator...")
-    
-    integrator = create_light_enhancement_integrator()
+
+    integrator = create_light_integrator()
     
     # Simulate a static scene
     static_frame1 = np.full((100, 100), 128, dtype=np.uint8)  # Gray frame

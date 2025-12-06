@@ -3,7 +3,7 @@ Debug/analysis of the scene change detection logic to understand the test result
 """
 
 import numpy as np
-from sunnypilot.modeld.scene_change_detection import create_scene_change_detector
+from sunnypilot.lightweight.scene_detection.detector import create_scene_change_detector
 
 def debug_scene_detection():
     print("=== Debugging Scene Change Detection Logic ===")
