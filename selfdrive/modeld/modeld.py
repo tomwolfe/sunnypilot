@@ -294,9 +294,17 @@ class ModelState(ModelStateBase):
       # Calculate mean absolute difference between frames
       diff = np.mean(np.abs(current_sample.astype(np.int16) - prev_sample.astype(np.int16)))
 
-      # Threshold for scene change (adjustable based on testing)
-      # Typical values: static scene ~1-3, normal driving ~5-10, rapid changes ~15+
-      scene_change_threshold = 3.0  # Lower values = more aggressive skipping
+      # Enhanced threshold based on driving context
+      # Higher threshold for highway driving (less need for frequent updates)
+      # Lower threshold for city driving (more dynamic environment)
+      # Get v_ego from last inputs if available
+      v_ego = getattr(self, '_v_ego_for_validation', 0.0)
+      if v_ego > 15.0:  # Highway speed
+        scene_change_threshold = 4.0  # Higher threshold for highway
+      elif v_ego > 5.0:  # City speed
+        scene_change_threshold = 3.0  # Medium threshold for city
+      else:  # Low speed / parking
+        scene_change_threshold = 2.0  # Lower threshold for parking/low speed
 
       scene_changed = diff > scene_change_threshold
 
@@ -306,10 +314,17 @@ class ModelState(ModelStateBase):
         self.frame_skip_counter = 0
         return True
       else:
+        # Enhanced: Check system load to determine if we should run model
+        system_load_factor = getattr(self, 'system_load_factor', 0.0)
+
+        # Run model at least once every 2 frames when system is under low stress
+        # Increase frequency to 1 every frame when system stress is high to maintain safety
+        max_skip_based_on_load = 1 if system_load_factor > 0.7 else 3
+
         # Scene unchanged, increment skip counter and skip this frame
         self.frame_skip_counter += 1
         # Check if we've reached max skip count
-        if self.frame_skip_counter >= 3:
+        if self.frame_skip_counter >= max_skip_based_on_load:
           self.frame_skip_counter = 0  # Reset counter
           return True  # Run model after reaching max skip
         return False
@@ -825,6 +840,8 @@ def main(demo=False):
 
       # Store system load in the model for use in efficiency decisions
       model.system_load_factor = system_load
+      # Store v_ego for scene change detection threshold calculation
+      model._v_ego_for_validation = v_ego
 
       # Enhanced performance monitoring with adaptive model execution
       mt1 = time.perf_counter()

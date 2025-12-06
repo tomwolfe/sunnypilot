@@ -5,6 +5,9 @@ This module provides advanced thermal management for the adaptive control system
 to ensure hardware safety under varying thermal conditions.
 """
 
+import time
+import numpy as np
+
 from cereal import log
 from openpilot.common.swaglog import cloudlog
 
@@ -106,43 +109,61 @@ class ThermalManager:
     if not self.gpu_management_enabled:
       return
 
-    # Check thermal status
+    # Enhanced thermal monitoring with additional sensors
     device_state = sm.get('deviceState', None)
     if not device_state:
       return
 
     # Get current thermal metrics if available
     current_temp = getattr(device_state, 'gpuTemp', None)
+    cpu_temp = getattr(device_state, 'cpuTemp', None)
+    soc_temp = getattr(device_state, 'memoryTemp', getattr(device_state, 'socTemp', None))
+
+    # Initialize tracking history if not present
+    if not hasattr(self, '_thermal_history'):
+      self._thermal_history = []
+
+    # Add current state to thermal history
+    current_thermal_state = {
+      'timestamp': time.time(),
+      'gpu_temp': current_temp,
+      'cpu_temp': cpu_temp,
+      'soc_temp': soc_temp,
+      'thermal_status': self.thermal_status,
+      'v_ego': getattr(CS, 'vEgo', 0.0) if CS else 0.0
+    }
+    self._thermal_history.append(current_thermal_state)
+
+    # Keep only recent history (last 30 seconds worth of data)
+    if len(self._thermal_history) > 30:  # Assuming ~1Hz updates
+      self._thermal_history = self._thermal_history[-30:]
+
+    # Calculate thermal trends using historical data
+    temp_trend = self._calculate_thermal_trend('gpu_temp')
+    cpu_trend = self._calculate_thermal_trend('cpu_temp')
+    soc_trend = self._calculate_thermal_trend('soc_temp')
 
     # Predictive thermal management based on current load and trends
-    if hasattr(sm, 'deviceState') and sm.recv_frame.get('deviceState', 0) > 0:
-      # Calculate thermal trend if we have history
-      if not hasattr(self, '_prev_gpu_temp') or self._prev_gpu_temp is None:
-        self._prev_gpu_temp = current_temp if current_temp is not None else 0
-        temp_trend = 0
-      else:
-        temp_trend = (current_temp - self._prev_gpu_temp) if current_temp is not None else 0
-        self._prev_gpu_temp = current_temp if current_temp is not None else self._prev_gpu_temp
+    predicted_temp = current_temp + temp_trend if current_temp is not None else None
+    predicted_cpu = cpu_temp + cpu_trend if cpu_temp is not None else None
+    predicted_soc = soc_temp + soc_trend if soc_temp is not None else None
 
-      # Predict next thermal state based on trend
-      predicted_temp = current_temp + temp_trend if current_temp is not None else None
-    else:
-      temp_trend = 0
-      predicted_temp = current_temp
+    # Enhanced predictive thermal control with multiple sensors
+    thermal_risk_level = self._assess_thermal_risk(predicted_temp, predicted_cpu, predicted_soc)
 
-    # Based on thermal status, apply appropriate GPU management
-    if self.thermal_status == log.DeviceState.ThermalStatus.danger:
-      # In danger state, force thermal-safe GPU mode
+    # Based on thermal risk level, apply appropriate GPU management
+    if thermal_risk_level >= 4:  # Very high risk (equivalent to danger)
+      # In very high risk state, force thermal-safe GPU mode
       self._apply_gpu_thermal_safe_mode()
-      cloudlog.warning("GPU forced to thermal-safe mode due to thermal danger")
-    elif self.thermal_status == log.DeviceState.ThermalStatus.red:
-      # In red state, use ondemand governor to preserve thermal safety
+      cloudlog.warning(f"GPU forced to thermal-safe mode due to thermal risk. Predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+    elif thermal_risk_level >= 3:  # High risk (equivalent to red)
+      # In high risk, use ondemand governor to preserve thermal safety
       self._apply_gpu_ondemand_mode()
-    elif self.thermal_status == log.DeviceState.ThermalStatus.yellow and predicted_temp and predicted_temp > self.gpu_max * 0.9:
-      # If thermal status is yellow and we're predicting thermal issues, be proactive
+    elif thermal_risk_level >= 2:  # Medium risk (equivalent to yellow)
+      # If in medium risk and we're predicting thermal issues, be proactive
       self._apply_gpu_ondemand_mode()
-      cloudlog.debug(f"Proactive thermal management - predicted temp: {predicted_temp:.1f}°C")
-    else:
+      cloudlog.debug(f"Proactive thermal management - risk level: {thermal_risk_level}, predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+    else:  # Low risk (equivalent to green/yellow)
       # Check vehicle speed and standstill status safely, handling Mock objects
       try:
         v_ego = getattr(CS, 'vEgo', 0.0)
@@ -166,17 +187,115 @@ class ThermalManager:
       except (TypeError, AttributeError):
         standstill_val = False
 
+      # Enhanced decision making based on driving context and thermal risk
       if v_ego_val < 5.0 or standstill_val:
-        # At low speeds or standstill, use ondemand governor for thermal safety
+        # At low speeds or standstill, use conservative mode for thermal safety
         self._apply_gpu_ondemand_mode()
       else:
         # At higher speeds in safe thermal conditions with good thermal trend,
         # we can use performance mode for critical operations
-        if temp_trend <= 0:  # Temperature is stable or decreasing
+        if temp_trend <= -0.5 or cpu_trend <= -0.5:  # Temperature is significantly decreasing
           self._apply_gpu_performance_mode_if_safe(sm)
+        elif temp_trend <= 0 and cpu_trend <= 0:  # Temperature is stable or slightly decreasing
+          self._apply_gpu_balanced_mode()  # Use balanced mode instead of performance
         else:
           # Temperature rising, use conservative approach
           self._apply_gpu_ondemand_mode()
+
+  def _calculate_thermal_trend(self, temp_key):
+    """
+    Calculate temperature trend from historical data using linear regression.
+
+    Args:
+        temp_key: Key for temperature type ('gpu_temp', 'cpu_temp', 'soc_temp')
+
+    Returns:
+        float: Temperature change rate in °C per second
+    """
+    if len(self._thermal_history) < 3:
+      return 0.0
+
+    # Get valid temperature data points
+    valid_points = []
+    for entry in self._thermal_history:
+      temp_val = entry.get(temp_key)
+      if temp_val is not None and temp_val > 0:  # Valid temperature reading
+        valid_points.append((entry['timestamp'], temp_val))
+
+    if len(valid_points) < 2:
+      return 0.0
+
+    # Perform simple linear regression to calculate trend
+    n = len(valid_points)
+    timestamps = np.array([p[0] for p in valid_points])
+    temps = np.array([p[1] for p in valid_points])
+
+    # Calculate slope (temperature change rate)
+    if n > 1:
+      dt = timestamps[-1] - timestamps[0]
+      if dt > 0:
+        slope = (temps[-1] - temps[0]) / dt  # °C per second
+        return slope
+      else:
+        return 0.0
+    else:
+      return 0.0
+
+  def _assess_thermal_risk(self, predicted_gpu, predicted_cpu, predicted_soc):
+    """
+    Assess overall thermal risk based on all temperature sensors.
+
+    Args:
+        predicted_gpu: Predicted GPU temperature
+        predicted_cpu: Predicted CPU temperature
+        predicted_soc: Predicted SoC temperature
+
+    Returns:
+        int: Risk level (0=low, 1=medium, 2=high, 3=very high)
+    """
+    risk_score = 0
+
+    # Evaluate each temperature component
+    if predicted_gpu and predicted_gpu > self.gpu_critical * 0.9:  # 90% of critical
+      risk_score += 2
+    elif predicted_gpu and predicted_gpu > self.gpu_max * 0.95:  # 95% of max
+      risk_score += 1
+
+    if predicted_cpu and predicted_cpu > self.cpu_critical * 0.9:
+      risk_score += 2
+    elif predicted_cpu and predicted_cpu > self.cpu_max * 0.95:
+      risk_score += 1
+
+    if predicted_soc and predicted_soc > self.som_critical * 0.9:
+      risk_score += 2
+    elif predicted_soc and predicted_soc > self.som_max * 0.95:
+      risk_score += 1
+
+    # Return risk level based on score
+    if risk_score >= 4:
+      return 3  # Very high risk
+    elif risk_score >= 3:
+      return 2  # High risk
+    elif risk_score >= 1:
+      return 1  # Medium risk
+    else:
+      return 0  # Low risk
+
+  def _apply_gpu_balanced_mode(self):
+    """Apply balanced GPU governor for moderate performance with thermal safety."""
+    if not self.gpu_management_enabled:
+      return
+
+    # Apply balanced GPU governor for thermal safety while maintaining reasonable performance
+    gpu_governor_path = "/sys/class/kgsl/kgsl-3d0/devfreq/governor"
+    try:
+      if __import__('os').path.exists(gpu_governor_path):
+        with __import__('builtins').open(gpu_governor_path, 'w') as f:
+          f.write('interactive')  # Use interactive mode for balanced performance/thermal
+      cloudlog.debug("GPU governor set to balanced mode for thermal efficiency")
+    except (OSError, PermissionError):
+      # If we can't write to the file (e.g., not on Android), just log
+      cloudlog.debug("GPU governor set to balanced mode (simulated)")
 
   def _apply_gpu_ondemand_mode(self):
     """Apply ondemand GPU governor for thermal safety."""

@@ -309,8 +309,6 @@ class Controls(ControlsExt):
       }
       cloudlog.warning(f"Adaptive gains has unexpected structure, using default longitudinal gains: {type(adaptive_gains)}")
 
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, conservative_accel_limits, longitudinal_gains))
-
     # Apply self-learning adjustments to model outputs
     base_desired_curvature = model_v2.action.desiredCurvature
     # Use enhanced safety validation if available, otherwise fall back to basic adjustment
@@ -325,10 +323,25 @@ class Controls(ControlsExt):
       # Make lateral control more conservative by reducing desired curvature
       modified_desired_curvature = learned_adjusted_curvature * adaptive_mods['lateral_factor']
 
-    # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
+    # Enhanced coordination between longitudinal and lateral control
+    # Apply coordinated control to improve vehicle dynamics and passenger comfort
     new_desired_curvature = modified_desired_curvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+
+    # Coordination factor to adjust longitudinal control based on lateral demand
+    lateral_demand_factor = abs(self.desired_curvature) * CS.vEgo**2  # Proportional to lateral acceleration demand
+    max_lateral_accel = 3.0  # Maximum reasonable lateral acceleration
+
+    # Adjust longitudinal acceleration limits based on lateral demand for stability
+    if lateral_demand_factor > 1.0:  # High lateral demand
+      # Reduce longitudinal authority when high lateral demand exists
+      lat_influence_factor = min(0.8, 1.0 - (lateral_demand_factor - 1.0) / max_lateral_accel)
+      # Modify the longitudinal limits based on lateral demand
+      adjusted_accel_limits = (conservative_accel_limits[0] * lat_influence_factor,
+                              conservative_accel_limits[1] * lat_influence_factor)
+    else:  # Low lateral demand
+      adjusted_accel_limits = conservative_accel_limits
+
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature
@@ -339,6 +352,9 @@ class Controls(ControlsExt):
     steer, steeringAngleDeg, lac_log = self.LaC.update(
       CC.latActive, CS, self.VM, lp, self.steer_limited_by_safety, self.desired_curvature, self.calibrated_pose, curvature_limited, lat_delay, adaptive_gains
     )
+
+    # Update longitudinal control with adjusted limits based on lateral demand
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, adjusted_accel_limits, longitudinal_gains))
 
     # Enhanced saturation detection with smoother recovery
     saturation_detected = False

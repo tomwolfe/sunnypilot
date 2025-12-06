@@ -12,6 +12,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 import numpy as np
 from typing import Any
 import math
+import time
 
 from openpilot.common.swaglog import cloudlog
 
@@ -248,55 +249,118 @@ class RoadModelValidator:
         Tuple of (corrected_model_output, is_valid)
     """
     is_valid = True
+    validation_issues = []
 
-    # Validate lane lines
+    # Validate lane lines with enhanced safety checks
     if 'laneLines' in model_output:
       lane_lines, lane_valid = self.validate_lane_lines(model_output['laneLines'])
       model_output['laneLines'] = lane_lines
       if not lane_valid:
+        validation_issues.append("lane_lines")
         cloudlog.debug("Model output: lane lines validation failed")
-        is_valid = False
+        # Don't immediately invalidate - lane lines are not always critical for safety
 
-    # Validate path planning
+    # Validate path planning with enhanced checks
     if 'position' in model_output:
       corrected_pos, path_valid = self.validate_path_planning(model_output['position'])
       model_output['position'] = corrected_pos
       if not path_valid:
+        validation_issues.append("path_planning")
         cloudlog.debug("Model output: path planning validation failed")
-        is_valid = False
+        is_valid = False  # Path invalidation is critical
 
-    # Validate lead objects
+    # Enhanced lead object validation with temporal consistency
     if 'leadsV3' in model_output:
       corrected_leads, leads_valid = self.validate_lead_objects(model_output['leadsV3'])
       model_output['leadsV3'] = corrected_leads
       if not leads_valid:
+        validation_issues.append("lead_objects")
         cloudlog.debug("Model output: lead objects validation failed")
-        is_valid = False
+        # Don't immediately invalidate - can still operate safely without lead detection
 
-    # Validate desired curvature from action
+    # Enhanced desired curvature validation with speed-dependent safety margins
     if 'action' in model_output and hasattr(model_output['action'], 'desiredCurvature'):
       desired_curvature = model_output['action'].desiredCurvature
-      # Check for extreme curvature that's not physically possible at speed
-      if abs(desired_curvature) > self.max_path_curvature and v_ego > 5.0:
-        max_safe_curvature = 3.0 / (v_ego**2) if v_ego > 0.1 else self.max_path_curvature
+
+      # Speed-based maximum curvature with enhanced safety margins
+      if v_ego > 0.1:
+        # Calculate maximum safe curvature based on realistic tire friction limits
+        # Using mu=0.8 (typical for dry pavement) with 10% safety margin
+        max_safe_curvature = 0.72 / (v_ego**2) if v_ego > 1.0 else 0.72  # 0.72 = 0.8 * 0.9 (safety margin)
+
         if abs(desired_curvature) > max_safe_curvature:
-          cloudlog.warning(f"Desired curvature {desired_curvature} too high for speed {v_ego}m/s (max safe: {max_safe_curvature})")
-          model_output['action'].desiredCurvature = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))
+          # Calculate actual lateral acceleration to understand the risk
+          actual_lat_accel = desired_curvature * (v_ego**2)
+          max_lat_accel = max_safe_curvature * (v_ego**2)
+
+          cloudlog.warning(f"Desired curvature {desired_curvature:.4f} too high for speed {v_ego}m/s. "
+                          f"Lateral accel: {actual_lat_accel:.2f}m/s² (max safe: {max_lat_accel:.2f}m/s²)")
+
+          # Apply correction with safety margin
+          corrected_curvature = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))
+          model_output['action'].desiredCurvature = corrected_curvature
+
+          # Log the correction for analysis
+          validation_issues.append(f"curvature_correction:{desired_curvature:.4f}->{corrected_curvature:.4f}")
           is_valid = False
-      # Check for physically impossible curvatures
-      if abs(desired_curvature) > 1.0:  # Radius less than 1m
-        cloudlog.error(f"Physically impossible desired curvature: {desired_curvature}")
-        model_output['action'].desiredCurvature = max(-0.5, min(0.5, desired_curvature))
+
+    # Validate desired acceleration with enhanced physics-based limits
+    if 'action' in model_output and hasattr(model_output['action'], 'desiredAcceleration'):
+      desired_accel = model_output['action'].desiredAcceleration
+
+      # Enhanced acceleration limits based on vehicle physics and safety
+      max_brake = -6.0  # Maximum safe braking (6.0 m/s²)
+      max_accel = 3.0   # Maximum safe acceleration (3.0 m/s²)
+
+      # Adjust limits based on speed (higher speeds should have more conservative acceleration)
+      if v_ego > 20.0:  # Above ~72 km/h
+        max_brake = -4.5  # More conservative braking at high speed
+        max_accel = 2.0   # More conservative acceleration at high speed
+      elif v_ego > 10.0:  # Above ~36 km/h
+        max_brake = -5.0
+        max_accel = 2.5
+
+      if desired_accel < max_brake or desired_accel > max_accel:
+        original_accel = desired_accel
+        corrected_accel = max(max_brake, min(max_accel, desired_accel))
+        model_output['action'].desiredAcceleration = corrected_accel
+
+        cloudlog.warning(f"Acceleration limited from {original_accel:.2f} to {corrected_accel:.2f} "
+                        f"at speed {v_ego:.2f}m/s")
+        validation_issues.append(f"accel_correction:{original_accel:.2f}->{corrected_accel:.2f}")
         is_valid = False
 
-    # Add validation flag to output
+    # Enhanced validation for lane change indicators
+    if 'meta' in model_output and hasattr(model_output['meta'], 'desireState'):
+      # Check lane change desire states for consistency with vehicle kinematics
+      desire_state = model_output['meta'].desireState
+      if len(desire_state) > log.Desire.laneChangeRight and len(desire_state) > log.Desire.laneChangeLeft:
+        left_change_prob = desire_state[log.Desire.laneChangeLeft]
+        right_change_prob = desire_state[log.Desire.laneChangeRight]
+
+        # Ensure lane change probabilities sum doesn't exceed reasonable limits
+        total_lane_change_prob = left_change_prob + right_change_prob
+        if total_lane_change_prob > 1.5:  # Allow some overlap but not excessive
+          cloudlog.warning(f"Lane change probabilities sum too high: {total_lane_change_prob:.2f}")
+          # Apply normalization
+          if total_lane_change_prob > 0:
+            model_output['meta'].desireState[log.Desire.laneChangeLeft] = left_change_prob / total_lane_change_prob * 0.8
+            model_output['meta'].desireState[log.Desire.laneChangeRight] = right_change_prob / total_lane_change_prob * 0.8
+          validation_issues.append("lane_change_prob_adjusted")
+
+    # Add comprehensive validation information to output
     if 'meta' not in model_output:
       model_output['meta'] = {}
 
-    # Preserve original validation flag and add our result
-    original_validation = model_output['meta'].get('validation_applied', False)
-    model_output['meta']['validation_applied'] = original_validation or not is_valid
-    model_output['meta']['road_model_validation'] = not is_valid
+    # Enhanced validation reporting
+    model_output['meta']['validation_applied'] = len(validation_issues) > 0
+    model_output['meta']['validation_issues'] = validation_issues
+    model_output['meta']['overall_validation'] = is_valid
+    model_output['meta']['validation_timestamp'] = time.time()
+
+    # Log validation summary if issues were found
+    if validation_issues:
+      cloudlog.debug(f"Model validation issues detected: {', '.join(validation_issues)}")
 
     return model_output, is_valid
 

@@ -85,53 +85,94 @@ class AdaptiveGainsController:
       },
     }
 
-    # Speed-dependent adjustments
-    # Threshold justification: Normalize to 30 m/s (about 108 km/h) as reference high-speed point
-    speed_factor = min(1.0, v_ego / 30.0)
-    # Reduce gains by up to 30% at high speeds (when speed_factor = 1.0) for enhanced stability
-    speed_adjustment = 1.0 - (0.3 * speed_factor)  # Reduce gains at higher speeds for stability
+    # Enhanced speed-dependent adjustments with more sophisticated curves
+    # Use sigmoid function for smoother transition around city/highway speeds
+    if v_ego < 5.0:  # Low speed - parking/stop and go
+      speed_adjustment = 1.2  # Higher gains for precise low-speed control
+    elif v_ego < 15.0:  # City driving ~54 km/h
+      # Smooth transition using sigmoid-like function: x / (x + 1) shifted and scaled
+      city_factor = 0.7 + 0.3 * (v_ego - 5.0) / (15.0 - 5.0)  # Gradually reduce from 1.0 to 0.7
+      speed_adjustment = city_factor
+    elif v_ego < 30.0:  # Highway driving ~54-108 km/h
+      highway_factor = 0.7 - 0.2 * (v_ego - 15.0) / (30.0 - 15.0)  # Reduce from 0.7 to 0.5
+      speed_adjustment = highway_factor
+    else:  # Very high speed - maximum stability
+      speed_adjustment = 0.4  # Minimal gains for maximum stability
 
-    # Thermal adjustments
-    # Reduce gains by up to 20% when thermal stress is at maximum (thermal_state = 1.0) to reduce computational load
-    thermal_adjustment = 1.0 - (thermal_state * 0.2)  # Reduce gains when hot
+    # Enhanced thermal adjustments - aggressive when very hot, conservative when cool
+    if thermal_state < 0.3:
+      thermal_adjustment = 1.0  # Full performance when cool
+    elif thermal_state < 0.6:
+      thermal_adjustment = 1.0 - (thermal_state - 0.3) * 0.5  # Gradual reduction
+    else:
+      thermal_adjustment = max(0.6, 1.0 - thermal_state)  # More aggressive reduction when hot
 
     # Validate the context dictionary to ensure required keys exist
     validated_context = self._validate_context_dict(context)
 
-    # Context-based adjustments - simplified
+    # Enhanced context-based adjustments with more granular control
     context_adjustment = 1.0
 
-    # Reduce gains on curvy roads for smoother steering
-    # Factor 0.85 justification: Reduce gains by 15% to provide smoother, more conservative steering on curvy roads
-    if validated_context.get('is_curvy_road', False):
-      context_adjustment *= 0.85
+    # Road curvature-based adjustments
+    current_curvature = validated_context.get('current_curvature', 0.0)
+    if current_curvature > 0.002:  # Sharp turns
+      context_adjustment *= 0.7  # Very conservative for sharp turns
+    elif current_curvature > 0.001:  # Moderate curves
+      context_adjustment *= 0.85  # Moderate reduction for curves
+    elif validated_context.get('is_curvy_road', False):  # General curvy road
+      context_adjustment *= 0.9  # Slightly more conservative
 
-    # Increase caution in high traffic
-    # Factor 0.9 justification: Reduce gains by 10% to provide more conservative control in dense traffic
-    # NOTE: Traffic density classification ('low', 'medium', 'high') is determined by an upstream system.
-    # The threshold for 'high' traffic is not defined in this module but should be based on factors like
-    # vehicle density, distance to surrounding vehicles, and relative velocities from sensor fusion.
-    if validated_context.get('traffic_density', 'low') == 'high':
-      context_adjustment *= 0.9
+    # Traffic density with more granular levels
+    traffic_density = validated_context.get('traffic_density', 'low')
+    if traffic_density == 'high':
+      context_adjustment *= 0.75  # Very conservative in heavy traffic
+    elif traffic_density == 'medium':
+      context_adjustment *= 0.85  # More conservative in medium traffic
+    # Low traffic remains at 1.0
 
-    # Reduce gains in poor weather (if we can detect it)
-    # Factor 0.9 justification: Reduce gains by 10% for safety in adverse weather conditions
-    # NOTE: Weather detection currently relies on an upstream system providing weather_condition values.
-    # This could be from vehicle sensors, external weather APIs, or vision-based detection algorithms.
-    # The system assumes that if weather_condition is not 'normal', appropriate detection has occurred.
-    if validated_context.get('weather_condition', 'normal') != 'normal':
-      context_adjustment *= 0.9
+    # Weather condition adjustments with different weather types
+    weather_condition = validated_context.get('weather_condition', 'normal')
+    if weather_condition in ['rain', 'snow']:
+      context_adjustment *= 0.7  # Very conservative in precipitation
+    elif weather_condition == 'fog':
+      context_adjustment *= 0.75  # Conservative in low visibility
+    elif weather_condition == 'wind':
+      context_adjustment *= 0.85  # Moderate adjustment for wind
+    # Normal weather remains at 1.0
 
-    # Apply combined adjustments
+    # Time of day adjustments (for night driving)
+    time_of_day = validated_context.get('time_of_day', 'day')
+    if time_of_day == 'night':
+      context_adjustment *= 0.9  # Slightly more conservative at night
+
+    # Lateral acceleration-based adjustments for stability
+    lateral_accel = validated_context.get('lateral_accel', 0.0)
+    if lateral_accel > 2.0:  # High lateral acceleration
+      context_adjustment *= 0.8  # Reduce gains to maintain stability
+
+    # Longitudinal acceleration magnitude
+    long_accel_magnitude = validated_context.get('long_accel_magnitude', 0.0)
+    if long_accel_magnitude > 2.0:  # High longitudinal acceleration
+      context_adjustment *= 0.9  # Reduce gains during aggressive acceleration/braking
+
+    # Steering activity level (high steering rate suggests challenging driving)
+    steering_activity = validated_context.get('steering_activity', 0.0)
+    if steering_activity > 5.0:  # High steering rate
+      context_adjustment *= 0.85  # Reduce gains when steering is active
+
+    # Apply combined adjustments with safety limits
     combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
+    combined_adjustment = max(0.3, min(1.5, combined_adjustment))  # Limit to reasonable bounds
 
     # Log detailed information for debugging
     cloudlog.debug(
       f"Adaptive gains calculation: v_ego={v_ego:.2f}, thermal={thermal_state:.2f}, "
-      + f"speed_factor={speed_factor:.3f}, thermal_adj={thermal_adjustment:.3f}, "
+      + f"speed_adj={speed_adjustment:.3f}, thermal_adj={thermal_adjustment:.3f}, "
       + f"context_adj={context_adjustment:.3f}, combined_adj={combined_adjustment:.3f}, "
       + f"curvy_road={validated_context.get('is_curvy_road', False)}, traffic={validated_context.get('traffic_density', 'low')}, "
-      + f"weather={validated_context.get('weather_condition', 'normal')}"
+      + f"weather={validated_context.get('weather_condition', 'normal')}, "
+      + f"curvature={current_curvature:.4f}, lateral_accel={lateral_accel:.3f}, "
+      + f"long_accel={long_accel_magnitude:.3f}, steering_rate={steering_activity:.2f}"
     )
 
     # Apply adjustments to base gains

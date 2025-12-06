@@ -297,6 +297,91 @@ class SafetyManager:
 
     return True
 
+  def execute_error_recovery(self, car_state: car.CarState, control_output: car.CarControl.Actuators) -> car.CarControl.Actuators:
+    """
+    Execute safe error recovery by implementing conservative controls
+    when system detects unsafe conditions but doesn't need full disengagement.
+
+    Args:
+      car_state: Current car state
+      control_output: Current control system output
+
+    Returns:
+      Safe control output that brings system to a safe state
+    """
+    # Create a safe control output as a copy of the current one
+    safe_output = car.CarControl.Actuators.new_message()
+    safe_output.torque = 0.0  # Zero out torque to let vehicle coast
+    safe_output.accel = -0.5  # Gentle deceleration to slow down safely
+    safe_output.steeringAngleDeg = car_state.steeringAngleDeg  # Maintain current steering angle
+    safe_output.curvature = 0.0  # Avoid any aggressive steering
+
+    # Add safety logging
+    cloudlog.warning(f"Executing error recovery: v_ego={car_state.vEgo}, a_ego={car_state.aEgo}")
+
+    return safe_output
+
+  def check_immediate_danger(self, car_state: car.CarState, model_data=None, radar_data=None) -> tuple[bool, str]:
+    """
+    Check for immediate danger conditions that require emergency action.
+    This is for immediate, life-threatening conditions that need immediate response.
+
+    Args:
+      car_state: Current car state
+      model_data: Model predictions (optional)
+      radar_data: Radar data (optional)
+
+    Returns:
+      Tuple of (immediate_danger_detected, danger_description)
+    """
+    # Check for close lead vehicle with high closing rate
+    if radar_data and hasattr(radar_data, 'leadOne') and radar_data.leadOne.status:
+      lead = radar_data.leadOne
+      if lead.dRel < 10.0 and lead.vRel < -5.0:  # Close and approaching rapidly
+        time_to_collision = lead.dRel / abs(lead.vRel) if abs(lead.vRel) > 0.1 else float('inf')
+        if time_to_collision < 1.5:  # Collision likely in under 1.5 seconds
+          return True, f"IMMINENT COLLISION: Lead {lead.dRel:.1f}m away, approaching at {abs(lead.vRel):.1f}m/s, TTC: {time_to_collision:.1f}s"
+
+    # Check for vehicle system critical faults
+    if (
+      hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent or
+      hasattr(car_state, 'brakeFault') and car_state.brakeFault or
+      hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed
+    ):
+      fault_desc = []
+      if hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent:
+        fault_desc.append("Steering fault")
+      if hasattr(car_state, 'brakeFault') and car_state.brakeFault:
+        fault_desc.append("Brake fault")
+      if hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed:
+        fault_desc.append("Controls not allowed")
+      return True, f"CRITICAL VEHICLE FAULT: {', '.join(fault_desc)}"
+
+    # Check for dangerous vehicle dynamics
+    if (
+      hasattr(car_state, 'vEgo') and car_state.vEgo > 5.0 and
+      hasattr(car_state, 'aEgo') and abs(car_state.aEgo) > 8.0
+    ):
+      # Very high acceleration/deceleration at speed
+      accel_type = "HIGH DECELERATION" if car_state.aEgo < 0 else "HIGH ACCELERATION"
+      return True, f"DANGEROUS VEHICLE DYNAMICS: {accel_type} of {abs(car_state.aEgo):.2f}m/s² at {car_state.vEgo:.2f}m/s"
+
+    # Check for brake and gas pedal conflict (driver override)
+    if (
+      hasattr(car_state, 'brakePressed') and car_state.brakePressed and
+      hasattr(car_state, 'gasPressed') and car_state.gasPressed
+    ):
+      return True, "BRAKE AND GAS CONFLICT: Driver attempting override"
+
+    # Check for dangerous steering conditions
+    if (
+      hasattr(car_state, 'steeringAngleDeg') and abs(car_state.steeringAngleDeg) > 60 and
+      hasattr(car_state, 'vEgo') and car_state.vEgo > 8.0  # Above ~29 km/h
+    ):
+      return True, f"DANGEROUS STEERING: {abs(car_state.steeringAngleDeg):.1f}° at {car_state.vEgo:.2f}m/s"
+
+    return False, ""
+
   def _check_physical_feasibility(self, model_data):
     """
     Check if model predictions are physically feasible
