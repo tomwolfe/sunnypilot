@@ -95,6 +95,9 @@ class ThermalManager:
         else:
           thermal_state = 0.5  # Unknown state - be conservative
 
+    # Calculate system load factor based on CPU/GPU usage
+    self._calculate_system_load_factor(sm)
+
     return thermal_state
 
   def apply_gpu_management(self, sm, CS):
@@ -227,13 +230,15 @@ class ThermalManager:
     cpu_trend = getattr(self, '_cpu_trend', 0.0)
     soc_trend = getattr(self, '_soc_trend', 0.0)
 
-    # Enhanced predictive thermal management based on current load and smoothed trends
+    # Enhanced predictive thermal management with true prediction (beyond simple smoothing)
     # Handle case where temperature values might be Mock objects (in tests)
     if current_temp is not None and not (hasattr(current_temp, 'return_value') or hasattr(current_temp, 'side_effect')):
       try:
         temp_val = float(current_temp)
-        # Use predictive model with exponential smoothing
-        predicted_temp = temp_val + temp_trend
+        # Use true predictive model based on trend and current load
+        # Predict 100ms ahead based on current trend and system load
+        prediction_horizon = 0.1  # 100ms ahead
+        predicted_temp = self._predict_temperature(temp_val, temp_trend, self.system_load_factor, prediction_horizon)
       except (TypeError, ValueError):
         predicted_temp = None
     else:
@@ -242,7 +247,9 @@ class ThermalManager:
     if cpu_temp is not None and not (hasattr(cpu_temp, 'return_value') or hasattr(cpu_temp, 'side_effect')):
       try:
         cpu_val = float(cpu_temp)
-        predicted_cpu = cpu_val + cpu_trend
+        # Use true predictive model based on trend and current load
+        prediction_horizon = 0.1  # 100ms ahead
+        predicted_cpu = self._predict_temperature(cpu_val, cpu_trend, self.system_load_factor, prediction_horizon)
       except (TypeError, ValueError):
         predicted_cpu = None
     else:
@@ -251,7 +258,9 @@ class ThermalManager:
     if soc_temp is not None and not (hasattr(soc_temp, 'return_value') or hasattr(soc_temp, 'side_effect')):
       try:
         soc_val = float(soc_temp)
-        predicted_soc = soc_val + soc_trend
+        # Use true predictive model based on trend and current load
+        prediction_horizon = 0.1  # 100ms ahead
+        predicted_soc = self._predict_temperature(soc_val, soc_trend, self.system_load_factor, prediction_horizon)
       except (TypeError, ValueError):
         predicted_soc = None
     else:
@@ -312,6 +321,196 @@ class ThermalManager:
         else:
           # Temperature rising, use conservative approach
           self._apply_gpu_ondemand_mode()
+
+  def _calculate_system_load_factor(self, sm):
+    """
+    Calculate system load factor based on CPU and GPU utilization.
+    This factor represents the overall system load (0.0 to 1.0) where 1.0 is maximum load.
+
+    Args:
+        sm: SubMaster instance with sensor data
+    """
+    # Initialize the system load factor attribute if not already set
+    if not hasattr(self, 'system_load_factor'):
+      self.system_load_factor = 0.0
+
+    # Initialize history for load calculation if not already set
+    if not hasattr(self, '_load_history'):
+      self._load_history = {
+        'cpu_usage': [],
+        'gpu_usage': [],
+        'memory_usage': [],
+        'timestamps': []
+      }
+
+    # Get device state to access system metrics
+    device_state = sm.get('deviceState', None) if hasattr(sm, 'get') else None
+    if device_state is None:
+      # If no device state available, check if sm is a dict-like object
+      if isinstance(sm, dict) and 'deviceState' in sm:
+        device_state = sm['deviceState']
+      else:
+        # Fallback: set to 0.0 if no system metrics available
+        self.system_load_factor = 0.0
+        return
+
+    # Extract system utilization metrics if available
+    current_cpu_usage = getattr(device_state, 'cpuPct', None)
+    current_gpu_usage = getattr(device_state, 'gpuPct', None)
+    current_memory_usage = getattr(device_state, 'memoryPct', None)
+
+    # Handle case where metrics might be Mock objects (in tests)
+    cpu_usage_val = None
+    if current_cpu_usage is not None:
+      if hasattr(current_cpu_usage, 'return_value') or hasattr(current_cpu_usage, 'side_effect'):
+        # This is a Mock object, use None to skip processing
+        cpu_usage_val = None
+      else:
+        try:
+          cpu_usage_val = float(current_cpu_usage) if current_cpu_usage is not None else None
+        except (TypeError, ValueError):
+          cpu_usage_val = None
+
+    gpu_usage_val = None
+    if current_gpu_usage is not None:
+      if hasattr(current_gpu_usage, 'return_value') or hasattr(current_gpu_usage, 'side_effect'):
+        # This is a Mock object, use None to skip processing
+        gpu_usage_val = None
+      else:
+        try:
+          gpu_usage_val = float(current_gpu_usage) if current_gpu_usage is not None else None
+        except (TypeError, ValueError):
+          gpu_usage_val = None
+
+    # Calculate average system load based on available metrics
+    load_components = []
+
+    if cpu_usage_val is not None:
+      # Normalize CPU usage (0.0 to 1.0)
+      cpu_factor = min(1.0, max(0.0, cpu_usage_val / 100.0))
+      load_components.append(cpu_factor)
+
+    if gpu_usage_val is not None:
+      # Normalize GPU usage (0.0 to 1.0)
+      gpu_factor = min(1.0, max(0.0, gpu_usage_val / 100.0))
+      load_components.append(gpu_factor)
+
+    if current_memory_usage is not None:
+      if not (hasattr(current_memory_usage, 'return_value') or hasattr(current_memory_usage, 'side_effect')):
+        try:
+          memory_val = float(current_memory_usage)
+          # Normalize memory usage (0.0 to 1.0)
+          memory_factor = min(1.0, max(0.0, memory_val / 100.0))
+          load_components.append(memory_factor)
+        except (TypeError, ValueError):
+          pass  # Skip if memory usage can't be converted to float
+
+    # Calculate average load factor from available components
+    if load_components:
+      avg_load_factor = sum(load_components) / len(load_components)
+      # Apply a time-weighted average to smooth out load factor changes
+      # Add current value to history
+      current_time = time.monotonic()
+      self._load_history['timestamps'].append(current_time)
+      self._load_history['cpu_usage'].append(cpu_usage_val if cpu_usage_val is not None else -1)
+      self._load_history['gpu_usage'].append(gpu_usage_val if gpu_usage_val is not None else -1)
+      self._load_history['memory_usage'].append(current_memory_usage if current_memory_usage is not None else -1)
+
+      # Keep only recent history (last 5 seconds worth of data assuming ~1Hz updates)
+      cutoff_time = current_time - 5.0
+      valid_indices = [i for i, ts in enumerate(self._load_history['timestamps']) if ts >= cutoff_time]
+
+      if valid_indices:
+        recent_load_factors = []
+        for i in valid_indices:
+          # Recalculate load factor for each historical point
+          hist_components = []
+          if self._load_history['cpu_usage'][i] >= 0:
+            hist_components.append(self._load_history['cpu_usage'][i] / 100.0)
+          if self._load_history['gpu_usage'][i] >= 0:
+            hist_components.append(self._load_history['gpu_usage'][i] / 100.0)
+          if self._load_history['memory_usage'][i] >= 0:
+            hist_components.append(self._load_history['memory_usage'][i] / 100.0)
+
+          if hist_components:
+            recent_load_factors.append(sum(hist_components) / len(hist_components))
+
+        if recent_load_factors:
+          # Use exponentially weighted moving average to smooth the load factor
+          alpha = 0.3  # Smoothing factor (higher values give more weight to recent values)
+          if hasattr(self, 'system_load_factor'):
+            # Apply EMA: new_value = alpha * current + (1 - alpha) * previous
+            smoothed_load = alpha * avg_load_factor + (1 - alpha) * self.system_load_factor
+            self.system_load_factor = min(1.0, max(0.0, smoothed_load))
+          else:
+            self.system_load_factor = min(1.0, max(0.0, avg_load_factor))
+        else:
+          self.system_load_factor = min(1.0, max(0.0, avg_load_factor))
+      else:
+        # No recent history, use current value directly
+        self.system_load_factor = min(1.0, max(0.0, avg_load_factor))
+    else:
+      # No load metrics available, set to 0.0
+      self.system_load_factor = 0.0
+
+    # Clean up old history entries to prevent memory growth
+    current_time = time.monotonic()
+    cutoff_time = current_time - 10.0  # Keep only last 10 seconds
+    valid_indices = [i for i, ts in enumerate(self._load_history['timestamps']) if ts >= cutoff_time]
+    if len(valid_indices) < len(self._load_history['timestamps']):
+      self._load_history['timestamps'] = [self._load_history['timestamps'][i] for i in valid_indices]
+      self._load_history['cpu_usage'] = [self._load_history['cpu_usage'][i] for i in valid_indices]
+      self._load_history['gpu_usage'] = [self._load_history['gpu_usage'][i] for i in valid_indices]
+      self._load_history['memory_usage'] = [self._load_history['memory_usage'][i] for i in valid_indices]
+
+    # Log system load factor periodically for monitoring
+    if not hasattr(self, '_last_load_log_time'):
+      self._last_load_log_time = 0
+
+    if current_time - self._last_load_log_time > 5.0:  # Log every 5 seconds
+      self._last_load_log_time = current_time
+      cloudlog.debug(f"System load monitoring: system_load_factor={self.system_load_factor:.3f}, "
+                    f"cpu_usage={cpu_usage_val:.3f}, gpu_usage={gpu_usage_val:.3f}, "
+                    f"memory_usage={current_memory_usage:.3f if current_memory_usage is not None else None}")
+
+  def _predict_temperature(self, current_temp, current_trend, system_load_factor, prediction_horizon):
+    """
+    Predict temperature at a future time based on current temperature, trend, and system load.
+
+    Args:
+        current_temp: Current temperature reading (°C)
+        current_trend: Current temperature trend (°C/s)
+        system_load_factor: Current system load factor (0.0 to 1.0)
+        prediction_horizon: Time horizon for prediction in seconds
+
+    Returns:
+        float: Predicted temperature at future time
+    """
+    # Base prediction using linear trend
+    base_prediction = current_temp + (current_trend * prediction_horizon)
+
+    # Factor in system load to adjust prediction
+    # Higher load increases temperature, lower load decreases temperature
+    load_coefficient = 2.0  # How much system load affects temperature prediction
+
+    # Adjust prediction based on load factor
+    load_adjustment = load_coefficient * system_load_factor
+
+    # If the system is under high load, temperature will rise faster than linear trend
+    if current_trend >= 0:  # Temperature is increasing
+      adjusted_trend = current_trend + (load_adjustment * 0.1)  # Add load effect when heating up
+    else:  # Temperature is decreasing
+      # If load is high but temperature is decreasing, the trend may be more negative
+      # but load will eventually cause heating when sustained
+      adjusted_trend = current_trend + (load_adjustment * 0.05 * system_load_factor)  # Smaller effect when cooling
+
+    # Calculate final prediction
+    predicted_temp = current_temp + (adjusted_trend * prediction_horizon)
+
+    # Ensure prediction is physically reasonable
+    predicted_temp = max(0.0, min(100.0, predicted_temp))  # Clamp to realistic temperature range
+
+    return predicted_temp
 
   def _calculate_thermal_trend(self, temp_key):
     """

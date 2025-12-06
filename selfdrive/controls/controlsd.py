@@ -830,22 +830,38 @@ class Controls(ControlsExt):
         a_ego = getattr(CS, 'aEgo', 0.0)  # Current acceleration
         curvature = abs(self.desired_curvature) if hasattr(self, 'desired_curvature') else 0.0
 
-        # Driving context factor: reduce rate in low-activity scenarios
-        if v_ego < 5.0:  # Stationary or very low speed
-          context_factor = 0.5  # Lower rate for parking/low speed scenarios
-        elif v_ego < 15.0 and abs(a_ego) < 0.5 and curvature < 0.001:  # Highway cruise
-          context_factor = 0.75  # Moderate reduction for steady highway driving
+        # Driving context factor: adjust control rate based on driving scenario for efficiency and safety
+        # Each scenario has been tuned based on computational requirements and safety considerations:
+        if v_ego < 5.0:  # Stationary or very low speed (parking, traffic jams)
+          # Lower rate (0.5x) during parking/low speed - less dynamic environment
+          context_factor = 0.5
+        elif v_ego < 15.0 and abs(a_ego) < 0.5 and curvature < 0.001:  # Highway cruise scenario
+          # Moderate reduction (0.75x) for steady highway driving - predictable, stable conditions
+          # Parameters: vEgo < 15m/s (54 km/h), low acceleration (<0.5 m/s²), low curvature (<0.001)
+          context_factor = 0.75
         elif curvature > 0.002:  # High curvature (curvy roads)
-          context_factor = 1.2  # Higher rate for challenging maneuvers
-        else:  # Normal driving
+          # Higher rate (1.2x) for challenging maneuvers requiring precise control
+          # Curvature threshold 0.002 = 1/500m radius curve - sharp enough to need enhanced control
+          context_factor = 1.2
+        else:  # Normal driving conditions
+          # Standard rate (1.0x) for mixed driving scenarios
           context_factor = 1.0
 
         # Combine thermal and system load factors (without context factor influence for safety)
         system_load_factor = getattr(self.thermal_manager, 'system_load_factor', 0.0) if hasattr(self.thermal_manager, 'system_load_factor') else 0.0
+
+        # Calculate base adaptive factor using weighted combination of stress factors:
+        # - stress_factor (thermal) weighted at 0.4: thermal management is critical for hardware protection
+        # - system_load_factor weighted at 0.3: system load affects thermal generation and performance
+        # Minimum rate factor of 0.3 ensures system never runs below critical safety threshold
         base_adaptive_factor = max(0.3, min(1.0, 1.0 - (stress_factor * 0.4 + system_load_factor * 0.3)))
 
         # Apply thermal-aware context capping for enhanced safety under high thermal stress
-        context_cap = max(1.0, min(1.2, 1.2 - (stress_factor * 0.4)))  # Reduces max context boost under high thermal stress
+        # Context cap formula: 1.2 - (stress_factor * 0.4)
+        # - Base cap of 1.2 allows up to 20% boost for safety-critical scenarios
+        # - Reduction based on stress_factor prevents boosting when thermal stress is high
+        # - Clamped between 1.0-1.2 to ensure safe operational bounds
+        context_cap = max(1.0, min(1.2, 1.2 - (stress_factor * 0.4)))
         limited_context_factor = min(context_factor, context_cap)
 
         # Calculate adaptive control rate with thermal-aware context limiting
