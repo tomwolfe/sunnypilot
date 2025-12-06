@@ -469,9 +469,12 @@ class ThermalManager:
 
     if current_time - self._last_load_log_time > 5.0:  # Log every 5 seconds
       self._last_load_log_time = current_time
+      cpu_usage_str = f"{cpu_usage_val:.3f}" if cpu_usage_val is not None else "None"
+      gpu_usage_str = f"{gpu_usage_val:.3f}" if gpu_usage_val is not None else "None"
+      memory_usage_str = f"{current_memory_usage:.3f}" if current_memory_usage is not None else "None"
       cloudlog.debug(f"System load monitoring: system_load_factor={self.system_load_factor:.3f}, "
-                    f"cpu_usage={cpu_usage_val:.3f}, gpu_usage={gpu_usage_val:.3f}, "
-                    f"memory_usage={current_memory_usage:.3f if current_memory_usage is not None else None}")
+                    f"cpu_usage={cpu_usage_str}, gpu_usage={gpu_usage_str}, "
+                    f"memory_usage={memory_usage_str}")
 
   def _predict_temperature(self, current_temp, current_trend, system_load_factor, prediction_horizon):
     """
