@@ -338,7 +338,9 @@ class Controls(ControlsExt):
     lateral_demand_threshold = 3.0  # Approximately 3.0 m/s² lateral acceleration
     if lateral_demand_factor > lateral_demand_threshold:  # High lateral demand
       # Reduce longitudinal authority when high lateral demand exists
-      lat_influence_factor = min(0.8, 1.0 - (lateral_demand_factor - lateral_demand_threshold) / max_lateral_accel)
+      # Calculate influence factor with safe bounds to prevent negative values
+      lat_influence_calc = 1.0 - (lateral_demand_factor - lateral_demand_threshold) / max_lateral_accel
+      lat_influence_factor = max(0.1, min(0.8, lat_influence_calc))  # Clamp to [0.1, 0.8] range
       # Modify the longitudinal limits based on lateral demand
       adjusted_accel_limits = (conservative_accel_limits[0] * lat_influence_factor,
                               conservative_accel_limits[1] * lat_influence_factor)
