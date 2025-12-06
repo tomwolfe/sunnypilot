@@ -7,9 +7,9 @@ by processing fewer frames when the scene is static.
 """
 
 import numpy as np
-from typing import Tuple, Optional
 import cv2
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -45,12 +45,12 @@ class LightweightSceneChangeDetector:
         self.min_static_frames = min_static_frames
         self.max_dynamic_frames = max_dynamic_frames
 
-        self.prev_frame_gray = None
+        self.prev_frame_gray: Optional[np.ndarray] = None
         self.static_frame_count = 0
         self.dynamic_frame_count = 0
         self.current_state = False  # True if scene is static
 
-    def detect_change(self, current_frame: np.ndarray) -> Tuple[bool, float]:
+    def detect_change(self, current_frame: np.ndarray) -> tuple[bool, float]:
         """
         Detect if scene has changed compared to previous frame.
 
@@ -76,7 +76,7 @@ class LightweightSceneChangeDetector:
 
         # Compute simple frame difference
         frame_diff = cv2.absdiff(self.prev_frame_gray, current_gray)
-        motion_level = float(np.mean(frame_diff)) / 255.0  # Normalize to [0, 1]
+        motion_level = float(np.mean(frame_diff.astype(np.float64))) / 255.0  # Normalize to [0, 1]
 
         # Update state based on motion threshold
         is_moving = motion_level > self.motion_threshold

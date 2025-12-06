@@ -12,7 +12,6 @@ class LightEnhancementIntegrator(LightweightIntegrator):
     Wrapper class for the lightweight integrator to maintain API compatibility
     with the expected interface in tests.
     """
-    pass
 
 
 def create_light_enhancement_integrator():

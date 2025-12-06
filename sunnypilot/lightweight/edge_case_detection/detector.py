@@ -6,8 +6,7 @@ This module implements basic edge case detection focused on the most critical sc
 with minimal computational overhead.
 """
 
-import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
 
@@ -34,7 +33,7 @@ class EdgeCase:
 @dataclass
 class DetectionResult:
     """Result of edge case detection."""
-    edge_cases: List[EdgeCase]
+    edge_cases: list[EdgeCase]
     safe_speed_multiplier: float  # Multiplier to apply to desired speed
     required_action: str  # Recommended action
 
@@ -56,9 +55,9 @@ class BasicEdgeCaseDetector:
         self.confidence_threshold = 0.6           # minimum confidence for reporting
 
     def detect_edge_cases(self,
-                         radar_data: Dict,
-                         vision_data: Dict,
-                         car_state: Dict) -> DetectionResult:
+                         radar_data: dict,
+                         vision_data: dict,
+                         car_state: dict) -> DetectionResult:
         """
         Detect basic edge cases using radar, vision, and car state data.
 
@@ -92,7 +91,7 @@ class BasicEdgeCaseDetector:
             required_action=required_action
         )
 
-    def _detect_stopped_traffic(self, radar_data: Dict, car_state: Dict) -> Optional[EdgeCase]:
+    def _detect_stopped_traffic(self, radar_data: dict, car_state: dict) -> Optional[EdgeCase]:
         """
         Detect stopped traffic ahead.
 
@@ -122,7 +121,7 @@ class BasicEdgeCaseDetector:
 
         return None
 
-    def _detect_construction_zone(self, radar_data: Dict, car_state: Dict) -> Optional[EdgeCase]:
+    def _detect_construction_zone(self, radar_data: dict, car_state: dict) -> Optional[EdgeCase]:
         """
         Detect potential construction zone based on speed and lead vehicle behavior.
 
@@ -156,7 +155,7 @@ class BasicEdgeCaseDetector:
 
         return None
 
-    def _calculate_safe_speed_multiplier(self, edge_cases: List[EdgeCase]) -> float:
+    def _calculate_safe_speed_multiplier(self, edge_cases: list[EdgeCase]) -> float:
         """
         Calculate speed multiplier based on detected edge cases.
 
@@ -180,7 +179,7 @@ class BasicEdgeCaseDetector:
         else:
             return 0.9  # Minor reduction
 
-    def _determine_required_action(self, edge_cases: List[EdgeCase]) -> str:
+    def _determine_required_action(self, edge_cases: list[EdgeCase]) -> str:
         """
         Determine required action based on detected edge cases.
 

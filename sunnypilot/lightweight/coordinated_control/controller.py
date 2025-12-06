@@ -7,7 +7,6 @@ longitudinal acceleration during high lateral demand, mimicking human driving be
 """
 
 import numpy as np
-from typing import Tuple, Dict, Any
 from dataclasses import dataclass
 
 
@@ -176,7 +175,7 @@ class SafetyLimiter:
         return final_accel
 
 
-def create_coordinated_controller() -> Tuple[SimplifiedCoordinatedController, SafetyLimiter]:
+def create_coordinated_controller() -> tuple[SimplifiedCoordinatedController, SafetyLimiter]:
     """
     Factory function to create coordinated controller and safety limiter
     optimized for Snapdragon 845 hardware constraints.

@@ -5,24 +5,16 @@ This serves as the beginning of Phase 2: Validation and Testing.
 
 import numpy as np
 import time
-from typing import Dict, Any, Tuple
 from sunnypilot.lightweight.scene_detection.detector import (
-    LightweightSceneChangeDetector,
     create_scene_change_detector
 )
 from sunnypilot.lightweight.coordinated_control.controller import (
-    SimplifiedCoordinatedController,
-    SafetyLimiter,
     create_coordinated_controller
 )
 from sunnypilot.lightweight.edge_case_detection.detector import (
-    BasicEdgeCaseDetector,
-    DetectionResult,
-    EdgeCaseType,
     create_edge_case_detector
 )
 from sunnypilot.lightweight.integration import (
-    LightweightIntegrator,
     create_light_integrator
 )
 
@@ -30,9 +22,7 @@ from sunnypilot.lightweight.integration import (
 def test_scene_change_detection_comprehensive():
     """Comprehensive test of scene change detection with performance metrics."""
     print("=== Comprehensive Scene Change Detection Test ===")
-    
-    detector = create_scene_change_detector()
-    
+
     # Create separate detector for static test to avoid state interference
     static_detector = create_scene_change_detector()
 
@@ -42,14 +32,14 @@ def test_scene_change_detection_comprehensive():
     static_process_count = 0
     static_motion_levels = []
 
-    start_time = time.time()
-    for i, frame in enumerate(static_frames):
+    start_time = time.monotonic()
+    for _i, frame in enumerate(static_frames):
         should_process, motion_level = static_detector.detect_change(frame)
         if not should_process:  # Note: should_process refers to whether to skip, so if it's False, we process
             static_process_count += 1
         static_motion_levels.append(motion_level)
 
-    static_time = time.time() - start_time
+    static_time = time.monotonic() - start_time
     print(f"  Static scene: {static_process_count}/{len(static_frames)} frames processed ({static_process_count/len(static_frames)*100:.1f}%)")
     print(f"  Static scene: Motion levels = {[f'{x:.3f}' for x in static_motion_levels[:5]]}... (first 5)")
     print(f"  Static scene: Processing time = {static_time:.4f}s")
@@ -63,18 +53,18 @@ def test_scene_change_detection_comprehensive():
     dynamic_process_count = 0
     dynamic_motion_levels = []
 
-    start_time = time.time()
-    for i, frame in enumerate(dynamic_frames):
+    start_time = time.monotonic()
+    for _i, frame in enumerate(dynamic_frames):
         should_process, motion_level = dynamic_detector.detect_change(frame)
         if not should_process:  # Note: should_process refers to whether to skip, so if it's False, we process
             dynamic_process_count += 1
         dynamic_motion_levels.append(motion_level)
 
-    dynamic_time = time.time() - start_time
+    dynamic_time = time.monotonic() - start_time
     print(f"  Dynamic scene: {dynamic_process_count}/{len(dynamic_frames)} frames processed ({dynamic_process_count/len(dynamic_frames)*100:.1f}%)")
     print(f"  Dynamic scene: Motion levels = {[f'{x:.3f}' for x in dynamic_motion_levels[:5]]}... (first 5)")
     print(f"  Dynamic scene: Processing time = {dynamic_time:.4f}s")
-    
+
     # Validate that dynamic scene had higher motion levels on average
     avg_static_motion = np.mean(static_motion_levels)
     avg_dynamic_motion = np.mean(dynamic_motion_levels)
@@ -86,7 +76,6 @@ def test_scene_change_detection_comprehensive():
     # 3. In a static scene, fewer frames should be processed after initial ones (should_skip becomes more True)
     dynamic_higher_motion = avg_dynamic_motion > avg_static_motion
     dynamic_mostly_processed = dynamic_process_count >= len(dynamic_frames) * 0.8  # At least 80% processed
-    static_fewer_processed = static_process_count < len(static_frames)  # Some frames should be skipped in static
 
     success = (
         dynamic_higher_motion and
@@ -103,9 +92,9 @@ def test_scene_change_detection_comprehensive():
 def test_coordinated_control_comprehensive():
     """Comprehensive test of coordinated control with safety validation."""
     print("=== Comprehensive Coordinated Control Test ===")
-    
+
     controller, safety_limiter = create_coordinated_controller()
-    
+
     # Test 1: Very low lateral demand (should not change acceleration much)
     base_acc = 1.0
     adjusted_no_lat = controller.adjust_acceleration(base_acc, 0.05, 15.0, 0.0001)  # Very small curvature
@@ -149,9 +138,9 @@ def test_coordinated_control_comprehensive():
 def test_edge_case_detection_comprehensive():
     """Comprehensive test of edge case detection with various scenarios."""
     print("=== Comprehensive Edge Case Detection Test ===")
-    
+
     detector = create_edge_case_detector()
-    
+
     # Test 1: Normal conditions (should detect no edge cases)
     normal_radar = {
         'leadOne': type('obj', (object,), {
@@ -163,7 +152,7 @@ def test_edge_case_detection_comprehensive():
     normal_result = detector.detect_edge_cases(normal_radar, {}, {'vEgo': 25.0})
     print(f"  Normal conditions: {len(normal_result.edge_cases)} cases detected")
     print(f"  Normal conditions: Speed multiplier: {normal_result.safe_speed_multiplier:.2f}")
-    
+
     # Test 2: Stopped traffic detection
     stopped_radar = {
         'leadOne': type('obj', (object,), {
@@ -179,7 +168,7 @@ def test_edge_case_detection_comprehensive():
         print(f"    - {case.case_type.value}, confidence: {case.confidence:.2f}, severity: {case.severity}")
     print(f"  Stopped traffic: Speed multiplier: {stopped_result.safe_speed_multiplier:.2f}")
     print(f"  Stopped traffic: Action: {stopped_result.required_action}")
-    
+
     # Test 3: Potential construction zone
     construction_radar = {
         'leadOne': type('obj', (object,), {
@@ -200,7 +189,7 @@ def test_edge_case_detection_comprehensive():
         print(f"    - {case.case_type.value}, confidence: {case.confidence:.2f}, severity: {case.severity}")
     print(f"  Construction zone: Speed multiplier: {construction_result.safe_speed_multiplier:.2f}")
     print(f"  Construction zone: Action: {construction_result.required_action}")
-    
+
     # Validate results
     success = (
         len(normal_result.edge_cases) == 0 and  # No cases in normal conditions
@@ -210,7 +199,7 @@ def test_edge_case_detection_comprehensive():
     )
     print(f"  ✓ Edge case detection test: {'PASSED' if success else 'FAILED'}")
     print()
-    
+
     return success
 
 
@@ -219,7 +208,7 @@ def test_integration_comprehensive():
     print("=== Comprehensive Integration Test ===")
 
     integrator = create_light_integrator()
-    
+
     # Simulate a sequence of frames and control decisions
     frames = [
         np.full((100, 100), 128, dtype=np.uint8),  # Static frame
@@ -227,12 +216,12 @@ def test_integration_comprehensive():
         np.random.randint(0, 255, (100, 100), dtype=np.uint8),  # Motion frame
         np.random.randint(0, 255, (100, 100), dtype=np.uint8),  # Motion frame
     ]
-    
+
     print("  Processing frame sequence...")
     for i, frame in enumerate(frames):
         should_process, motion_level = integrator.should_process_frame(frame)
         print(f"    Frame {i+1}: Process={should_process}, Motion={motion_level:.3f}")
-    
+
     # Test coordinated control through integrator
     adjusted_acc = integrator.adjust_acceleration_for_lateral_demand(
         base_acceleration=1.5,
@@ -249,7 +238,7 @@ def test_integration_comprehensive():
         car_state={'vEgo': 18.0}
     )
     print(f"  Coordinated control through integrator: 1.5 -> {adjusted_acc:.3f}")
-    
+
     # Test edge case detection through integrator
     edge_result = integrator.detect_edge_cases(
         radar_data={
@@ -263,29 +252,29 @@ def test_integration_comprehensive():
         car_state={'vEgo': 12.0}
     )
     print(f"  Edge case detection through integrator: {len(edge_result.edge_cases)} cases")
-    
+
     # Get performance stats
     stats = integrator.get_performance_stats()
     print(f"  Performance stats: {stats['total_frames']} total, {stats['frames_skipped']} skipped, {stats['frame_skip_rate']:.1%} skip rate")
-    
+
     success = (
         stats['total_frames'] == len(frames) and
         adjusted_acc < 1.5  # Should be reduced due to coordination
     )
     print(f"  ✓ Integration test: {'PASSED' if success else 'FAILED'}")
     print()
-    
+
     return success
 
 
 def validate_performance_requirements():
     """Validate that components meet performance requirements for Snapdragon 845."""
     print("=== Performance Requirements Validation ===")
-    
+
     # Test timing for scene detection (should be fast)
     detector = create_scene_change_detector()
     test_frame = np.random.randint(0, 255, (200, 200, 3), dtype=np.uint8)  # Simulate camera frame
-    
+
     # Time several iterations to get average
     times = []
     for _ in range(10):
@@ -293,66 +282,66 @@ def validate_performance_requirements():
         detector.detect_change(test_frame)
         end = time.perf_counter()
         times.append((end - start) * 1000)  # Convert to milliseconds
-    
+
     avg_time_ms = np.mean(times)
     print(f"  Scene detection average time: {avg_time_ms:.3f}ms per frame")
     print(f"  Scene detection time range: {np.min(times):.3f}ms - {np.max(times):.3f}ms")
-    
+
     # Test timing for coordinated control
     controller, safety_limiter = create_coordinated_controller()
-    
+
     times = []
     for _ in range(10):
         start = time.perf_counter()
         acc = controller.adjust_acceleration(1.0, 1.0, 15.0, 0.05)
-        final_acc = safety_limiter.apply_safety_limits(acc, 1.0, 1.0, 15.0, 30.0, 10.0)
+        safety_limiter.apply_safety_limits(acc, 1.0, 1.0, 15.0, 30.0, 10.0)
         end = time.perf_counter()
         times.append((end - start) * 1000)
-    
+
     avg_control_time_ms = np.mean(times)
     print(f"  Coordinated control average time: {avg_control_time_ms:.3f}ms per calculation")
     print(f"  Coordinated control time range: {np.min(times):.3f}ms - {np.max(times):.3f}ms")
-    
+
     # Performance validation
     scene_perf_ok = avg_time_ms < 5.0  # Should be well under 5ms for scene detection
     control_perf_ok = avg_control_time_ms < 2.0  # Should be well under 2ms for control
-    
+
     print(f"  Scene detection performance OK: {'YES' if scene_perf_ok else 'NO'} (target: <5ms)")
     print(f"  Coordinated control performance OK: {'YES' if control_perf_ok else 'NO'} (target: <2ms)")
-    
+
     overall_perf_ok = scene_perf_ok and control_perf_ok
     print(f"  ✓ Performance validation: {'PASSED' if overall_perf_ok else 'FAILED'}")
     print()
-    
+
     return overall_perf_ok
 
 
 def run_all_tests():
     """Run all comprehensive validation tests."""
     print("Running Comprehensive Validation Tests for Lightweight Enhancement Components\n")
-    
+
     results = []
     results.append(test_scene_change_detection_comprehensive())
     results.append(test_coordinated_control_comprehensive())
     results.append(test_edge_case_detection_comprehensive())
     results.append(test_integration_comprehensive())
     results.append(validate_performance_requirements())
-    
+
     print("=== Test Summary ===")
     test_names = [
         "Scene Change Detection",
-        "Coordinated Control", 
+        "Coordinated Control",
         "Edge Case Detection",
         "Integration",
         "Performance Requirements"
     ]
-    
+
     all_passed = True
-    for i, (name, result) in enumerate(zip(test_names, results)):
+    for _i, (name, result) in enumerate(zip(test_names, results, strict=True)):
         status = "PASSED" if result else "FAILED"
         print(f"  {name}: {status}")
         all_passed = all_passed and result
-    
+
     print(f"\nOverall: {'ALL TESTS PASSED ✓' if all_passed else 'SOME TESTS FAILED ✗'}")
     return all_passed
 
