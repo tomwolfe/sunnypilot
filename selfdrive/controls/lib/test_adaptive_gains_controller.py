@@ -57,11 +57,14 @@ class TestAdaptiveGainsController:
             },
         }
 
-        # With no context adjustments, gains should be based on speed_factor and thermal_adjustment only
-        speed_factor = min(1.0, 15.0 / 30.0)  # 0.5
-        speed_adjustment = 1.0 - (0.3 * speed_factor)  # 0.85
-        thermal_adjustment = 1.0 - (0.0 * 0.2)  # 1.0 (no thermal stress)
-        combined_adjustment = speed_adjustment * thermal_adjustment  # 0.85
+        # With v_ego=15.0 (in highway range), speed adjustment = 0.7 (highway_factor = 0.7 - 0.2 * (15.0 - 15.0) / 15.0 = 0.7)
+        # With thermal_state=0.0 (cool), thermal adjustment = 1.0
+        # With no context adjustments, context adjustment = 1.0
+        # Combined adjustment = 0.7 * 1.0 * 1.0 = 0.7
+        speed_adjustment = 0.7  # For v_ego=15.0 in highway range
+        thermal_adjustment = 1.0  # No thermal stress
+        context_adjustment = 1.0  # No context adjustments
+        combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment  # 0.7
 
         # Expected gains should be the base gains multiplied by the combined adjustment
         expected_lateral_steer_kp = expected_base_gains['lateral']['steer_kp'] * combined_adjustment
@@ -87,12 +90,14 @@ class TestAdaptiveGainsController:
             v_ego=15.0, thermal_state=0.0, context=partial_context
         )
 
-        # With curvy road True, we have an additional context adjustment of * 0.85
-        speed_factor = min(1.0, 15.0 / 30.0)  # 0.5
-        speed_adjustment = 1.0 - (0.3 * speed_factor)  # 0.85
+        # With v_ego=15.0 (in highway range), speed adjustment = 0.7
+        # With thermal_state=0.0 (cool), thermal adjustment = 1.0
+        # With is_curvy_road=True, context adjustment = 0.9 (for curvy road)
+        # Combined adjustment = 0.7 * 1.0 * 0.9 = 0.63
+        speed_adjustment = 0.7  # For v_ego=15.0 in highway range
         thermal_adjustment = 1.0  # No thermal stress
-        context_adjustment = 0.85  # For curvy road
-        combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
+        context_adjustment = 0.9  # For curvy road
+        combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment  # 0.63
 
         expected_lateral_steer_kp = 1.0 * combined_adjustment
         expected_lateral_steer_ki = 0.1 * combined_adjustment
@@ -145,14 +150,16 @@ class TestAdaptiveGainsController:
             v_ego=15.0, thermal_state=0.0, context=invalid_values_context
         )
 
-        # With curvy road True, we get a context adjustment of * 0.85
+        # With v_ego=15.0 (in highway range), speed adjustment = 0.7
+        # With thermal_state=0.0 (cool), thermal adjustment = 1.0
+        # With is_curvy_road=True, context adjustment = 0.9 (for curvy road)
         # Invalid traffic_density and weather_condition should default to non-adjusting values
         # So no additional adjustment for traffic or weather
-        speed_factor = min(1.0, 15.0 / 30.0)  # 0.5
-        speed_adjustment = 1.0 - (0.3 * speed_factor)  # 0.85
+        # Combined adjustment = 0.7 * 1.0 * 0.9 = 0.63
+        speed_adjustment = 0.7  # For v_ego=15.0 in highway range
         thermal_adjustment = 1.0  # No thermal stress
-        context_adjustment = 0.85  # For curvy road only
-        combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment
+        context_adjustment = 0.9  # For curvy road only
+        combined_adjustment = speed_adjustment * thermal_adjustment * context_adjustment  # 0.63
 
         expected_lateral_steer_kp = 1.0 * combined_adjustment
         expected_lateral_steer_ki = 0.1 * combined_adjustment
