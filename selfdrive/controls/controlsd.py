@@ -840,12 +840,16 @@ class Controls(ControlsExt):
         else:  # Normal driving
           context_factor = 1.0
 
-        # Combine thermal, system load, and context factors
+        # Combine thermal and system load factors (without context factor influence for safety)
         system_load_factor = getattr(self.thermal_manager, 'system_load_factor', 0.0) if hasattr(self.thermal_manager, 'system_load_factor') else 0.0
-        combined_factor = max(0.3, min(1.0, 1.0 - (stress_factor * 0.4 + system_load_factor * 0.3 + (1 - context_factor) * 0.3)))
+        base_adaptive_factor = max(0.3, min(1.0, 1.0 - (stress_factor * 0.4 + system_load_factor * 0.3)))
 
-        # Calculate adaptive control rate
-        target_rate = self._control_rate_params['base_rate'] * combined_factor * context_factor
+        # Apply thermal-aware context capping for enhanced safety under high thermal stress
+        context_cap = max(1.0, min(1.2, 1.2 - (stress_factor * 0.4)))  # Reduces max context boost under high thermal stress
+        limited_context_factor = min(context_factor, context_cap)
+
+        # Calculate adaptive control rate with thermal-aware context limiting
+        target_rate = self._control_rate_params['base_rate'] * base_adaptive_factor * limited_context_factor
         current_rate = max(self._control_rate_params['min_rate'], min(self._control_rate_params['max_rate'], target_rate))
 
         # Update context multiplier for logging
@@ -881,8 +885,8 @@ class Controls(ControlsExt):
             if self._control_rate_params['frame_count'] % max(1, int(2 * current_rate)) == 0:  # Log ~every 2 seconds
               cloudlog.debug(
                   f"Adaptive control rate: target={current_rate:.1f}Hz, thermal={stress_factor:.2f}, " +
-                  f"context_factor={context_factor:.2f}, sys_load={system_load_factor:.2f}, " +
-                  f"vEgo={v_ego:.1f}m/s, curvature={curvature:.4f}"
+                  f"context_factor={context_factor:.2f}, limited_context={limited_context_factor:.2f}, " +
+                  f"sys_load={system_load_factor:.2f}, vEgo={v_ego:.1f}m/s, curvature={curvature:.4f}"
               )
         else:
           # Still update the message subsystem regularly to maintain message flow
