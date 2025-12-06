@@ -5,7 +5,6 @@ This module provides additional tests specifically for validating the safety fea
 of the enhanced autonomous driving system, focusing on edge cases and critical scenarios.
 """
 
-import pytest
 from unittest.mock import Mock
 
 from cereal import log
@@ -121,7 +120,6 @@ class TestComprehensiveSafetyValidation:
 
         # Calculate lateral demand factor as done in controlsd.py
         lateral_demand_factor = abs(desired_curvature) * v_ego**2  # Should be 0.02 * 625 = 12.5 m/s²
-        max_lateral_accel = 3.0
         lateral_demand_threshold = 3.0
 
         # Should exceed threshold, triggering reduced longitudinal authority

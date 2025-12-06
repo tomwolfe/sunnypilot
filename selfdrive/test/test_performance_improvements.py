@@ -6,7 +6,6 @@ including perception efficiency, sensor fusion, thermal management, adaptive con
 and safety validation.
 """
 
-import pytest
 import numpy as np
 from unittest.mock import Mock
 import time
