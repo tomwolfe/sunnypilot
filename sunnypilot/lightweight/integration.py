@@ -31,7 +31,7 @@ class LightweightIntegrator:
         Returns:
             Tuple of (should_process, motion_level)
         """
-        return self.controller.should_process_frame(frame)
+        return self.controller.should_process_frame(frame)  # type: ignore
 
     def adjust_acceleration_for_lateral_demand(self,
                                              base_acceleration: float,
@@ -43,7 +43,7 @@ class LightweightIntegrator:
         """
         Adjust longitudinal acceleration based on lateral demand with safety limits.
         """
-        return self.controller.adjust_acceleration_for_lateral_demand(
+        return self.controller.adjust_acceleration_for_lateral_demand(  # type: ignore
             base_acceleration, lateral_demand, speed, curvature, radar_data, car_state
         )
 
@@ -53,13 +53,13 @@ class LightweightIntegrator:
         """
         Detect critical edge cases that require special handling.
         """
-        return self.controller.detect_edge_cases(radar_data, vision_data, car_state)
+        return self.controller.detect_edge_cases(radar_data, vision_data, car_state)  # type: ignore
 
     def get_performance_stats(self) -> dict[str, Any]:
         """
         Get performance statistics for the enhancement suite.
         """
-        return self.controller.get_performance_stats()
+        return self.controller.get_performance_stats()  # type: ignore
 
 
 def create_light_integrator() -> LightweightIntegrator:

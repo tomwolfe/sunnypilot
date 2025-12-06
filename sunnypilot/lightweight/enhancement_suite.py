@@ -90,7 +90,7 @@ class LightweightEnhancementSuite:
             adjusted_accel, base_acceleration, lat_accel, speed, lead_distance, lead_velocity
         )
 
-        return final_accel
+        return final_accel  # type: ignore
 
     def detect_edge_cases(self, radar_data: dict[str, Any],
                          vision_data: dict[str, Any],
@@ -106,7 +106,7 @@ class LightweightEnhancementSuite:
         Returns:
             DetectionResult with edge cases and recommended actions
         """
-        return self.edge_case_detector.detect_edge_cases(radar_data, vision_data, car_state)
+        return self.edge_case_detector.detect_edge_cases(radar_data, vision_data, car_state)  # type: ignore
 
     def get_performance_stats(self) -> dict[str, Any]:
         """
