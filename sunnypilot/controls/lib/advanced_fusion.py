@@ -304,24 +304,53 @@ class AdvancedRadarCameraFusion:
                 assigned_visions.add(v_idx)
         
         return final_associations
-    
-    def _update_tracks(self, 
-                      associations: List[Tuple[int, int, float]], 
-                      radar_detections: List[Dict[str, Any]], 
-                      vision_detections: List[Dict[str, Any]], 
+
+    def _find_best_matching_track(self, measurement_pos: np.ndarray,
+                                 max_distance: float = 5.0) -> Optional[int]:
+        """
+        Find the best matching existing track for a new measurement.
+
+        Args:
+            measurement_pos: [x, y] position of the new measurement
+            max_distance: Maximum distance to consider a match (meters)
+
+        Returns:
+            Index of the best matching track, or None if no good match found
+        """
+        best_idx = None
+        best_distance = float('inf')
+
+        for i, track in enumerate(self.tracks):
+            # Calculate distance between measurement and track position
+            distance = np.linalg.norm(measurement_pos - track.position)
+
+            # Consider this a potential match if within distance threshold
+            if distance < max_distance and distance < best_distance:
+                best_distance = distance
+                best_idx = i
+
+        return best_idx
+
+    def _update_tracks(self,
+                      associations: List[Tuple[int, int, float]],
+                      radar_detections: List[Dict[str, Any]],
+                      vision_detections: List[Dict[str, Any]],
                       ego_state: Dict[str, float]):
         """Update existing tracks with matched measurements."""
-        
-        # Update fused tracks with matched detections
+
+        # Track which tracks have been updated in this cycle
+        updated_track_indices = set()
+
+        # Update existing tracks with matched measurements
         for r_idx, v_idx, confidence in associations:
             radar_obj = radar_detections[r_idx]
             vision_obj = vision_detections[v_idx]
-            
+
             # Convert radar measurements to world frame
             ego_vx = ego_state.get('vEgo', 0.0)
             obj_vx = ego_vx - radar_obj.get('vRel', 0.0)  # Object velocity in world frame
             obj_vy = -radar_obj.get('vLat', 0.0)  # Lateral velocity
-            
+
             # Convert to measurement vector [x, y, vx, vy]
             measurement = np.array([
                 radar_obj.get('dRel', 0.0),  # x (downtrack)
@@ -329,14 +358,45 @@ class AdvancedRadarCameraFusion:
                 obj_vx,
                 obj_vy
             ])
-            
-            # Find track that corresponds to this measurement
-            # For this simplified version, we'll create a new fused track
-            track = self._create_fused_track(measurement, confidence, ego_state.get('logMonoTime', 0.0))
-            track.last_radar_update = ego_state.get('logMonoTime', 0.0)
-            track.last_vision_update = ego_state.get('logMonoTime', 0.0)
-            
-            self.tracks.append(track)
+
+            # Find the best matching existing track based on position
+            best_track_idx = self._find_best_matching_track(measurement[:2])
+
+            if best_track_idx is not None and best_track_idx < len(self.tracks):
+                # Update existing track
+                track = self.tracks[best_track_idx]
+                if hasattr(track, 'filter'):
+                    # Update the Kalman filter with the new measurement
+                    track.filter.update(measurement, source='fused')
+
+                    # Update track properties
+                    track.position = track.filter.x[:2]
+                    track.velocity = track.filter.x[2:]
+                    track.confidence = max(track.confidence, confidence)  # Keep higher confidence
+                    track.timestamp = ego_state.get('logMonoTime', 0.0)
+                    track.last_radar_update = ego_state.get('logMonoTime', 0.0)
+                    track.last_vision_update = ego_state.get('logMonoTime', 0.0)
+                    track.source = 'fused'  # Mark as fused since both sources contributed
+
+                    updated_track_indices.add(best_track_idx)
+                else:
+                    # If no filter exists, directly update the track
+                    track.position = measurement[:2]
+                    track.velocity = measurement[2:]
+                    track.confidence = confidence
+                    track.timestamp = ego_state.get('logMonoTime', 0.0)
+                    track.last_radar_update = ego_state.get('logMonoTime', 0.0)
+                    track.last_vision_update = ego_state.get('logMonoTime', 0.0)
+                    track.source = 'fused'
+            else:
+                # Create a new track if no matching existing track found
+                new_track = self._create_fused_track(measurement, confidence, ego_state.get('logMonoTime', 0.0))
+                new_track.last_radar_update = ego_state.get('logMonoTime', 0.0)
+                new_track.last_vision_update = ego_state.get('logMonoTime', 0.0)
+                self.tracks.append(new_track)
+
+        # Also update any remaining unmatched tracks with partial measurements (if applicable)
+        # This is for radar-only or vision-only updates in subsequent frames
     
     def _handle_unmatched_detections(self,
                                    associations: List[Tuple[int, int, float]],
@@ -344,20 +404,70 @@ class AdvancedRadarCameraFusion:
                                    vision_detections: List[Dict[str, Any]],
                                    ego_state: Dict[str, float]):
         """Handle unmatched radar and vision detections."""
-        
+
         # Find unmatched radar detections
         matched_radars = {r_idx for r_idx, _, _ in associations}
         for r_idx, radar_obj in enumerate(radar_detections):
             if r_idx not in matched_radars:
-                # Create or update radar-only track
-                self._create_radar_only_track(radar_obj, ego_state)
-        
+                # Try to match with existing track first (for updated measurements of existing objects)
+                measurement = np.array([
+                    radar_obj.get('dRel', 0.0),
+                    radar_obj.get('yRel', 0.0),
+                    ego_state.get('vEgo', 0.0) - radar_obj.get('vRel', 0.0),  # Convert to world frame
+                    -radar_obj.get('vLat', 0.0)  # Lateral velocity
+                ])
+
+                best_track_idx = self._find_best_matching_track(measurement[:2])
+
+                if best_track_idx is not None and best_track_idx < len(self.tracks):
+                    # Update existing track with radar-only measurement
+                    track = self.tracks[best_track_idx]
+                    if hasattr(track, 'filter'):
+                        track.filter.update(measurement, source='radar')
+                        track.position = track.filter.x[:2]
+                        track.velocity = track.filter.x[2:]
+                        track.timestamp = ego_state.get('logMonoTime', 0.0)
+                        track.last_radar_update = ego_state.get('logMonoTime', 0.0)
+                        track.source = 'fused' if track.source != 'vision' else 'fused'  # Upgrade to fused if vision existed
+                else:
+                    # Create new radar-only track
+                    self._create_radar_only_track(radar_obj, ego_state)
+
         # Find unmatched vision detections
         matched_visions = {v_idx for _, v_idx, _ in associations}
         for v_idx, vision_obj in enumerate(vision_detections):
             if v_idx not in matched_visions:
-                # Create or update vision-only track
-                self._create_vision_only_track(vision_obj, ego_state)
+                # Try to match with existing track first
+                measurement = np.array([
+                    vision_obj.get('dRel', 0.0),
+                    vision_obj.get('yRel', 0.0),
+                    0.0,  # Velocity initially unknown from vision
+                    0.0
+                ])
+
+                best_track_idx = self._find_best_matching_track(measurement[:2])
+
+                if best_track_idx is not None and best_track_idx < len(self.tracks):
+                    # Update existing track with vision-only measurement
+                    track = self.tracks[best_track_idx]
+                    if hasattr(track, 'filter'):
+                        # Use a modified update to only influence position from vision
+                        # (since vision velocity estimates are less reliable)
+                        updated_measurement = track.filter.x.copy()
+                        updated_measurement[:2] = measurement[:2]  # Update position with vision
+                        # Keep velocity from existing track or filter prediction
+
+                        # Update the Kalman filter with this hybrid measurement
+                        track.filter.update(updated_measurement, source='vision')
+
+                        track.position = track.filter.x[:2]
+                        track.velocity = track.filter.x[2:]
+                        track.timestamp = ego_state.get('logMonoTime', 0.0)
+                        track.last_vision_update = ego_state.get('logMonoTime', 0.0)
+                        track.source = 'fused' if track.source != 'radar' else 'fused'  # Upgrade to fused if radar existed
+                else:
+                    # Create new vision-only track
+                    self._create_vision_only_track(vision_obj, ego_state)
     
     def _create_fused_track(self, 
                            measurement: np.ndarray, 
