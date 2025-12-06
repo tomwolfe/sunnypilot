@@ -7,8 +7,7 @@ and safety validation.
 """
 
 import numpy as np
-import unittest.mock
-Mock = unittest.mock.Mock
+from unittest.mock import Mock  # noqa: TID251
 import time
 
 from cereal import log
