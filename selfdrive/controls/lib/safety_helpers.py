@@ -924,60 +924,6 @@ class SafetyManager:
       return float(slope)
     return 0.0
 
-  def check_immediate_danger(self, car_state: car.CarState, model_data=None, radar_data=None) -> tuple[bool, str]:
-    """
-    Check for immediate danger requiring immediate action.
-
-    Args:
-        car_state: Current car state
-        model_data: Model predictions (optional)
-        radar_data: Radar data for lead vehicle detection
-
-    Returns:
-        Tuple of (is_immediately_dangerous, danger_description)
-    """
-    # 1. Check for system faults
-    if hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent:
-      return True, "Permanent steering fault detected"
-
-    if hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed:
-      return True, "Controls not allowed by vehicle"
-
-    # 2. Check for collision risk with lead vehicle
-    if radar_data and hasattr(radar_data, 'leadOne') and radar_data.leadOne.status:
-      lead = radar_data.leadOne
-      if lead.dRel < 25.0 and lead.vRel < -1.0:  # Close and closing fast
-        time_to_collision = lead.dRel / abs(lead.vRel) if lead.vRel < -0.1 else float('inf')
-        if time_to_collision < 2.0:  # Less than 2 seconds
-          return True, f"Imminent collision: TTC={time_to_collision:.1f}s, dist={lead.dRel:.1f}m"
-
-    # 3. Check for dangerous vehicle dynamics
-    if hasattr(car_state, 'aEgo') and hasattr(car_state, 'vEgo'):
-      # Excessive acceleration/deceleration at higher speeds
-      if car_state.vEgo > 8.0 and abs(car_state.aEgo) > 6.0:  # More than 0.6g
-        return True, f"Excessive acceleration: {car_state.aEgo:.2f} m/s² at {car_state.vEgo:.2f} m/s"
-
-    # 4. Check for conflicting pedal inputs
-    if (hasattr(car_state, 'brakePressed') and hasattr(car_state, 'gasPressed') and
-        car_state.brakePressed and car_state.gasPressed):
-      return True, "Conflicting brake and gas inputs"
-
-    # 5. Check for extreme steering conditions
-    if (hasattr(car_state, 'steeringAngleDeg') and hasattr(car_state, 'steeringRateDeg') and
-        abs(car_state.steeringAngleDeg) > 70 and abs(car_state.steeringRateDeg) > 150):
-      return True, "Extreme steering angle with high rate of change"
-
-    # 6. Check for model prediction anomalies
-    if model_data and hasattr(model_data, 'action'):
-      v_ego = getattr(car_state, 'vEgo', 0)
-      desired_curvature = getattr(model_data.action, 'desiredCurvature', 0)
-
-      # Check for dangerous lateral acceleration at speed
-      required_lat_accel = desired_curvature * v_ego**2
-      if abs(required_lat_accel) > 6.0 and v_ego > 8.0:  # More than 0.6g
-        return True, f"Unsafe lateral acceleration requested: {required_lat_accel:.2f} m/s²"
-
-    return False, "No immediate danger detected"
 
   def get_graduated_safety_response(self, risk_level: float) -> dict:
     """

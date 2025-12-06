@@ -496,14 +496,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     """
     dt = 0.05  # Approximately the model update interval
 
-    filtered_leads = []
-
     # Initialize tracking history if not present
     if not hasattr(self, '_lead_tracking_history'):
       self._lead_tracking_history = []
 
     # Update tracking history with current measurements
-    current_time = time.time()
+    current_time = time.monotonic()
     current_targets = []
 
     for i, lead in enumerate(matched_leads):

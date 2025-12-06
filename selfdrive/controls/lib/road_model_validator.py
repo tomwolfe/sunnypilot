@@ -14,6 +14,7 @@ from typing import Any
 import math
 import time
 
+from cereal import log
 from openpilot.common.swaglog import cloudlog
 
 
@@ -294,7 +295,7 @@ class RoadModelValidator:
           max_lat_accel = max_safe_curvature * (v_ego**2)
 
           cloudlog.warning(f"Desired curvature {desired_curvature:.4f} too high for speed {v_ego}m/s. "
-                          f"Lateral accel: {actual_lat_accel:.2f}m/s² (max safe: {max_lat_accel:.2f}m/s²)")
+                           f"Lateral accel: {actual_lat_accel:.2f}m/s² (max safe: {max_lat_accel:.2f}m/s²)")
 
           # Apply correction with safety margin
           corrected_curvature = max(-max_safe_curvature, min(max_safe_curvature, desired_curvature))
@@ -326,7 +327,7 @@ class RoadModelValidator:
         model_output['action'].desiredAcceleration = corrected_accel
 
         cloudlog.warning(f"Acceleration limited from {original_accel:.2f} to {corrected_accel:.2f} "
-                        f"at speed {v_ego:.2f}m/s")
+                         f"at speed {v_ego:.2f}m/s")
         validation_issues.append(f"accel_correction:{original_accel:.2f}->{corrected_accel:.2f}")
         is_valid = False
 
@@ -356,7 +357,7 @@ class RoadModelValidator:
     model_output['meta']['validation_applied'] = len(validation_issues) > 0
     model_output['meta']['validation_issues'] = validation_issues
     model_output['meta']['overall_validation'] = is_valid
-    model_output['meta']['validation_timestamp'] = time.time()
+    model_output['meta']['validation_timestamp'] = time.monotonic()
 
     # Log validation summary if issues were found
     if validation_issues:

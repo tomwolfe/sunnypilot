@@ -8,10 +8,10 @@ and safety validation.
 
 import pytest
 import numpy as np
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import time
 
-from cereal import car, log
+from cereal import log
 from openpilot.selfdrive.controls.lib.road_model_validator import road_model_validator
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
 from openpilot.selfdrive.controls.lib.adaptive_gains_controller import AdaptiveGainsController
@@ -35,7 +35,7 @@ class TestPerformanceImprovements:
         v_ego_values = [25.0, 10.0, 0.0]  # Highway, city, parking speeds
         expected_thresholds = [4.0, 3.0, 2.0]  # Higher thresholds at higher speeds
 
-        for v_ego, expected_threshold in zip(v_ego_values, expected_thresholds):
+        for v_ego, expected_threshold in zip(v_ego_values, expected_thresholds, strict=True):
             # Simulate the threshold calculation logic
             if v_ego > 15.0:  # Highway speed
                 threshold = 4.0
@@ -86,7 +86,6 @@ class TestPerformanceImprovements:
 
         # Create an instance of the longitudinal planner to call the fusion method
         from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
-        import openpilot.common.util as util
         # Need to create CP and CP_SP objects - using a basic CarParams object
         from opendbc.car.structs import CarParams
 
@@ -162,7 +161,7 @@ class TestPerformanceImprovements:
         mock_cs.vEgo = 15.0
 
         # Test thermal state calculation
-        thermal_state = self.thermal_manager.get_thermal_state_with_fallback(mock_sm, time.time())
+        thermal_state = self.thermal_manager.get_thermal_state_with_fallback(mock_sm, time.monotonic())
         assert 0.0 <= thermal_state <= 1.0
 
         # Test that thermal history is maintained
@@ -217,12 +216,12 @@ class TestPerformanceImprovements:
                 }
             }
         ]
-        
+
         for case in test_cases:
             gains = self.adaptive_gains_controller.calculate_contextual_adaptive_gains(
                 case['v_ego'], case['thermal_state'], case['context']
             )
-            
+
             # Ensure all required gain parameters exist
             assert 'lateral' in gains
             assert 'longitudinal' in gains
@@ -231,14 +230,13 @@ class TestPerformanceImprovements:
             assert 'steer_kd' in gains['lateral']
             assert 'accel_kp' in gains['longitudinal']
             assert 'accel_ki' in gains['longitudinal']
-            
+
             # Ensure gains are within reasonable bounds
             assert 0.3 <= gains['lateral']['steer_kp'] <= 1.5
             assert 0.3 <= gains['longitudinal']['accel_kp'] <= 1.5
 
     def test_enhanced_safety_validation(self):
         """Test enhanced safety validation with physics-based checks."""
-        import cereal.messaging as messaging
         from cereal import log
 
         # Create mock model output with actual list for desireState
@@ -401,7 +399,6 @@ class TestPerformanceImprovements:
 
     def test_performance_regression_prevention(self):
         """Test that performance improvements don't introduce regressions."""
-        import cereal.messaging as messaging
         from cereal import log
 
         # Create mock model output with actual list for desireState using correct values
@@ -449,7 +446,6 @@ class TestStressPerformance:
         thermal_manager = ThermalManager()
 
         # Simulate thermal history
-        start_time = time.time()
         for i in range(30):
             mock_device_state = Mock()
             # Set up proper values instead of using type assignment
@@ -460,15 +456,15 @@ class TestStressPerformance:
             mock_device_state.thermalPerc = 50.0 + (i * 1.5)
 
             # Mock the SubMaster-style access pattern
-            def mock_get(key, default=None):
+            def mock_get(key, default=None, current_device_state=mock_device_state):
                 if key == 'deviceState':
-                    return mock_device_state
+                    return current_device_state
                 return default
 
             # Create a mock that supports both dictionary-style access and attribute access
             mock_sm = Mock()
             mock_sm.get = Mock(side_effect=mock_get)
-            mock_sm.__getitem__ = Mock(side_effect=lambda key: mock_get(key, None))
+            mock_sm.__getitem__ = Mock(side_effect=lambda key, mock_get_ref=mock_get: mock_get_ref(key, None))
             mock_sm.deviceState = mock_device_state
             mock_sm.recv_frame = {'deviceState': 1}  # Simulate received frame
 
@@ -485,7 +481,6 @@ class TestStressPerformance:
         """Test that sensor fusion remains stable over time."""
         # Create a minimal class to test the predictive filter method directly
         import time
-        import copy
 
         class MockLongitudinalPlanner:
             def __init__(self):
@@ -498,14 +493,12 @@ class TestStressPerformance:
                 """
                 dt = 0.05  # Approximately the model update interval
 
-                filtered_leads = []
-
                 # Initialize tracking history if not present
                 if not hasattr(self, '_lead_tracking_history'):
                     self._lead_tracking_history = []
 
                 # Update tracking history with current measurements
-                current_time = time.time()
+                current_time = time.monotonic()
                 current_targets = []
 
                 for i, lead in enumerate(matched_leads):
@@ -606,7 +599,7 @@ class TestStressPerformance:
         v_ego = 25.0
         # Test multiple prediction cycles using our mock
         mock_planner = MockLongitudinalPlanner()
-        for i in range(5):
+        for _i in range(5):
             filtered = mock_planner._predictive_filter_leads(matched_leads, v_ego)
             assert len(filtered) == 1
             assert 'distance' in filtered[0]
@@ -614,5 +607,3 @@ class TestStressPerformance:
             assert 'acceleration' in filtered[0]
 
 
-if __name__ == "__main__":
-    pytest.main([__file__])

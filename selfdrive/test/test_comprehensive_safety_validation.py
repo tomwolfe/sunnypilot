@@ -5,11 +5,10 @@ This module provides additional tests specifically for validating the safety fea
 of the enhanced autonomous driving system, focusing on edge cases and critical scenarios.
 """
 
-import numpy as np
-from unittest.mock import Mock
 import pytest
+from unittest.mock import Mock
 
-from cereal import car, log
+from cereal import log
 from openpilot.selfdrive.controls.lib.safety_helpers import SafetyManager
 from openpilot.selfdrive.controls.lib.road_model_validator import RoadModelValidator
 from openpilot.selfdrive.controls.lib.thermal_manager import ThermalManager
@@ -65,16 +64,16 @@ class TestComprehensiveSafetyValidation:
         assert "acceleration" in desc.lower() or "dynamics" in desc.lower()
 
         # Test brake and gas conflict
-        setattr(mock_car_state, 'aEgo', 0.0)  # Reset
-        setattr(mock_car_state, 'brakePressed', True)
-        setattr(mock_car_state, 'gasPressed', True)
+        mock_car_state.aEgo = 0.0  # Reset
+        mock_car_state.brakePressed = True
+        mock_car_state.gasPressed = True
         danger, desc = self.safety_manager.check_immediate_danger(mock_car_state)
         assert danger, "Should detect brake and gas conflict"
         assert "conflict" in desc.lower() or "override" in desc.lower()
 
         # Reset brake and gas for next test
-        setattr(mock_car_state, 'brakePressed', False)
-        setattr(mock_car_state, 'gasPressed', False)
+        mock_car_state.brakePressed = False
+        mock_car_state.gasPressed = False
 
         # NOTE: Skipping dangerous steering test due to Mock object compatibility issues
         # The test would check: abs(car_state.steeringAngleDeg) > 70 and abs(car_state.steeringRateDeg) > 150
@@ -86,7 +85,7 @@ class TestComprehensiveSafetyValidation:
         model_output = {
             'action': Mock(),
             'meta': {'desireState': [0.0] * (max([
-                log.Desire.none, log.Desire.laneChangeLeft, log.Desire.laneChangeRight, 
+                log.Desire.none, log.Desire.laneChangeLeft, log.Desire.laneChangeRight,
                 log.Desire.keepLeft, log.Desire.keepRight, log.Desire.turnLeft, log.Desire.turnRight
             ]) + 1)}
         }
@@ -115,8 +114,6 @@ class TestComprehensiveSafetyValidation:
 
     def test_lateral_longitudinal_coordination_safety(self):
         """Test the safety aspects of lateral-longitudinal coordination."""
-        from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
-        from opendbc.car.structs import CarParams
 
         # Test that longitudinal authority is reduced with high lateral demand
         desired_curvature = 0.02  # High curvature (sharp turn)
@@ -131,7 +128,6 @@ class TestComprehensiveSafetyValidation:
         assert lateral_demand_factor > lateral_demand_threshold, "Should have high lateral demand"
 
         # The actual testing would happen in the control system, but we can validate the math
-        lat_influence_factor = min(0.8, 1.0 - (lateral_demand_factor - lateral_demand_threshold) / max_lateral_accel)
         # With lateral_demand_factor = 12.5, this would be: 1.0 - (12.5 - 3.0) / 3.0 = 1.0 - 9.5/3.0 = 1.0 - 3.17 = -2.17
         # So influence factor should be clamped to min(0.8, -2.17) = negative value, which gets clamped to a small positive value
         expected_influence = max(0.1, min(0.8, 1.0 - (12.5 - 3.0) / 3.0))
@@ -165,7 +161,7 @@ class TestComprehensiveSafetyValidation:
 
         # Apply thermal management - should trigger safety measures
         self.thermal_manager.apply_gpu_management(mock_sm, mock_cs)
-        
+
         # Check that thermal history was created
         assert hasattr(self.thermal_manager, '_thermal_history')
         assert len(self.thermal_manager._thermal_history) >= 1
@@ -174,7 +170,7 @@ class TestComprehensiveSafetyValidation:
         predicted_temp = mock_device_state.gpuTemp + 1.0  # Simulate rising trend
         predicted_cpu = mock_device_state.cpuTemp + 0.8
         predicted_soc = mock_device_state.socTemp + 0.7
-        
+
         risk_level = self.thermal_manager._assess_thermal_risk(predicted_temp, predicted_cpu, predicted_soc)
         assert risk_level >= 2, "Should detect high thermal risk with critical temperatures"
 
@@ -222,7 +218,7 @@ class TestComprehensiveSafetyValidation:
         mock_car_state.steeringAngleDeg = 5.0
 
         mock_control_output = Mock()
-        
+
         safe_output = self.safety_manager.execute_error_recovery(mock_car_state, mock_control_output)
 
         # Validate safety constraints
@@ -244,7 +240,7 @@ class TestComprehensiveSafetyValidation:
         model_output = {
             'action': Mock(),
             'meta': {'desireState': [0.0] * (max([
-                log.Desire.none, log.Desire.laneChangeLeft, log.Desire.laneChangeRight, 
+                log.Desire.none, log.Desire.laneChangeLeft, log.Desire.laneChangeRight,
                 log.Desire.keepLeft, log.Desire.keepRight, log.Desire.turnLeft, log.Desire.turnRight
             ]) + 1)}
         }
@@ -266,7 +262,3 @@ class TestComprehensiveSafetyValidation:
         assert not is_valid, "Should reject extremely high values"
         assert abs(corrected_output['action'].desiredCurvature) <= 0.72, "Should clamp curvature at low speed"
         assert corrected_output['action'].desiredAcceleration <= 3.0, "Should clamp acceleration"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])

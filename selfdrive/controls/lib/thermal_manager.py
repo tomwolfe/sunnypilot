@@ -134,7 +134,7 @@ class ThermalManager:
       # If this is the first entry but we have previous values set manually, add a pseudo-previous entry
       if prev_gpu_temp is not None:
         # Create a previous state that was just before the current one
-        prev_timestamp = time.time() - 1.0  # Assume 1 second ago as a default
+        prev_timestamp = time.monotonic() - 1.0  # Assume 1 second ago as a default
         prev_thermal_state = {
           'timestamp': prev_timestamp,
           'gpu_temp': prev_gpu_temp,
@@ -147,7 +147,7 @@ class ThermalManager:
 
     # Add current state to thermal history
     current_thermal_state = {
-      'timestamp': time.time(),
+      'timestamp': time.monotonic(),
       'gpu_temp': current_temp,
       'cpu_temp': cpu_temp,
       'soc_temp': soc_temp,
@@ -225,14 +225,16 @@ class ThermalManager:
     if thermal_risk_level >= 4:  # Very high risk (equivalent to danger)
       # In very high risk state, force thermal-safe GPU mode
       self._apply_gpu_thermal_safe_mode()
-      cloudlog.warning(f"GPU forced to thermal-safe mode due to thermal risk. Predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+      cloudlog.warning(f"GPU forced to thermal-safe mode due to thermal risk. "
+                       f"Predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
     elif thermal_risk_level >= 3:  # High risk (equivalent to red)
       # In high risk, use ondemand governor to preserve thermal safety
       self._apply_gpu_ondemand_mode()
     elif thermal_risk_level >= 2:  # Medium risk (equivalent to yellow)
       # If in medium risk and we're predicting thermal issues, be proactive
       self._apply_gpu_ondemand_mode()
-      cloudlog.debug(f"Proactive thermal management - risk level: {thermal_risk_level}, predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
+      cloudlog.debug(f"Proactive thermal management - risk level: {thermal_risk_level}, "
+                     f"predicted temps: GPU={predicted_temp:.1f}°C, CPU={predicted_cpu:.1f}°C, SoC={predicted_soc:.1f}°C")
     else:  # Low risk (equivalent to green/yellow)
       # Check vehicle speed and standstill status safely, handling Mock objects
       try:
@@ -296,8 +298,6 @@ class ThermalManager:
           try:
             current_temp_val = float(current_temp)
 
-            # Get previous temp stored (for backward compatibility)
-            prev_temp = getattr(self, '_prev_gpu_temp', None)
             # Note: _prev_gpu_temp was just updated in apply_gpu_management to be current_temp_val,
             # so let's get the previous to previous value for comparison
             # Actually, we should look at the actual previous entry in history
