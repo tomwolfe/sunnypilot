@@ -344,13 +344,14 @@ class SafetyManager:
 
     # Check for vehicle system critical faults
     if (
-      hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent or
+      hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent
+    ):
+      return True, "Permanent steering fault detected"
+    elif (
       hasattr(car_state, 'brakeFault') and car_state.brakeFault or
       hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed
     ):
       fault_desc = []
-      if hasattr(car_state, 'steerFaultPermanent') and car_state.steerFaultPermanent:
-        fault_desc.append("Steering fault")
       if hasattr(car_state, 'brakeFault') and car_state.brakeFault:
         fault_desc.append("Brake fault")
       if hasattr(car_state, 'controlsAllowed') and not car_state.controlsAllowed:
