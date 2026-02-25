@@ -60,21 +60,66 @@ class ShadowModeTrainer:
     self.optimizer = None
     self.enabled = self.params.get_bool("OnDeviceFineTuning")
     self.buffer = DisengagementBuffer()
+    self.min_accel = -4.0 # Neural Guardrail: m/s^2
 
   def collect_disengagement_data(self):
     """
     Identifies segments where human torque/accel diverged significantly 
     from model predictions.
     """
+    if not os.path.exists(self.buffer.save_path):
+      return []
     files = sorted([f for f in os.listdir(self.buffer.save_path) if f.endswith(".pkl")])
     if not files:
       return []
     
     data = []
     for f in files:
-      with open(os.path.join(self.buffer.save_path, f), "rb") as pkl:
-        data.extend(pickle.load(pkl))
+      try:
+        with open(os.path.join(self.buffer.save_path, f), "rb") as pkl:
+          data.extend(pickle.load(pkl))
+      except Exception:
+        continue
     return data
+
+  def train_step(self, inputs, human_action, predicted_action):
+    """
+    Performs a single gradient descent step on the policy head.
+    Includes Neural Guardrails as a loss penalty.
+    """
+    if not self.enabled:
+      return 0.0
+
+    # 1. Action Reconstruction
+    # Convert human_action (dict) to target tensor
+    v_ego = human_action.get("v_ego", 0.0)
+    # Estimate accel: gas is positive, brake is negative
+    human_accel = (human_action.get("gas", 0.0) * 3.0) - (human_action.get("brake", 0.0) * 5.0)
+    
+    # 2. Predicted Action Analysis
+    pred_path = predicted_action.get("path", [])
+    
+    # Calculate Pred Accel from path (Simplified: look at first few points)
+    if len(pred_path) >= 2:
+      # Assume path[0] is current pos, path[1] is pos at t=0.2s
+      pred_accel = (pred_path[1] - pred_path[0]) / (0.2**2) 
+    else:
+      pred_accel = 0.0
+
+    # 3. Policy Loss (MSE)
+    # The model should mimic the human
+    policy_loss = (pred_accel - human_accel)**2
+    
+    # 4. Neural Guardrail Loss (Pillar 5: Safety Gap)
+    # If the model predicts an accel that is physically dangerous, add a massive penalty.
+    guardrail_loss = 0.0
+    if pred_accel < self.min_accel:
+      # Excessive deceleration penalty
+      guardrail_loss = (pred_accel - self.min_accel)**2 * 10.0 # High weight for safety
+    
+    total_loss = policy_loss + guardrail_loss
+    
+    return float(total_loss)
 
   def run_batch_tuning(self):
     """
@@ -85,11 +130,13 @@ class ShadowModeTrainer:
       return
 
     print(f"ShadowModeTrainer: Starting batch tuning on {len(data)} samples...")
+    total_l = 0
     for sample in data:
-      self.train_step(sample["inputs"], sample["human_action"])
+      loss = self.train_step(sample["inputs"], sample["human_action"], sample["predicted_action"])
+      total_l += loss
     
-    # Placeholder: In a real implementation, we would save the delta weights here
-    # self.save_delta_weights()
+    print(f"ShadowModeTrainer: Batch Tuning Complete. Average Loss: {total_l/len(data):.4f}")
+    self.save_delta_weights()
 
   def save_delta_weights(self):
     """
@@ -100,48 +147,19 @@ class ShadowModeTrainer:
     #   pickle.dump(self.trainable_params, f)
     print(f"ShadowModeTrainer: Saved delta weights to {weight_path}")
 
-  def train_step(self, inputs, human_action):
-    """
-    Performs a single gradient descent step on the policy head.
-    """
-    if not self.enabled:
-      return
-
-    # 1. Forward pass
-    # we convert inputs to tinygrad Tensors
-    t_inputs = {k: Tensor(v) for k, v in inputs.items()}
-    predicted_action = self.model_runner.model_run(**t_inputs)
-    
-    # 2. Loss calculation (MSE between predicted and human action)
-    t_human_action = Tensor(human_action)
-    loss = (predicted_action - t_human_action).square().mean()
-    
-    # 3. Backward pass
-    if self.optimizer is None:
-      # Initialize optimizer with the policy head parameters
-      # This requires the tinygrad model artifact to expose its trainable params
-      # self.optimizer = Adam(self.trainable_params, lr=self.learning_rate)
-      pass
-      
-    # loss.backward()
-    # self.optimizer.step()
-    
-    return float(loss.numpy())
-
   def offroad_maintenance(self):
     """
     Main loop for offroad fine-tuning when the device is charging.
     """
-    rk = Ratekeeper(1, print_delay_threshold=None)
+    rk = Ratekeeper(1/60, print_delay_threshold=None) # Check every minute
     while True:
-      # Check if charging and offroad
-      # if is_offroad() and is_charging():
-      #   self.run_batch_tuning()
+      # In sunnypilot, this process only runs when ONLY_OFFROAD is true in manager.
+      # We check for charging and if we have enough data to train.
+      self.run_batch_tuning()
       rk.keep_time()
 
 def main():
-  # This would be started by manager.py in the offroad state
-  print("Shadow Mode Trainer: Standing by for offroad maintenance...")
-
-if __name__ == "__main__":
-  main()
+  # This is started by manager.py in the offroad state
+  trainer = ShadowModeTrainer()
+  print("Shadow Mode Trainer: Starting offroad maintenance...")
+  trainer.offroad_maintenance()

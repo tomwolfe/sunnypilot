@@ -167,14 +167,19 @@ procs = [
   PythonProcess("firehosed", "sunnypilot.sunnylink.firehosed", only_onroad),
 ]
 
-# sunnypilot
+  # sunnypilot
 procs += [
   # Models
   PythonProcess("models_manager", "sunnypilot.models.manager", only_offroad),
   NativeProcess("modeld_snpe", "sunnypilot/modeld", ["./modeld"], and_(only_onroad, is_snpe_model)),
   NativeProcess("modeld_tinygrad", "sunnypilot/modeld_v2", ["./modeld"], and_(only_onroad, is_tinygrad_model)),
 
+  # Policy Distillation & Shadow Mode
+  PythonProcess("onroad_trainer", "sunnypilot.models.onroad_trainer", only_onroad),
+  PythonProcess("shadow_mode_trainer", "sunnypilot.models.trainer", only_offroad),
+
   # Backup
+
   PythonProcess("backup_manager", "sunnypilot.sunnylink.backups.manager", and_(only_offroad, sunnylink_ready_shim)),
 
   # mapd
