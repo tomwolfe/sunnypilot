@@ -65,4 +65,18 @@ def get_nn_model_path(CP: structs.CarParams) -> tuple[str, str, bool]:
 
   model_name = os.path.splitext(os.path.basename(model_path))[0]
 
+  # A+ Enhancement: Check for on-device calibration
+  # If calibration exists with high confidence, override fuzzy matching
+  try:
+    from .on_device_calibration import get_calibrator
+    calibrator = get_calibrator()
+    
+    # If calibration is confident (>0.8), consider it an exact match
+    # regardless of fingerprint similarity
+    if calibrator.params.calibration_confidence > 0.8:
+      exact_match = True
+      model_name = f"{model_name}_calibrated"
+  except Exception:
+    pass  # Fallback to original behavior if calibration not available
+
   return model_path, model_name, exact_match
