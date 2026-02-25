@@ -443,6 +443,7 @@ enum Desire {
   laneChangeRight @4;
   keepLeft @5;
   keepRight @6;
+  pauseLateral @7;
 }
 
 enum LaneChangeState {

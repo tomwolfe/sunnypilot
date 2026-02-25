@@ -171,13 +171,15 @@ class Controls(ControlsExt):
 
     actuators.curvature = self.desired_curvature
     lateral_uncertainty = float(np.mean(model_v2.position.yStd[:7])) if len(model_v2.position.yStd) > 0 else 0.0
+    desire = model_v2.meta.desire
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited, lat_delay,
                                                        torque_neural=model_v2.action.torque,
                                                        lateral_uncertainty=lateral_uncertainty,
                                                        actual_curvature=self.curvature,
-                                                       e2e_weight=e2e_weight)
+                                                       e2e_weight=e2e_weight,
+                                                       desire=desire)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs
