@@ -160,8 +160,27 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
+    # Proactive Disengage Prevention:
+    # Use brake disengage predictions as a "neural cost" to proactively slow down.
+    # This prevents the system from waiting for a hard-coded threshold.
+    brake_prob = 0.0
+    if len(sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs) > 0:
+      brake_prob = float(max(sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs))
+
+    if brake_prob > 0.25:
+      # Proactively cap acceleration if the model predicts a high likelihood of braking
+      proactive_slowdown_accel = float(np.interp(brake_prob, [0.25, 0.7], [output_a_target_mpc, -2.0]))
+      output_a_target_mpc = min(output_a_target_mpc, proactive_slowdown_accel)
+
     if self.is_e2e(sm):
-      output_a_target = min(output_a_target_e2e, output_a_target_mpc)
+      # Intent-Mixing: Transition from "Mode-Switching" to "Intent-Mixing"
+      # We use a personality-based blend of E2E and MPC targets.
+      # Relaxed (0) -> More MPC (smoother)
+      # Aggressive (2) -> More E2E (more direct/human-like)
+      personality = sm['selfdriveState'].personality
+      e2e_weight = float(np.interp(float(personality.raw), [0, 1, 2], [0.25, 0.5, 0.75]))
+      
+      output_a_target = e2e_weight * output_a_target_e2e + (1.0 - e2e_weight) * output_a_target_mpc
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e

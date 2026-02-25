@@ -146,7 +146,8 @@ class Controls(ControlsExt):
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        self.calibrated_pose, curvature_limited, lat_delay,
                                                        torque_neural=model_v2.action.torque,
-                                                       lateral_uncertainty=lateral_uncertainty)
+                                                       lateral_uncertainty=lateral_uncertainty,
+                                                       actual_curvature=self.curvature)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs

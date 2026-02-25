@@ -59,6 +59,10 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     self.error_deque = deque(maxlen=history_check_frames[0])
     self.past_future_len = len(self.past_times) + len(self.nn_future_times)
 
+    # Self-Healing: Bias-correction layer with 30-second time constant
+    self.bias = 0.0
+    self.bias_filter = FirstOrderFilter(0.0, 30.0, 0.01)
+
   @property
   def _nnlc_enabled(self):
     return self.enabled and self.model_valid and self.has_nn_model
@@ -157,6 +161,9 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
                + past_rolls + future_rolls
     self._ff = self.model.evaluate(nn_input)
 
+    # Apply adaptive bias correction
+    self._ff += self.bias
+
     # E2E Torque Blending (Objective 5): Blend modular NNFF with direct E2E "policy" torque
     if hasattr(self.model_v2, 'action') and self.model_v2.action.torque != 0:
       model_torque = self.model_v2.action.torque
@@ -170,3 +177,9 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
       self._pid_log.error += get_friction(friction_input, self._lateral_accel_deadzone, FRICTION_THRESHOLD, self.lac_torque.torque_params)
 
     self.update_output_torque(CS)
+
+    # Online Learning: Track residual bias from the PID integrator
+    if self._nnlc_enabled and not CS.steeringPressed and CS.vEgo > 10.0:
+      # We slowly integrate the PID's I-term into our bias for a self-healing effect.
+      # This ensures the NNFF adapts to long-term changes in car hardware (tires, alignment).
+      self.bias = self.bias_filter.update(self.bias + self._pid.i)
