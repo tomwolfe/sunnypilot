@@ -29,7 +29,7 @@ class DirectCANOutput:
 class DirectCANOutputter:
     """
     Direct CAN Output for Neural Lateral Control
-    
+
     Outputs neural network commands directly to CAN bus without PID intermediate.
     This enables true end-to-end control where the policy model outputs
     voltage/current/torque directly.
@@ -60,13 +60,13 @@ class DirectCANOutputter:
                               dt: float = 0.05) -> DirectCANOutput:
         """
         Compute direct CAN output from neural torque prediction
-        
+
         Args:
             neural_torque: Direct torque from neural network (Nm)
             v_ego: Current vehicle speed (m/s)
             lateral_uncertainty: Uncertainty from model (0-1)
             dt: Time step
-            
+
         Returns:
             DirectCANOutput with clamped and limited values
         """
@@ -111,7 +111,7 @@ class DirectCANOutputter:
     def _torque_to_voltage(self, torque: float, v_ego: float) -> float:
         """
         Convert torque command to steering motor voltage
-        
+
         Uses a simple model: V = k * torque / speed
         At higher speeds, less voltage is needed for same torque
         """
@@ -142,7 +142,7 @@ class DirectCANOutputter:
     def _apply_uncertainty_scaling(self, voltage: float, uncertainty: float) -> float:
         """
         Scale output based on model uncertainty
-        
+
         Higher uncertainty = scale back neural command
         This provides a soft safety margin
         """

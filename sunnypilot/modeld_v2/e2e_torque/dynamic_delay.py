@@ -31,12 +31,12 @@ class DelayPrediction:
 class DynamicDelayPredictor:
     """
     Neural Network-Based Dynamic Steering Delay Prediction
-    
-    Automates the steer_delay using a model that predicts effective steering 
+
+    Automates the steer_delay using a model that predicts effective steering
     latency based on road surface, tire grip, and vehicle dynamics.
-    
+
     This is an improvement over hard-coded delay values - the system learns
-    that on gravel, ice, or worn tires, the "delay" between a command and 
+    that on gravel, ice, or worn tires, the "delay" between a command and
     actual turn will be longer.
     """
 
@@ -94,12 +94,12 @@ class DynamicDelayPredictor:
                      desired_curvature: float = 0.0) -> DelayPrediction:
         """
         Predict effective steering delay
-        
+
         Args:
             current_curvature: Current path curvature
             current_speed: Current vehicle speed
             desired_curvature: Desired curvature from model
-            
+
         Returns:
             DelayPrediction with breakdown of delay components
         """
@@ -221,7 +221,7 @@ class DynamicDelayPredictor:
                                   desired_curvature: float = 0.0) -> float:
         """
         Compute lag-adjusted curvature using predicted delay
-        
+
         This replaces the manual steer_delay calculation in drive_helpers.py
         """
         from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, MIN_SPEED, MAX_LATERAL_JERK
@@ -266,7 +266,7 @@ class DynamicDelayPredictor:
 class AdaptiveDelayFilter:
     """
     Adaptive filter for smooth delay transitions
-    
+
     Prevents sudden jumps in delay prediction
     """
 
@@ -277,11 +277,11 @@ class AdaptiveDelayFilter:
     def update(self, predicted_delay: float, dt: float = 0.05) -> float:
         """
         Smoothly update to new predicted delay
-        
+
         Args:
             predicted_delay: Newly predicted delay
             dt: Time step
-            
+
         Returns:
             Smoothed delay value
         """

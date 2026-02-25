@@ -45,15 +45,15 @@ class TrajectoryContext:
 class SafetyCriticNetwork:
     """
     Safety Critic Neural Network
-    
+
     Instead of relying on classical MPC to determine "safety", this neural
     network learns from millions of miles of intervention data to predict
     when a proposed trajectory is likely to cause a human takeover.
-    
+
     Architecture:
     - Input: Current state + proposed trajectory + context
     - Output: Risk score, intervention probability, safety violations
-    
+
     The critic can:
     1. Flag trajectories as unsafe before execution
     2. Suggest safer alternative trajectories
@@ -93,12 +93,12 @@ class SafetyCriticNetwork:
                alternative_trajectories: Optional[list[np.ndarray]] = None) -> SafetyAssessment:
         """
         Evaluate safety of proposed trajectory
-        
+
         Args:
             state: Current vehicle/context state
             proposed_trajectory: Proposed trajectory to evaluate
             alternative_trajectories: Optional list of safer alternatives
-            
+
         Returns:
             SafetyAssessment with risk score and recommendations
         """
@@ -299,7 +299,7 @@ class SafetyCriticNetwork:
                               was_unsafe: bool):
         """
         Update safety bounds based on intervention data
-        
+
         This allows the critic to adapt to the driver's preferences
         """
         if was_unsafe:
@@ -325,7 +325,7 @@ class SafetyCriticNetwork:
 class SafetyGate:
     """
     High-level safety gate that coordinates between E2E policy and Safety Critic
-    
+
     This replaces the MPC fallback with a neural network safety check that
     can pivot between multiple trajectory modes within the same latent space.
     """
@@ -345,7 +345,7 @@ class SafetyGate:
                 alternative_trajectories: Optional[list[np.ndarray]] = None) -> tuple[bool, str, Optional[int]]:
         """
         Evaluate trajectory and determine if it should be executed
-        
+
         Returns:
             (should_execute, reason, alternative_mode_index)
         """

@@ -26,7 +26,7 @@ import time
 class MCTSNode:
     """
     Node in the MCTS tree
-    
+
     Represents a state-action pair in the search tree
     """
     state: Any  # WorldState or latent representation
@@ -60,10 +60,10 @@ class MCTSNode:
     def best_child(self, c_param: float = 1.414) -> Optional['MCTSNode']:
         """
         Select best child using UCT (Upper Confidence Bound for Trees)
-        
+
         Args:
             c_param: Exploration parameter (sqrt(2) is standard)
-        
+
         Returns:
             Best child node according to UCT formula
         """
@@ -96,14 +96,14 @@ class MCTSResult:
 class ContinuousMCTSPlanner:
     """
     Continuous Monte Carlo Tree Search Planner
-    
+
     This replaces the static "8 rollout" approach with iterative tree search:
-    
+
     1. **Selection**: Traverse tree using UCT to select promising node
     2. **Expansion**: Add new child node with refined action
     3. **Simulation**: Rollout trajectory using WorldModel
     4. **Backpropagation**: Update node values based on rollout cost
-    
+
     Key innovations over static rollouts:
     - Iteratively refines best path (not just picks from 8 options)
     - Focuses computation on promising regions of action space
@@ -124,7 +124,7 @@ class ContinuousMCTSPlanner:
                  alpha_widening: float = 0.5):
         """
         Initialize MCTS planner
-        
+
         Args:
             world_model: WorldModel instance for rollouts
             max_iterations: Maximum MCTS iterations
@@ -165,16 +165,16 @@ class ContinuousMCTSPlanner:
                prior_policy: Optional[Any] = None) -> MCTSResult:
         """
         Run MCTS search from initial state
-        
+
         Args:
             initial_state: Current WorldState
             context: Additional context (map, radar, traffic)
             prior_policy: Optional policy network for action priors
-        
+
         Returns:
             MCTSResult with optimal action and search statistics
         """
-        start_time = time.time()
+        start_time = time.monotonic()
 
         # Initialize root node
         self.root = MCTSNode(
@@ -189,7 +189,7 @@ class ContinuousMCTSPlanner:
 
         # Main MCTS loop
         while (self._iteration_count < self.max_iterations and
-               (time.time() - start_time) * 1000 < self.max_time_ms):
+               (time.monotonic() - start_time) * 1000 < self.max_time_ms):
 
             self._iteration_count += 1
 
@@ -214,7 +214,7 @@ class ContinuousMCTSPlanner:
         else:
             self._best_node = self.root
 
-        search_time_ms = (time.time() - start_time) * 1000
+        search_time_ms = (time.monotonic() - start_time) * 1000
 
         # Extract optimal action
         optimal_action = self._extract_action(self._best_node)
@@ -245,10 +245,10 @@ class ContinuousMCTSPlanner:
     def _select(self, node: MCTSNode) -> MCTSNode:
         """
         Selection phase: traverse tree using UCT
-        
+
         Args:
             node: Starting node (usually root)
-        
+
         Returns:
             Leaf node to expand
         """
@@ -277,10 +277,10 @@ class ContinuousMCTSPlanner:
                      prior_policy: Optional[Any]):
         """
         Expansion phase: add new child node
-        
+
         Uses progressive widening for continuous action spaces:
         - Number of actions grows as O(n^alpha) where n is visit count
-        
+
         Args:
             node: Node to expand
             context: Additional context
@@ -316,11 +316,11 @@ class ContinuousMCTSPlanner:
                              prior_policy: Optional[Any]):
         """
         Simulation and backup phase
-        
+
         1. Rollout trajectory using WorldModel
         2. Compute cost from trajectory
         3. Backpropagate value up the tree
-        
+
         Args:
             node: Node to simulate
             context: Additional context
@@ -350,12 +350,12 @@ class ContinuousMCTSPlanner:
                            context: Optional[dict[str, Any]]) -> Any:
         """
         Roll out trajectory using WorldModel
-        
+
         Args:
             state: Initial state
             action: Action to execute
             context: Additional context
-        
+
         Returns:
             Trajectory prediction
         """
@@ -374,7 +374,7 @@ class ContinuousMCTSPlanner:
                        context: Optional[dict[str, Any]]) -> Any:
         """
         Simple kinematic rollout (fallback)
-        
+
         Args:
             state: Initial WorldState
             action: [steer, throttle, brake, reserved]
@@ -450,11 +450,11 @@ class ContinuousMCTSPlanner:
                                  context: Optional[dict[str, Any]]) -> float:
         """
         Compute cost for a trajectory
-        
+
         Args:
             trajectory: TrajectoryPrediction
             context: Additional context
-        
+
         Returns:
             Cost value (lower is better)
         """
@@ -488,7 +488,7 @@ class ContinuousMCTSPlanner:
     def _backup(self, node: MCTSNode, cost: float):
         """
         Backpropagation: update node values up the tree
-        
+
         Args:
             node: Starting node
             cost: Cost to backpropagate (lower is better)
@@ -505,10 +505,10 @@ class ContinuousMCTSPlanner:
     def _sample_action(self, prior_policy: Optional[Any]) -> np.ndarray:
         """
         Sample action from action space
-        
+
         Args:
             prior_policy: Optional policy network for biased sampling
-        
+
         Returns:
             Sampled action
         """
@@ -532,10 +532,10 @@ class ContinuousMCTSPlanner:
     def _extract_action(self, node: MCTSNode) -> np.ndarray:
         """
         Extract action from best node
-        
+
         Args:
             node: Best node from search
-        
+
         Returns:
             Optimal action
         """
@@ -554,7 +554,7 @@ class ContinuousMCTSPlanner:
     def _compute_action_entropy(self) -> float:
         """
         Compute entropy of action distribution from visit counts
-        
+
         Returns:
             Entropy value (higher = more uncertain)
         """
@@ -625,7 +625,7 @@ class ContinuousMCTSPlanner:
 class MCTSIntegrationHelper:
     """
     Helper class for integrating MCTS with existing WorldModel
-    
+
     Provides seamless fallback to static rollouts when MCTS is disabled
     """
 
@@ -636,7 +636,7 @@ class MCTSIntegrationHelper:
                  mcts_max_iterations: int = 80):
         """
         Initialize MCTS integration
-        
+
         Args:
             world_model: WorldModel instance
             enable_mcts: Enable MCTS planning
@@ -661,12 +661,12 @@ class MCTSIntegrationHelper:
              proposed_actions: Optional[list[np.ndarray]] = None) -> Any:
         """
         Plan optimal action using MCTS or fallback to static rollouts
-        
+
         Args:
             current_state: Current WorldState
             context: Additional context
             proposed_actions: Fallback actions for static rollout
-        
+
         Returns:
             SimulationResult or MCTSResult
         """

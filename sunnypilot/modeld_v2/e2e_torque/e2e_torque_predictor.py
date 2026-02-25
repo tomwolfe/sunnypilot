@@ -39,7 +39,7 @@ class GMMOutput:
 class VehicleResponseModel:
     """
     Learned vehicle response model for direct torque control.
-    
+
     Maps commanded torque -> actual lateral acceleration/curvature.
     This replaces the physics-based VehicleModel which is never 100% accurate.
     """
@@ -65,11 +65,11 @@ class VehicleResponseModel:
     def predict_response(self, torque_command: float, v_ego: float) -> float:
         """
         Predict actual lateral acceleration from torque command
-        
+
         Args:
             torque_command: Commanded torque (Nm)
             v_ego: Vehicle speed (m/s)
-            
+
         Returns:
             Predicted lateral acceleration (m/s^2)
         """
@@ -98,7 +98,7 @@ class VehicleResponseModel:
                                 v_ego: float):
         """
         Online learning: update model based on observed response
-        
+
         Args:
             torque_command: Commanded torque
             actual_lat_accel: Observed lateral acceleration
@@ -153,11 +153,11 @@ class E2ETorqueOutput:
 class GMMPolicyHead:
     """
     Gaussian Mixture Model Policy Head for Multi-Modal Trajectory Prediction
-    
+
     Instead of outputting a single mean prediction, this head outputs the
     parameters of a Gaussian Mixture Model representing multiple potential
     trajectories (e.g., go left, go right, go straight).
-    
+
     This solves the "multi-modal ambiguity" problem where averaging two paths
     would lead the car into a divider.
     """
@@ -177,10 +177,10 @@ class GMMPolicyHead:
     def forward(self, latent_features: np.ndarray) -> GMMOutput:
         """
         Forward pass to generate GMM parameters
-        
+
         Args:
             latent_features: Input latent features from vision backbone [batch, feature_dim]
-            
+
         Returns:
             GMMOutput with means, variances, and mixture weights
         """
@@ -209,11 +209,11 @@ class GMMPolicyHead:
     def sample_from_gmm(self, gmm: GMMOutput, mode: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
         """
         Sample from the GMM
-        
+
         Args:
             gmm: GMM output
             mode: If specified, sample from this mode. Otherwise use weighted sampling.
-            
+
         Returns:
             (sample, variance)
         """
@@ -230,11 +230,11 @@ class GMMPolicyHead:
     def get_best_mode(self, gmm: GMMOutput, context: Optional[dict] = None) -> int:
         """
         Select the best mode based on context (e.g., available lanes, obstacles)
-        
+
         Args:
             gmm: GMM output
             context: Optional context (lane availability, obstacle positions)
-            
+
         Returns:
             Index of selected mode
         """
@@ -253,7 +253,7 @@ class GMMPolicyHead:
     def compute_mode_uncertainty(self, gmm: GMMOutput) -> float:
         """
         Compute overall uncertainty from GMM parameters
-        
+
         Higher uncertainty when:
         - Mixture weights are uniform (ambiguous)
         - Individual variances are high
@@ -272,13 +272,13 @@ class GMMPolicyHead:
 class ClosedLoopDirectController:
     """
     A+ Enhancement: Closed-Loop Direct Torque Control
-    
+
     This controller eliminates the VehicleModel middleman by:
     1. Using direct torque commands from the neural network
     2. Learning the vehicle-specific torque->response mapping online
     3. Compensating for lag and deadzone in real-time
     4. Providing feedforward compensation for known disturbances
-    
+
     This achieves the "Perfect Grade" requirement for Direct Control Prediction.
     """
 
@@ -321,13 +321,13 @@ class ClosedLoopDirectController:
                               dt: float = 0.05) -> tuple[float, dict[str, float]]:
         """
         Compute direct torque command using closed-loop control
-        
+
         Args:
             desired_lat_accel: Desired lateral acceleration from planner (m/s^2)
             v_ego: Vehicle speed (m/s)
             actual_lat_accel: Measured lateral acceleration (for feedback)
             dt: Time step
-            
+
         Returns:
             (torque_command, debug_info)
         """
@@ -402,11 +402,11 @@ class ClosedLoopDirectController:
     def _inverse_vehicle_model(self, desired_lat_accel: float, v_ego: float) -> float:
         """
         Inverse of vehicle response model: compute torque needed for desired acceleration
-        
+
         Args:
             desired_lat_accel: Desired lateral acceleration
             v_ego: Vehicle speed
-            
+
         Returns:
             Torque command
         """
@@ -429,7 +429,7 @@ class ClosedLoopDirectController:
                            tire_friction: float = 1.0):
         """
         Update feedforward compensation terms
-        
+
         Args:
             road_grade: Road grade (radians, positive = uphill)
             crosswind: Crosswind force estimate (N)
@@ -457,7 +457,7 @@ class E2ETorquePredictor:
     - torque_drive: Direct drive torque/acceleration (Nm for torque, m/s^2 for accel)
     - uncertainty: Standard deviation of the prediction
     - gmm_output: Gaussian Mixture Model for multi-modal planning
-    
+
     A+ Enhancements:
     - Integrated ClosedLoopDirectController for true direct torque control
     - Vehicle response model learning
@@ -504,12 +504,12 @@ class E2ETorquePredictor:
                           apply_bias: bool = True) -> E2ETorqueOutput:
         """
         Process GMM output for multi-modal torque prediction
-        
+
         Args:
             latent_features: Latent features from vision backbone
             context: Context for mode selection (lane availability, obstacles)
             apply_bias: Whether to apply bias correction
-            
+
         Returns:
             E2ETorqueOutput with GMM metadata
         """
@@ -556,7 +556,7 @@ class E2ETorquePredictor:
                      apply_bias: bool = True) -> list[E2ETorqueOutput]:
         """
         Get torque outputs for all GMM modes (for trajectory evaluation)
-        
+
         Returns:
             List of E2ETorqueOutput, one per mode
         """
@@ -596,7 +596,7 @@ class E2ETorquePredictor:
                                    torque_from_lateral_accel_fn=None) -> float:
         """
         Convert desired longitudinal acceleration to torque
-        
+
         This is a fallback for when direct torque prediction is not available
         """
         if torque_from_lateral_accel_fn is not None:
@@ -609,7 +609,7 @@ class E2ETorquePredictor:
                    dt: float = 0.05):
         """
         Online learning / residual adaptation
-        
+
         Update the bias by comparing neural prediction to estimated required torque.
         Uses exponential moving average with configurable time constant.
         """
@@ -626,7 +626,7 @@ class E2ETorquePredictor:
     def _estimate_required_torque(self, curvature: float, v_ego: float) -> Optional[float]:
         """
         Estimate the actual required torque based on observed vehicle response
-        
+
         This would ideally come from steering angle sensors and lateral acceleration
         """
         if curvature == 0.0 or v_ego == 0.0:
@@ -641,12 +641,12 @@ class E2ETorquePredictor:
                           apply_bias: bool = True) -> E2ETorqueOutput:
         """
         Process raw neural network output into usable torque command
-        
+
         Args:
             torque_output: Raw torque predictions from model [batch, time]
             uncertainty_output: Uncertainty/std dev predictions
             apply_bias: Whether to apply the learned bias correction
-            
+
         Returns:
             E2ETorqueOutput with processed torque and metadata
         """
@@ -713,16 +713,16 @@ class E2ETorquePredictor:
                                    dt: float = 0.05) -> tuple[float, dict[str, float]]:
         """
         A+ Enhancement: Compute direct torque using closed-loop controller
-        
+
         This bypasses the VehicleModel and directly computes torque commands
         using learned vehicle response and adaptive control.
-        
+
         Args:
             desired_lat_accel: Desired lateral acceleration from planner
             v_ego: Vehicle speed
             actual_lat_accel: Measured lateral acceleration (from IMU)
             dt: Time step
-            
+
         Returns:
             (torque_command, debug_info)
         """
@@ -740,7 +740,7 @@ class E2ETorquePredictor:
                                    tire_friction: float = 1.0):
         """
         Update vehicle compensation parameters for closed-loop controller
-        
+
         Args:
             road_grade: Road grade estimate
             crosswind: Crosswind force estimate
@@ -754,7 +754,7 @@ class E2ETorquePredictor:
     def get_vehicle_learning_status(self) -> dict[str, float]:
         """
         Get status of vehicle response learning
-        
+
         Returns:
             Dict with learning status information
         """
@@ -773,7 +773,7 @@ class E2ETorquePredictor:
 class E2ETorqueSafety:
     """
     Safety monitor for E2E torque outputs
-    
+
     Provides hardware-level safety checking of neural network torque outputs
     """
 
@@ -795,7 +795,7 @@ class E2ETorqueSafety:
                        v_ego: float = 0.0) -> tuple[bool, str]:
         """
         Validate that torque is within safe bounds
-        
+
         Returns:
             (is_valid, reason)
         """

@@ -2,13 +2,13 @@
 Multi-Modal Latent Fusion Module for sunnypilot
 ===============================================
 
-This module implements fusion of radar and map data directly into the 
-Transformer's latent space, enabling the E2E model to "attend" to 
+This module implements fusion of radar and map data directly into the
+Transformer's latent space, enabling the E2E model to "attend" to
 sensor data beyond just vision.
 
 Key Features:
 - Radar state latent injection
-- OpenStreetMap data latent injection  
+- OpenStreetMap data latent injection
 - Cross-Attention Fusion (vision queries radar/map)
 - Learned feature fusion via cross-attention
 - Temporal attention over sensor modalities
@@ -92,14 +92,14 @@ class CrossAttentionFusion:
                 map_confidence: float = 0.5) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Cross-attention forward pass
-        
+
         Args:
             vision_latent: [batch, seq_len, vision_dim]
             radar_features: [batch, radar_dim] or None
             map_features: [batch, map_dim] or None
             radar_confidence: Confidence in radar data [0, 1]
             map_confidence: Confidence in map data [0, 1]
-            
+
         Returns:
             (fused_latent, radar_attention, map_attention)
         """
@@ -184,7 +184,7 @@ class CrossAttentionFusion:
                                    map_features: Optional[np.ndarray]) -> tuple[float, float]:
         """
         Compute dynamic confidence weights based on modality quality
-        
+
         Returns:
             (radar_confidence, map_confidence)
         """
@@ -230,10 +230,10 @@ class CrossAttentionFusion:
 class MultiModalLatentFusion:
     """
     Multi-Modal Latent Fusion
-    
+
     Integrates radar and map data directly into the Transformer's latent space
     using cross-attention mechanisms.
-    
+
     This allows the E2E model to:
     - "See" radar-detected objects even when occluded in camera
     - "Know" about upcoming speed limits and turns from map data
@@ -338,7 +338,7 @@ class MultiModalLatentFusion:
              map_state: Optional[MapState] = None) -> FusionOutput:
         """
         Fuse multi-modal inputs into unified latent representation
-        
+
         Uses cross-attention to let vision features attend to radar and map features
         """
         batch_size = vision_latent.shape[0]
@@ -393,7 +393,7 @@ class MultiModalLatentFusion:
                           key: np.ndarray) -> np.ndarray:
         """
         Compute scaled dot-product attention
-        
+
         Simplified version for fusion weights
         """
         d_k = key.shape[-1]
@@ -412,8 +412,8 @@ class MultiModalLatentFusion:
 class LatentInjectionBuffer:
     """
     Maintains temporal history of latent injections for attention mechanism
-    
-    Allows the model to attend to radar/map observations from multiple 
+
+    Allows the model to attend to radar/map observations from multiple
     timesteps in the past
     """
 

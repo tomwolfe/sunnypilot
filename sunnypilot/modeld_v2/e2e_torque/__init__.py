@@ -13,34 +13,30 @@ This module provides Pure E2E Torque Prediction, integrating:
 These six A+ enhancements work together to provide world-class E2E driving.
 """
 
+import numpy as np
+
 from openpilot.sunnypilot.modeld_v2.e2e_torque.e2e_torque_predictor import (
     E2ETorquePredictor,
     E2ETorqueOutput,
     E2ETorqueSafety,
     GMMPolicyHead,
-    GMMOutput
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.multimodal_latent_fusion import (
     MultiModalLatentFusion,
-    RadarState,
-    MapState,
     FusionOutput,
     LatentInjectionBuffer,
-    CrossAttentionFusion
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.world_model import (
     WorldModel,
     WorldState,
-    TrajectoryPrediction,
     SimulationResult,
-    ImaginationBuffer,
     MPPIController,
     MPPIResult,
     CostFunction,
     ExperienceReplayBuffer,
-    DynaLearningModule
+    DynaLearningModule,
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.dynamic_delay import (
@@ -51,43 +47,30 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.dynamic_delay import (
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.uncertainty_estimation import (
     UncertaintyOutput,
-    MCDropoutEstimator,
-    LaplaceApproximationEstimator,
-    EnsembleUncertaintyEstimator,
     UncertaintyAwareController
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.qcom_optimization import (
     QCOMHardwareOptimizer,
-    QCOMMemoryPool,
-    ZeroCopyCameraBuffer,
-    QCOMImageTexture,
-    TransformerInputOptimizer
 )
 
 # Recommendation #1: MCTS Planning
 from openpilot.sunnypilot.modeld_v2.e2e_torque.mcts_planner import (
     ContinuousMCTSPlanner,
     MCTSIntegrationHelper,
-    MCTSNode,
-    MCTSResult
 )
 
 # Recommendation #2: Quantization
 from openpilot.sunnypilot.modeld_v2.e2e_torque.quantization import (
     INT8Quantizer,
     ModelQuantizer,
-    QuantizedLayer,
     QuantizationConfig
 )
 
 # Recommendation #3: Temporal Memory
 from openpilot.sunnypilot.modeld_v2.e2e_torque.temporal_memory import (
     TemporalMemoryModule,
-    TransformerXLMemory,
-    StateSpaceMemory,
     MemoryState,
-    MemoryIntegrationHelper
 )
 
 # Recommendation #4: Neural Observer
@@ -97,7 +80,7 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.neural_observer import (
     VehicleDynamicsObserver,
     AdaptiveTorqueController,
     ObserverState,
-    NeuralObserverOutput
+    NeuralObserverOutput,
 )
 
 # Recommendation #5: Disengagement Analysis
@@ -108,14 +91,14 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.disengagement_analysis import (
     DisengagementReason,
     DisengagementIntegrationHelper,
     WorldModelSnapshot,
-    TrajectorySnapshot
+    TrajectorySnapshot,
 )
 
 
 class E2EController:
     """
     Unified E2E Controller - A+ Grade Implementation
-    
+
     Combines all six A+ enhancements into a single integrated controller:
     1. Pure E2E Torque Prediction with GMM
     2. Multi-Modal Latent Fusion (radar + map + OSM)
@@ -173,10 +156,10 @@ class E2EController:
 
     def update(self,
               model_outputs: dict,
-              radar_state: dict = None,
-              map_state: dict = None,
-              osm_data: dict = None,
-              vehicle_state: dict = None):
+              radar_state: dict | None = None,
+              map_state: dict | None = None,
+              osm_data: dict | None = None,
+              vehicle_state: dict | None = None):
         """
         Update all components with new data
 
@@ -210,7 +193,7 @@ class E2EController:
             self.qcom_optimizer.process_camera_to_transformer(camera_buffer, timestamp)
 
     def get_fused_latent(self, vision_latent: np.ndarray,
-                         osm_context: dict = None) -> FusionOutput:
+                         osm_context: dict | None = None) -> FusionOutput:
         """Get multi-modal fused latent representation with OSM bias"""
         if not self.enable_fusion or not self.fusion:
             return FusionOutput(fused_latent=vision_latent)
@@ -228,7 +211,7 @@ class E2EController:
 
     def predict_torque(self,
                        torque_output: np.ndarray,
-                       uncertainty_output: np.ndarray = None,
+                       uncertainty_output: np.ndarray | None = None,
                        personality_mode: str = 'standard') -> E2ETorqueOutput:
         """Predict torque from model outputs with personality conditioning"""
         if not self.enable_torque or not self.torque_predictor:
@@ -258,7 +241,7 @@ class E2EController:
 
     def run_mppi_optimization(self,
                              current_state: WorldState,
-                             context: dict = None) -> MPPIResult:
+                             context: dict | None = None) -> MPPIResult:
         """Run MPPI closed-loop imagination optimization"""
         if not self.enable_world_model or not self.world_model:
             raise RuntimeError("World model is not enabled")

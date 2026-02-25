@@ -34,10 +34,10 @@ class QCOMBufferConfig:
 class QCOMMemoryPool:
     """
     Memory Pool for QCOM TICI
-    
+
     Pre-allocates memory buffers to avoid runtime allocation overhead.
     Uses ION memory for zero-copy DMA transfers from ISP.
-    
+
     Benefits:
     - Eliminates malloc/free during inference
     - Reduces memory fragmentation
@@ -68,7 +68,7 @@ class QCOMMemoryPool:
     def _allocate_buffer(self, size: int) -> Optional[np.ndarray]:
         """
         Allocate buffer using optimal memory backend
-        
+
         Tries:
         1. ION memory (zero-copy DMA)
         2. Ashmem (shared memory)
@@ -90,7 +90,7 @@ class QCOMMemoryPool:
     def _allocate_ion_memory(self, size: int) -> Optional[np.ndarray]:
         """
         Allocate ION memory for zero-copy DMA
-        
+
         ION is Android's memory allocator that supports hardware buffers.
         This enables zero-copy from camera ISP to neural network.
         """
@@ -116,10 +116,10 @@ class QCOMMemoryPool:
     def acquire(self, size: int) -> Optional[np.ndarray]:
         """
         Acquire buffer from pool
-        
+
         Args:
             size: Required buffer size in bytes
-            
+
         Returns:
             Buffer or None if unavailable
         """
@@ -147,7 +147,7 @@ class QCOMMemoryPool:
     def release(self, buffer: np.ndarray):
         """
         Release buffer back to pool
-        
+
         Args:
             buffer: Buffer to release
         """
@@ -179,10 +179,10 @@ class QCOMMemoryPool:
 class ZeroCopyCameraBuffer:
     """
     Zero-Copy Camera Input Buffer
-    
+
     Enables direct transfer from camera ISP to neural network input
     without intermediate copies.
-    
+
     Uses:
     - DMA-BUF file descriptors
     - QCOM Gralloc buffers
@@ -218,7 +218,7 @@ class ZeroCopyCameraBuffer:
     def _allocate_camera_buffer(self) -> Optional[np.ndarray]:
         """
         Allocate camera buffer with optimal layout
-        
+
         Uses QCOM-specific buffer formats:
         - NV12 for YUV
         - RGB888 for RGB
@@ -271,10 +271,10 @@ class ZeroCopyCameraBuffer:
 class QCOMImageTexture:
     """
     QCOM IMAGE Texture for GPU-Accelerated Inference
-    
+
     Uses QCOM's IMAGE extension for zero-copy texture access
     from OpenCL/Vulkan shaders.
-    
+
     Benefits:
     - Direct ISP to texture upload
     - No CPU-GPU transfer overhead
@@ -320,9 +320,9 @@ class QCOMImageTexture:
     def upload_from_camera(self, camera_buffer: np.ndarray) -> bool:
         """
         Upload camera buffer to texture
-        
+
         Uses zero-copy path when possible
-        
+
         Returns:
             True if successful
         """
@@ -348,12 +348,12 @@ class QCOMImageTexture:
 class TransformerInputOptimizer:
     """
     Transformer Input Optimizer
-    
+
     Optimizes input pipeline for Transformer-based E2E model:
     1. Zero-copy from camera to feature extractor
     2. Preprocessing on GPU (via OpenCL)
     3. Direct feed to Transformer Q/K/V projections
-    
+
     Eliminates CPU-GPU transfer bottlenecks.
     """
 
@@ -391,11 +391,11 @@ class TransformerInputOptimizer:
                      timestamp: float) -> np.ndarray:
         """
         Process camera frame for Transformer input
-        
+
         Args:
             camera_buffer: Raw camera data
             timestamp: Frame timestamp
-            
+
         Returns:
             Processed feature vector
         """
@@ -447,7 +447,7 @@ class TransformerInputOptimizer:
     def get_optimized_query_tensor(self) -> np.ndarray:
         """
         Get optimized query tensor for Transformer
-        
+
         Uses zero-copy buffer when available
         """
         current_features = self._history_buffer[-1] if self._history_buffer else \
@@ -462,13 +462,13 @@ class TransformerInputOptimizer:
 class QCOMHardwareOptimizer:
     """
     Main QCOM Hardware Optimizer
-    
+
     Integrates all QCOM-specific optimizations:
     1. Memory pool management
     2. Zero-copy camera buffers
     3. GPU texture optimization
     4. OpenCL preprocessing
-    
+
     Usage:
         optimizer = QCOMHardwareOptimizer()
         features = optimizer.process_camera_to_transformer(camera_buffer)
@@ -497,13 +497,13 @@ class QCOMHardwareOptimizer:
                                      timestamp: float) -> np.ndarray:
         """
         Process camera buffer directly to Transformer input
-        
+
         Zero-copy path: Camera ISP -> GPU -> Transformer
-        
+
         Args:
             camera_buffer: Raw camera data
             timestamp: Frame timestamp
-            
+
         Returns:
             Feature vector for Transformer
         """

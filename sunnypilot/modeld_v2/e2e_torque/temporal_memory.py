@@ -28,7 +28,7 @@ import math
 class MemoryState:
     """
     Represents the current state of temporal memory
-    
+
     Contains both short-term working memory and long-term compressed memories
     """
     # Short-term working memory (recent frames)
@@ -72,10 +72,10 @@ class SSMOutput:
 class RelativePositionalEncoding:
     """
     Transformer-XL Style Relative Positional Encoding
-    
+
     Unlike absolute positional encoding, relative encoding allows the model
     to generalize to sequence lengths not seen during training.
-    
+
     This is critical for maintaining memory over variable time horizons
     (e.g., remembering a car that was occluded 2 seconds vs 10 seconds ago).
     """
@@ -83,7 +83,7 @@ class RelativePositionalEncoding:
     def __init__(self, dim: int, max_len: int = 512):
         """
         Initialize relative positional encoding
-        
+
         Args:
             dim: Dimension of hidden states
             max_len: Maximum sequence length to encode
@@ -112,10 +112,10 @@ class RelativePositionalEncoding:
     def encode(self, positions: np.ndarray) -> np.ndarray:
         """
         Get relative positional encoding for given positions
-        
+
         Args:
             positions: Array of positions [seq_len]
-        
+
         Returns:
             Positional encodings [seq_len, dim]
         """
@@ -124,11 +124,11 @@ class RelativePositionalEncoding:
     def get_relative_bias(self, query_pos: int, key_pos: int) -> np.ndarray:
         """
         Get relative position bias between query and key positions
-        
+
         Args:
             query_pos: Position of query
             key_pos: Position of key
-        
+
         Returns:
             Relative bias vector [dim]
         """
@@ -142,17 +142,17 @@ class RelativePositionalEncoding:
 class TransformerXLMemory:
     """
     Transformer-XL Style Segment-Level Recurrence Memory
-    
+
     Key innovations over standard Transformer:
     1. **Segment-level recurrence**: Reuses hidden states from previous segments
     2. **Relative positional encoding**: Generalizes to longer sequences
     3. **Gradient stopping**: Prevents backprop through entire history
-    
+
     This allows the model to:
     - Maintain context over hundreds of frames
     - Remember occluded objects ("that car went behind the truck")
     - Learn temporal patterns (e.g., car approaching intersection)
-    
+
     Application to sunnypilot:
     - Replaces simple FULL_HISTORY_BUFFER_LEN (511) with learned memory
     - Enables "object permanence" for occluded lead vehicles
@@ -168,7 +168,7 @@ class TransformerXLMemory:
                  dropout: float = 0.1):
         """
         Initialize Transformer-XL memory
-        
+
         Args:
             hidden_dim: Dimension of hidden states
             num_heads: Number of attention heads
@@ -207,11 +207,11 @@ class TransformerXLMemory:
                 use_memory: bool = True) -> TransformerXLOutput:
         """
         Forward pass with segment-level recurrence
-        
+
         Args:
             segment: Current segment [segment_len, hidden_dim]
             use_memory: Whether to use memory (False for first segment)
-        
+
         Returns:
             TransformerXLOutput with updated states
         """
@@ -304,7 +304,7 @@ class TransformerXLMemory:
     def _update_memory(self, output: np.ndarray):
         """
         Update memory buffer with new output
-        
+
         Uses FIFO strategy - oldest memories are pushed out
         """
         output_2d = output.reshape(-1, self.hidden_dim)
@@ -322,12 +322,12 @@ class TransformerXLMemory:
     def get_memory_attention(self, query: np.ndarray) -> np.ndarray:
         """
         Compute attention weights over memory for a query
-        
+
         Useful for visualization: "what is the model remembering?"
-        
+
         Args:
             query: Current query vector [hidden_dim]
-        
+
         Returns:
             Attention weights over memory [memory_len]
         """
@@ -349,15 +349,15 @@ class TransformerXLMemory:
 class StateSpaceMemory:
     """
     State Space Model (SSM) / Mamba-inspired Memory
-    
+
     Inspired by recent work on State Space Models (Mamba, S4, etc.)
-    
+
     Key advantages over Transformer:
     - O(n) complexity vs O(n²) for attention
     - Constant memory footprint regardless of sequence length
     - Natural handling of very long sequences (1000+ frames)
     - Continuous-time modeling - handles variable frame rates
-    
+
     This is ideal for:
     - Long-term occlusion tracking (car behind truck for 10+ seconds)
     - Low-compute environments (Comma 3X)
@@ -372,17 +372,17 @@ class StateSpaceMemory:
                  learnable_dt: bool = True):
         """
         Initialize State Space Model memory
-        
+
         The SSM is defined by:
         h'(t) = A * h(t) + B * x(t)
         y(t) = C * h(t)
-        
+
         Where:
         - h(t): Hidden state
         - x(t): Input
         - y(t): Output
         - A, B, C: State space matrices
-        
+
         Args:
             hidden_dim: Dimension of input/output
             state_dim: Dimension of internal state
@@ -417,15 +417,15 @@ class StateSpaceMemory:
     def forward(self, x: np.ndarray, dt: Optional[float] = None) -> SSMOutput:
         """
         Forward pass through SSM
-        
+
         Uses zero-order hold (ZOH) discretization:
         A_bar = exp(dt * A)
         B_bar = (exp(dt * A) - I) * A^{-1} * B
-        
+
         Args:
             x: Input vector [hidden_dim]
             dt: Time step (optional, uses learned dt if None)
-        
+
         Returns:
             SSMOutput with updated state and output
         """
@@ -464,7 +464,7 @@ class StateSpaceMemory:
     def _discretize(self, dt: np.ndarray):
         """
         Discretize continuous-time SSM matrices
-        
+
         Uses exact ZOH discretization for diagonal A
         """
         # A_bar = exp(dt * A)
@@ -485,11 +485,11 @@ class StateSpaceMemory:
     def multi_input_forward(self, inputs: np.ndarray, dts: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Process sequence of inputs
-        
+
         Args:
             inputs: Sequence of inputs [seq_len, hidden_dim]
             dts: Optional time steps [seq_len, state_dim]
-        
+
         Returns:
             Sequence of outputs [seq_len, hidden_dim]
         """
@@ -510,7 +510,7 @@ class StateSpaceMemory:
     def get_state_projection(self) -> np.ndarray:
         """
         Get projection of internal state to output space
-        
+
         Useful for visualization: "what does the SSM remember?"
         """
         return np.dot(self.C, self.state)
@@ -519,17 +519,17 @@ class StateSpaceMemory:
 class TemporalMemoryModule:
     """
     Unified Temporal Memory Module
-    
+
     Combines Transformer-XL and SSM approaches:
     - Transformer-XL for medium-term memory (128 frames, ~6 seconds)
     - SSM for long-term memory (1000+ frames, ~50 seconds)
-    
+
     Features:
     - Occluded object tracking
     - Adaptive memory compression
     - Memory-based attention for planning
     - Integration with existing vision pipeline
-    
+
     This replaces the simple FULL_HISTORY_BUFFER_LEN (511) with
     learned, content-addressable memory.
     """
@@ -543,7 +543,7 @@ class TemporalMemoryModule:
                  enable_occlusion_tracking: bool = True):
         """
         Initialize temporal memory module
-        
+
         Args:
             hidden_dim: Dimension of hidden states
             transformer_xl_enabled: Enable Transformer-XL memory
@@ -593,12 +593,12 @@ class TemporalMemoryModule:
                timestamp: float = 0.0) -> MemoryState:
         """
         Update temporal memory with new observations
-        
+
         Args:
             vision_features: Vision features from backbone [seq_len, hidden_dim]
             detected_objects: List of detected objects with tracking IDs
             timestamp: Current timestamp
-        
+
         Returns:
             MemoryState with updated memory
         """
@@ -647,10 +647,10 @@ class TemporalMemoryModule:
     def _update_occlusion_tracking(self, detected_objects: list[dict[str, Any]]):
         """
         Track occluded objects
-        
+
         Objects that were previously detected but are now missing
         are marked as "occluded" and maintained in memory.
-        
+
         Args:
             detected_objects: Currently detected objects
         """
@@ -688,11 +688,11 @@ class TemporalMemoryModule:
                                      use_attention: bool = True) -> np.ndarray:
         """
         Get memory-enhanced features for planning
-        
+
         Args:
             current_features: Current vision features
             use_attention: Whether to use memory attention
-        
+
         Returns:
             Memory-enhanced features
         """
@@ -722,11 +722,11 @@ class TemporalMemoryModule:
                          memory: np.ndarray) -> np.ndarray:
         """
         Attend to memory using current features as query
-        
+
         Args:
             query: Query features [seq_len, hidden_dim]
             memory: Memory features [memory_len, hidden_dim]
-        
+
         Returns:
             Attended memory features
         """
@@ -762,7 +762,7 @@ class TemporalMemoryModule:
 class MemoryIntegrationHelper:
     """
     Helper class for integrating temporal memory with existing modeld pipeline
-    
+
     Provides seamless integration with the FULL_HISTORY_BUFFER_LEN constant
     """
 
@@ -772,7 +772,7 @@ class MemoryIntegrationHelper:
                  memory_hidden_dim: int = 256):
         """
         Initialize memory integration
-        
+
         Args:
             enable_transformer_xl: Enable Transformer-XL
             enable_ssm: Enable SSM
@@ -790,12 +790,12 @@ class MemoryIntegrationHelper:
                      timestamp: float = 0.0) -> np.ndarray:
         """
         Process frame with temporal memory
-        
+
         Args:
             vision_features: Vision features from backbone
             detected_objects: Detected objects for occlusion tracking
             timestamp: Frame timestamp
-        
+
         Returns:
             Memory-enhanced features for planning
         """

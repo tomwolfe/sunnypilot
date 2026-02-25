@@ -8,7 +8,7 @@ and the existing sunnypilot modeld infrastructure.
 Usage:
 ------
 1. Pure E2E Torque: Use E2ETorquePredictor in latcontrol_neural.py
-2. Multi-Modal Fusion: Use MultiModalLatentFusion in modeld.py 
+2. Multi-Modal Fusion: Use MultiModalLatentFusion in modeld.py
 3. World Model: Use WorldModel for action validation in plannerd.py
 4. Dynamic Delay: Use DynamicDelayPredictor in drive_helpers.py
 

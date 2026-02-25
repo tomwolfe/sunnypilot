@@ -59,16 +59,12 @@ class NeuralObserverOutput:
     should_adapt: bool
 
 
-# Alias for consistent naming
-VehicleDynamicsObserver = NeuralObserver
-
-
 class VehicleDynamicsModel:
     """
     Physics-based vehicle steering dynamics model
-    
+
     Serves as the "world model" for the neural observer.
-    
+
     The model captures:
     - Steering rack kinematics
     - Tire-road interaction
@@ -83,7 +79,7 @@ class VehicleDynamicsModel:
                  initial_backlash: float = 0.02):
         """
         Initialize vehicle dynamics model
-        
+
         Args:
             initial_stiffness: Initial steering stiffness (Nm/rad)
             initial_damping: Initial steering damping (Nm/(rad/s))
@@ -114,15 +110,15 @@ class VehicleDynamicsModel:
              vehicle_speed: float) -> tuple[float, float, float]:
         """
         Simulate one step of steering dynamics
-        
+
         Second-order system with backlash:
         I * theta_ddot + B * theta_dot + K * theta = T_input - T_backlash
-        
+
         Args:
             input_torque: Commanded steering torque
             dt: Time step
             vehicle_speed: Current vehicle speed
-        
+
         Returns:
             (steering_angle, steering_rate, steering_torque)
         """
@@ -197,15 +193,15 @@ class VehicleDynamicsModel:
 class NeuralObserver:
     """
     Neural Network Observer for Vehicle Steering Dynamics
-    
+
     This observer uses a small neural network to estimate:
     1. Unmeasurable states (tire slip, backlash)
     2. Vehicle-specific parameters (stiffness, damping)
     3. Effective steering delay
-    
+
     The network is trained online using prediction errors,
     allowing it to adapt to different vehicles automatically.
-    
+
     Architecture:
     - Input: [steering_cmd, steering_angle, yaw_rate, speed, lateral_accel]
     - Hidden: 2 layers of 32 neurons with ReLU
@@ -220,7 +216,7 @@ class NeuralObserver:
                  adaptation_rate: float = 0.01):
         """
         Initialize neural observer
-        
+
         Args:
             input_dim: Dimension of input vector
             hidden_dim: Dimension of hidden layers
@@ -268,7 +264,7 @@ class NeuralObserver:
                 dt: float = 0.01) -> NeuralObserverOutput:
         """
         Run observer to estimate states and delay
-        
+
         Args:
             steering_cmd: Commanded steering (from model)
             steering_angle: Measured steering angle
@@ -276,7 +272,7 @@ class NeuralObserver:
             vehicle_speed: Vehicle speed
             lateral_accel: Lateral acceleration
             dt: Time step
-        
+
         Returns:
             NeuralObserverOutput with estimates
         """
@@ -343,10 +339,10 @@ class NeuralObserver:
     def _forward(self, x: np.ndarray) -> np.ndarray:
         """
         Forward pass through neural network
-        
+
         Args:
             x: Input vector [input_dim]
-        
+
         Returns:
             Output vector [output_dim]
         """
@@ -367,9 +363,9 @@ class NeuralObserver:
                dt: float = 0.01):
         """
         Update neural network using prediction error
-        
+
         Uses simple gradient descent on prediction error.
-        
+
         Args:
             predicted_delay: Predicted delay from observer
             actual_delay: Actual observed delay (from cross-correlation)
@@ -431,14 +427,14 @@ class NeuralObserver:
                           lateral_accel: float) -> ObserverState:
         """
         Get full observer state
-        
+
         Args:
             steering_cmd: Commanded steering
             steering_angle: Measured steering angle
             yaw_rate: Measured yaw rate
             vehicle_speed: Vehicle speed
             lateral_accel: Lateral acceleration
-        
+
         Returns:
             ObserverState with all estimates
         """
@@ -472,10 +468,14 @@ class NeuralObserver:
         self.observation_count = 0
 
 
+# Alias for consistent naming
+VehicleDynamicsObserver = NeuralObserver
+
+
 class NeuralDelayObserver:
     """
     Specialized Neural Observer for Steering Delay
-    
+
     This is a focused version of NeuralObserver that only estimates
     effective steering delay, optimized for integration with
     existing lagd_toggle.py infrastructure.
@@ -487,7 +487,7 @@ class NeuralDelayObserver:
                  base_delay: float = 0.15):
         """
         Initialize neural delay observer
-        
+
         Args:
             history_length: Length of input history
             learning_rate: Learning rate for adaptation
@@ -524,13 +524,13 @@ class NeuralDelayObserver:
                dt: float = 0.01) -> float:
         """
         Update delay estimate
-        
+
         Args:
             torque_cmd: Commanded steering torque
             yaw_rate: Measured yaw rate
             vehicle_speed: Vehicle speed
             dt: Time step
-        
+
         Returns:
             Estimated delay
         """
@@ -571,7 +571,7 @@ class NeuralDelayObserver:
     def _compute_cross_correlation_delay(self) -> float:
         """
         Compute delay using cross-correlation between torque and yaw
-        
+
         Returns:
             Estimated delay in seconds
         """
@@ -614,12 +614,12 @@ class NeuralDelayObserver:
 class AdaptiveTorqueController:
     """
     Adaptive Torque Controller with Neural Observer
-    
+
     Integrates neural observer into torque control loop:
     1. Observer estimates vehicle-specific parameters
     2. Controller adapts torque commands based on learned dynamics
     3. Delay compensation uses neural estimate instead of fixed alpha filter
-    
+
     This provides "perfect" E2E torque feel across different vehicles.
     """
 
@@ -629,7 +629,7 @@ class AdaptiveTorqueController:
                  adaptation_rate: float = 0.01):
         """
         Initialize adaptive torque controller
-        
+
         Args:
             cp: CarParams from vehicle
             enable_neural_observer: Enable neural observer
@@ -668,7 +668,7 @@ class AdaptiveTorqueController:
                       dt: float = 0.01) -> tuple[float, dict[str, Any]]:
         """
         Compute adaptive torque command
-        
+
         Args:
             desired_curvature: Desired path curvature
             actual_curvature: Actual path curvature
@@ -677,7 +677,7 @@ class AdaptiveTorqueController:
             yaw_rate: Measured yaw rate
             lateral_accel: Lateral acceleration
             dt: Time step
-        
+
         Returns:
             (torque_command, metadata)
         """
@@ -752,12 +752,12 @@ class AdaptiveTorqueController:
                                     dt: float) -> float:
         """
         Compute feedforward torque from vehicle model
-        
+
         Args:
             desired_curvature: Desired path curvature
             v_ego: Vehicle speed
             dt: Time step
-        
+
         Returns:
             Feedforward torque
         """
@@ -776,9 +776,9 @@ class AdaptiveTorqueController:
                                 dt: float):
         """
         Update feedforward gain based on tracking performance
-        
+
         Uses simple gradient descent on squared curvature error.
-        
+
         Args:
             curvature_error: Tracking error
             dt: Time step

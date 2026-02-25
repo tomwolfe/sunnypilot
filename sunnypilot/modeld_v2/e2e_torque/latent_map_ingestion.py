@@ -12,8 +12,8 @@ Key Features:
 - Map attention mechanism for reading map features
 - Integration with MultiModalLatentFusion
 
-Instead of get_current_speed_limit(), the model now has a "Map Insight" 
-input branch that allows the Vision model to "read" the map just as 
+Instead of get_current_speed_limit(), the model now has a "Map Insight"
+input branch that allows the Vision model to "read" the map just as
 a human looks at a GPS while looking at the road.
 """
 
@@ -50,8 +50,8 @@ class LatentMapState:
 class MapTileEncoder:
     """
     Encodes map tiles into latent feature vectors.
-    
-    This allows the E2E model to attend to map features just like 
+
+    This allows the E2E model to attend to map features just like
     it attends to vision features.
     """
 
@@ -171,11 +171,11 @@ class MapTileEncoder:
 class LatentMapIngestion:
     """
     End-to-End Latent Map Ingestion.
-    
+
     Instead of get_current_speed_limit(), the model now has a "Map Insight"
-    input branch that allows the Vision model to "read" the map, just as 
+    input branch that allows the Vision model to "read" the map, just as
     a human looks at a GPS while looking at the road.
-    
+
     The module:
     1. Fetches map tiles around the vehicle's position
     2. Encodes tiles into latent tensors
@@ -237,7 +237,7 @@ class LatentMapIngestion:
     def _fetch_tile_from_osm(self, x: int, y: int, zoom: int) -> Optional[dict]:
         """
         Fetch map tile from OpenStreetMap.
-        
+
         In production, this would use the OSM API or local tile server.
         For now, returns structured data based on coordinates.
         """
@@ -267,7 +267,7 @@ class LatentMapIngestion:
     def get_latent_map_state(self, vision_features: np.ndarray) -> LatentMapState:
         """
         Get the latent map state for neural network input.
-        
+
         This is the key method that enables E2E latent mapping:
         - Instead of returning speed_limit from database
         - Returns latent tensor that model can attend to
@@ -355,7 +355,7 @@ class LatentMapIngestion:
     def _compute_attention(self, vision_features: np.ndarray, map_features: np.ndarray) -> float:
         """
         Compute attention weight between vision and map features.
-        
+
         This allows the model to learn which map features are relevant
         given the current visual context.
         """
@@ -394,7 +394,7 @@ class LatentMapIngestion:
 class MapInsightAttention:
     """
     Attention mechanism for map insight.
-    
+
     Allows the E2E model to "attend" to specific parts of the map
     just like it attends to specific frames in video.
     """
@@ -411,11 +411,11 @@ class MapInsightAttention:
     def forward(self, vision_context: np.ndarray, map_features: np.ndarray) -> np.ndarray:
         """
         Compute attention-weighted map features.
-        
+
         Args:
             vision_context: Current vision model context (feature_dim,)
             map_features: Map features from LatentMapIngestion (feature_dim,)
-            
+
         Returns:
             Attention-weighted map features (feature_dim,)
         """

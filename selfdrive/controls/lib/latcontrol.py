@@ -15,7 +15,8 @@ class LatControl(ABC):
 
   @abstractmethod
   def update(self, active: bool, CS, VM, params, steer_limited_by_safety: bool, desired_curvature: float, calibrated_pose: Pose,
-             curvature_limited: bool, lat_delay: float, torque_neural: float = 0.0, lateral_uncertainty: float = 0.0, actual_curvature: float = 0.0):
+             curvature_limited: bool, lat_delay: float, torque_neural: float = 0.0, lateral_uncertainty: float = 0.0, actual_curvature: float = 0.0,
+             e2e_weight: float = 0.0, desire=None):
     pass
 
   def reset(self):

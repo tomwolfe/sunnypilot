@@ -34,10 +34,10 @@ class UncertaintyOutput:
 class MCDropoutEstimator:
     """
     Monte Carlo Dropout Uncertainty Estimator
-    
+
     Uses dropout at inference time to generate multiple stochastic forward passes.
     The variance across passes estimates epistemic (model) uncertainty.
-    
+
     Advantages:
     - No retraining required
     - Computationally efficient
@@ -72,11 +72,11 @@ class MCDropoutEstimator:
                             input_features: np.ndarray) -> UncertaintyOutput:
         """
         Estimate uncertainty using MC Dropout
-        
+
         Args:
             forward_pass_fn: Function that takes (features, dropout_mask) and returns output
             input_features: Input feature vector
-            
+
         Returns:
             UncertaintyOutput with epistemic and aleatoric components
         """
@@ -150,15 +150,15 @@ class MCDropoutEstimator:
 class LaplaceApproximationEstimator:
     """
     Laplace Approximation for Uncertainty Estimation
-    
+
     Approximates the posterior distribution of network weights using a Gaussian
     centered at the MAP estimate. The inverse Hessian provides uncertainty estimates.
-    
+
     Advantages:
     - More accurate than MC Dropout
     - Provides both mean and variance predictions
     - Well-founded in Bayesian statistics
-    
+
     Disadvantages:
     - Requires computing/approximating Hessian
     - More computationally expensive
@@ -186,7 +186,7 @@ class LaplaceApproximationEstimator:
                                targets: Optional[np.ndarray] = None):
         """
         Update diagonal Hessian approximation using Gauss-Newton
-        
+
         Args:
             features: Input features [batch, feature_dim]
             predictions: Model predictions [batch, output_dim]
@@ -211,11 +211,11 @@ class LaplaceApproximationEstimator:
                             weights: np.ndarray) -> UncertaintyOutput:
         """
         Estimate uncertainty using Laplace approximation
-        
+
         Args:
             features: Input features
             weights: Network weights (flattened)
-            
+
         Returns:
             UncertaintyOutput
         """
@@ -275,15 +275,15 @@ class LaplaceApproximationEstimator:
 class EnsembleUncertaintyEstimator:
     """
     Ensemble-based Uncertainty Estimator
-    
+
     Uses an ensemble of models trained with different initializations.
     Disagreement between ensemble members indicates uncertainty.
-    
+
     Advantages:
     - Most reliable uncertainty estimates
     - Captures multi-modal predictions
     - Robust to distributional shift
-    
+
     Disadvantages:
     - Requires training multiple models
     - Higher memory footprint
@@ -316,11 +316,11 @@ class EnsembleUncertaintyEstimator:
                             input_features: np.ndarray) -> UncertaintyOutput:
         """
         Estimate uncertainty using ensemble disagreement
-        
+
         Args:
             forward_pass_fns: List of forward pass functions (one per ensemble member)
             input_features: Input features
-            
+
         Returns:
             UncertaintyOutput
         """
@@ -401,7 +401,7 @@ class EnsembleUncertaintyEstimator:
 class UncertaintyAwareController:
     """
     Uncertainty-Aware E2E Controller
-    
+
     Integrates uncertainty estimation into the E2E control loop:
     1. Estimates uncertainty in real-time
     2. Adjusts camera sampling frequency based on uncertainty
@@ -418,7 +418,7 @@ class UncertaintyAwareController:
                  feature_dim: int = 256):
         """
         Initialize uncertainty-aware controller
-        
+
         Args:
             method: Uncertainty estimation method ('mc_dropout', 'laplace', 'ensemble')
             num_samples: Number of MC samples / ensemble members
@@ -461,11 +461,11 @@ class UncertaintyAwareController:
                 input_features: np.ndarray) -> UncertaintyOutput:
         """
         Estimate uncertainty and update controller state
-        
+
         Args:
             forward_pass_fn: Forward pass function
             input_features: Input features
-            
+
         Returns:
             UncertaintyOutput
         """

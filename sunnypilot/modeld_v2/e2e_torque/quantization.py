@@ -44,10 +44,10 @@ class LayerStats:
 class INT8Quantizer:
     """
     INT8 Quantizer with Calibrated Clipping
-    
+
     Reduces model precision from FP32/FP16 to INT8 while maintaining accuracy
     by learning optimal clipping ranges during calibration.
-    
+
     Usage:
         1. Run calibration with representative data
         2. Apply quantization to model weights/activations
@@ -73,7 +73,7 @@ class INT8Quantizer:
                       is_critical: bool = False):
         """
         Register a layer for quantization
-        
+
         Args:
             layer_name: Name of the layer
             precision: 'int8', 'fp16', or 'mixed'
@@ -96,7 +96,7 @@ class INT8Quantizer:
     def collect_stats(self, layer_name: str, activation: np.ndarray):
         """
         Collect activation statistics for calibration
-        
+
         Call this during forward pass with representative data
         """
         if layer_name not in self._calibration_data:
@@ -108,7 +108,7 @@ class INT8Quantizer:
     def calibrate(self):
         """
         Compute optimal clipping ranges from calibration data
-        
+
         Uses percentile-based clipping to minimize quantization error
         """
         for layer_name, data in self._calibration_data.items():
@@ -135,11 +135,11 @@ class INT8Quantizer:
     def quantize(self, layer_name: str, activation: np.ndarray) -> np.ndarray:
         """
         Quantize activation to INT8
-        
+
         Args:
             layer_name: Name of layer
             activation: FP32/FP16 activation tensor
-            
+
         Returns:
             Quantized INT8 activation
         """
@@ -164,11 +164,11 @@ class INT8Quantizer:
     def dequantize(self, layer_name: str, quantized: np.ndarray) -> np.ndarray:
         """
        Dequantize INT8 activation back to FP32
-        
+
         Args:
             layer_name: Name of layer
             quantized: INT8 quantized tensor
-            
+
         Returns:
             Dequantized FP32 activation
         """
@@ -189,11 +189,11 @@ class INT8Quantizer:
     def quantize_weights(self, weights: np.ndarray, layer_name: str) -> np.ndarray:
         """
         Quantize model weights to INT8
-        
+
         Args:
             weights: FP32 weight matrix
             layer_name: Name of layer
-            
+
         Returns:
             Quantized INT8 weights
         """
@@ -226,7 +226,7 @@ class INT8Quantizer:
 class ModelQuantizer:
     """
     High-level model quantization manager
-    
+
     Applies quantization to vision encoder and policy head with different
     precision levels for optimal speed/accuracy tradeoff.
     """
@@ -314,7 +314,7 @@ class ModelQuantizer:
     def run_calibration(self, model_forward_fn: Callable, num_batches: int = 100):
         """
         Run calibration with representative data
-        
+
         Args:
             model_forward_fn: Function that runs one forward pass and returns dict of layer->activation
             num_batches: Number of batches to collect
@@ -359,12 +359,12 @@ class ModelQuantizer:
                         quantize: bool = True) -> np.ndarray:
         """
         Quantized forward pass for a single layer
-        
+
         Args:
             layer_name: Name of the layer
             activation: Input activation
             quantize: Whether to quantize (False for inference)
-            
+
         Returns:
             Processed activation (quantized or dequantized based on precision)
         """
@@ -392,12 +392,12 @@ class ModelQuantizer:
                                    forward_fn: Callable) -> np.ndarray:
         """
         Run quantized inference on model
-        
+
         Args:
             model: Model to run
             input_data: Input tensor
             forward_fn: Function to run forward pass, returns dict of layer->activation
-            
+
         Returns:
             Model output
         """
@@ -406,7 +406,7 @@ class ModelQuantizer:
     def estimate_speedup(self) -> dict[str, float]:
         """
         Estimate speedup from quantization
-        
+
         Returns:
             Dict with estimated speedup factors
         """
@@ -439,7 +439,7 @@ class ModelQuantizer:
 class QuantizedLayer:
     """
     Wrapper for quantized layer operations
-    
+
     Provides quantized forward pass with FP16 fallback
     """
 
@@ -471,11 +471,11 @@ class QuantizedLayer:
     def forward(self, x: np.ndarray, use_quantized: bool = True) -> np.ndarray:
         """
         Forward pass with optional quantization
-        
+
         Args:
             x: Input activation
             use_quantized: Whether to use INT8 quantization
-            
+
         Returns:
             Output activation
         """

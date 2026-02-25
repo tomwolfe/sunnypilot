@@ -64,7 +64,7 @@ class WorldModelSnapshot:
 class DisengagementEvent:
     """
     Complete record of a disengagement event
-    
+
     Contains 30 seconds of before/after data for analysis
     """
     # Event metadata
@@ -106,13 +106,13 @@ class DisengagementEvent:
 class TelemetryRecorder:
     """
     Continuous telemetry recorder for disengagement analysis
-    
+
     Maintains rolling buffer of:
     - World Model snapshots (imagined trajectories)
     - Vehicle state
     - Control commands
     - Sensor data
-    
+
     When disengagement occurs, saves last 30 seconds for analysis.
     """
 
@@ -122,7 +122,7 @@ class TelemetryRecorder:
                  save_dir: str = "/tmp/sunnypilot/disengagements"):
         """
         Initialize telemetry recorder
-        
+
         Args:
             history_seconds: How much history to save on disengagement
             sample_rate_hz: Recording sample rate
@@ -151,7 +151,7 @@ class TelemetryRecorder:
                           world_model_snapshot: WorldModelSnapshot):
         """
         Record World Model snapshot
-        
+
         Args:
             world_model_snapshot: Current World Model state
         """
@@ -168,7 +168,7 @@ class TelemetryRecorder:
                             road_type: str = "unknown"):
         """
         Record vehicle state
-        
+
         Args:
             speed: Vehicle speed (m/s)
             steering_angle: Steering angle (rad)
@@ -197,7 +197,7 @@ class TelemetryRecorder:
                       blended_weight: float):
         """
         Record control commands and actuals
-        
+
         Args:
             torque_command: Commanded torque
             torque_actual: Actual torque (from sensors)
@@ -219,13 +219,13 @@ class TelemetryRecorder:
                              severity: float = 0.5) -> DisengagementEvent:
         """
         Capture disengagement event
-        
+
         Saves all buffered data and creates DisengagementEvent.
-        
+
         Args:
             reason: Reason for disengagement
             severity: Severity of disengagement (0-1)
-        
+
         Returns:
             DisengagementEvent with captured data
         """
@@ -278,11 +278,11 @@ class TelemetryRecorder:
                                        vehicle_state: dict[str, Any]) -> float:
         """
         Compute how much the human trajectory diverged from model trajectory
-        
+
         Args:
             world_model_history: History of World Model snapshots
             vehicle_state: Current vehicle state
-        
+
         Returns:
             Divergence metric (higher = more different)
         """
@@ -314,7 +314,7 @@ class TelemetryRecorder:
     def _analyze_disengagement(self, event: DisengagementEvent):
         """
         Analyze disengagement to determine root cause and suggested fix
-        
+
         Args:
             event: Disengagement event to analyze
         """
@@ -365,7 +365,7 @@ class TelemetryRecorder:
     def _save_event(self, event: DisengagementEvent):
         """
         Save disengagement event to disk
-        
+
         Args:
             event: Event to save
         """
@@ -437,10 +437,10 @@ class TelemetryRecorder:
     def get_recent_events(self, n: int = 10) -> list[dict[str, Any]]:
         """
         Get summary of recent disengagement events
-        
+
         Args:
             n: Number of events to return
-        
+
         Returns:
             List of event summaries
         """
@@ -471,7 +471,7 @@ class TelemetryRecorder:
 class DisengagementAnalyzer:
     """
     Analyzer for disengagement patterns and auto-tuning
-    
+
     Analyzes historical disengagement data to:
     1. Identify common failure modes
     2. Auto-tune blended_weight for E2E vs fallback
@@ -485,7 +485,7 @@ class DisengagementAnalyzer:
                  min_events_for_tuning: int = 10):
         """
         Initialize disengagement analyzer
-        
+
         Args:
             telemetry_recorder: TelemetryRecorder instance
             auto_tune_enabled: Enable automatic tuning
@@ -509,11 +509,11 @@ class DisengagementAnalyzer:
                             severity: float = 0.5) -> DisengagementEvent:
         """
         Record and analyze a disengagement event
-        
+
         Args:
             reason: Reason for disengagement
             severity: Severity (0-1)
-        
+
         Returns:
             DisengagementEvent
         """
@@ -532,7 +532,7 @@ class DisengagementAnalyzer:
     def _auto_tune(self):
         """
         Auto-tune blended_weight based on disengagement patterns
-        
+
         Analyzes recent events to determine optimal E2E vs fallback balance.
         """
         if not self.events:
@@ -589,7 +589,7 @@ class DisengagementAnalyzer:
     def get_analysis_report(self) -> dict[str, Any]:
         """
         Generate analysis report of all disengagements
-        
+
         Returns:
             Analysis report dictionary
         """
@@ -688,7 +688,7 @@ class DisengagementAnalyzer:
     def export_events(self, output_path: str):
         """
         Export all events to a file for offline analysis
-        
+
         Args:
             output_path: Path to save exported data
         """
@@ -720,7 +720,7 @@ class DisengagementAnalyzer:
 class DisengagementIntegrationHelper:
     """
     Helper class for integrating disengagement analysis with existing controls
-    
+
     Provides hooks for:
     - Detecting disengagement triggers
     - Recording telemetry automatically
@@ -733,7 +733,7 @@ class DisengagementIntegrationHelper:
                  save_dir: str = "/tmp/sunnypilot/disengagements"):
         """
         Initialize disengagement integration
-        
+
         Args:
             enable_recording: Enable telemetry recording
             enable_auto_tune: Enable automatic tuning
@@ -758,9 +758,9 @@ class DisengagementIntegrationHelper:
               control_data: dict[str, Any]):
         """
         Update telemetry with current data
-        
+
         Call this at each control loop iteration.
-        
+
         Args:
             world_model_snapshot: Current World Model state (optional)
             vehicle_state: Current vehicle state
@@ -798,11 +798,11 @@ class DisengagementIntegrationHelper:
                         severity: float = 0.5) -> DisengagementEvent:
         """
         Call when disengagement occurs
-        
+
         Args:
             reason: Reason string (planning, perception, control, comfort, user_request)
             severity: Severity (0-1)
-        
+
         Returns:
             DisengagementEvent
         """

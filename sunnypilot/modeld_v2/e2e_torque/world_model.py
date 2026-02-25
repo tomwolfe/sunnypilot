@@ -105,12 +105,12 @@ class ModelError:
 class DynaLearningModule:
     """
     Dyna-Style Learning Module
-    
+
     Implements the Dyna architecture where:
     1. The agent learns from real experiences (direct RL)
     2. The agent also learns from imagined experiences (model-based RL)
     3. When imagination deviates from reality, the model is updated
-    
+
     This enables the World Model to "learn from its mistakes" by:
     - Recording imagination-reality discrepancies
     - Using model errors to update dynamics model
@@ -141,7 +141,7 @@ class DynaLearningModule:
                                    actual_next: WorldState) -> ModelError:
         """
         Compute error between imagined and actual outcomes
-        
+
         Returns:
             ModelError with state and dynamics errors
         """
@@ -184,7 +184,7 @@ class DynaLearningModule:
                              imagined_experiences: list[Experience]):
         """
         Update dynamics model using both real and imagined experiences
-        
+
         Uses gradient-like update to minimize prediction error
         """
         if not real_experiences and not imagined_experiences:
@@ -221,7 +221,7 @@ class DynaLearningModule:
                                    actual_next: Optional[WorldState] = None) -> Experience:
         """
         Generate imagined experience from model rollouts
-        
+
         If actual_next is provided, computes the imagination error
         """
         reward = self._compute_imagined_reward(initial_state, predicted_next, action)
@@ -360,15 +360,15 @@ class CostFunction:
 class MPPIController:
     """
     Model Predictive Path Integral (MPPI) Controller
-    
+
     This is the "Closed-Loop Imagination" system that elevates sunnypilot to A+.
-    
+
     Instead of the model outputting a single path, MPPI:
     1. Generates N=1000 possible futures based on different torque/steering inputs
     2. Evaluates each trajectory using the cost function
     3. Computes weighted average of actions using softmax over costs
     4. Returns the optimal action that minimizes expected cost
-    
+
     Key advantages:
     - Naturally handles multi-modal decisions (lane change vs. stay)
     - Provides uncertainty estimates via action entropy
@@ -406,14 +406,14 @@ class MPPIController:
                 initial_action_sequence: Optional[np.ndarray] = None) -> MPPIResult:
         """
         Run MPPI optimization to find optimal action sequence
-        
+
         Args:
             initial_state: Current world state
             cost_function: Cost function to minimize
             world_model: World model for trajectory rollouts
             context: Additional context (map, radar, etc.)
             initial_action_sequence: Warm-start action sequence (from previous iteration)
-            
+
         Returns:
             MPPIResult with optimal action and metadata
         """
@@ -780,17 +780,17 @@ class WorldModel:
                              context: Optional[dict[str, Any]] = None) -> MPPIResult:
         """
         Run MPPI (Model Predictive Path Integral) optimization
-        
+
         This is the "Closed-Loop Imagination" that achieves A+ grade:
         - Generates 256-1000 possible futures
         - Evaluates each using the cost function
         - Returns optimal action weighted by trajectory quality
         - Provides uncertainty estimate via action entropy
-        
+
         Args:
             current_state: Current world state
             context: Additional context (map, radar, traffic)
-            
+
         Returns:
             MPPIResult with optimal action and metadata
         """
@@ -867,12 +867,12 @@ class WorldModel:
                  context: Optional[dict[str, Any]] = None) -> SimulationResult:
         """
         Run world model simulation
-        
+
         Args:
             current_state: Current vehicle/world state
             proposed_actions: List of candidate actions (e.g., turn left, go straight)
             context: Additional context (radar objects, map data, etc.)
-            
+
         Returns:
             SimulationResult with evaluated trajectories
         """
@@ -1078,14 +1078,14 @@ class WorldModel:
                       context: Optional[dict[str, Any]] = None) -> tuple[Optional[np.ndarray], dict[str, Any]]:
         """
         A+ Enhancement: Plan optimal action using MCTS
-        
+
         This uses Monte Carlo Tree Search to iteratively refine the best trajectory,
         rather than just selecting from 8 pre-defined rollouts.
-        
+
         Args:
             current_state: Current world state
             context: Additional context (map, radar, traffic)
-            
+
         Returns:
             (optimal_action, debug_info)
         """
@@ -1150,10 +1150,10 @@ class WorldModel:
                                        trajectory: Any) -> np.ndarray:
         """
         Extract action sequence from trajectory prediction
-        
+
         Args:
             trajectory: TrajectoryPrediction or MCTS trajectory
-            
+
         Returns:
             Action sequence
         """
