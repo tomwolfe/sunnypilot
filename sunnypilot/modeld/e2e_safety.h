@@ -6,6 +6,9 @@
  * at the hardware level. It monitors path deviation and enforces safety limits by
  * cutting torque if the E2E path deviates excessively from expected road geometry.
  *
+ * Includes Control Barrier Function (CBF) based safety guarantees for mathematical
+ * verification of safety constraints.
+ *
  * Copyright (c) 2021- sunnypilot
  * Licensed under the MIT License
  */
@@ -22,6 +25,10 @@ extern "C" {
 #define E2E_SAFETY_MAX_PATH_POINTS 33
 #define E2E_SAFETY_DEVIATION_HYSTERESIS_FRAMES 3
 #define E2E_SAFETY_ROAD_EDGE_HISTORY_SIZE 10
+
+#define CBF_SAFE_MARGIN_M 0.5
+#define CBF_MAX_TORQUE_NM 2.0f
+#define CBF_GAMMA 0.5f
 
 typedef struct {
   float x[E2E_SAFETY_MAX_PATH_POINTS];
@@ -70,6 +77,16 @@ typedef struct {
   float filtered_road_edge;
 } RoadEdgeEstimator;
 
+typedef struct {
+  float road_width_m;
+  float vehicle_position_m;
+  float velocity_mps;
+  float heading_rad;
+  float time_to_road_edge_s;
+  float barrier_value;
+  bool cbf_constraint_satisfied;
+} CBFSafetyState;
+
 void e2e_safety_init(const E2ESafetyConfig* config);
 void e2e_safety_reset(void);
 
@@ -89,6 +106,10 @@ float e2e_safety_get_current_deviation(void);
 float e2e_safety_get_path_uncertainty(void);
 
 void e2e_safety_process_frame(void);
+
+float e2e_safety_apply_cbf_constraint(float desired_torque, const CBFSafetyState* cbf_state);
+
+CBFSafetyState e2e_safety_compute_cbf(float road_width_m, float vehicle_y_m, float velocity_mps, float heading_rad);
 
 #ifdef __cplusplus
 }

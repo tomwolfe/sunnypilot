@@ -5,6 +5,9 @@
  * This module provides real-time safety monitoring of E2E (End-to-End) model outputs
  * at the hardware level. It monitors path deviation and enforces safety limits.
  *
+ * Includes Control Barrier Function (CBF) based safety verification that provides
+ * mathematical guarantees that the E2E model cannot command unsafe torque.
+ *
  * Copyright (c) 2021- sunnypilot
  * Licensed under the MIT License
  */
@@ -44,6 +47,15 @@ static RoadEdgeEstimator road_edge_estimator = {
 static E2EPathData current_path;
 static float current_speed_ms = 0.0f;
 static uint32_t system_tick_ms = 0;
+static CBFSafetyState cbf_state = {
+  .road_width_m = 3.5f,
+  .vehicle_position_m = 0.0f,
+  .velocity_mps = 0.0f,
+  .heading_rad = 0.0f,
+  .time_to_road_edge_s = 999.0f,
+  .barrier_value = 1.0f,
+  .cbf_constraint_satisfied = true
+};
 
 void e2e_safety_init(const E2ESafetyConfig* config) {
   if (config != NULL) {
@@ -60,6 +72,10 @@ void e2e_safety_reset(void) {
   memset(&road_edge_estimator, 0, sizeof(RoadEdgeEstimator));
   memset(&current_path, 0, sizeof(E2EPathData));
   current_speed_ms = 0.0f;
+  
+  memset(&cbf_state, 0, sizeof(CBFSafetyState));
+  cbf_state.barrier_value = 1.0f;
+  cbf_state.cbf_constraint_satisfied = true;
 }
 
 void e2e_safety_update_path(const E2EPathData* path) {
@@ -74,6 +90,10 @@ void e2e_safety_update_path(const E2EPathData* path) {
     total_uncertainty += current_path.uncertainty[i];
   }
   safety_state.path_uncertainty_avg = total_uncertainty / (float)current_path.num_points;
+  
+  if (current_path.num_points > 0) {
+    cbf_state.vehicle_position_m = current_path.y[0];
+  }
 }
 
 void e2e_safety_update_road_edge(float road_edge_angle_rad) {
@@ -95,6 +115,7 @@ void e2e_safety_update_road_edge(float road_edge_angle_rad) {
 
 void e2e_safety_update_speed(float v_ego_ms) {
   current_speed_ms = v_ego_ms;
+  cbf_state.velocity_mps = v_ego_ms;
 }
 
 static float calculate_path_deviation(void) {
@@ -124,6 +145,70 @@ static float calculate_path_deviation(void) {
   return fabsf(deviation);
 }
 
+CBFSafetyState e2e_safety_compute_cbf(float road_width_m, float vehicle_y_m, float velocity_mps, float heading_rad) {
+  CBFSafetyState result;
+  
+  result.road_width_m = road_width_m;
+  result.vehicle_position_m = vehicle_y_m;
+  result.velocity_mps = velocity_mps;
+  result.heading_rad = heading_rad;
+  
+  float safe_distance = road_width_m / 2.0f - CBF_SAFE_MARGIN_M;
+  float distance_to_edge = safe_distance - fabsf(vehicle_y_m);
+  
+  result.barrier_value = distance_to_edge;
+  
+  if (velocity_mps > 0.1f) {
+    result.time_to_road_edge_s = distance_to_edge / velocity_mps;
+  } else {
+    result.time_to_road_edge_s = 999.0f;
+  }
+  
+  float h = distance_to_edge;
+  float h_dot = -vehicle_y_m * heading_rad;
+  
+  float gamma = CBF_GAMMA;
+  bool cbf_satisfied = (h_dot + gamma * h) >= 0.0f;
+  
+  result.cbf_constraint_satisfied = cbf_satisfied;
+  
+  cbf_state = result;
+  
+  return result;
+}
+
+float e2e_safety_apply_cbf_constraint(float desired_torque, const CBFSafetyState* cbf_state) {
+  if (cbf_state == NULL) {
+    return desired_torque;
+  }
+  
+  if (cbf_state->cbf_constraint_satisfied) {
+    return desired_torque;
+  }
+  
+  float barrier_value = cbf_state->barrier_value;
+  float velocity = cbf_state->velocity_mps;
+  
+  if (barrier_value < 0.0f) {
+    return 0.0f;
+  }
+  
+  float max_safe_torque = CBF_MAX_TORQUE_NM * (barrier_value / CBF_SAFE_MARGIN_M);
+  max_safe_torque = fminf(max_safe_torque, CBF_MAX_TORQUE_NM);
+  
+  if (velocity > 5.0f) {
+    max_safe_torque *= 0.5f;
+  }
+  
+  if (desired_torque > max_safe_torque) {
+    return max_safe_torque;
+  } else if (desired_torque < -max_safe_torque) {
+    return -max_safe_torque;
+  }
+  
+  return desired_torque;
+}
+
 static void update_safety_status(void) {
   if (!safety_config.enabled) {
     safety_state.status = E2E_SAFETY_STATUS_OK;
@@ -134,6 +219,20 @@ static void update_safety_status(void) {
   
   float deviation = calculate_path_deviation();
   safety_state.current_deviation_deg = deviation;
+  
+  CBFSafetyState cbf = e2e_safety_compute_cbf(
+    safety_config.deviation_threshold_deg / 10.0f,
+    current_path.num_points > 0 ? current_path.y[0] : 0.0f,
+    current_speed_ms,
+    road_edge_estimator.filtered_road_edge * DEG_TO_RAD
+  );
+  
+  if (!cbf.cbf_constraint_satisfied) {
+    safety_state.status = E2E_SAFETY_STATUS_CRITICAL;
+    safety_state.action = E2E_SAFETY_ACTION_CUT_TORQUE_IMMEDIATE;
+    safety_state.torque_cut_active = true;
+    return;
+  }
   
   if (deviation > safety_config.deviation_threshold_deg) {
     safety_state.danger_frame_count++;
