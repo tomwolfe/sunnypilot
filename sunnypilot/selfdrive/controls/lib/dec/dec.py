@@ -23,10 +23,10 @@ SET_MODE_TIMEOUT = 15
 class PersonalityVector:
     """
     Personality Vector for Unified Policy Head.
-    
+
     Instead of switching between "Chill" and "Experimental" modes,
     the E2E model takes a personality vector as latent input.
-    
+
     Components:
     - aggressiveness: 0.0 (conservative) to 1.0 (aggressive)
     - comfort: 0.0 (sporty) to 1.0 (comfortable)
@@ -277,15 +277,15 @@ class VisionOnlyTrafficAuditor:
 class UnifiedPolicyHead:
     """
     Unified Policy Head with Personality Vector.
-    
+
     A+ Enhancement: Eliminates the "Mode Switcher" crutch.
-    
+
     Instead of switching between "Chill" and "Experimental" modes,
     this uses a single E2E model that takes a "Personality Vector" as input.
-    
+
     The user's selection (Aggressive/Relaxed/Standard) becomes a latent input
     to the policy network, not a post-processing gain or blender weight.
-    
+
     Architecture:
     1. Vision backbone extracts features
     2. Personality vector is concatenated with latent features
@@ -341,10 +341,10 @@ class UnifiedPolicyHead:
     def forward(self, vision_features: np.ndarray) -> np.ndarray:
         """
         Forward pass through unified policy head
-        
+
         Args:
             vision_features: Vision backbone features [batch, feature_dim]
-            
+
         Returns:
             Policy output [batch, output_dim] containing:
             - torque: Steering torque
@@ -352,7 +352,6 @@ class UnifiedPolicyHead:
             - confidence: Policy confidence
             - uncertainty: Prediction uncertainty
         """
-        batch_size = vision_features.shape[0]
         personality = self._current_personality.to_array()
 
         # Project personality to hidden space
@@ -383,7 +382,7 @@ class UnifiedPolicyHead:
     def interpolate_personality(self, target: PersonalityVector, alpha: float):
         """
         Smoothly interpolate personality over time
-        
+
         Args:
             target: Target personality vector
             alpha: Interpolation factor (0.0 = current, 1.0 = target)
@@ -414,13 +413,13 @@ class SafetyClipLevel(IntEnum):
 class UnifiedE2EPolicy:
   """
   Unified E2E Policy - No Blending.
-  
+
   Instead of blending between ACC, Blended, and Pure E2E modes, this policy
   uses a Single Unified Policy where:
   1. World Model generates the primary policy
   2. Safety is a hard-limit "clipping" layer, not a blender
   3. Classical ACC/MPC serves only as fallback when E2E confidence is too low
-  
+
   The system transitions gracefully:
   - E2E confident + safe → Execute E2E action
   - E2E not confident OR unsafe → Clip to safety limits, execute
@@ -461,7 +460,7 @@ class UnifiedE2EPolicy:
                          road_edge_clear: bool) -> SafetyClipLevel:
     """
     Compute safety clip level based on urgency and road conditions.
-    
+
     This is a HARD limit, not a blender weight. If clip level is set,
     the E2E output is mathematically clipped before execution.
     """
@@ -489,7 +488,7 @@ class UnifiedE2EPolicy:
                        clip_level: SafetyClipLevel) -> tuple[float, float]:
     """
     Apply hard-limit clipping to E2E outputs.
-    
+
     Unlike blending (which averages outputs), this applies mathematical
     constraints that CANNOT be exceeded.
     """
@@ -863,7 +862,7 @@ class DynamicExperimentalController:
       engaged_prob
     )
 
-    clip_level = self._unified_policy.compute_safety_clip(
+    self._unified_policy.compute_safety_clip(
       self._urgency,
       self._trajectory_valid,
       road_edge_clear
@@ -885,7 +884,7 @@ class DynamicExperimentalController:
       engaged_prob
     )
 
-    clip_level = self._unified_policy.compute_safety_clip(
+    self._unified_policy.compute_safety_clip(
       self._urgency,
       self._trajectory_valid,
       road_edge_clear

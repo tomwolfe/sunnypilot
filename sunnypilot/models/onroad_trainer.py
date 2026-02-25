@@ -58,11 +58,10 @@ def main():
 
     if sm.updated['modelV2']:
       # Capture model context every frame
-      history.add(sm['modelV2'], sm['carState'], sm['carControl'], time.time())
+      history.add(sm['modelV2'], sm['carState'], sm['carControl'], time.monotonic())
 
     if sm.updated['carState']:
       CS = sm['carState']
-      CC = sm['carControl']
 
       # Detect human override
       is_steer_override = CS.steerOverride
@@ -82,7 +81,7 @@ def main():
         # 2. Get Aligned Model Context (Pillar 4: Dynamic Latency Compensation)
         # We look back in history to find what the model was predicting
         # at the moment the human *actually* decided to override.
-        aligned_data = history.get_aligned_context(time.time(), system_latency)
+        aligned_data = history.get_aligned_context(time.monotonic(), system_latency)
 
         if aligned_data:
           model_msg = aligned_data["model"]

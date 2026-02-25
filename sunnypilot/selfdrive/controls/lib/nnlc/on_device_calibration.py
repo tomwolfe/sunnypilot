@@ -31,7 +31,7 @@ import time
 class VehicleCalibrationParams:
     """
     Vehicle-specific calibration parameters for NNLC
-    
+
     These parameters adjust the neural network's behavior to match
     the specific vehicle's mechanical characteristics.
     """
@@ -118,17 +118,17 @@ class CalibrationSample:
 class OnDeviceCalibrator:
     """
     A+ Enhancement: On-Device Calibration for NNLC Exact Matching
-    
+
     This system automatically calibrates vehicle-specific parameters during
     the first 50 miles of driving, achieving "Perfect Grade" E2E performance.
-    
+
     How it works:
     1. Collects driving data (torque commands, vehicle response, road curvature)
     2. Compares predicted response vs actual response
     3. Updates calibration parameters to minimize error
     4. Gradually increases confidence as more data is collected
     5. Adjusts NN weights based on learned parameters
-    
+
     Key innovations:
     - No manual calibration required
     - Continuously adapts during normal driving
@@ -162,7 +162,7 @@ class OnDeviceCalibrator:
                  enable_torque_calibration: bool = True):
         """
         Initialize on-device calibrator
-        
+
         Args:
             calibration_path: Path to save/load calibration data
             auto_save: Automatically save calibration updates
@@ -216,7 +216,7 @@ class OnDeviceCalibrator:
                odometer: float) -> bool:
         """
         Update calibrator with new driving data
-        
+
         Args:
             timestamp: Current timestamp
             v_ego: Vehicle speed (m/s)
@@ -226,7 +226,7 @@ class OnDeviceCalibrator:
             yaw_rate: Yaw rate (rad/s)
             curvature: Road curvature (1/m)
             odometer: Current odometer reading (miles)
-            
+
         Returns:
             True if sample was valid and used for calibration
         """
@@ -340,7 +340,7 @@ class OnDeviceCalibrator:
                                curvature: np.ndarray):
         """
         Learn vehicle-specific torque constant
-        
+
         Uses linear regression: torque = k * curvature + bias
         """
         # Simple least squares fit
@@ -386,7 +386,7 @@ class OnDeviceCalibrator:
                                 v_ego: np.ndarray):
         """
         Learn camera mounting parameters
-        
+
         Camera height and pitch affect perceived curvature.
         We learn a correction factor based on steering vs curvature relationship.
         """
@@ -460,12 +460,12 @@ class OnDeviceCalibrator:
                            curvature: float) -> float:
         """
         Apply calibration adjustments to torque command
-        
+
         Args:
             base_torque: Base torque from NN model
             v_ego: Vehicle speed
             curvature: Road curvature
-            
+
         Returns:
             Adjusted torque command
         """
@@ -517,7 +517,7 @@ class OnDeviceCalibrator:
         try:
             data = {
                 'version': 1,
-                'timestamp': time.time(),
+                'timestamp': time.monotonic(),
                 'params': self.params.to_dict(),
                 'statistics': {
                     'total_samples': self.total_samples,
@@ -604,7 +604,7 @@ def update_calibration(**kwargs) -> bool:
     """Convenience function to update calibration"""
     calibrator = get_calibrator()
     return calibrator.update(
-        timestamp=kwargs.get('timestamp', time.time()),
+        timestamp=kwargs.get('timestamp', time.monotonic()),
         v_ego=kwargs.get('v_ego', 0.0),
         steering_angle=kwargs.get('steering_angle', 0.0),
         torque_command=kwargs.get('torque_command', 0.0),

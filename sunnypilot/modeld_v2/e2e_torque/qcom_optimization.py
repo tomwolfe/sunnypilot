@@ -124,7 +124,7 @@ class QCOMMemoryPool:
             Buffer or None if unavailable
         """
         # Look for suitable buffer in free pool
-        for i, buffer in enumerate(self._free_buffers):
+        for _i, buffer in enumerate(self._free_buffers):
             if buffer.nbytes >= size:
                 self._free_buffers.remove(buffer)
                 buffer_id = self._next_id
@@ -208,7 +208,7 @@ class ZeroCopyCameraBuffer:
 
     def _initialize_buffers(self):
         """Initialize zero-copy camera buffers"""
-        for i in range(self.num_buffers):
+        for _i in range(self.num_buffers):
             buffer = self._allocate_camera_buffer()
             if buffer is not None:
                 self._buffers.append(buffer)
@@ -284,10 +284,10 @@ class QCOMImageTexture:
     def __init__(self,
                  width: int,
                  height: int,
-                 format: str = 'RGBA8'):
+                 image_format: str = 'RGBA8'):
         self.width = width
         self.height = height
-        self.format = format
+        self.format = image_format
 
         self._texture_id: Optional[int] = None
         self._cl_mem: Optional[Any] = None

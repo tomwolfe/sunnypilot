@@ -46,9 +46,9 @@ class NavigationE2EController:
                             current_speed_limit: float, road_edge_angle: float):
     """
     Update turn desire from navigation data.
-    
+
     Args:
-      nav_instruction: Navigation instruction type ('turn_left', 'turn_right', 
+      nav_instruction: Navigation instruction type ('turn_left', 'turn_right',
                        'lane_change_left', 'lane_change_right', 'continue', 'none')
       distance_to_maneuver: Distance to the maneuver in meters
       current_speed_limit: Current speed limit in m/s
@@ -76,10 +76,10 @@ class NavigationE2EController:
   def get_turn_desire(self, v_ego: float) -> int:
     """
     Get the navigation-based turn desire based on current conditions.
-    
+
     Args:
       v_ego: Current vehicle speed
-      
+
     Returns:
       Turn desire code (TURN_LEFT, TURN_RIGHT, LANE_CHANGE_LEFT, LANE_CHANGE_RIGHT, NONE)
     """

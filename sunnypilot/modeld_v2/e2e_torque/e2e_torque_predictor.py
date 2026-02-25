@@ -184,7 +184,6 @@ class GMMPolicyHead:
         Returns:
             GMMOutput with means, variances, and mixture weights
         """
-        batch_size = latent_features.shape[0]
 
         means = np.tanh(np.dot(latent_features, self._mean_proj.T))
 

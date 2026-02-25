@@ -91,10 +91,10 @@ class LagdToggle:
   def update_execution_time(self, execution_time_sec: float, frame_time: float) -> None:
     """
     A+ Enhancement: Record model execution time for adaptive latency compensation
-    
+
     As the device heats up and GPU throttling occurs, execution time increases.
     This method tracks execution time and updates the latency estimate accordingly.
-    
+
     Args:
       execution_time_sec: Time taken to execute the model (seconds)
       frame_time: Timestamp of the frame being processed
@@ -140,7 +140,7 @@ class LagdToggle:
   def get_execution_time_stats(self) -> dict:
     """
     Get execution time statistics for debugging/monitoring
-    
+
     Returns:
       Dict with execution time statistics
     """
@@ -169,10 +169,10 @@ class LagdToggle:
   def get_adaptive_latency_compensation(self) -> float:
     """
     A+ Enhancement: Get adaptive latency compensation value
-    
+
     This compensates for computational jitter by feeding back the
     measured execution time of the previous frame.
-    
+
     Returns:
       Latency compensation value in seconds
     """

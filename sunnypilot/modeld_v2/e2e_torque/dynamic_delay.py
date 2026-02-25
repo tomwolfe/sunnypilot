@@ -153,7 +153,6 @@ class DynamicDelayPredictor:
 
         response_ratio = np.std(lat_accel_array) / (np.std(steering_array) + 1e-6)
 
-        expected_ratio = 1.0
         if response_ratio < 0.5:
             self._current_surface = "ice"
             surface_delay = 0.15

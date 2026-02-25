@@ -89,8 +89,7 @@ class MCDropoutEstimator:
 
         outputs = np.array(outputs)
 
-        # Mean prediction
-        mean_output = np.mean(outputs, axis=0)
+        # Mean prediction (used implicitly in confidence calculation)
 
         # Epistemic uncertainty (variance across dropout samples)
         epistemic = np.var(outputs, axis=0)

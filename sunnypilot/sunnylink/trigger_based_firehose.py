@@ -138,10 +138,10 @@ class DisengagementEvent:
 class TriggerBasedFirehose:
     """
     A+ Enhancement: Trigger-Based Learning for Firehose Mode
-    
+
     This system automatically detects and tags disengagement events
     during E2E maneuvers, prioritizing them for training data uploads.
-    
+
     The goal is to create a self-healing loop:
     1. User disengages during E2E maneuver
     2. System auto-tags segment as "Failure Case"
@@ -207,7 +207,7 @@ class TriggerBasedFirehose:
                       road_type: str):
         """
         Record current context for potential disengagement tagging
-        
+
         This should be called every frame to maintain context history.
         """
         context = {
@@ -242,7 +242,7 @@ class TriggerBasedFirehose:
                             collision_risk: float) -> Optional[DisengagementReason]:
         """
         Detect disengagement and determine the reason
-        
+
         Args:
             timestamp: Current timestamp
             user_steer_override: True if user applied steering torque
@@ -252,7 +252,7 @@ class TriggerBasedFirehose:
             lane_deviation: Lateral deviation from lane (meters)
             excessive_accel: True if acceleration was excessive
             collision_risk: Collision risk probability
-            
+
         Returns:
             DisengagementReason if disengagement detected, None otherwise
         """
@@ -278,11 +278,11 @@ class TriggerBasedFirehose:
                                    timestamp: float) -> DisengagementEvent:
         """
         Create a disengagement event with full context
-        
+
         Args:
             reason: Reason for disengagement
             timestamp: Time of disengagement
-            
+
         Returns:
             DisengagementEvent with captured context
         """
@@ -360,7 +360,7 @@ class TriggerBasedFirehose:
     def _calculate_severity(self, context: dict[str, Any], reason: DisengagementReason) -> float:
         """
         Calculate severity of disengagement (0.0-1.0)
-        
+
         Higher severity for:
         - High speed
         - Abrupt maneuvers
@@ -431,7 +431,7 @@ class TriggerBasedFirehose:
     def _calculate_upload_priority(self, event: DisengagementEvent) -> float:
         """
         Calculate upload priority (0.0-1.0)
-        
+
         Higher priority for:
         - E2E failures
         - High severity
@@ -472,11 +472,11 @@ class TriggerBasedFirehose:
                              min_priority: float = 0.5) -> list[DisengagementEvent]:
         """
         Get events prioritized for upload
-        
+
         Args:
             max_events: Maximum number of events to return
             min_priority: Minimum priority threshold
-            
+
         Returns:
             List of events sorted by priority
         """
@@ -527,7 +527,7 @@ class TriggerBasedFirehose:
 
         data = {
             'version': 1,
-            'export_timestamp': time.time(),
+            'export_timestamp': time.monotonic(),
             'statistics': self.get_statistics(),
             'events': [e.to_dict() for e in events]
         }
@@ -558,11 +558,11 @@ def get_trigger_firehose() -> TriggerBasedFirehose:
 def record_disengagement(reason: DisengagementReason, timestamp: float) -> Optional[DisengagementEvent]:
     """
     Convenience function to record a disengagement
-    
+
     Args:
         reason: Reason for disengagement
         timestamp: Time of disengagement
-        
+
     Returns:
         Created DisengagementEvent
     """
@@ -574,7 +574,7 @@ def update_context(**kwargs):
     """Convenience function to update context"""
     firehose = get_trigger_firehose()
     firehose.update_context(
-        timestamp=kwargs.get('timestamp', time.time()),
+        timestamp=kwargs.get('timestamp', time.monotonic()),
         v_ego=kwargs.get('v_ego', 0.0),
         steering_angle=kwargs.get('steering_angle', 0.0),
         torque_command=kwargs.get('torque_command', 0.0),

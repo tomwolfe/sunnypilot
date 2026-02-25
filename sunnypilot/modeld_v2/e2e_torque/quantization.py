@@ -403,7 +403,7 @@ class ModelQuantizer:
         """
         return forward_fn(model, input_data, self)
 
-    def estimate_speedup(self) -> dict[str, float]:
+    def estimate_speedup(self) -> dict[str, float | str]:
         """
         Estimate speedup from quantization
 

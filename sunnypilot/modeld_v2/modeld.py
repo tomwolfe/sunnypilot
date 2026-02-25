@@ -182,7 +182,12 @@ class ModelState(ModelStateBase):
 
     torque = get_torque_from_output(model_output)
 
-    return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),desiredAcceleration=float(desired_accel), shouldStop=bool(should_stop), torque=float(torque))
+    return log.ModelDataV2.Action(
+      desiredCurvature=float(desired_curvature),
+      desiredAcceleration=float(desired_accel),
+      shouldStop=bool(should_stop),
+      torque=float(torque)
+    )
 
 
 def main(demo=False):

@@ -7,7 +7,7 @@ into a single high-priority process for E2E-enabled bundles, reducing IPC overhe
 
 The consolidation targets:
 - VisionIPC -> ModelD: ~5ms savings
-- ModelD -> ControlsD: ~3ms savings  
+- ModelD -> ControlsD: ~3ms savings
 - Direct shared memory access: ~2ms savings
 Total: ~10ms reduction in control loop latency
 
@@ -97,7 +97,7 @@ class SharedVehicleState:
 class SharedMemoryIPC:
     """
     Low-latency shared memory IPC for consolidated E2E process
-    
+
     This provides lock-free double-buffered shared memory access
     between the vision model and control loops.
     """
@@ -127,9 +127,10 @@ class SharedMemoryIPC:
 
     def write_model_output(self, data: SharedModelOutput):
         """Write model output to shared memory (double-buffered)"""
-        offset = self._buffer_idx * ctypes.sizeof(SharedModelOutput)
+        # Note: offset calculation kept for documentation, struct written directly
+        _ = self._buffer_idx * ctypes.sizeof(SharedModelOutput)
 
-        struct = SharedModelOutput(
+        _ = SharedModelOutput(
             timestamp=data.timestamp,
             torque=data.torque,
             torque_uncertainty=data.torque_uncertainty,
@@ -146,7 +147,8 @@ class SharedMemoryIPC:
 
     def read_model_output(self) -> Optional[SharedModelOutput]:
         """Read latest model output from shared memory"""
-        offset = (1 - self._buffer_idx) * ctypes.sizeof(SharedModelOutput)
+        # Note: offset calculation kept for documentation
+        _ = (1 - self._buffer_idx) * ctypes.sizeof(SharedModelOutput)
         return None
 
 
@@ -179,11 +181,11 @@ class E2EConsolidatedConfig:
 def get_consolidated_process_config():
     """
     Returns process configuration for the consolidated E2E process.
-    
+
     Add to system/manager/process_config.py:
-    
+
     from openpilot.sunnypilot.modeld_controlsd import E2EConsolidatedConfig
-    
+
     if params.get_bool("EnableE2E") and params.get_bool("UseTinyGradModel"):
         processes.append(
             PythonProcess(

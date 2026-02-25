@@ -188,7 +188,7 @@ class CrossAttentionFusion:
         Returns:
             (radar_confidence, map_confidence)
         """
-        vision_confidence = self._estimate_feature_quality(vision_features)
+        self._estimate_feature_quality(vision_features)
 
         radar_confidence = 0.5
         if radar_features is not None:
@@ -341,9 +341,6 @@ class MultiModalLatentFusion:
 
         Uses cross-attention to let vision features attend to radar and map features
         """
-        batch_size = vision_latent.shape[0]
-        seq_len = vision_latent.shape[1]
-        feature_dim = vision_latent.shape[2]
 
         modalities = []
         attention_weights = []

@@ -186,7 +186,7 @@ class TelemetryRecorder:
             'longitude': longitude,
             'latitude': latitude,
             'road_type': road_type,
-            'timestamp': self.timestamps[-1] if self.timestamps else time.time()
+            'timestamp': self.timestamps[-1] if self.timestamps else time.monotonic()
         })
 
     def record_control(self,
@@ -211,7 +211,7 @@ class TelemetryRecorder:
             'curvature_command': curvature_command,
             'curvature_actual': curvature_actual,
             'blended_weight': blended_weight,
-            'timestamp': self.timestamps[-1] if self.timestamps else time.time()
+            'timestamp': self.timestamps[-1] if self.timestamps else time.monotonic()
         })
 
     def capture_disengagement(self,
@@ -232,10 +232,10 @@ class TelemetryRecorder:
         self.event_count += 1
 
         # Generate event ID
-        event_id = f"disengage_{self.event_count}_{int(time.time())}"
+        event_id = f"disengage_{self.event_count}_{int(time.monotonic())}"
 
         # Get current timestamp
-        current_time = self.timestamps[-1] if self.timestamps else time.time()
+        current_time = self.timestamps[-1] if self.timestamps else time.monotonic()
 
         # Get vehicle state at disengagement
         vehicle_state = self.vehicle_state_buffer[-1] if self.vehicle_state_buffer else {}
@@ -555,7 +555,7 @@ class DisengagementAnalyzer:
 
         # Record tuning
         tuning_record = {
-            'timestamp': time.time(),
+            'timestamp': time.monotonic(),
             'old_weight': old_weight,
             'new_weight': self.current_blended_weight,
             'adjustment': avg_adjustment,
@@ -646,37 +646,37 @@ class DisengagementAnalyzer:
         # Planning issues
         if reason_counts.get('planning', 0) > len(self.events) * 0.3:
             recommendations.append(
-                "High rate of planning disengagements. Consider reducing E2E blend weight "
-                "or improving cost function."
+                ("High rate of planning disengagements. Consider reducing E2E blend weight "
+                 "or improving cost function.")
             )
 
         # Perception issues
         if reason_counts.get('perception', 0) > len(self.events) * 0.2:
             recommendations.append(
-                "Perception failures detected. Review radar/vision fusion and "
-                "occlusion handling in temporal memory."
+                ("Perception failures detected. Review radar/vision fusion and "
+                 "occlusion handling in temporal memory.")
             )
 
         # Control issues
         if reason_counts.get('control', 0) > len(self.events) * 0.2:
             recommendations.append(
-                "Control issues detected. Consider tuning neural observer or "
-                "adjusting torque rate limits."
+                ("Control issues detected. Consider tuning neural observer or "
+                 "adjusting torque rate limits.")
             )
 
         # Comfort issues
         if reason_counts.get('comfort', 0) > len(self.events) * 0.15:
             recommendations.append(
-                "Comfort complaints. Review cost function comfort weights and "
-                "consider smoother trajectory generation."
+                ("Comfort complaints. Review cost function comfort weights and "
+                 "consider smoother trajectory generation.")
             )
 
         # High speed disengagements
         high_speed_events = [e for e in self.events if e.vehicle_speed > 25.0]
         if len(high_speed_events) > len(self.events) * 0.3:
             recommendations.append(
-                "Many disengagements at high speed. Consider more conservative "
-                "planning at speeds > 25 m/s."
+                ("Many disengagements at high speed. Consider more conservative "
+                 "planning at speeds > 25 m/s.")
             )
 
         return recommendations

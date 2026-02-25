@@ -22,7 +22,7 @@ class FeatureMemory:
     """
     Transformer-based Feature Memory for E2E Path Planning.
     Replaces rolling history with an Attention mechanism over a latent buffer.
-    
+
     A+ Enhancement: Deep OSM Fusion
     - Map data is now a "spatial embedding" that biases the Transformer Attention
     - Road names and intersection geometry spike attention on velocity features
@@ -53,7 +53,7 @@ class FeatureMemory:
     def add(self, feature: np.ndarray, osm_embedding: Optional[OSMEmbedding] = None):
         """
         Adds a new feature to the memory.
-        
+
         Args:
             feature: Latent feature vector
             osm_embedding: Optional OSM spatial embedding for attention bias
@@ -68,7 +68,7 @@ class FeatureMemory:
     def add_with_osm(self, feature: np.ndarray, osm_data: dict[str, Any]):
         """
         Add feature with OSM data extracted from liveMapDataSP
-        
+
         Args:
             feature: Latent feature vector
             osm_data: Raw OSM data from liveMapDataSP
@@ -111,16 +111,16 @@ class FeatureMemory:
                                osm_context: Optional[dict[str, Any]] = None) -> np.ndarray:
         """
         Computes a contextual feature using Scaled Dot-Product Attention with OSM bias.
-        
+
         A+ Enhancement: OSM data biases the attention mechanism:
         - Stop signs spike attention on velocity/braking features
         - Intersections increase attention on lateral position features
         - Highway driving focuses on longitudinal velocity
-        
+
         Args:
             current_feature: Current latent feature
             osm_context: Optional OSM context for attention bias
-            
+
         Returns:
             Contextual feature with attention-weighted history
         """
@@ -157,10 +157,10 @@ class FeatureMemory:
     def _compute_osm_attention_bias(self, osm_context: Optional[dict[str, Any]]) -> Optional[np.ndarray]:
         """
         Compute attention bias from OSM context
-        
+
         This biases the Transformer to attend to relevant historical features
         based on the current map context.
-        
+
         Returns:
             Attention bias array of shape (N,) or None
         """

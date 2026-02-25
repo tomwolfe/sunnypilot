@@ -50,7 +50,6 @@ class MultiHypothesisPathVisualizer:
       return
 
     primary_x = model.position.x
-    primary_y = model.position.y
 
     if len(primary_x) == 0:
       return

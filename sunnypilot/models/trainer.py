@@ -101,7 +101,6 @@ class ShadowModeTrainer:
 
     # 1. Action Reconstruction
     # Convert human_action (dict) to target tensor
-    v_ego = human_action.get("v_ego", 0.0)
     # Estimate accel: gas is positive, brake is negative
     human_accel = (human_action.get("gas", 0.0) * 3.0) - (human_action.get("brake", 0.0) * 5.0)
 

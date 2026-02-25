@@ -367,7 +367,6 @@ class SafetyGate:
 
     def get_statistics(self) -> dict[str, Any]:
         """Get safety gate statistics"""
-        total_decisions = self._num_rejected + (1000 - len(self.safety_critic._intervention_history))
         return {
             'rejected_trajectories': self._num_rejected,
             'pivoted_to_alternative': self._num_pivoted,

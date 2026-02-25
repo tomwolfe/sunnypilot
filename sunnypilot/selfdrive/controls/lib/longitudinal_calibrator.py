@@ -167,7 +167,7 @@ class LongitudinalCalibrator:
   def update_personality_from_override(self, a_ego: float, accel_neural: float, gas_pressed: float, brake_pressed: float):
     """
     Update personality based on user driving behavior.
-    
+
     Args:
       a_ego: actual acceleration
       accel_neural: model predicted acceleration

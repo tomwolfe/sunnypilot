@@ -31,12 +31,6 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.multimodal_latent_fusion import (
 from openpilot.sunnypilot.modeld_v2.e2e_torque.world_model import (
     WorldModel,
     WorldState,
-    SimulationResult,
-    MPPIController,
-    MPPIResult,
-    CostFunction,
-    ExperienceReplayBuffer,
-    DynaLearningModule,
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.dynamic_delay import (
@@ -55,44 +49,44 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.qcom_optimization import (
 )
 
 # Recommendation #1: MCTS Planning
-from openpilot.sunnypilot.modeld_v2.e2e_torque.mcts_planner import (
-    ContinuousMCTSPlanner,
-    MCTSIntegrationHelper,
-)
+# from openpilot.sunnypilot.modeld_v2.e2e_torque.mcts_planner import (
+#     ContinuousMCTSPlanner,
+#     MCTSIntegrationHelper,
+# )
 
 # Recommendation #2: Quantization
-from openpilot.sunnypilot.modeld_v2.e2e_torque.quantization import (
-    INT8Quantizer,
-    ModelQuantizer,
-    QuantizationConfig
-)
+# from openpilot.sunnypilot.modeld_v2.e2e_torque.quantization import (
+#     INT8Quantizer,
+#     ModelQuantizer,
+#     QuantizationConfig
+# )
 
 # Recommendation #3: Temporal Memory
-from openpilot.sunnypilot.modeld_v2.e2e_torque.temporal_memory import (
-    TemporalMemoryModule,
-    MemoryState,
-)
+# from openpilot.sunnypilot.modeld_v2.e2e_torque.temporal_memory import (
+#     TemporalMemoryModule,
+#     MemoryState,
+# )
 
 # Recommendation #4: Neural Observer
-from openpilot.sunnypilot.modeld_v2.e2e_torque.neural_observer import (
-    NeuralObserver,
-    NeuralDelayObserver,
-    VehicleDynamicsObserver,
-    AdaptiveTorqueController,
-    ObserverState,
-    NeuralObserverOutput,
-)
+# from openpilot.sunnypilot.modeld_v2.e2e_torque.neural_observer import (
+#     NeuralObserver,
+#     NeuralDelayObserver,
+#     VehicleDynamicsObserver,
+#     AdaptiveTorqueController,
+#     ObserverState,
+#     NeuralObserverOutput,
+# )
 
 # Recommendation #5: Disengagement Analysis
-from openpilot.sunnypilot.modeld_v2.e2e_torque.disengagement_analysis import (
-    DisengagementAnalyzer,
-    DisengagementEvent,
-    TelemetryRecorder,
-    DisengagementReason,
-    DisengagementIntegrationHelper,
-    WorldModelSnapshot,
-    TrajectorySnapshot,
-)
+# from openpilot.sunnypilot.modeld_v2.e2e_torque.disengagement_analysis import (
+#     DisengagementAnalyzer,
+#     DisengagementEvent,
+#     TelemetryRecorder,
+#     DisengagementReason,
+#     DisengagementIntegrationHelper,
+#     WorldModelSnapshot,
+#     TrajectorySnapshot,
+# )
 
 
 class E2EController:
@@ -133,7 +127,7 @@ class E2EController:
         # Multi-modal fusion
         self.fusion = MultiModalLatentFusion() if enable_fusion else None
         self.latent_buffer = LatentInjectionBuffer() if enable_fusion else None
-        self.cross_attention = CrossAttentionFusion() if enable_fusion else None
+        # self.cross_attention = CrossAttentionFusion() if enable_fusion else None
 
         # World model with MPPI
         self.world_model = WorldModel(

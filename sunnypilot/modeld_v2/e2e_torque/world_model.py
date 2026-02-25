@@ -717,10 +717,10 @@ class WorldModel:
 
         lane_violation = abs(next_state.position[1]) - 3.5
         if lane_violation > 0:
-            return lane_violation * 10.0
+            return float(lane_violation * 10.0)
 
         lateral_accel = np.linalg.norm(next_state.acceleration[:2])
-        return lateral_accel * 0.5
+        return float(lateral_accel * 0.5)
 
     def _train_dynamics_model(self):
         """Train latent dynamics model from experience replay"""
@@ -737,7 +737,6 @@ class WorldModel:
             state_errors.append(error)
 
         if state_errors:
-            avg_error = np.mean(state_errors)
             learning_rate = 0.001
             self._latent_dynamics_model *= (1.0 - learning_rate)
 
@@ -882,7 +881,6 @@ class WorldModel:
             trajectory = self._rollout_trajectory(current_state, action, context)
             trajectories.append(trajectory)
 
-        collision_probs = [t.is_collision for t in trajectories]
         collision_prob = float(np.mean([float(t.is_collision) for t in trajectories]))
 
         rewards = self._evaluate_trajectories(trajectories, context)

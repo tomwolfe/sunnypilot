@@ -385,7 +385,7 @@ class NeuralObserver:
         # Forward pass (recompute for gradients)
         h1 = np.maximum(0, np.dot(x, self.W1) + self.b1)
         h2 = np.maximum(0, np.dot(h1, self.W2) + self.b2)
-        output = np.dot(h2, self.W3) + self.b3
+        _ = np.dot(h2, self.W3) + self.b3
 
         # Backward pass (simplified gradient)
         # Gradient of MSE loss w.r.t. output

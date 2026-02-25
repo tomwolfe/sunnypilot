@@ -45,7 +45,7 @@ class SaliencyMap:
             threshold_value = max_attn * threshold
             rows, cols = np.where(attention_2d > threshold_value)
 
-            self.focus_points = [(int(col), int(row)) for col, row in zip(cols, rows)]
+            self.focus_points = [(int(col), int(row)) for col, row in zip(cols, rows, strict=False)]
 
     def get_normalized(self) -> np.ndarray:
         """Get normalized saliency map [0, 1]"""
@@ -55,9 +55,9 @@ class SaliencyMap:
 class AttentionVisualizer:
   """
   E2E Explainability: Renders 'Attention Heatmaps' and 'Saliency Maps' on the road.
-  Uses longitudinal and lateral uncertainty (xStd, yStd) to highlight 
+  Uses longitudinal and lateral uncertainty (xStd, yStd) to highlight
   what the model is 'thinking' about.
-  
+
   XAI Features:
   - Uncertainty Heatmap: Shows model confidence across the path
   - Saliency Maps: Highlights which image regions the model focuses on

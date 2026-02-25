@@ -8,7 +8,7 @@ class NativeAttention:
   """
   Native Tinygrad implementation of Scaled Dot-Product Attention.
   This eliminates the CPU-GPU transfer latency of the Python/Numpy implementation.
-  
+
   GPU-Resident Features:
   - History keys/values stored as Tensors (on GPU)
   - Rolling buffer implemented in GPU memory
@@ -77,10 +77,10 @@ class NativeAttention:
     """
     Compute contextual feature using Scaled Dot-Product Attention.
     All computation stays on GPU.
-    
+
     Args:
       current_feature: Tensor of shape (feature_dim,) or (1, feature_dim)
-      
+
     Returns:
       Contextual feature with residual connection, shape (feature_dim,)
     """
@@ -112,11 +112,11 @@ class NativeAttention:
   def forward_multi_head(self, current_feature: Tensor, num_heads: int = 4) -> Tensor:
     """
     Multi-head attention for richer contextual representation.
-    
+
     Args:
       current_feature: Tensor of shape (feature_dim,)
       num_heads: Number of attention heads
-      
+
     Returns:
       Contextual feature with multi-head attention
     """
@@ -160,7 +160,7 @@ class NativeAttention:
 class GPUResidentImaginationBuffer:
   """
   GPU-resident buffer for imagined trajectories.
-  
+
   Instead of storing trajectories in CPU memory and transferring to GPU,
   this buffer keeps all trajectory data on the GPU for fast access
   during attention computations.
@@ -265,7 +265,7 @@ class AttentionRunner:
   def update_and_run(self, feature: Tensor) -> Tensor:
     """
     Add feature to history and compute contextual output.
-    
+
     This method maintains the history internally and should be called
     after each model inference to build temporal context.
     """
@@ -293,11 +293,11 @@ class AttentionRunner:
 def create_attention_runner(feature_dim: int = 1024, max_history: int = 50) -> AttentionRunner:
   """
   Factory function to create an AttentionRunner.
-  
+
   Args:
     feature_dim: Dimension of the latent features (default: 1024 from model)
     max_history: Maximum history buffer size (default: 50 = ~2.5s at 20Hz)
-    
+
   Returns:
     AttentionRunner instance
   """

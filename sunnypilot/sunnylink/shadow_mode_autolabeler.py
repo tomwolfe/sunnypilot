@@ -4,8 +4,8 @@ Shadow Mode Auto-Labeling for E2E Training
 
 This module implements on-device "Shadow Mode" evaluation for E2E training.
 
-When the E2E model's predicted torque differs significantly from the 
-human driver's torque, the system automatically flags those segments 
+When the E2E model's predicted torque differs significantly from the
+human driver's torque, the system automatically flags those segments
 for priority upload/training - enabling a closed-loop training pipeline.
 
 Key Features:
@@ -63,10 +63,10 @@ class ShadowModeSnapshot:
 class TorqueDivergenceDetector:
     """
     Detects when E2E model predictions diverge from human driver.
-    
+
     Uses multiple signals to determine if the divergence is meaningful:
     - Raw torque difference
-    - Directional disagreement  
+    - Directional disagreement
     - Temporal persistence
     - Context (curvature, speed, road type)
     """
@@ -95,7 +95,7 @@ class TorqueDivergenceDetector:
                           curvature: float = 0.0) -> tuple[DivergenceType, float]:
         """
         Compute divergence between E2E and human driver.
-        
+
         Returns:
             (divergence_type, divergence_score)
         """
@@ -130,7 +130,7 @@ class TorqueDivergenceDetector:
         self._divergence_history.append(final_score)
 
         if divergence_type != DivergenceType.NONE:
-            self._last_divergence_time = time.time()
+            self._last_divergence_time = time.monotonic()
 
         return divergence_type, final_score
 
@@ -146,7 +146,7 @@ class TorqueDivergenceDetector:
 class ShadowModeEvaluator:
     """
     Shadow Mode Evaluator for E2E Auto-Labeling.
-    
+
     Runs in parallel with the E2E controller, comparing model predictions
     against human driver input. Automatically flags segments for training.
     """
@@ -191,7 +191,7 @@ class ShadowModeEvaluator:
             return
 
         snapshot = ShadowModeSnapshot(
-            timestamp=time.time(),
+            timestamp=time.monotonic(),
             e2e_torque=e2e_torque,
             e2e_uncertainty=e2e_uncertainty,
             human_torque=human_torque,
@@ -234,7 +234,7 @@ class ShadowModeEvaluator:
                           score: float,
                           snapshot: ShadowModeSnapshot) -> None:
         """Handle detected divergence - start or extend segment."""
-        current_time = time.time()
+        current_time = time.monotonic()
 
         if self._current_segment is None:
             self._current_segment = LabeledSegment(
@@ -311,7 +311,7 @@ class ShadowModeEvaluator:
     def get_pending_uploads(self, max_count: int = 10) -> list[LabeledSegment]:
         """Get pending segments for upload."""
         segments = sorted(
-            list(self._segment_queue),
+            self._segment_queue,
             key=lambda s: s.priority,
             reverse=True
         )
@@ -358,7 +358,7 @@ class ShadowModeEvaluator:
 class FirehoseAutoLabeler:
     """
     High-level interface for Firehose Auto-Labeling.
-    
+
     Integrates Shadow Mode with the Firehose upload system for
     closed-loop E2E training.
     """
@@ -383,7 +383,7 @@ class FirehoseAutoLabeler:
               visibility: float = 1.0) -> None:
         """
         Update with new control data.
-        
+
         Should be called every control cycle (10Hz recommended).
         """
         self._shadow_mode.add_snapshot(
@@ -402,7 +402,7 @@ class FirehoseAutoLabeler:
 
     def _check_auto_upload(self) -> None:
         """Check if automatic upload should be triggered."""
-        current_time = time.time()
+        current_time = time.monotonic()
 
         if current_time - self._last_upload_time < self._upload_interval_sec:
             return

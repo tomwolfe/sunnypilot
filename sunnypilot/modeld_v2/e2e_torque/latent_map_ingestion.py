@@ -130,7 +130,7 @@ class MapTileEncoder:
         x = tile_data.get('x', 0)
         y = tile_data.get('y', 0)
         zoom = tile_data.get('zoom', 16)
-        timestamp = tile_data.get('timestamp', time.time())
+        timestamp = tile_data.get('timestamp', time.monotonic())
 
         road_segments = tile_data.get('road_segments', [])
         intersections = tile_data.get('intersections', [])
@@ -245,7 +245,7 @@ class LatentMapIngestion:
             'x': x,
             'y': y,
             'zoom': zoom,
-            'timestamp': time.time(),
+            'timestamp': time.monotonic(),
             'road_segments': [
                 {'road_type': 'primary', 'speed_limit': 50, 'lanes': 2, 'curvature': 0.001, 'oneway': False},
                 {'road_type': 'residential', 'speed_limit': 30, 'lanes': 1, 'curvature': 0.005, 'oneway': False},
@@ -284,7 +284,7 @@ class LatentMapIngestion:
                 intersections=np.zeros(10, dtype=np.float32),
                 traffic_signs=np.zeros(15, dtype=np.float32),
                 confidence=0.0,
-                timestamp=time.time()
+                timestamp=time.monotonic()
             )
 
         self.add_observation(center_tile)
@@ -342,8 +342,6 @@ class LatentMapIngestion:
     def _extract_traffic_signs(self, tile: MapTile) -> np.ndarray:
         """Extract traffic sign features."""
         signs = np.zeros(15, dtype=np.float32)
-
-        sign_types = {'stop': 0, 'speed_limit': 1, 'yield': 2, 'warning': 3}
 
         for segment in tile.road_segments:
             if 'speed_limit' in segment:

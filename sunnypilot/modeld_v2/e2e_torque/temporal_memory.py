@@ -215,8 +215,6 @@ class TransformerXLMemory:
         Returns:
             TransformerXLOutput with updated states
         """
-        batch_size = segment.shape[0] if segment.ndim > 2 else 1
-        seg_len = segment.shape[-2] if segment.ndim > 2 else len(segment)
 
         # Concatenate memory and current segment
         if use_memory and len(self.memory_buffer) > 0:
@@ -280,7 +278,6 @@ class TransformerXLMemory:
 
         for i in range(query_len):
             for j in range(key_len):
-                rel_pos = i - j
                 bias[i, j] = np.sum(self.pos_encoding.get_relative_bias(i, j))
 
         return bias[np.newaxis, :, :]  # Add head dimension
@@ -799,7 +796,7 @@ class MemoryIntegrationHelper:
         Returns:
             Memory-enhanced features for planning
         """
-        memory_state = self.memory_module.update(
+        self.memory_module.update(
             vision_features,
             detected_objects,
             timestamp

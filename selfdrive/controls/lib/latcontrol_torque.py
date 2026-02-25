@@ -60,7 +60,10 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, torque_neural=0.0, lateral_uncertainty=0.0, actual_curvature=0.0, e2e_weight=0.0, desire=None):
+  def update(self, active, CS, VM, params, steer_limited_by_safety,
+             desired_curvature, calibrated_pose, curvature_limited, lat_delay,
+             torque_neural=0.0, lateral_uncertainty=0.0, actual_curvature=0.0,
+             e2e_weight=0.0, desire=None):
     # Override torque params from extension
     if self.extension.update_override_torque_params(self.torque_params):
       self.update_limits()

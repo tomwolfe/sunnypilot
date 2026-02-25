@@ -22,7 +22,10 @@ class LatControlNeural(LatControl):
     # Hysteresis Gate: Filtered neural weight for smooth transitions
     self.neural_weight_filtered = FirstOrderFilter(1.0, 0.2, dt)
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, torque_neural=0.0, lateral_uncertainty=0.0, actual_curvature=0.0, e2e_weight=0.0, desire=log.Desire.none):
+  def update(self, active, CS, VM, params, steer_limited_by_safety,
+             desired_curvature, calibrated_pose, curvature_limited, lat_delay,
+             torque_neural=0.0, lateral_uncertainty=0.0, actual_curvature=0.0,
+             e2e_weight=0.0, desire=log.Desire.none):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
 
     if not active or desire == log.Desire.pauseLateral:
