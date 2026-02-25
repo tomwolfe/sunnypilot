@@ -1,12 +1,12 @@
 import numpy as np
 
 def index_function(idx, max_val=192, max_idx=32):
-  # Urban-Optimized Hybrid: Denser sampling at low indices for complex urban maneuvers, 
-  # transitioning to quadratic for long-range planning.
-  if idx < 8:
-    return (max_val * 0.05) * (idx / 8.0)
+  # Urban-Aggressive Hybrid: Even denser sampling at low indices (first 12 steps)
+  # for ultra-fine control in intersections and tight urban environments.
+  if idx < 12:
+    return (max_val * 0.10) * (idx / 12.0)
   else:
-    return (max_val * 0.05) + (max_val * 0.95) * (((idx - 8) / (max_idx - 8))**2)
+    return (max_val * 0.10) + (max_val * 0.90) * (((idx - 12) / (max_idx - 12))**2)
 
 class ModelConstants:
   # time and distance indices

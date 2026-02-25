@@ -34,7 +34,7 @@ class JerkLimitedNeuralFilter:
     self.jerk_limit_base = 2.0  # m/s^3
     self.braking_jerk_factor = 0.4  # more restrictive when braking
 
-  def update(self, a_target, e2e_trust):
+  def update(self, a_target, e2e_trust, calibration_confidence=1.0):
     if not self.initialized:
       self.a = a_target
       self.initialized = True
@@ -47,7 +47,8 @@ class JerkLimitedNeuralFilter:
     jerk_limit = self.jerk_limit_base * (self.braking_jerk_factor if is_braking else 1.0)
     
     # Scale jerk limit slightly with trust to allow more responsive E2E maneuvers
-    jerk_limit *= (0.8 + 0.4 * e2e_trust)
+    # but restrict it if calibration confidence is low (MAE is high)
+    jerk_limit *= (0.8 + 0.4 * e2e_trust * calibration_confidence)
 
     da = (a_target - self.a) / self.dt
     da_clipped = np.clip(da, -jerk_limit, jerk_limit)
@@ -122,8 +123,9 @@ class LongitudinalPlannerSP:
                           self.scc.vision.output_v_target if self.scc.vision.is_active else float('inf'))
         
         # Bayesian blending: favor the model if uncertainty is low or trust is high
-        # We use a dynamic blend factor that scales with our continuous trust in the neural model.
-        blend_factor = 0.5 + 0.4 * e2e_trust  # Scales from 0.5 to 0.9
+        # We use a dynamic blend factor that scales with our continuous trust in the neural model
+        # AND the calibration confidence.
+        blend_factor = 0.5 + 0.4 * e2e_trust * self.calibrator.confidence
         v_cruise_neural = v_model * blend_factor + v_heuristic * (1.0 - blend_factor)
         
         # Update the dominant heuristic source with our blended neural target
@@ -136,13 +138,12 @@ class LongitudinalPlannerSP:
     self.output_v_target, self.output_a_target = targets[self.source]
 
     # Apply Jerk-Limited Neural Filter for smoothness
-    self.output_a_target = self.a_filter.update(self.output_a_target, e2e_trust)
+    self.output_a_target = self.a_filter.update(self.output_a_target, e2e_trust, self.calibrator.confidence)
 
     return self.output_v_target, self.output_a_target
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
-    self.dec.update(sm)
     
     # Update Neural Calibration
     md = sm['modelV2']
@@ -150,6 +151,13 @@ class LongitudinalPlannerSP:
       # Calculate model's intended immediate acceleration
       a_neural = (md.velocity.x[1] - md.velocity.x[0]) / DT_MDL
       self.calibrator.update(a_neural, sm['carState'].aEgo, self.dec.mode() == 'blended')
+
+    # Update DEC with calibration data
+    self.dec._calibration_mae = self.calibrator.mae
+    self.dec._calibration_uncertainty_offset = self.calibrator.calibrated_uncertainty_offset
+    self.dec._calibration_confidence = self.calibrator.confidence
+    
+    self.dec.update(sm)
 
     self.e2e_alerts_helper.update(sm, self.events_sp)
 
@@ -215,5 +223,19 @@ class LongitudinalPlannerSP:
     e2eAlerts = longitudinalPlanSP.e2eAlerts
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
+
+    # Navigation Intent Fusion: 
+    # Translates map/vision curve control slowing into a 'Soft Intent' for the E2E model.
+    nav_intent = 0.0
+    v_ego = sm['carState'].vEgo
+    if self.scc.map.is_active or self.scc.vision.is_active:
+      v_target_min = min(self.scc.map.output_v_target if self.scc.map.is_active else float('inf'),
+                         self.scc.vision.output_v_target if self.scc.vision.is_active else float('inf'))
+      # We scale intent based on how much the system wants to slow down relative to current speed.
+      # 1.0 intent at 5m/s (18km/h) or greater delta
+      if v_target_min < v_ego:
+        nav_intent = np.clip((v_ego - v_target_min) / 5.0, 0.0, 1.0)
+    
+    longitudinalPlanSP.navigationIntent = float(nav_intent)
 
     pm.send('longitudinalPlanSP', plan_sp_send)

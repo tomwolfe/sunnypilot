@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 
 from cereal import messaging
 from opendbc.car import structs
-from numpy import interp
+import numpy as np
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
@@ -154,6 +154,7 @@ class DynamicExperimentalController:
     self._mode_manager = ModeTransitionManager()
     self._calibration_mae = 0.0
     self._calibration_uncertainty_offset = 0.0
+    self._calibration_confidence = 1.0
 
     # Smooth filters for stable decision making with faster response for critical scenarios
     self._lead_filter = SmoothKalmanFilter(
@@ -240,6 +241,9 @@ class DynamicExperimentalController:
 
   def calibration_uncertainty_offset(self) -> float:
     return self._calibration_uncertainty_offset
+
+  def calibration_confidence(self) -> float:
+    return self._calibration_confidence
 
   def blended_confidence(self) -> float:
     """Returns the continuous confidence in the 'blended' (E2E) mode."""
@@ -344,7 +348,7 @@ class DynamicExperimentalController:
     self._endpoint_x = endpoint_x
 
     # Get expected distance based on current speed using tuned constants
-    expected_distance = interp(self._v_ego_kph,
+    expected_distance = np.interp(self._v_ego_kph,
                                WMACConstants.SLOW_DOWN_BP,
                                WMACConstants.SLOW_DOWN_DIST)
     self._expected_distance = expected_distance
@@ -371,6 +375,22 @@ class DynamicExperimentalController:
     uncertainty_filtered = self._uncertainty_filter.get_value() or 0.0
     brake_prob_filtered = self._disengage_prob_filter.get_value() or 0.0
     future_brake_prob_filtered = self._disengage_prob_future_filter.get_value() or 0.0
+
+    # FORMAL SAFETY CHECK: Kinematic Feasibility
+    # Calculate the minimum distance required to stop comfortably (-2.5 m/s^2)
+    # and the distance required for a hard stop (-4.0 m/s^2)
+    v_ego = self._v_ego_kph / 3.6
+    dist_comfortable = (v_ego**2) / (2 * 2.5)
+    dist_hard = (v_ego**2) / (2 * 4.0)
+    
+    kinematic_urgency = 0.0
+    if self._trajectory_valid and v_ego > 3.0:
+      if self._endpoint_x < dist_hard:
+        # Model is planning a stop that is physically very aggressive
+        kinematic_urgency = 1.0
+      elif self._endpoint_x < dist_comfortable:
+        # Model is planning a stop that is firmer than comfortable
+        kinematic_urgency = np.interp(self._endpoint_x, [dist_hard, dist_comfortable], [1.0, 0.2])
 
     # Vision-Only Velocity Verification (Zero-Latency)
     # Compare model's predicted immediate velocity with carState vEgo to pre-act on slows
@@ -406,13 +426,14 @@ class DynamicExperimentalController:
 
     intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
                         future_brake_urgency, velocity_urgency, curve_urgency,
-                        hard_brake_urgency])
+                        hard_brake_urgency, kinematic_urgency])
     
-    # Dynamic weighting based on engaged_prob
-    # If the model is not confident about engagement, we penalize all its urgenices except for hard brake
+    # Dynamic weighting based on engaged_prob and CALIBRATION CONFIDENCE
+    # If the model is not confident or the calibrator has high MAE, we penalize model intents.
     weights = np.ones_like(intents)
-    weights[:6] *= (0.5 + 0.5 * engaged_prob)
+    weights[:6] *= (0.5 + 0.5 * engaged_prob) * self._calibration_confidence
     weights[6] = 1.0 # Always trust hard brake prediction for safety
+    weights[7] = 1.0 # Always trust kinematic safety check
 
     # Square-root of the sum of squares with dynamic weighting
     weighted_sum_sq = np.sum(np.square(intents) * weights)
@@ -426,6 +447,9 @@ class DynamicExperimentalController:
     # Update state with a dynamic threshold that scales with model confidence
     model_confidence = self._uncertainty_filter.get_confidence()
     dynamic_threshold = WMACConstants.SLOW_DOWN_PROB * (1.2 - 0.4 * model_confidence)
+    
+    # Penalty for low calibration confidence: increase required threshold for slow down
+    dynamic_threshold *= (1.5 - 0.5 * self._calibration_confidence)
     
     self._has_slow_down = urgency_filtered > dynamic_threshold
     self._urgency = urgency_filtered
@@ -506,11 +530,6 @@ class DynamicExperimentalController:
 
   def update(self, sm: messaging.SubMaster) -> None:
     self._read_params()
-
-    if sm.updated['longitudinalPlanSP']:
-      lp_sp = sm['longitudinalPlanSP']
-      self._calibration_mae = lp_sp.dec.mae
-      self._calibration_uncertainty_offset = lp_sp.dec.uncertaintyOffset
 
     self.set_mpc_fcw_crash_cnt()
 

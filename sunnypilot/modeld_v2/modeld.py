@@ -315,11 +315,25 @@ def main(demo=False):
     if desire >= 0 and desire < model.constants.DESIRE_LEN:
       vec_desire[desire] = 1
 
-    # Inject Personality into index 7 for model-aware longitudinal behavior
-    # Mapping: Relaxed (0) -> 0.0, Standard (1) -> 0.5, Aggressive (2) -> 1.0
+    # Inject Navigation and Personality Intent into index 7
+    # Personality Mapping: Relaxed (0) -> 0.0, Standard (1) -> 0.5, Aggressive (2) -> 1.0
+    # Navigation Mapping: We override personality with a high-intensity 'Slowing' signal
+    # when map-based slow-downs are detected.
     personality_map = {0: 0.0, 1: 0.5, 2: 1.0}
+    intent_val = personality_map.get(model.personality, 0.5)
+
+    if sm.updated['liveMapDataSP'] or sm.updated['liveDelay']: # Check dependencies
+       pass
+
+    # Read from LongitudinalPlanSP for zero-latency fusion
+    if sm.updated['longitudinalPlanSP']:
+      nav_intent = sm['longitudinalPlanSP'].navigationIntent
+      if nav_intent > 0.1:
+        # Use high intent value (0.7-1.0) to signal 'Navigation-Aware Slowing' to the E2E model
+        intent_val = 0.7 + 0.3 * nav_intent
+
     if model.constants.DESIRE_LEN > 7:
-      vec_desire[7] = personality_map.get(model.personality, 0.5)
+      vec_desire[7] = intent_val
 
     # tracked dropped frames
     vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)
