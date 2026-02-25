@@ -336,6 +336,21 @@ class DynamicExperimentalController:
     brake_prob_filtered = self._disengage_prob_filter.get_value() or 0.0
     future_brake_prob_filtered = self._disengage_prob_future_filter.get_value() or 0.0
 
+    # Vision-Only Velocity Verification (Zero-Latency)
+    # Compare model's predicted immediate velocity with carState vEgo to pre-act on slows
+    velocity_urgency = 0.0
+    if len(md.velocity.x) > 0:
+      v_ego_model = md.velocity.x[0]
+      v_diff = max(0.0, car_state.vEgo - v_ego_model)
+      velocity_urgency = min(1.0, v_diff / 4.0)  # Full urgency at 4m/s delta
+
+    # Curve Anticipation from Orientation Rate
+    curve_urgency = 0.0
+    if len(md.orientationRate.z) > 0:
+      yaw_rate_model = abs(md.orientationRate.z[0])
+      # High yaw rate predicted by model indicates a sharp maneuver/curve ahead
+      curve_urgency = min(1.0, max(0.0, yaw_rate_model - 0.05) * 2.0)
+
     # Uncertainty in trajectory (xStd) above 10m is highly indicative of a blocked path
     uncertainty_urgency = min(1.0, max(0.0, (uncertainty_filtered - 4.0) / 12.0))
     # Brake disengage probability - any prob over 0.1 indicates the car might want to stop soon
@@ -344,7 +359,8 @@ class DynamicExperimentalController:
     future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
     # Combine with current urgency - take max of the metrics
-    combined_urgency = max(urgency, uncertainty_urgency, brake_prob_urgency, future_brake_urgency)
+    combined_urgency = max(urgency, uncertainty_urgency, brake_prob_urgency,
+                           future_brake_urgency, velocity_urgency, curve_urgency)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(combined_urgency)

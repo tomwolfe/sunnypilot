@@ -19,6 +19,9 @@ class LatControlNeural(LatControl):
     self.bias = 0.0
     self.bias_filter = FirstOrderFilter(0.0, 30.0, dt)
 
+    # Hysteresis Gate: Filtered neural weight for smooth transitions
+    self.neural_weight_filtered = FirstOrderFilter(1.0, 0.2, dt)
+
   def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, torque_neural=0.0, lateral_uncertainty=0.0, actual_curvature=0.0):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
 
@@ -40,13 +43,23 @@ class LatControlNeural(LatControl):
       UNCERTAINTY_THRESHOLD = 0.5
 
       if torque_neural != 0.0:
+        # Hysteresis Gate: Determine neural authority using a sigmoid transition
+        # We shift the center of the sigmoid based on the current filtered weight
+        # to "lock in" the neural mode.
+        sigmoid_center = 0.35 if self.neural_weight_filtered.x > 0.5 else 0.25
+        sigmoid_steepness = 15.0
+        
+        # Neural weight target based on uncertainty
+        w_neural_target = 1.0 / (1.0 + np.exp(sigmoid_steepness * (lateral_uncertainty - sigmoid_center)))
+        w_neural_gated = self.neural_weight_filtered.update(w_neural_target)
+
         # Variational Bayesian Blending:
         # Instead of a hard gate, we treat the neural and kinematic torques as
         # probability distributions and perform a variance-weighted fusion.
 
         # 1. Neural Variance (estimated from uncertainty)
-        # We map uncertainty to a variance parameter.
-        neural_variance = np.square(lateral_uncertainty) + 0.01
+        # We map uncertainty to a variance parameter, modulated by our gated weight.
+        neural_variance = (np.square(lateral_uncertainty) + 0.01) / max(w_neural_gated, 1e-3)
 
         # 2. Kinematic Variance (estimated based on speed and consistency)
         # At high speeds, kinematics is highly reliable.
