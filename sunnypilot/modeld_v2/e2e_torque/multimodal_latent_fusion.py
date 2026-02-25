@@ -55,10 +55,10 @@ class FusionOutput:
 class CrossAttentionFusion:
     """
     Cross-Attention Fusion Module
-    
+
     Instead of concatenating radar/map data into the vision latent,
-    this module lets the vision transformer "query" the radar data.
-    
+    this module allows the vision transformer to "query" the radar data.
+
     This allows the model to:
     - Ignore vision noise (like glare) if radar provides high-confidence return
     - Attend to specific radar detections that matter for the current context
