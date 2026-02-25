@@ -1,25 +1,21 @@
 """
-Copyright (c) 2021-, rav4kumar, Haibin Wen, sunnypilot, and a number of other contributors.
+Copyright (c) 2021-, sunnypilot, and a number of other contributors.
 
 This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
-# Version = 2025-6-30
-
 from cereal import messaging
 from opendbc.car import structs
 import numpy as np
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
-from typing import Literal
+from typing import Literal, Optional
+from dataclasses import dataclass
 
-# d-e2e, from modeldata.h
+
 TRAJECTORY_SIZE = 33
 SET_MODE_TIMEOUT = 15
-
-# Define the valid mode types
-ModeType = Literal['acc', 'blended', 'pure_e2e']
 
 
 class SmoothKalmanFilter:
@@ -75,6 +71,149 @@ class SmoothKalmanFilter:
     self.confidence = 0.0
 
 
+@dataclass
+class VisionTrafficDetection:
+  """Vision-only traffic signal detection results."""
+  signal_type: str = 'none'
+  distance: float = 0.0
+  probability: float = 0.0
+  should_precharge_brake: bool = False
+  predictive_stop_prob: float = 0.0
+
+
+class VisionOnlyTrafficAuditor:
+  """
+  E2E-Native Predictive Braking System.
+  Detects stop signs and red lights using ONLY the E2E model's internal signals,
+  without relying on map data. Uses model uncertainty and disengage predictions
+  to proactively prepare for stops.
+  """
+  PREDICTIVE_LOOKAHEAD_SEC = 3.0
+  STOP_SIGN_UNCERTAINTY_THRESHOLD = 8.0
+  RED_LIGHT_UNCERTAINTY_THRESHOLD = 6.0
+  STOP_PROB_THRESHOLD = 0.7
+  PRECHARGE_SPEED_THRESHOLD_MS = 2.0
+
+  def __init__(self):
+    self._stop_sign_prob = 0.0
+    self._red_light_prob = 0.0
+    self._predictive_stop_prob = 0.0
+    self._precharge_brake = False
+    self._last_detection_time = 0
+
+    self._uncertainty_stop_filter = SmoothKalmanFilter(
+      measurement_noise=0.15,
+      process_noise=0.1,
+      alpha=1.05,
+      smoothing_factor=0.7
+    )
+
+    self._stop_sign_filter = SmoothKalmanFilter(
+      measurement_noise=0.2,
+      process_noise=0.15,
+      alpha=1.1,
+      smoothing_factor=0.6
+    )
+
+    self._red_light_filter = SmoothKalmanFilter(
+      measurement_noise=0.2,
+      process_noise=0.15,
+      alpha=1.1,
+      smoothing_factor=0.6
+    )
+
+    self._predictive_stop_filter = SmoothKalmanFilter(
+      measurement_noise=0.15,
+      process_noise=0.1,
+      alpha=1.05,
+      smoothing_factor=0.65
+    )
+
+  def update(self, model_uncertainty: np.ndarray, disengage_probs: np.ndarray,
+             v_ego: float) -> VisionTrafficDetection:
+    """
+    Analyze E2E model outputs to detect potential stops at stop signs or red lights.
+    Returns a VisionTrafficDetection with the analysis results.
+    """
+    result = VisionTrafficDetection()
+
+    if len(model_uncertainty) < TRAJECTORY_SIZE or len(disengage_probs) < TRAJECTORY_SIZE:
+      return result
+
+    max_uncertainty = float(np.max(model_uncertainty))
+    self._uncertainty_stop_filter.add_data(max_uncertainty)
+    filtered_uncertainty = self._uncertainty_stop_filter.get_value() or 0.0
+
+    lookahead_idx = int(self.PREDICTIVE_LOOKAHEAD_SEC * 10)
+    lookahead_idx = min(lookahead_idx, len(disengage_probs) - 1)
+
+    predictive_prob = float(np.max(disengage_probs[:lookahead_idx + 1]))
+    self._predictive_stop_filter.add_data(predictive_prob)
+    self._predictive_stop_prob = self._predictive_stop_filter.get_value() or 0.0
+    result.predictive_stop_prob = self._predictive_stop_prob
+
+    stop_sign_detected = (
+      filtered_uncertainty > self.STOP_SIGN_UNCERTAINTY_THRESHOLD and
+      self._predictive_stop_prob > self.STOP_PROB_THRESHOLD
+    )
+
+    red_light_detected = (
+      filtered_uncertainty > self.RED_LIGHT_UNCERTAINTY_THRESHOLD and
+      self._predictive_stop_prob > self.STOP_PROB_THRESHOLD * 0.9 and
+      not stop_sign_detected
+    )
+
+    self._stop_sign_filter.add_data(1.0 if stop_sign_detected else 0.0)
+    self._red_light_filter.add_data(1.0 if red_light_detected else 0.0)
+
+    self._stop_sign_prob = self._stop_sign_filter.get_value() or 0.0
+    self._red_light_prob = self._red_light_filter.get_value() or 0.0
+
+    if self._stop_sign_prob > 0.5:
+      result.signal_type = 'stop_sign'
+      result.probability = self._stop_sign_prob
+      result.distance = filtered_uncertainty * 2.0
+    elif self._red_light_prob > 0.5:
+      result.signal_type = 'red_light'
+      result.probability = self._red_light_prob
+      result.distance = filtered_uncertainty * 1.5
+    else:
+      result.signal_type = 'none'
+      result.probability = 0.0
+      result.distance = 0.0
+
+    if self._predictive_stop_prob > 0.5 and v_ego > self.PRECHARGE_SPEED_THRESHOLD_MS:
+      self._precharge_brake = True
+      result.should_precharge_brake = True
+    else:
+      self._precharge_brake = False
+      result.should_precharge_brake = False
+
+    return result
+
+  def get_stop_probability(self) -> float:
+    """Returns the probability of an imminent stop."""
+    return self._predictive_stop_prob
+
+  def should_precharge(self) -> bool:
+    """Returns True if brake pre-charging should be activated."""
+    return self._precharge_brake
+
+  def reset(self) -> None:
+    """Reset all filter states."""
+    self._stop_sign_prob = 0.0
+    self._red_light_prob = 0.0
+    self._predictive_stop_prob = 0.0
+    self._precharge_brake = False
+    self._uncertainty_stop_filter.reset_data()
+    self._stop_sign_filter.reset_data()
+    self._red_light_filter.reset_data()
+    self._predictive_stop_filter.reset_data()
+
+
+ModeType = Literal['acc', 'blended', 'pure_e2e']
+
+
 class ModeTransitionManager:
   """Manages smooth transitions between driving modes with continuous weighting."""
 
@@ -88,7 +227,6 @@ class ModeTransitionManager:
     self.emergency_override = False
 
   def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
-    # Update confidence scores with faster convergence for neural intent
     self.mode_confidence[mode] = min(1.0, self.mode_confidence[mode] + 0.2 * confidence)
     for m in self.mode_confidence:
       if m != mode:
@@ -102,11 +240,9 @@ class ModeTransitionManager:
       self.blended_weight = 1.0 if mode in ['blended', 'pure_e2e'] else 0.0
       return
 
-    # Require minimum duration in current mode (unless emergency)
     if self.mode_duration < self.min_mode_duration and not self.emergency_override:
       return
 
-    # Dynamic thresholding based on speed: higher certainty required at speed for ACC
     confidence_threshold = 0.5 if mode != self.current_mode else 0.2
 
     if self.mode_confidence[mode] > confidence_threshold:
@@ -120,18 +256,13 @@ class ModeTransitionManager:
       self.transition_timeout -= 1
     self.mode_duration += 1
 
-    # Reset emergency override after some time
     if self.emergency_override and self.mode_duration > 10:
       self.emergency_override = False
 
-    # Minimal confidence decay to maintain policy stability
     for mode in self.mode_confidence:
       self.mode_confidence[mode] *= 0.995
-      
-    # Calculate continuous blended weight (A+ Feature)
-    # This blends between the current discrete mode and the target intent.
+
     target_weight = 1.0 if self.current_mode in ['blended', 'pure_e2e'] else 0.0
-    # Add a sigmoid-based interpolation for smooth weight transitions
     self.blended_weight = 0.9 * self.blended_weight + 0.1 * target_weight
 
   def get_mode(self) -> ModeType:
@@ -156,7 +287,8 @@ class DynamicExperimentalController:
     self._calibration_uncertainty_offset = 0.0
     self._calibration_confidence = 1.0
 
-    # Smooth filters for stable decision making with faster response for critical scenarios
+    self._vision_traffic_auditor = VisionOnlyTrafficAuditor()
+
     self._lead_filter = SmoothKalmanFilter(
       measurement_noise=0.15,
       process_noise=0.05,
@@ -220,10 +352,10 @@ class DynamicExperimentalController:
     self._has_standstill = False
     self._mpc_fcw_crash_cnt = 0
     self._standstill_count = 0
-    # debug
     self._endpoint_x = float('inf')
     self._expected_distance = 0.0
     self._trajectory_valid = False
+    self._vision_traffic_detection = VisionTrafficDetection()
 
   def _read_params(self) -> None:
     if self._frame % int(1. / DT_MDL) == 0:
@@ -233,7 +365,6 @@ class DynamicExperimentalController:
     return self._mode_manager.get_mode()
 
   def blended_weight(self) -> float:
-    """Returns the continuous weight (0.0 to 1.0) for blending ACC and E2E targets."""
     return self._mode_manager.get_weight()
 
   def calibration_mae(self) -> float:
@@ -246,7 +377,6 @@ class DynamicExperimentalController:
     return self._calibration_confidence
 
   def blended_confidence(self) -> float:
-    """Returns the continuous confidence in the 'blended' (E2E) mode."""
     return float(self._mode_manager.mode_confidence['blended'])
 
   def enabled(self) -> bool:
@@ -256,8 +386,13 @@ class DynamicExperimentalController:
     return self._active
 
   def set_mpc_fcw_crash_cnt(self) -> None:
-    """Set MPC FCW crash count"""
     self._mpc_fcw_crash_cnt = self._mpc.crash_cnt
+
+  def vision_traffic_detection(self) -> VisionTrafficDetection:
+    return self._vision_traffic_detection
+
+  def should_precharge_brake(self) -> bool:
+    return self._vision_traffic_detection.should_precharge_brake
 
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
     car_state = sm['carState']
@@ -268,69 +403,61 @@ class DynamicExperimentalController:
     self._v_cruise_kph = car_state.vCruise
     self._has_standstill = car_state.standstill
 
-    # standstill detection
     if self._has_standstill:
       self._standstill_count = min(20, self._standstill_count + 1)
     else:
       self._standstill_count = max(0, self._standstill_count - 1)
 
-    # Lead detection
     self._lead_filter.add_data(float(lead_one.status))
     lead_value = self._lead_filter.get_value() or 0.0
     self._has_lead_filtered = lead_value > WMACConstants.LEAD_PROB
 
-    # MPC FCW detection
     fcw_filtered_value = self._mpc_fcw_filter.get_value() or 0.0
     self._mpc_fcw_filter.add_data(float(self._mpc_fcw_crash_cnt > 0))
     self._has_mpc_fcw = fcw_filtered_value > 0.5
 
-    # Uncertainty and Disengage Probs from model
+    uncertainty_array = np.zeros(TRAJECTORY_SIZE)
+    disengage_probs_array = np.zeros(TRAJECTORY_SIZE)
+
     if len(md.position.xStd) == TRAJECTORY_SIZE:
-      # Max uncertainty in the longitudinal path (xStd)
       longitudinal_uncertainty = float(md.position.xStd[TRAJECTORY_SIZE - 1])
+      uncertainty_array = np.array(md.position.xStd, dtype=np.float32)
       self._uncertainty_filter.add_data(longitudinal_uncertainty)
 
     if len(md.meta.disengagePredictions.brakeDisengageProbs) > 0:
-      # Use the earliest brake disengage probability as a proxy for immediate stop intent
       brake_prob = float(md.meta.disengagePredictions.brakeDisengageProbs[0])
       self._disengage_prob_filter.add_data(brake_prob)
 
-      # Use the maximum probability across the future horizon for proactive stop detection
       max_brake_prob = float(max(md.meta.disengagePredictions.brakeDisengageProbs))
       self._disengage_prob_future_filter.add_data(max_brake_prob)
+      disengage_probs_array = np.array(md.meta.disengagePredictions.brakeDisengageProbs, dtype=np.float32)
 
-    # Engaged Probability: A high-level confidence that the model thinks it should be in control
     self._engaged_prob_filter.add_data(float(md.meta.engagedProb))
     self._hard_brake_predicted = bool(md.meta.hardBrakePredicted)
 
-    # Slow down detection
+    self._vision_traffic_detection = self._vision_traffic_auditor.update(
+      uncertainty_array, disengage_probs_array, car_state.vEgo
+    )
+
     self._calculate_slow_down(md)
 
-    # Slowness detection
     if not (self._standstill_count > 5) and not self._has_slow_down:
       current_slowness = float(self._v_ego_kph <= (self._v_cruise_kph * WMACConstants.SLOWNESS_CRUISE_OFFSET))
       self._slowness_filter.add_data(current_slowness)
       slowness_value = self._slowness_filter.get_value() or 0.0
 
-      # Hysteresis for slowness
       threshold = WMACConstants.SLOWNESS_PROB * (0.8 if self._has_slowness else 1.1)
       self._has_slowness = slowness_value > threshold
 
   def _calculate_slow_down(self, md):
-    """Calculate urgency based on trajectory endpoint vs expected distance."""
-
-    # Reset to safe defaults
     urgency = 0.0
     self._endpoint_x = float('inf')
     self._trajectory_valid = False
 
-    #Require exact trajectory size
     position_valid = len(md.position.x) == TRAJECTORY_SIZE
     orientation_valid = len(md.orientation.x) == TRAJECTORY_SIZE
 
     if not (position_valid and orientation_valid):
-      # Invalid trajectory - this itself might indicate a stop scenario
-      # Apply moderate urgency for incomplete trajectories at speed
       if self._v_ego_kph > 20.0:
         urgency = 0.3
 
@@ -340,45 +467,34 @@ class DynamicExperimentalController:
       self._urgency = urgency_filtered
       return
 
-    # We have a valid full trajectory
     self._trajectory_valid = True
 
-    # Use the exact endpoint (33rd point, index 32)
     endpoint_x = md.position.x[TRAJECTORY_SIZE - 1]
     self._endpoint_x = endpoint_x
 
-    # Get expected distance based on current speed using tuned constants
     expected_distance = np.interp(self._v_ego_kph,
                                WMACConstants.SLOW_DOWN_BP,
                                WMACConstants.SLOW_DOWN_DIST)
     self._expected_distance = expected_distance
 
-    # Calculate urgency based on trajectory shortage
     if endpoint_x < expected_distance:
       shortage = expected_distance - endpoint_x
       shortage_ratio = shortage / expected_distance
 
-      # Base urgency on shortage ratio
       urgency = min(1.0, shortage_ratio * 2.0)
 
-      # Increase urgency for very short trajectories (imminent stops)
       critical_distance = expected_distance * 0.3
       if endpoint_x < critical_distance:
         urgency = min(1.0, urgency * 2.0)
 
-      # Speed-based urgency adjustment
       if self._v_ego_kph > 25.0:
         speed_factor = 1.0 + (self._v_ego_kph - 25.0) / 80.0
         urgency = min(1.0, urgency * speed_factor)
 
-    # Incorporate Model Uncertainty and Disengage Probs into urgency
     uncertainty_filtered = self._uncertainty_filter.get_value() or 0.0
     brake_prob_filtered = self._disengage_prob_filter.get_value() or 0.0
     future_brake_prob_filtered = self._disengage_prob_future_filter.get_value() or 0.0
 
-    # FORMAL SAFETY CHECK: Kinematic Feasibility
-    # Calculate the minimum distance required to stop comfortably (-2.5 m/s^2)
-    # and the distance required for a hard stop (-4.0 m/s^2)
     v_ego = self._v_ego_kph / 3.6
     dist_comfortable = (v_ego**2) / (2 * 2.5)
     dist_hard = (v_ego**2) / (2 * 4.0)
@@ -386,159 +502,128 @@ class DynamicExperimentalController:
     kinematic_urgency = 0.0
     if self._trajectory_valid and v_ego > 3.0:
       if self._endpoint_x < dist_hard:
-        # Model is planning a stop that is physically very aggressive
         kinematic_urgency = 1.0
       elif self._endpoint_x < dist_comfortable:
-        # Model is planning a stop that is firmer than comfortable
         kinematic_urgency = np.interp(self._endpoint_x, [dist_hard, dist_comfortable], [1.0, 0.2])
 
-    # Vision-Only Velocity Verification (Zero-Latency)
-    # Compare model's predicted immediate velocity with carState vEgo to pre-act on slows
     velocity_urgency = 0.0
     if len(md.velocity.x) > 0:
       v_ego_model = md.velocity.x[0]
-      v_diff = max(0.0, car_state.vEgo - v_ego_model)
-      velocity_urgency = min(1.0, v_diff / 4.0)  # Full urgency at 4m/s delta
+      v_diff = max(0.0, (self._v_ego_kph / 3.6) - v_ego_model)
+      velocity_urgency = min(1.0, v_diff / 4.0)
 
-    # Curve Anticipation from Orientation Rate
     curve_urgency = 0.0
     if len(md.orientationRate.z) > 0:
       yaw_rate_model = abs(md.orientationRate.z[0])
-      # High yaw rate predicted by model indicates a sharp maneuver/curve ahead
       curve_urgency = min(1.0, max(0.0, yaw_rate_model - 0.05) * 2.0)
 
-    # Uncertainty in trajectory (xStd) above 4m starts to indicate a blocked path
     uncertainty_urgency = min(1.0, max(0.0, (uncertainty_filtered - 4.0) / 12.0))
-    # Brake disengage probability - any prob over 0.1 indicates the car might want to stop soon
     brake_prob_urgency = min(1.0, brake_prob_filtered * 2.0)
-    # Future brake intent - slightly lower weight but earlier detection
     future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
-    # Bayesian Intent Fusion (Neural Arbitrator):
-    # Instead of max(), we use a weighted fusion that favors high-certainty model signals.
-    # This reduces reliance on the 'max' of potentially noisy heuristics.
-    
-    # We include Engaged Probability as a "Gating Signal" for confidence
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
     
-    # Emergency: hard brake predicted by model
     hard_brake_urgency = 1.0 if self._hard_brake_predicted else 0.0
+
+    vision_traffic_urgency = 0.0
+    if self._vision_traffic_detection.signal_type != 'none':
+      vision_traffic_urgency = self._vision_traffic_detection.probability * 0.9
 
     intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
                         future_brake_urgency, velocity_urgency, curve_urgency,
-                        hard_brake_urgency, kinematic_urgency])
+                        hard_brake_urgency, kinematic_urgency, vision_traffic_urgency])
     
-    # Dynamic weighting based on engaged_prob and CALIBRATION CONFIDENCE
-    # If the model is not confident or the calibrator has high MAE, we penalize model intents.
     weights = np.ones_like(intents)
     weights[:6] *= (0.5 + 0.5 * engaged_prob) * self._calibration_confidence
-    weights[6] = 1.0 # Always trust hard brake prediction for safety
-    weights[7] = 1.0 # Always trust kinematic safety check
+    weights[6] = 1.0
+    weights[7] = 1.0
+    weights[8] = 0.8
 
-    # Square-root of the sum of squares with dynamic weighting
     weighted_sum_sq = np.sum(np.square(intents) * weights)
     combined_urgency = float(np.sqrt(weighted_sum_sq / np.sum(weights) * len(intents)))
     combined_urgency = min(1.0, combined_urgency)
 
-    # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(combined_urgency)
     urgency_filtered = self._slow_down_filter.get_value() or 0.0
 
-    # Update state with a dynamic threshold that scales with model confidence
     model_confidence = self._uncertainty_filter.get_confidence()
     dynamic_threshold = WMACConstants.SLOW_DOWN_PROB * (1.2 - 0.4 * model_confidence)
-    
-    # Penalty for low calibration confidence: increase required threshold for slow down
     dynamic_threshold *= (1.5 - 0.5 * self._calibration_confidence)
     
     self._has_slow_down = urgency_filtered > dynamic_threshold
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
-    """Radarless mode decision logic with emergency handling."""
-
-    # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # Check for Pure E2E Transition (Pillar 1)
-    # If the model is highly confident and calibrated, upgrade to pure_e2e
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
     if self._calibration_confidence > 0.85 and engaged_prob > 0.92:
       self._mode_manager.request_mode('pure_e2e', confidence=0.8)
       return
 
-    # Standstill: use blended
     if self._standstill_count > 3:
       self._mode_manager.request_mode('blended', confidence=0.9)
       return
 
-    # Slow down scenarios: emergency for high urgency, normal for lower urgency
+    if self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
+      if self._vision_traffic_detection.probability > 0.6:
+        self._mode_manager.request_mode('blended', confidence=self._vision_traffic_detection.probability, emergency=True)
+        return
+
     if self._has_slow_down:
       if self._urgency > 0.7:
-        # Emergency: immediate blended mode for high urgency stops
         self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       else:
-        # Normal: blended with urgency-based confidence
         confidence = min(1.0, self._urgency * 1.5)
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
-    # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
       self._mode_manager.request_mode('acc', confidence=0.8)
       return
 
-    # Default: ACC
     self._mode_manager.request_mode('acc', confidence=0.7)
 
   def _radar_mode(self) -> None:
-    """Radar mode with emergency handling and Vision-Primary override."""
-
-    # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # Check for Pure E2E Transition (Pillar 1)
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
     if self._calibration_confidence > 0.85 and engaged_prob > 0.95:
       self._mode_manager.request_mode('pure_e2e', confidence=0.8)
       return
 
-    # If lead detected: usually use ACC, but allow Vision to override for imminent slow-downs
-    # this makes the system Vision-Primary even when radar leads are present.
     if self._has_lead_filtered and not (self._standstill_count > 3):
       if self._has_slow_down and self._urgency > 0.6:
-        # Vision sees a slow down that radar lead logic might be ignoring (e.g. stop sign/red light)
         self._mode_manager.request_mode('blended', confidence=self._urgency)
       else:
         self._mode_manager.request_mode('acc', confidence=1.0)
       return
 
-    # Slow down scenarios: emergency for high urgency, normal for lower urgency
+    if self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
+      if self._vision_traffic_detection.probability > 0.55:
+        self._mode_manager.request_mode('blended', confidence=self._vision_traffic_detection.probability)
+        return
+
     if self._has_slow_down:
       if self._urgency > 0.7:
-        # Emergency: immediate blended mode for high urgency stops
         self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       else:
-        # Normal: blended with urgency-based confidence
         confidence = min(1.0, self._urgency * 1.3)
         self._mode_manager.request_mode('blended', confidence=confidence)
       return
 
-    # Standstill: use blended
     if self._standstill_count > 3:
       self._mode_manager.request_mode('blended', confidence=0.9)
       return
 
-    # Driving slow: use ACC (but not if actively slowing down)
     if self._has_slowness and not self._has_slow_down:
       self._mode_manager.request_mode('acc', confidence=0.8)
       return
 
-    # Default: ACC
     self._mode_manager.request_mode('acc', confidence=0.7)
 
   def update(self, sm: messaging.SubMaster) -> None:
