@@ -21,7 +21,7 @@ class FirehoseDaemon:
   def __init__(self):
     self.params = Params()
     self.pm = messaging.PubMaster(['sunnylinkState'])
-    self.sm = messaging.SubMaster(['modelV2', 'carState', 'longitudinalPlanSP', 'carControl'])
+    self.sm = messaging.SubMaster(['modelV2', 'carState', 'longitudinalPlanSP', 'carControl', 'driverStateV2'])
     
     self.entropy_filter = 0.0
     self.firehose_active = False
@@ -38,6 +38,7 @@ class FirehoseDaemon:
       md = self.sm['modelV2']
       cs = self.sm['carState']
       cc = self.sm['carControl']
+      ds = self.sm['driverStateV2']
       
       # 1. Path Uncertainty (Entropy)
       # High standard deviation in the predicted trajectory indicates model confusion.
@@ -56,9 +57,23 @@ class FirehoseDaemon:
       # If the model predicts a high probability of disengagement that doesn't 
       # match the current mode, it's a "surprising" moment.
       max_disengage_prob = float(max(md.meta.disengagePredictions.brakeDisengageProbs))
+
+      # 4. Hard Negative Triggers (High-G / Evasive)
+      # Trigger if the car experiences high longitudinal or lateral Gs, 
+      # which often indicates a safety critical event or model failure.
+      hard_brake = abs(cs.aEgo) > 3.0  # > 3.0 m/s^2 deceleration
+      evasive_maneuver = abs(cs.yawRate) > 0.4 and cs.vEgo > 15.0 # High yaw rate at speed
+      hard_negative_score = 20.0 if (hard_brake or evasive_maneuver) else 0.0
+
+      # 5. Environmental Diversity
+      # Trigger on low visibility or difficult lighting conditions.
+      # driverStateV2.extra contains indicators for poor vision conditions.
+      visibility_score = 0.0
+      if hasattr(ds, 'extra') and (ds.extra.poorVisionProbs > 0.5):
+        visibility_score = 10.0
       
       # Bayesian Entropy Fusion
-      total_entropy = (path_uncertainty * 0.2) + (divergence * 5.0) + (max_disengage_prob * 10.0)
+      total_entropy = (path_uncertainty * 0.2) + (divergence * 5.0) + (max_disengage_prob * 10.0) + hard_negative_score + visibility_score
       
       # Smooth the entropy signal
       self.entropy_filter = 0.9 * self.entropy_filter + 0.1 * total_entropy
