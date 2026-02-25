@@ -76,31 +76,31 @@ class SmoothKalmanFilter:
 
 
 class ModeTransitionManager:
-  """Manages smooth transitions between driving modes with hysteresis."""
+  """Manages smooth transitions between driving modes with continuous weighting."""
 
   def __init__(self):
     self.current_mode: ModeType = 'acc'
     self.mode_confidence = {'acc': 1.0, 'blended': 0.0}
+    self.blended_weight = 0.0
     self.transition_timeout = 0
     self.min_mode_duration = 2
     self.mode_duration = 0
     self.emergency_override = False
 
   def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
-    # Pure Neural Policy: If the neural model is active and certain, it takes precedence.
-    # In 'blended' mode, we are essentially running pixels-to-pedal E2EL.
-    if emergency:
-      self.emergency_override = True
-      self.current_mode = mode
-      self.transition_timeout = SET_MODE_TIMEOUT
-      self.mode_duration = 0
-      return
-
     # Update confidence scores with faster convergence for neural intent
     self.mode_confidence[mode] = min(1.0, self.mode_confidence[mode] + 0.2 * confidence)
     for m in self.mode_confidence:
       if m != mode:
         self.mode_confidence[m] = max(0.0, self.mode_confidence[m] - 0.1)
+
+    if emergency:
+      self.emergency_override = True
+      self.current_mode = mode
+      self.transition_timeout = SET_MODE_TIMEOUT
+      self.mode_duration = 0
+      self.blended_weight = 1.0 if mode == 'blended' else 0.0
+      return
 
     # Require minimum duration in current mode (unless emergency)
     if self.mode_duration < self.min_mode_duration and not self.emergency_override:
@@ -127,9 +127,18 @@ class ModeTransitionManager:
     # Minimal confidence decay to maintain policy stability
     for mode in self.mode_confidence:
       self.mode_confidence[mode] *= 0.995
+      
+    # Calculate continuous blended weight (A+ Feature)
+    # This blends between the current discrete mode and the target intent.
+    target_weight = 1.0 if self.current_mode == 'blended' else 0.0
+    # Add a sigmoid-based interpolation for smooth weight transitions
+    self.blended_weight = 0.9 * self.blended_weight + 0.1 * target_weight
 
   def get_mode(self) -> ModeType:
     return self.current_mode
+  
+  def get_weight(self) -> float:
+    return float(self.blended_weight)
 
 
 class DynamicExperimentalController:
@@ -143,6 +152,8 @@ class DynamicExperimentalController:
     self._urgency = 0.0
 
     self._mode_manager = ModeTransitionManager()
+    self._calibration_mae = 0.0
+    self._calibration_uncertainty_offset = 0.0
 
     # Smooth filters for stable decision making with faster response for critical scenarios
     self._lead_filter = SmoothKalmanFilter(
@@ -219,6 +230,16 @@ class DynamicExperimentalController:
 
   def mode(self) -> str:
     return self._mode_manager.get_mode()
+
+  def blended_weight(self) -> float:
+    """Returns the continuous weight (0.0 to 1.0) for blending ACC and E2E targets."""
+    return self._mode_manager.get_weight()
+
+  def calibration_mae(self) -> float:
+    return self._calibration_mae
+
+  def calibration_uncertainty_offset(self) -> float:
+    return self._calibration_uncertainty_offset
 
   def blended_confidence(self) -> float:
     """Returns the continuous confidence in the 'blended' (E2E) mode."""
@@ -485,6 +506,11 @@ class DynamicExperimentalController:
 
   def update(self, sm: messaging.SubMaster) -> None:
     self._read_params()
+
+    if sm.updated['longitudinalPlanSP']:
+      lp_sp = sm['longitudinalPlanSP']
+      self._calibration_mae = lp_sp.dec.mae
+      self._calibration_uncertainty_offset = lp_sp.dec.uncertaintyOffset
 
     self.set_mpc_fcw_crash_cnt()
 

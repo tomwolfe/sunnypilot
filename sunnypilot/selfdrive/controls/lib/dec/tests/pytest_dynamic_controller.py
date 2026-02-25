@@ -26,6 +26,10 @@ class MockSelfDriveState:
   def __init__(self, experimentalMode=False):
     self.experimentalMode = experimentalMode
 
+class MockLongitudinalPlanSP:
+  def __init__(self):
+    self.dec = type("Dec", (), {"mae": 0.0, "uncertaintyOffset": 0.0})()
+
 class MockParams:
   def get_bool(self, name):
     return True
@@ -37,8 +41,15 @@ def default_sm():
     'radarState': MockRadarState(status=1.0),
     'modelV2': MockModelData(valid=True),
     'selfdriveState': MockSelfDriveState(experimentalMode=True),
+    'longitudinalPlanSP': MockLongitudinalPlanSP(),
   }
-  return sm
+  # Add updated dict tracking for SubMaster mock
+  sm_obj = type("SubMaster", (), {
+    "__getitem__": lambda self, k: sm[k],
+    "updated": {"longitudinalPlanSP": True},
+    "all_checks": lambda self, **kwargs: True
+  })()
+  return sm_obj
 
 @pytest.fixture
 def mock_cp():
@@ -64,6 +75,7 @@ class FakeKalman:
 def test_initial_mode_is_acc(mock_cp, mock_mpc):
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
   assert controller.mode() == "acc"
+  assert controller.blended_weight() == 0.0
 
 def test_standstill_triggers_blended(mock_cp, mock_mpc, default_sm):
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
@@ -71,6 +83,7 @@ def test_standstill_triggers_blended(mock_cp, mock_mpc, default_sm):
   for _ in range(10):
     controller.update(default_sm)
   assert controller.mode() == "blended"
+  assert controller.blended_weight() > 0.5  # Weight should be trending toward 1.0
 
 def test_emergency_blended_on_fcw(mock_cp, mock_mpc, default_sm):
   controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
@@ -78,6 +91,15 @@ def test_emergency_blended_on_fcw(mock_cp, mock_mpc, default_sm):
   for _ in range(2):
     controller.update(default_sm)
   assert controller.mode() == "blended"
+  assert controller.blended_weight() > 0.0 # Starts trending immediately
+
+def test_calibration_update(mock_cp, mock_mpc, default_sm):
+  controller = DynamicExperimentalController(mock_cp, mock_mpc, params=MockParams())
+  default_sm['longitudinalPlanSP'].dec.mae = 0.5
+  default_sm['longitudinalPlanSP'].dec.uncertaintyOffset = 1.0
+  controller.update(default_sm)
+  assert controller.calibration_mae() == 0.5
+  assert controller.calibration_uncertainty_offset() == 1.0
 
 def test_radarless_slowdown_triggers_blended(mock_cp, mock_mpc, default_sm):
   mock_cp.radarUnavailable = True
@@ -86,9 +108,16 @@ def test_radarless_slowdown_triggers_blended(mock_cp, mock_mpc, default_sm):
   # Force conditions to simulate slowdown
   controller._slow_down_filter = FakeKalman(value=1.0)  # Ensure urgency triggers slowdown
   controller._v_ego_kph = 35.0
-  default_sm['modelV2'] = MockModelData(valid=False)  # Incomplete trajectory
+  # Mock model data with attributes that _calculate_slow_down expects
+  md = MockModelData(valid=False)
+  md.meta = type("Meta", (), {"hardBrakePredicted": False, "disengagePredictions": type("D", (), {"brakeDisengageProbs": [0.0]})(), "engagedProb": 1.0})()
+  md.position.xStd = [0.0] * 33
+  md.velocity = type("Vel", (), {"x": [0.0]})()
+  md.orientationRate = type("OriR", (), {"z": [0.0]})()
+  default_sm['modelV2'] = md
 
   for _ in range(3):
     controller.update(default_sm)
 
   assert controller.mode() == "blended"
+  assert controller.blended_weight() > 0.0

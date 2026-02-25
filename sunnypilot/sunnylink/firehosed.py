@@ -24,6 +24,7 @@ class FirehoseDaemon:
     self.sm = messaging.SubMaster(['modelV2', 'carState', 'longitudinalPlanSP', 'carControl', 'driverStateV2'])
     
     self.entropy_filter = 0.0
+    self.entropy_history = deque(maxlen=600)  # 1 minute at 10Hz
     self.firehose_active = False
 
   def run(self):
@@ -77,16 +78,32 @@ class FirehoseDaemon:
       
       # Smooth the entropy signal
       self.entropy_filter = 0.9 * self.entropy_filter + 0.1 * total_entropy
+      self.entropy_history.append(self.entropy_filter)
       
+      # 6. Novelty Detection (A+ Feature)
+      # If current entropy is significantly higher than the rolling average, 
+      # it's a "novel" or "surprising" moment even if the absolute value is low.
+      novelty_score = 0.0
+      if len(self.entropy_history) > 100:
+        avg_entropy = np.mean(self.entropy_history)
+        std_entropy = np.std(self.entropy_history)
+        # 3-sigma deviation indicates a statistically significant novelty
+        if self.entropy_filter > (avg_entropy + 3.0 * std_entropy):
+          novelty_score = 10.0
+
       # Flag for Firehose Mode (High-Priority Upload)
-      # Threshold 15.0 is a heuristic for "Very High Uncertainty"
-      is_high_entropy = self.entropy_filter > 15.0
+      # Dynamic Threshold: Use the 95th percentile of history or a sane floor (10.0)
+      dynamic_threshold = 15.0
+      if len(self.entropy_history) > 300:
+        dynamic_threshold = max(10.0, np.percentile(self.entropy_history, 95))
+
+      is_high_entropy = (self.entropy_filter + novelty_score) > dynamic_threshold
       
       if is_high_entropy != self.firehose_active:
         self.firehose_active = is_high_entropy
         self.params.put_nonblocking("FirehoseModeActive", "1" if is_high_entropy else "0")
         if is_high_entropy:
-          cloudlog.event("firehose_trigger", entropy=self.entropy_filter)
+          cloudlog.event("firehose_trigger", entropy=self.entropy_filter, threshold=dynamic_threshold, novelty=novelty_score)
       
       time.sleep(0.1) # 10Hz is plenty for tagging
 

@@ -198,6 +198,9 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     state @0 :DynamicExperimentalControlState;
     enabled @1 :Bool;
     active @2 :Bool;
+    blendedWeight @3 :Float32;
+    mae @4 :Float32;
+    uncertaintyOffset @5 :Float32;
 
     enum DynamicExperimentalControlState {
       acc @0;
