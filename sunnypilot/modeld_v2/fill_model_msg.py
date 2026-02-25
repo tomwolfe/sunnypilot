@@ -20,6 +20,12 @@ def get_curvature_from_output(output, plan, vego, lat_action_t, mlsim):
                                        ModelConstants.T_IDXS, vego, lat_action_t))
 
 
+def get_torque_from_output(output):
+  if torque := output.get('torque'):
+    return float(torque[0, 0])
+  return 0.0
+
+
 class PublishState:
   def __init__(self):
     self.disengage_buffer = np.zeros(ModelConstants.CONFIDENCE_BUFFER_LEN*ModelConstants.DISENGAGE_WIDTH, dtype=np.float32)

@@ -1184,6 +1184,7 @@ struct ModelDataV2 {
     desiredCurvature @0 :Float32;
     desiredAcceleration @1 :Float32;
     shouldStop @2 :Bool;
+    torque @3 :Float32;
   }
 }
 
