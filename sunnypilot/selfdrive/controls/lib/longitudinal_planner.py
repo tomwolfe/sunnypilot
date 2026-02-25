@@ -41,7 +41,8 @@ class LongitudinalPlannerSP:
     if not self.dec.active():
       return experimental_mode
 
-    return experimental_mode and self.dec.mode() == "blended"
+    # Use continuous trust for high-level decision making
+    return experimental_mode and self.dec.blended_confidence() > 0.5
 
   def update_targets(self, sm: messaging.SubMaster, v_ego: float, a_ego: float, v_cruise: float) -> tuple[float, float]:
     CS = sm['carState']
@@ -72,7 +73,9 @@ class LongitudinalPlannerSP:
     # Neural Speed Limit Fusion:
     # If in E2E mode, we treat the speed limit as a "soft" feature rather than a hard constraint.
     # We blend the SLA target with the model's predicted trajectory endpoint velocity.
-    if self.is_e2e(sm) and (self.sla.is_active or self.scc.vision.is_active):
+    e2e_trust = self.dec.blended_confidence() if self.dec.active() else float(sm['selfdriveState'].experimentalMode)
+    
+    if e2e_trust > 0.3 and (self.sla.is_active or self.scc.vision.is_active):
       md = sm['modelV2']
       if len(md.velocity.x) > 0:
         v_model = md.velocity.x[0]
@@ -82,10 +85,9 @@ class LongitudinalPlannerSP:
         v_heuristic = min(self.sla.output_v_target, 
                           self.scc.vision.output_v_target if self.scc.vision.is_active else float('inf'))
         
-        # Bayesian blending: favor the model if uncertainty is low
-        # In sharp curves, the model's vision-based velocity often reacts faster than 
-        # map-based or curvature-calculated heuristics.
-        blend_factor = 0.7  # 70% weight to model's "intent"
+        # Bayesian blending: favor the model if uncertainty is low or trust is high
+        # We use a dynamic blend factor that scales with our continuous trust in the neural model.
+        blend_factor = 0.5 + 0.4 * e2e_trust  # Scales from 0.5 to 0.9
         v_cruise_neural = v_model * blend_factor + v_heuristic * (1.0 - blend_factor)
         
         # Update the dominant heuristic source with our blended neural target

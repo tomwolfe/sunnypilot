@@ -71,6 +71,7 @@ class ModelState(ModelStateBase):
     self.LONG_SMOOTH_SECONDS = float(overrides.get('long', ".0"))
     self.MIN_LAT_CONTROL_SPEED = 0.3
     self.PLANPLUS_CONTROL: float = 1.0
+    self.personality = 1  # Default to Standard
 
     buffer_length = 5 if self.model_runner.is_20hz else 2
     self.frames = {name: DrivingModelFrame(context, buffer_length) for name in self.model_runner.vision_input_names}
@@ -296,6 +297,7 @@ def main(demo=False):
     if sm.frame % 60 == 0:
       model.lat_delay = get_lat_delay(params, sm["liveDelay"].lateralDelay)
       model.PLANPLUS_CONTROL = params.get("PlanplusControl", return_default=True)
+      model.personality = int(params.get("LongitudinalPersonality", return_default=True))
       camera_offset_helper.set_offset(params.get("CameraOffset", return_default=True))
     lat_delay = model.lat_delay + model.LAT_SMOOTH_SECONDS
     if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
@@ -312,6 +314,12 @@ def main(demo=False):
     vec_desire = np.zeros(model.constants.DESIRE_LEN, dtype=np.float32)
     if desire >= 0 and desire < model.constants.DESIRE_LEN:
       vec_desire[desire] = 1
+
+    # Inject Personality into index 7 for model-aware longitudinal behavior
+    # Mapping: Relaxed (0) -> 0.0, Standard (1) -> 0.5, Aggressive (2) -> 1.0
+    personality_map = {0: 0.0, 1: 0.5, 2: 1.0}
+    if model.constants.DESIRE_LEN > 7:
+      vec_desire[7] = personality_map.get(model.personality, 0.5)
 
     # tracked dropped frames
     vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)

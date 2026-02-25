@@ -213,6 +213,10 @@ class DynamicExperimentalController:
   def mode(self) -> str:
     return self._mode_manager.get_mode()
 
+  def blended_confidence(self) -> float:
+    """Returns the continuous confidence in the 'blended' (E2E) mode."""
+    return float(self._mode_manager.mode_confidence['blended'])
+
   def enabled(self) -> bool:
     return self._enabled
 
@@ -412,16 +416,21 @@ class DynamicExperimentalController:
     self._mode_manager.request_mode('acc', confidence=0.7)
 
   def _radar_mode(self) -> None:
-    """Radar mode with emergency handling."""
+    """Radar mode with emergency handling and Vision-Primary override."""
 
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
-    # If lead detected and not in standstill: always use ACC
+    # If lead detected: usually use ACC, but allow Vision to override for imminent slow-downs
+    # this makes the system Vision-Primary even when radar leads are present.
     if self._has_lead_filtered and not (self._standstill_count > 3):
-      self._mode_manager.request_mode('acc', confidence=1.0)
+      if self._has_slow_down and self._urgency > 0.6:
+        # Vision sees a slow down that radar lead logic might be ignoring (e.g. stop sign/red light)
+        self._mode_manager.request_mode('blended', confidence=self._urgency)
+      else:
+        self._mode_manager.request_mode('acc', confidence=1.0)
       return
 
     # Slow down scenarios: emergency for high urgency, normal for lower urgency
