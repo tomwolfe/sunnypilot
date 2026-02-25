@@ -14,8 +14,15 @@ def get_lag_adjusted_curvature(steer_delay, v_ego, psis, curvatures):
   # in high delay cases some corrections never even get commanded. So just use
   # psi to calculate a simple linearization of desired curvature
   current_curvature_desired = curvatures[0]
-  psi = interp(steer_delay, ModelConstants.T_IDXS[:CONTROL_N], psis)
-  average_curvature_desired = psi / (v_ego * steer_delay)
+
+  # Dynamic delay adjustment based on estimated steering rack load.
+  # Higher speed and curvature increase the force required to turn the wheels, 
+  # potentially increasing the effective delay.
+  load_factor = abs(current_curvature_desired) * v_ego
+  dynamic_delay = steer_delay * (1.0 + 0.2 * clip(load_factor, 0.0, 1.0))
+
+  psi = interp(dynamic_delay, ModelConstants.T_IDXS[:CONTROL_N], psis)
+  average_curvature_desired = psi / (v_ego * dynamic_delay)
   desired_curvature = 2 * average_curvature_desired - current_curvature_desired
 
   # This is the "desired rate of the setpoint" not an actual desired rate

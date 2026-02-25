@@ -58,6 +58,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._path_offset_z = HEIGHT_INIT[0]
     self._counter = -1
     self._camera_offset = ui_state.params.get("CameraOffset", return_default=True) if ui_state.active_bundle else 0.0
+    self._lateral_uncertainty = 0.0
     # Initialize ModelPoints objects
     self._path = ModelPoints()
     self._lane_lines = [ModelPoints() for _ in range(4)]
@@ -72,6 +73,13 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._exp_gradient = Gradient(
       start=(0.0, 1.0),  # Bottom of path
       end=(0.0, 0.0),  # Top of path
+      colors=[],
+      stops=[],
+    )
+
+    self._confidence_gradient = Gradient(
+      start=(0.0, 1.0),
+      end=(0.0, 0.0),
       colors=[],
       stops=[],
     )
@@ -152,6 +160,51 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     self._lane_line_probs = np.array(model.laneLineProbs, dtype=np.float32)
     self._road_edge_stds = np.array(model.roadEdgeStds, dtype=np.float32)
     self._acceleration_x = np.array(model.acceleration.x, dtype=np.float32)
+    self._lateral_uncertainty = np.array(model.position.yStd, dtype=np.float32)
+
+  def _update_confidence_gradient(self):
+    """Calculate confidence gradient colors based on lateral uncertainty."""
+    if self._lateral_uncertainty.size == 0:
+      return
+
+    max_len = min(len(self._path.projected_points) // 2, len(self._lateral_uncertainty))
+
+    segment_colors = []
+    gradient_stops = []
+
+    # Threshold for high uncertainty (same as in control logic)
+    UNCERTAINTY_THRESHOLD = 0.5
+
+    i = 0
+    while i < max_len:
+      track_y = self._path.projected_points[i][1]
+      if track_y < self._rect.y or track_y > (self._rect.y + self._rect.height):
+        i += 1
+        continue
+
+      lin_grad_point = 1 - (track_y - self._rect.y) / self._rect.height
+
+      # Map uncertainty to color: 0.0 -> Green (120), UNCERTAINTY_THRESHOLD -> Red (0)
+      uncertainty = self._lateral_uncertainty[i]
+      path_hue = np.clip(120 - (uncertainty / UNCERTAINTY_THRESHOLD) * 120, 0, 120)
+
+      saturation = 0.9
+      lightness = 0.6
+      alpha = np.interp(lin_grad_point, [0.0, 0.75], [0.6, 0.0])
+
+      color = self._hsla_to_color(path_hue / 360.0, saturation, lightness, alpha)
+
+      gradient_stops.append(lin_grad_point)
+      segment_colors.append(color)
+
+      i += 1 + (1 if (i + 2) < max_len else 0)
+
+    self._confidence_gradient = Gradient(
+      start=(0.0, 1.0),
+      end=(0.0, 0.0),
+      colors=segment_colors,
+      stops=gradient_stops,
+    )
 
   def _update_leads(self, radar_state, path_x_array):
     """Update positions of lead vehicles"""
@@ -195,6 +248,7 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
     )
 
     self._update_experimental_gradient()
+    self._update_confidence_gradient()
 
   def _update_experimental_gradient(self):
     """Pre-calculate experimental mode gradient colors"""
@@ -302,16 +356,20 @@ class ModelRenderer(Widget, ChevronMetrics, ModelRendererSP):
       else:
         draw_polygon(self._rect, self._path.projected_points, rl.Color(255, 255, 255, 30))
     else:
-      # Blend throttle/no throttle colors based on transition
-      blend_factor = round(self._blend_filter.x * 100) / 100
-      blended_colors = self._blend_colors(NO_THROTTLE_COLORS, THROTTLE_COLORS, blend_factor)
-      gradient = Gradient(
-        start=(0.0, 1.0),  # Bottom of path
-        end=(0.0, 0.0),  # Top of path
-        colors=blended_colors,
-        stops=[0.0, 0.5, 1.0],
-      )
-      draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
+      # Draw with confidence coloring (Green to Red based on yStd)
+      if len(self._confidence_gradient.colors) > 1:
+        draw_polygon(self._rect, self._path.projected_points, gradient=self._confidence_gradient)
+      else:
+        # Fallback to blended throttle colors
+        blend_factor = round(self._blend_filter.x * 100) / 100
+        blended_colors = self._blend_colors(NO_THROTTLE_COLORS, THROTTLE_COLORS, blend_factor)
+        gradient = Gradient(
+          start=(0.0, 1.0),  # Bottom of path
+          end=(0.0, 0.0),  # Top of path
+          colors=blended_colors,
+          stops=[0.0, 0.5, 1.0],
+        )
+        draw_polygon(self._rect, self._path.projected_points, gradient=gradient)
 
   def _draw_lead_indicator(self):
     # Draw lead vehicles if available

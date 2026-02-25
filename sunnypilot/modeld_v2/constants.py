@@ -59,7 +59,7 @@ class ModelConstants:
   RYG_GREEN = 0.01165
   RYG_YELLOW = 0.06157
 
-  POLY_PATH_DEGREE = 4
+  POLY_PATH_DEGREE = 5
 
 # model outputs slices
 class Plan:

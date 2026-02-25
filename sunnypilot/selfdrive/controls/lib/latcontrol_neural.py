@@ -5,6 +5,7 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from cereal import log
+import numpy as np
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 
 
@@ -13,20 +14,27 @@ class LatControlNeural(LatControl):
     super().__init__(CP, CP_SP, CI, dt)
     self.torque_from_lateral_accel = CI.torque_from_lateral_accel()
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, torque_neural=0.0):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, calibrated_pose, curvature_limited, lat_delay, torque_neural=0.0, lateral_uncertainty=0.0):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
 
     if not active:
       output_torque = 0.0
       pid_log.active = False
     else:
+      # Calculate fallback torque
+      desired_lateral_accel = desired_curvature * CS.vEgo ** 2
+      fallback_torque = self.torque_from_lateral_accel(desired_lateral_accel, self.CP.lateralTuning.torque)
+
       # Use torque directly from the neural model if available
-      output_torque = torque_neural
-      
-      # If no neural torque is provided, fallback to a basic curvature-to-torque conversion
-      if output_torque == 0.0:
-        desired_lateral_accel = desired_curvature * CS.vEgo ** 2
-        output_torque = self.torque_from_lateral_accel(desired_lateral_accel, self.CP.lateralTuning.torque)
+      # Blend based on uncertainty: 0.0 (certain) -> torque_neural, > threshold (uncertain) -> fallback_torque
+      # Standard deviation of 0.5 meters is used as a threshold for high uncertainty
+      UNCERTAINTY_THRESHOLD = 0.5
+      blend_factor = np.clip(lateral_uncertainty / UNCERTAINTY_THRESHOLD, 0.0, 1.0)
+
+      if torque_neural != 0.0:
+        output_torque = (1.0 - blend_factor) * torque_neural + blend_factor * fallback_torque
+      else:
+        output_torque = fallback_torque
 
       pid_log.active = True
       pid_log.p = 0.0
