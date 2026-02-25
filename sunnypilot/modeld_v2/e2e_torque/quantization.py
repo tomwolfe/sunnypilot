@@ -350,8 +350,8 @@ class ModelQuantizer:
                 config = self.quantizer.get_config(layer)
                 if config:
                     print(
-                        f"  {layer}: {config.precision} "
-                        f"[{config.clip_min:.3f}, {config.clip_max:.3f}] "
+                        f"  {layer}: {config.precision} " +
+                        f"[{config.clip_min:.3f}, {config.clip_max:.3f}] " +
                         f"scale={config.scale:.6f}"
                     )
 
