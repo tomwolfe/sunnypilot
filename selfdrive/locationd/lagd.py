@@ -385,6 +385,7 @@ def main():
           t = sm.logMonoTime[which] * 1e-9
           lag_learner.handle_log(t, which, sm[which])
       lag_learner.update_points()
+      lagd_toggle.update_dynamic_delay(sm)
 
     # 4Hz driven by livePose
     if sm.frame % 5 == 0:

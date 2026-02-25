@@ -192,10 +192,17 @@ class DynamicExperimentalController:
       alpha=1.03,
       smoothing_factor=0.75
     )
+    self._engaged_prob_filter = SmoothKalmanFilter(
+      measurement_noise=0.1,
+      process_noise=0.1,
+      alpha=1.02,
+      smoothing_factor=0.85
+    )
     self._has_lead_filtered = False
     self._has_slow_down = False
     self._has_slowness = False
     self._has_mpc_fcw = False
+    self._hard_brake_predicted = False
     self._v_ego_kph = 0.0
     self._v_cruise_kph = 0.0
     self._has_standstill = False
@@ -266,6 +273,10 @@ class DynamicExperimentalController:
       # Use the maximum probability across the future horizon for proactive stop detection
       max_brake_prob = float(max(md.meta.disengagePredictions.brakeDisengageProbs))
       self._disengage_prob_future_filter.add_data(max_brake_prob)
+
+    # Engaged Probability: A high-level confidence that the model thinks it should be in control
+    self._engaged_prob_filter.add_data(float(md.meta.engagedProb))
+    self._hard_brake_predicted = bool(md.meta.hardBrakePredicted)
 
     # Slow down detection
     self._calculate_slow_down(md)
@@ -362,14 +373,29 @@ class DynamicExperimentalController:
     # Future brake intent - slightly lower weight but earlier detection
     future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
-    # Bayesian Intent Fusion:
+    # Bayesian Intent Fusion (Neural Arbitrator):
     # Instead of max(), we use a weighted fusion that favors high-certainty model signals.
     # This reduces reliance on the 'max' of potentially noisy heuristics.
-    intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
-                        future_brake_urgency, velocity_urgency, curve_urgency])
     
-    # Square-root of the sum of squares to emphasize dominant signals while maintaining continuity
-    combined_urgency = float(np.sqrt(np.mean(np.square(intents)) * len(intents)))
+    # We include Engaged Probability as a "Gating Signal" for confidence
+    engaged_prob = self._engaged_prob_filter.get_value() or 0.0
+    
+    # Emergency: hard brake predicted by model
+    hard_brake_urgency = 1.0 if self._hard_brake_predicted else 0.0
+
+    intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
+                        future_brake_urgency, velocity_urgency, curve_urgency,
+                        hard_brake_urgency])
+    
+    # Dynamic weighting based on engaged_prob
+    # If the model is not confident about engagement, we penalize all its urgenices except for hard brake
+    weights = np.ones_like(intents)
+    weights[:6] *= (0.5 + 0.5 * engaged_prob)
+    weights[6] = 1.0 # Always trust hard brake prediction for safety
+
+    # Square-root of the sum of squares with dynamic weighting
+    weighted_sum_sq = np.sum(np.square(intents) * weights)
+    combined_urgency = float(np.sqrt(weighted_sum_sq / np.sum(weights) * len(intents)))
     combined_urgency = min(1.0, combined_urgency)
 
     # Apply filtering but with less smoothing for stops

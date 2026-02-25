@@ -21,6 +21,39 @@ DecState = custom.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimen
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 
 
+class JerkLimitedNeuralFilter:
+  """
+  Second-Order Jerk-Limited Filter for E2E Longitudinal Smoothness.
+  Filters acceleration targets based on the car's braking characteristics.
+  """
+  def __init__(self, dt=DT_MDL):
+    self.dt = dt
+    self.a = 0.0
+    self.initialized = False
+    self.jerk_limit_base = 2.0  # m/s^3
+    self.braking_jerk_factor = 0.4  # more restrictive when braking
+
+  def update(self, a_target, e2e_trust):
+    if not self.initialized:
+      self.a = a_target
+      self.initialized = True
+      return self.a
+
+    # Adjust jerk limit based on braking intensity and trust
+    # In high-trust E2E scenarios, we allow the model more authority but still limit the jerk
+    # for human-like smoothness.
+    is_braking = a_target < -0.5
+    jerk_limit = self.jerk_limit_base * (self.braking_jerk_factor if is_braking else 1.0)
+    
+    # Scale jerk limit slightly with trust to allow more responsive E2E maneuvers
+    jerk_limit *= (0.8 + 0.4 * e2e_trust)
+
+    da = (a_target - self.a) / self.dt
+    da_clipped = np.clip(da, -jerk_limit, jerk_limit)
+    self.a += da_clipped * self.dt
+    return self.a
+
+
 class LongitudinalPlannerSP:
   def __init__(self, CP: structs.CarParams, CP_SP: structs.CarParamsSP, mpc):
     self.events_sp = EventsSP()
@@ -35,6 +68,7 @@ class LongitudinalPlannerSP:
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+    self.a_filter = JerkLimitedNeuralFilter()
 
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
@@ -98,6 +132,10 @@ class LongitudinalPlannerSP:
 
     self.source = min(targets, key=lambda k: targets[k][0])
     self.output_v_target, self.output_a_target = targets[self.source]
+
+    # Apply Jerk-Limited Neural Filter for smoothness
+    self.output_a_target = self.a_filter.update(self.output_a_target, e2e_trust)
+
     return self.output_v_target, self.output_a_target
 
   def update(self, sm: messaging.SubMaster) -> None:
