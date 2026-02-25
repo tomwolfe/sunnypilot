@@ -310,3 +310,229 @@ float e2e_safety_get_current_deviation(void) {
 float e2e_safety_get_path_uncertainty(void) {
   return safety_state.path_uncertainty_avg;
 }
+
+static void simulate_trajectory(
+  const VehicleState* initial_state,
+  float torque_nm,
+  float dt_s,
+  TrajectoryPoint* trajectory
+) {
+  float heading = initial_state->heading_rad;
+  float velocity = sqrtf(initial_state->velocity_x_mps * initial_state->velocity_x_mps + 
+                         initial_state->velocity_y_mps * initial_state->velocity_y_mps);
+  
+  float steering_angle = torque_nm * 0.1f;
+  float yaw_rate = steering_angle * velocity * 0.1f;
+  
+  float current_x = initial_state->position_x_m;
+  float current_y = initial_state->position_y_m;
+  float current_vx = initial_state->velocity_x_mps;
+  float current_vy = initial_state->velocity_y_mps;
+  
+  for (uint8_t t = 0; t < REACHABILITY_NUM_STEPS; t++) {
+    float time_s = (float)t * dt_s;
+    
+    heading += yaw_rate * dt_s;
+    
+    current_vx += cosf(heading) * 0.5f * dt_s;
+    current_vy += sinf(heading) * 0.5f * dt_s;
+    
+    current_x += current_vx * dt_s;
+    current_y += current_vy * dt_s;
+    
+    trajectory->positions_x[t] = current_x;
+    trajectory->positions_y[t] = current_y;
+    trajectory->velocities_x[t] = current_vx;
+    trajectory->velocities_y[t] = current_vy;
+    trajectory->time_s = time_s;
+  }
+}
+
+static bool check_collision_with_obstacles(
+  const TrajectoryPoint* trajectory,
+  const float road_bound_left_m,
+  const float road_bound_right_m,
+  const float object_positions[][2],
+  uint8_t num_objects,
+  float* collision_time_s
+) {
+  for (uint8_t t = 0; t < REACHABILITY_NUM_STEPS; t++) {
+    float px = trajectory->positions_x[t];
+    float py = trajectory->positions_y[t];
+    
+    if (py < road_bound_left_m || py > road_bound_right_m) {
+      *collision_time_s = trajectory->time_s;
+      return true;
+    }
+    
+    for (uint8_t i = 0; i < num_objects; i++) {
+      float obj_x = object_positions[i][0];
+      float obj_y = object_positions[i][1];
+      float dx = px - obj_x;
+      float dy = py - obj_y;
+      float dist = sqrtf(dx * dx + dy * dy);
+      
+      if (dist < REACHABILITY_COLLISION_THRESHOLD_M) {
+        *collision_time_s = trajectory->time_s;
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+ReachabilityAnalysis e2e_safety_compute_reachability(
+  const VehicleState* current_state,
+  float desired_torque_nm,
+  const float road_bound_left_m,
+  const float road_bound_right_m,
+  const float object_positions[][2],
+  uint8_t num_objects
+) {
+  ReachabilityAnalysis result;
+  memset(&result, 0, sizeof(ReachabilityAnalysis));
+  
+  float dt_s = (float)REACHABILITY_TIME_STEP_MS / 1000.0f;
+  
+  float torque_samples[] = {-2.0f, -1.5f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+  uint8_t num_torques = sizeof(torque_samples) / sizeof(float);
+  
+  uint8_t collision_count = 0;
+  float min_collision_time = 999.0f;
+  
+  for (uint8_t i = 0; i < num_torques && result.num_trajectories < REACHABILITY_MAX_TRAJECTORIES; i++) {
+    float torque = torque_samples[i];
+    
+    simulate_trajectory(current_state, torque, dt_s, &result.trajectories[result.num_trajectories]);
+    
+    float collision_time = 0.0f;
+    bool collision = check_collision_with_obstacles(
+      &result.trajectories[result.num_trajectories],
+      road_bound_left_m,
+      road_bound_right_m,
+      object_positions,
+      num_objects,
+      &collision_time
+    );
+    
+    result.trajectories[result.num_trajectories].is_collision = collision;
+    result.trajectories[result.num_trajectories].collision_time_s = collision_time;
+    
+    if (collision) {
+      collision_count++;
+      if (collision_time < min_collision_time) {
+        min_collision_time = collision_time;
+      }
+    }
+    
+    result.num_trajectories++;
+  }
+  
+  result.collision_probability = (float)collision_count / (float)result.num_trajectories;
+  result.min_safe_time_s = min_collision_time;
+  
+  if (collision_count == 0) {
+    result.status = REACHABILITY_SAFE;
+    result.is_controllable = true;
+    result.max_safe_torque_nm = 2.0f;
+    result.min_safe_torque_nm = -2.0f;
+  } else if (collision_count == result.num_trajectories) {
+    result.status = REACHABILITY_UNSAFE_UNAVOIDABLE;
+    result.is_controllable = false;
+    result.max_safe_torque_nm = 0.0f;
+    result.min_safe_torque_nm = 0.0f;
+  } else {
+    result.status = REACHABILITY_UNSAFE_POSSIBLE;
+    result.is_controllable = true;
+    
+    result.max_safe_torque_nm = desired_torque_nm;
+    result.min_safe_torque_nm = desired_torque_nm;
+  }
+  
+  return result;
+}
+
+bool e2e_safety_is_collision_unavoidable(
+  const VehicleState* initial_state,
+  const float road_bound_left_m,
+  const float road_bound_right_m,
+  const float object_positions[][2],
+  uint8_t num_objects
+) {
+  float dt_s = (float)REACHABILITY_TIME_STEP_MS / 1000.0f;
+  
+  float torque_samples[] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+  uint8_t num_torques = 5;
+  
+  for (uint8_t i = 0; i < num_torques; i++) {
+    TrajectoryPoint trajectory;
+    simulate_trajectory(initial_state, torque_samples[i], dt_s, &trajectory);
+    
+    float collision_time = 0.0f;
+    bool collision = check_collision_with_obstacles(
+      &trajectory,
+      road_bound_left_m,
+      road_bound_right_m,
+      object_positions,
+      num_objects,
+      &collision_time
+    );
+    
+    if (!collision) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+float e2e_safety_compute_safe_torque_bound(
+  const VehicleState* current_state,
+  float desired_torque_nm,
+  const float road_bound_left_m,
+  const float road_bound_right_m,
+  bool is_max_bound
+) {
+  float test_torque = is_max_bound ? desired_torque_nm : -desired_torque_nm;
+  if (test_torque < 0) test_torque = -test_torque;
+  
+  float object_positions[1][2] = {{0.0f, 0.0f}};
+  
+  ReachabilityAnalysis analysis = e2e_safety_compute_reachability(
+    current_state,
+    test_torque,
+    road_bound_left_m,
+    road_bound_right_m,
+    object_positions,
+    0
+  );
+  
+  if (analysis.status == REACHABILITY_SAFE) {
+    return desired_torque_nm;
+  }
+  
+  float safe_torque = 0.0f;
+  float step = 0.1f;
+  
+  for (float t = 0.0f; t <= 2.0f; t += step) {
+    float test = is_max_bound ? t : -t;
+    
+    analysis = e2e_safety_compute_reachability(
+      current_state,
+      test,
+      road_bound_left_m,
+      road_bound_right_m,
+      object_positions,
+      0
+    );
+    
+    if (analysis.status == REACHABILITY_SAFE) {
+      safe_torque = test;
+    } else {
+      break;
+    }
+  }
+  
+  return safe_torque;
+}

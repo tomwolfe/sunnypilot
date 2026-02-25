@@ -12,6 +12,7 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
 from typing import Literal, Optional
 from dataclasses import dataclass
+from enum import IntEnum
 
 
 TRAJECTORY_SIZE = 33
@@ -211,65 +212,168 @@ class VisionOnlyTrafficAuditor:
     self._predictive_stop_filter.reset_data()
 
 
-ModeType = Literal['acc', 'blended', 'pure_e2e']
+ModeType = Literal['unified_e2e']
 
 
-class ModeTransitionManager:
-  """Manages smooth transitions between driving modes with continuous weighting."""
+class SafetyClipLevel(IntEnum):
+  NONE = 0
+  LIGHT = 1
+  MEDIUM = 2
+  HARD = 3
 
+
+class UnifiedE2EPolicy:
+  """
+  Unified E2E Policy - No Blending.
+  
+  Instead of blending between ACC, Blended, and Pure E2E modes, this policy
+  uses a Single Unified Policy where:
+  1. World Model generates the primary policy
+  2. Safety is a hard-limit "clipping" layer, not a blender
+  3. Classical ACC/MPC serves only as fallback when E2E confidence is too low
+  
+  The system transitions gracefully:
+  - E2E confident + safe → Execute E2E action
+  - E2E not confident OR unsafe → Clip to safety limits, execute
+  - E2E completely failed → Fallback to classical control
+  """
+  
+  CONFIDENCE_THRESHOLD_HIGH = 0.85
+  CONFIDENCE_THRESHOLD_LOW = 0.50
+  SAFETY_CLIP_ENABLED = True
+  
+  URGENCY_CURVE_THRESHOLD = 0.7
+  URGENCY_HARD_BRAKE_THRESHOLD = 0.9
+  
   def __init__(self):
-    self.current_mode: ModeType = 'acc'
-    self.mode_confidence = {'acc': 1.0, 'blended': 0.0, 'pure_e2e': 0.0}
-    self.blended_weight = 0.0
-    self.transition_timeout = 0
-    self.min_mode_duration = 2
-    self.mode_duration = 0
+    self.current_mode: ModeType = 'unified_e2e'
+    self.e2e_confidence = 0.0
+    self.safety_clip_level = SafetyClipLevel.NONE
+    self.fallback_active = False
     self.emergency_override = False
-
-  def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
-    self.mode_confidence[mode] = min(1.0, self.mode_confidence[mode] + 0.2 * confidence)
-    for m in self.mode_confidence:
-      if m != mode:
-        self.mode_confidence[m] = max(0.0, self.mode_confidence[m] - 0.1)
-
-    if emergency:
-      self.emergency_override = True
-      self.current_mode = mode
-      self.transition_timeout = SET_MODE_TIMEOUT
-      self.mode_duration = 0
-      self.blended_weight = 1.0 if mode in ['blended', 'pure_e2e'] else 0.0
-      return
-
-    if self.mode_duration < self.min_mode_duration and not self.emergency_override:
-      return
-
-    confidence_threshold = 0.5 if mode != self.current_mode else 0.2
-
-    if self.mode_confidence[mode] > confidence_threshold:
-      if mode != self.current_mode and self.transition_timeout == 0:
-        self.transition_timeout = SET_MODE_TIMEOUT
-        self.current_mode = mode
-        self.mode_duration = 0
-
-  def update(self):
-    if self.transition_timeout > 0:
-      self.transition_timeout -= 1
-    self.mode_duration += 1
-
-    if self.emergency_override and self.mode_duration > 10:
-      self.emergency_override = False
-
-    for mode in self.mode_confidence:
-      self.mode_confidence[mode] *= 0.995
-
-    target_weight = 1.0 if self.current_mode in ['blended', 'pure_e2e'] else 0.0
-    self.blended_weight = 0.9 * self.blended_weight + 0.1 * target_weight
-
+    
+    self._clip_torque_max = 2.0
+    self._clip_accel_min = -4.0
+    self._clip_accel_max = 2.5
+    
+    self._confidence_history = []
+    self._max_history = 30
+    
+  def update_confidence(self, model_confidence: float, calibration_confidence: float,
+                       engaged_prob: float) -> None:
+    """Update E2E confidence based on model and calibration factors."""
+    raw_confidence = model_confidence * calibration_confidence * engaged_prob
+    self._confidence_history.append(raw_confidence)
+    if len(self._confidence_history) > self._max_history:
+      self._confidence_history.pop(0)
+    self.e2e_confidence = sum(self._confidence_history) / len(self._confidence_history)
+  
+  def compute_safety_clip(self, urgency: float, predicted_trajectory_valid: bool,
+                         road_edge_clear: bool) -> SafetyClipLevel:
+    """
+    Compute safety clip level based on urgency and road conditions.
+    
+    This is a HARD limit, not a blender weight. If clip level is set,
+    the E2E output is mathematically clipped before execution.
+    """
+    if not self.SAFETY_CLIP_ENABLED:
+      return SafetyClipLevel.NONE
+    
+    if not predicted_trajectory_valid:
+      return SafetyClipLevel.HARD
+    
+    if urgency > self.URGENCY_HARD_BRAKE_THRESHOLD:
+      return SafetyClipLevel.HARD
+    
+    if urgency > self.URGENCY_CURVE_THRESHOLD and not road_edge_clear:
+      return SafetyClipLevel.MEDIUM
+    
+    if urgency > self.URGENCY_CURVE_THRESHOLD:
+      return SafetyClipLevel.LIGHT
+    
+    if not road_edge_clear:
+      return SafetyClipLevel.LIGHT
+    
+    return SafetyClipLevel.NONE
+  
+  def apply_safety_clip(self, torque: float, accel: float, 
+                       clip_level: SafetyClipLevel) -> tuple[float, float]:
+    """
+    Apply hard-limit clipping to E2E outputs.
+    
+    Unlike blending (which averages outputs), this applies mathematical
+    constraints that CANNOT be exceeded.
+    """
+    clipped_torque = torque
+    clipped_accel = accel
+    
+    torque_max = 2.0
+    accel_max = 2.5
+    
+    if clip_level >= SafetyClipLevel.LIGHT:
+      torque_max = 1.5
+      accel_max = 2.0
+    
+    if clip_level >= SafetyClipLevel.MEDIUM:
+      torque_max = 1.0
+      accel_max = 1.5
+    
+    if clip_level >= SafetyClipLevel.HARD:
+      torque_max = 0.5
+      accel_max = 0.5
+      clipped_accel = min(clipped_accel, self._clip_accel_min + 1.0)
+    
+    clipped_torque = max(-torque_max, min(torque_max, clipped_torque))
+    clipped_accel = max(self._clip_accel_min, min(accel_max, clipped_accel))
+    
+    self.safety_clip_level = clip_level
+    return clipped_torque, clipped_accel
+  
+  def should_fallback(self) -> bool:
+    """Determine if we should fall back to classical control."""
+    if self.emergency_override:
+      return True
+    if self.e2e_confidence < self.CONFIDENCE_THRESHOLD_LOW:
+      return True
+    if self.safety_clip_level >= SafetyClipLevel.HARD:
+      return True
+    return False
+  
   def get_mode(self) -> ModeType:
     return self.current_mode
   
+  def get_confidence(self) -> float:
+    return self.e2e_confidence
+  
+  def get_clip_level(self) -> SafetyClipLevel:
+    return self.safety_clip_level
+  
+  def is_fallback_active(self) -> bool:
+    return self.fallback_active
+
+
+class ModeTransitionManager:
+  """Simplified transition manager for backward compatibility - delegates to UnifiedE2EPolicy."""
+  
+  def __init__(self):
+    self._unified_policy = UnifiedE2EPolicy()
+    self.mode_duration = 0
+    
+  def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
+    pass
+    
+  def update(self):
+    self.mode_duration += 1
+    
+  def get_mode(self) -> ModeType:
+    return self._unified_policy.get_mode()
+  
   def get_weight(self) -> float:
-    return float(self.blended_weight)
+    return 1.0 if self._unified_policy.e2e_confidence > 0.5 else 0.0
+    
+  @property  
+  def mode_confidence(self):
+    return {'unified_e2e': self._unified_policy.get_confidence()}
 
 
 class DynamicExperimentalController:
@@ -283,6 +387,7 @@ class DynamicExperimentalController:
     self._urgency = 0.0
 
     self._mode_manager = ModeTransitionManager()
+    self._unified_policy = UnifiedE2EPolicy()
     self._calibration_mae = 0.0
     self._calibration_uncertainty_offset = 0.0
     self._calibration_confidence = 1.0
@@ -362,10 +467,10 @@ class DynamicExperimentalController:
       self._enabled = self._params.get_bool("DynamicExperimentalControl")
 
   def mode(self) -> str:
-    return self._mode_manager.get_mode()
+    return self._unified_policy.get_mode()
 
   def blended_weight(self) -> float:
-    return self._mode_manager.get_weight()
+    return 1.0 if self._unified_policy.e2e_confidence > UnifiedE2EPolicy.CONFIDENCE_THRESHOLD_LOW else 0.0
 
   def calibration_mae(self) -> float:
     return self._calibration_mae
@@ -377,7 +482,13 @@ class DynamicExperimentalController:
     return self._calibration_confidence
 
   def blended_confidence(self) -> float:
-    return float(self._mode_manager.mode_confidence['blended'])
+    return self._unified_policy.get_confidence()
+
+  def safety_clip_level(self) -> SafetyClipLevel:
+    return self._unified_policy.get_clip_level()
+
+  def is_fallback_active(self) -> bool:
+    return self._unified_policy.is_fallback_active()
 
   def enabled(self) -> bool:
     return self._enabled
@@ -554,77 +665,51 @@ class DynamicExperimentalController:
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
-    if self._has_mpc_fcw:
-      self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
-      return
-
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
-    if self._calibration_confidence > 0.85 and engaged_prob > 0.92:
-      self._mode_manager.request_mode('pure_e2e', confidence=0.8)
-      return
-
-    if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=0.9)
-      return
-
-    if self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
+    road_edge_clear = self._vision_traffic_detection.signal_type == 'none'
+    
+    self._unified_policy.update_confidence(
+      self._uncertainty_filter.get_confidence(),
+      self._calibration_confidence,
+      engaged_prob
+    )
+    
+    clip_level = self._unified_policy.compute_safety_clip(
+      self._urgency,
+      self._trajectory_valid,
+      road_edge_clear
+    )
+    
+    if self._has_mpc_fcw or self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
       if self._vision_traffic_detection.probability > 0.6:
-        self._mode_manager.request_mode('blended', confidence=self._vision_traffic_detection.probability, emergency=True)
-        return
-
-    if self._has_slow_down:
-      if self._urgency > 0.7:
-        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
-      else:
-        confidence = min(1.0, self._urgency * 1.5)
-        self._mode_manager.request_mode('blended', confidence=confidence)
-      return
-
-    if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
-      return
-
-    self._mode_manager.request_mode('acc', confidence=0.7)
+        self._unified_policy.emergency_override = True
+    
+    self._unified_policy.fallback_active = self._unified_policy.should_fallback()
 
   def _radar_mode(self) -> None:
-    if self._has_mpc_fcw:
-      self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
-      return
-
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
-    if self._calibration_confidence > 0.85 and engaged_prob > 0.95:
-      self._mode_manager.request_mode('pure_e2e', confidence=0.8)
-      return
-
-    if self._has_lead_filtered and not (self._standstill_count > 3):
-      if self._has_slow_down and self._urgency > 0.6:
-        self._mode_manager.request_mode('blended', confidence=self._urgency)
-      else:
-        self._mode_manager.request_mode('acc', confidence=1.0)
-      return
-
+    road_edge_clear = self._vision_traffic_detection.signal_type == 'none'
+    
+    self._unified_policy.update_confidence(
+      self._uncertainty_filter.get_confidence(),
+      self._calibration_confidence,
+      engaged_prob
+    )
+    
+    clip_level = self._unified_policy.compute_safety_clip(
+      self._urgency,
+      self._trajectory_valid,
+      road_edge_clear
+    )
+    
+    if self._has_mpc_fcw:
+      self._unified_policy.emergency_override = True
+    
     if self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
       if self._vision_traffic_detection.probability > 0.55:
-        self._mode_manager.request_mode('blended', confidence=self._vision_traffic_detection.probability)
-        return
-
-    if self._has_slow_down:
-      if self._urgency > 0.7:
-        self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
-      else:
-        confidence = min(1.0, self._urgency * 1.3)
-        self._mode_manager.request_mode('blended', confidence=confidence)
-      return
-
-    if self._standstill_count > 3:
-      self._mode_manager.request_mode('blended', confidence=0.9)
-      return
-
-    if self._has_slowness and not self._has_slow_down:
-      self._mode_manager.request_mode('acc', confidence=0.8)
-      return
-
-    self._mode_manager.request_mode('acc', confidence=0.7)
+        self._unified_policy.emergency_override = True
+    
+    self._unified_policy.fallback_active = self._unified_policy.should_fallback()
 
   def update(self, sm: messaging.SubMaster) -> None:
     self._read_params()
