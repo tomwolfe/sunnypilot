@@ -169,6 +169,32 @@ class Calibrator:
     if self.param_put and write_this_cycle:
       self.params.put_nonblocking("CalibrationParams", self.get_msg(True).to_bytes())
 
+  def handle_model(self, model_v2: log.ModelDataV2) -> None:
+    """Neural-Fast Online Extrinsics: Incorporate model's road_transform for near-instant calibration correction."""
+    if not (self.cal_status == log.LiveCalibrationData.Status.calibrated and self.v_ego > MIN_SPEED_FILTER):
+      return
+
+    # The road_transform_euler predicts the road plane orientation (pitch/roll) relative to the camera.
+    # In a perfect calibration, these should be zero.
+    if len(model_v2.roadTransformEuler.value) == 3:
+      road_euler = np.array(model_v2.roadTransformEuler.value)
+      road_euler_std = np.array(model_v2.roadTransformEuler.std)
+
+      # We only trust the model if its certainty is high (low std)
+      # 0.005 radians (~0.3 deg) is a very high certainty threshold
+      if np.all(road_euler_std < 0.005):
+        # We apply a small, fast correction to the current rpy.
+        # This allows the E2E planning to be robust against "pitch-up" under acceleration
+        # or vibration-induced mounting shift.
+        correction_alpha = 0.05  # 5% correction per model frame (20Hz)
+        
+        # We only correct Pitch (1) and Roll (0), as Yaw (2) is best handled by CameraOdometry
+        self.rpy[0] = (1.0 - correction_alpha) * self.rpy[0] + correction_alpha * (self.rpy[0] + road_euler[0])
+        self.rpy[1] = (1.0 - correction_alpha) * self.rpy[1] + correction_alpha * (self.rpy[1] + road_euler[1])
+        
+        # Clip to sanity limits to prevent runaway calibration
+        self.rpy = sanity_clip(self.rpy)
+
   def handle_v_ego(self, v_ego: float) -> None:
     self.v_ego = v_ego
 
@@ -262,7 +288,7 @@ def main() -> NoReturn:
   config_realtime_process([0, 1, 2, 3], 5)
 
   pm = messaging.PubMaster(['liveCalibration'])
-  sm = messaging.SubMaster(['cameraOdometry', 'carState'], poll='cameraOdometry')
+  sm = messaging.SubMaster(['cameraOdometry', 'carState', 'modelV2'], poll='cameraOdometry')
 
   params_reader = Params()
   CP = messaging.log_from_bytes(params_reader.get("CarParams", block=True), car.CarParams)
@@ -273,6 +299,9 @@ def main() -> NoReturn:
   while 1:
     timeout = 0 if sm.frame == -1 else 100
     sm.update(timeout)
+
+    if sm.updated['modelV2']:
+      calibrator.handle_model(sm['modelV2'])
 
     if sm.updated['cameraOdometry']:
       calibrator.handle_v_ego(sm['carState'].vEgo)

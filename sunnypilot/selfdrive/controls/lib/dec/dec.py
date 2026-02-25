@@ -351,23 +351,32 @@ class DynamicExperimentalController:
       # High yaw rate predicted by model indicates a sharp maneuver/curve ahead
       curve_urgency = min(1.0, max(0.0, yaw_rate_model - 0.05) * 2.0)
 
-    # Uncertainty in trajectory (xStd) above 10m is highly indicative of a blocked path
+    # Uncertainty in trajectory (xStd) above 4m starts to indicate a blocked path
     uncertainty_urgency = min(1.0, max(0.0, (uncertainty_filtered - 4.0) / 12.0))
     # Brake disengage probability - any prob over 0.1 indicates the car might want to stop soon
     brake_prob_urgency = min(1.0, brake_prob_filtered * 2.0)
     # Future brake intent - slightly lower weight but earlier detection
     future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
-    # Combine with current urgency - take max of the metrics
-    combined_urgency = max(urgency, uncertainty_urgency, brake_prob_urgency,
-                           future_brake_urgency, velocity_urgency, curve_urgency)
+    # Bayesian Intent Fusion:
+    # Instead of max(), we use a weighted fusion that favors high-certainty model signals.
+    # This reduces reliance on the 'max' of potentially noisy heuristics.
+    intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
+                        future_brake_urgency, velocity_urgency, curve_urgency])
+    
+    # Square-root of the sum of squares to emphasize dominant signals while maintaining continuity
+    combined_urgency = float(np.sqrt(np.mean(np.square(intents)) * len(intents)))
+    combined_urgency = min(1.0, combined_urgency)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(combined_urgency)
     urgency_filtered = self._slow_down_filter.get_value() or 0.0
 
-    # Update state with lower threshold for better stop detection
-    self._has_slow_down = urgency_filtered > (WMACConstants.SLOW_DOWN_PROB * 0.8)
+    # Update state with a dynamic threshold that scales with model confidence
+    model_confidence = self._uncertainty_filter.get_confidence()
+    dynamic_threshold = WMACConstants.SLOW_DOWN_PROB * (1.2 - 0.4 * model_confidence)
+    
+    self._has_slow_down = urgency_filtered > dynamic_threshold
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:

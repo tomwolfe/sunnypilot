@@ -132,7 +132,13 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    
+    # Longitudinal Neural Intent
+    accel_neural = float(model_v2.plan.acceleration[0]) if len(model_v2.plan.acceleration) > 0 else 0.0
+    longitudinal_uncertainty = float(model_v2.position.xStd[0]) if len(model_v2.position.xStd) > 0 else 0.0
+    
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits,
+                                            accel_neural=accel_neural, longitudinal_uncertainty=longitudinal_uncertainty))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

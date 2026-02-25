@@ -43,42 +43,35 @@ class LatControlNeural(LatControl):
       UNCERTAINTY_THRESHOLD = 0.5
 
       if torque_neural != 0.0:
-        # Hysteresis Gate: Determine neural authority using a sigmoid transition
-        # We shift the center of the sigmoid based on the current filtered weight
-        # to "lock in" the neural mode.
-        sigmoid_center = 0.35 if self.neural_weight_filtered.x > 0.5 else 0.25
-        sigmoid_steepness = 15.0
+        # Neural Authority Dominance:
+        # Instead of blending based on fixed certainty, we adopt an "Optimistic Neural" stance.
+        # We assume the model is correct unless it violates high-confidence physical constraints.
         
-        # Neural weight target based on uncertainty
+        # 1. Neural Weight from Latent Uncertainty
+        # Using a softer sigmoid to allow more "neural character" even at moderate uncertainty.
+        sigmoid_center = 0.55  # Increased from 0.35 to keep neural active longer
+        sigmoid_steepness = 10.0
         w_neural_target = 1.0 / (1.0 + np.exp(sigmoid_steepness * (lateral_uncertainty - sigmoid_center)))
         w_neural_gated = self.neural_weight_filtered.update(w_neural_target)
 
-        # Variational Bayesian Blending:
-        # Instead of a hard gate, we treat the neural and kinematic torques as
-        # probability distributions and perform a variance-weighted fusion.
+        # 2. Dynamic Constraint Envelope:
+        # We calculate the "allowed" deviation from physics. In pure E2E, this envelope is wide.
+        # It narrows only at very high speeds or high lateral G-loads.
+        lat_g = abs(actual_curvature * CS.vEgo ** 2)
+        constraint_tightness = interp(lat_g, [0.0, 3.0, 5.0], [0.1, 0.4, 0.8])
+        allowed_diff = (0.5 + 0.5 * max(0, 1.0 - CS.vEgo / 25.0)) * (1.0 - constraint_tightness)
 
-        # 1. Neural Variance (estimated from uncertainty)
-        # We map uncertainty to a variance parameter, modulated by our gated weight.
-        neural_variance = (np.square(lateral_uncertainty) + 0.01) / max(w_neural_gated, 1e-3)
-
-        # 2. Kinematic Variance (estimated based on speed and consistency)
-        # At high speeds, kinematics is highly reliable.
-        # Base envelope follows speed-based heuristic, scaled by relative uncertainty.
-        allowed_diff_base = 0.3 + 0.2 * max(0, 1.0 - CS.vEgo / 20.0)
-        kinematic_variance = 0.05 / max(1.0, (CS.vEgo / 15.0)**2)
-
-        # 3. Dynamic Cost Sensitivity: Increase kinematic weight if neural deviates significantly
-        # This acts as an "active inference" check.
+        # 3. Direct Neural Drive with Bayesian Guarding:
+        # If the difference between neural and fallback is within allowed_diff, we use 100% neural.
+        # We only blend back to kinematics if the model deviates beyond physical plausibility.
         torque_diff = abs(torque_neural - fallback_torque)
-        innovation_cost = np.square(torque_diff / allowed_diff_base)
-        kinematic_variance /= (1.0 + innovation_cost)
-
-        # Bayesian Blend: Weights are inversely proportional to variance
-        w_neural = 1.0 / neural_variance
-        w_kinematic = 1.0 / kinematic_variance
-
-        total_weight = w_neural + w_kinematic
-        output_torque = (w_neural * (torque_neural + self.bias) + w_kinematic * fallback_torque) / total_weight
+        out_of_bounds = max(0.0, (torque_diff - allowed_diff) / 0.2)
+        
+        # Final Blend Weight: Mix neural intent with safety-bound out_of_bounds
+        w_final_neural = w_neural_gated * (1.0 - min(1.0, out_of_bounds))
+        
+        # Apply Self-Healing Bias to the Neural signal
+        output_torque = w_final_neural * (torque_neural + self.bias) + (1.0 - w_final_neural) * fallback_torque
 
         # Online Learning / Residual Adaptation:
         # Update bias by comparing neural prediction to estimated required torque.

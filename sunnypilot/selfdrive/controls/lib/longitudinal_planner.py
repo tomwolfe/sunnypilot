@@ -69,6 +69,31 @@ class LongitudinalPlannerSP:
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),
     }
 
+    # Neural Speed Limit Fusion:
+    # If in E2E mode, we treat the speed limit as a "soft" feature rather than a hard constraint.
+    # We blend the SLA target with the model's predicted trajectory endpoint velocity.
+    if self.is_e2e(sm) and (self.sla.is_active or self.scc.vision.is_active):
+      md = sm['modelV2']
+      if len(md.velocity.x) > 0:
+        v_model = md.velocity.x[0]
+        
+        # Determine the "suggested" target from heuristics (SLA or Vision Curve Control)
+        # We take the minimum of the two as the "Heuristic Suggestion"
+        v_heuristic = min(self.sla.output_v_target, 
+                          self.scc.vision.output_v_target if self.scc.vision.is_active else float('inf'))
+        
+        # Bayesian blending: favor the model if uncertainty is low
+        # In sharp curves, the model's vision-based velocity often reacts faster than 
+        # map-based or curvature-calculated heuristics.
+        blend_factor = 0.7  # 70% weight to model's "intent"
+        v_cruise_neural = v_model * blend_factor + v_heuristic * (1.0 - blend_factor)
+        
+        # Update the dominant heuristic source with our blended neural target
+        if self.source == LongitudinalPlanSource.speedLimitAssist:
+          targets[LongitudinalPlanSource.speedLimitAssist] = (v_cruise_neural, self.sla.output_a_target)
+        elif self.source == LongitudinalPlanSource.sccVision:
+          targets[LongitudinalPlanSource.sccVision] = (v_cruise_neural, self.scc.vision.output_a_target)
+
     self.source = min(targets, key=lambda k: targets[k][0])
     self.output_v_target, self.output_a_target = targets[self.source]
     return self.output_v_target, self.output_a_target

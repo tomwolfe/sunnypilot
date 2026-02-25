@@ -60,7 +60,7 @@ class LongControl:
   def reset(self):
     self.pid.reset()
 
-  def update(self, active, CS, a_target, should_stop, accel_limits):
+  def update(self, active, CS, a_target, should_stop, accel_limits, accel_neural=0.0, longitudinal_uncertainty=0.0):
     """Update longitudinal control. This updates the state machine and runs a PID loop"""
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
@@ -68,6 +68,12 @@ class LongControl:
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill)
+    
+    # Neural Longitudinal Override:
+    # If the model is certain (low xStd), we blend its predicted acceleration directly.
+    # This allows for "smooth, human-like" braking that a simple PID often struggles with.
+    use_neural = accel_neural != 0.0 and self.long_control_state in [LongCtrlState.starting, LongCtrlState.pid]
+    
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
@@ -84,9 +90,22 @@ class LongControl:
       self.reset()
 
     else:  # LongCtrlState.pid
+      # Calculate PID output as fallback
       error = a_target - CS.aEgo
-      output_accel = self.pid.update(error, speed=CS.vEgo,
-                                     feedforward=a_target)
+      pid_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
+      
+      if use_neural:
+        # Bayesian Longitudinal Blend:
+        # Scale neural authority based on uncertainty (xStd proxy)
+        # 0.5m uncertainty is "perfect", 3.0m is "noisy"
+        sigmoid_center = 1.5
+        sigmoid_steepness = 4.0
+        w_neural = 1.0 / (1.0 + np.exp(sigmoid_steepness * (longitudinal_uncertainty - sigmoid_center)))
+        
+        # In 'Blended' (E2E) mode, we prioritize the model's intent
+        output_accel = w_neural * accel_neural + (1.0 - w_neural) * pid_accel
+      else:
+        output_accel = pid_accel
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel
