@@ -1,9 +1,11 @@
 import contextlib
 import http.server
 import os
+import signal
 import threading
 import time
 import pytest
+import psutil
 
 from functools import wraps
 
@@ -37,25 +39,59 @@ def release_only(f):
   return wrap
 
 
+def _kill_process_hard(proc, name, timeout=5):
+  """Forcefully kill a process, trying SIGTERM first then SIGKILL."""
+  if proc is None or proc.proc is None:
+    return
+  
+  try:
+    # Try graceful shutdown first with SIGTERM
+    proc.stop(sig=signal.SIGTERM, block=False)
+    
+    # Wait for process to exit
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < timeout and proc.proc.exitcode is None:
+      time.sleep(0.1)
+    
+    # If still running, send SIGKILL
+    if proc.proc.exitcode is None:
+      proc.stop(sig=signal.SIGKILL, block=True)
+  except Exception:
+    pass
+  
+  # Extra safety: use psutil to kill if still alive
+  try:
+    if proc.proc and proc.proc.pid is not None:
+      psutil_proc = psutil.Process(proc.proc.pid)
+      if psutil_proc.is_running():
+        psutil_proc.kill()
+        psutil_proc.wait(timeout=2)
+  except (psutil.NoSuchProcess, psutil.TimeoutExpired, Exception):
+    pass
+
+
 @contextlib.contextmanager
 def processes_context(processes, init_time=0, ignore_stopped=None):
   ignore_stopped = [] if ignore_stopped is None else ignore_stopped
-
-  # start and assert started
-  for n, p in enumerate(processes):
-    managed_processes[p].start()
-    if n < len(processes) - 1:
-      time.sleep(init_time)
-
-  assert all(managed_processes[name].proc.exitcode is None for name in processes)
+  started_procs = []
 
   try:
+    # start and assert started
+    for n, p in enumerate(processes):
+      managed_processes[p].start()
+      started_procs.append(managed_processes[p])
+      if n < len(processes) - 1:
+        time.sleep(init_time)
+
+    assert all(managed_processes[name].proc.exitcode is None for name in processes)
+
     yield [managed_processes[name] for name in processes]
     # assert processes are still started
     assert all(managed_processes[name].proc.exitcode is None for name in processes if name not in ignore_stopped)
   finally:
+    # Ensure all processes are properly killed
     for p in processes:
-      managed_processes[p].stop()
+      _kill_process_hard(managed_processes[p], p)
 
 
 def with_processes(processes, init_time=0, ignore_stopped=None):

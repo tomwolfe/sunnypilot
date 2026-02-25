@@ -1,11 +1,15 @@
 import contextlib
 import gc
 import os
+import signal
 import pytest
+import psutil
 
 from openpilot.common.prefix import OpenpilotPrefix
+from openpilot.common.swaglog import cloudlog
 from openpilot.system.manager import manager
 from openpilot.system.hardware import TICI, HARDWARE
+from openpilot.system.manager.process_config import managed_processes
 
 # TODO: pytest-cpp doesn't support FAIL, and we need to create test translations in sessionstart
 # pending https://github.com/pytest-dev/pytest-cpp/pull/147
@@ -110,3 +114,41 @@ def pytest_configure(config):
 
   config_line = "shared_download_cache: share download cache between tests"
   config.addinivalue_line("markers", config_line)
+
+
+def pytest_sessionfinish(session, exitstatus):
+  """Clean up any stray managed processes after all tests complete."""
+  cloudlog.info("pytest_sessionfinish: cleaning up stray managed processes")
+  
+  for name, proc in managed_processes.items():
+    try:
+      if proc.proc is not None and proc.proc.pid is not None:
+        # Check if process is still running
+        try:
+          psutil_proc = psutil.Process(proc.proc.pid)
+          if psutil_proc.is_running():
+            cloudlog.warning(f"pytest_sessionfinish: killing stray process {name} (PID {proc.proc.pid})")
+            # Try SIGTERM first
+            try:
+              os.kill(proc.proc.pid, signal.SIGTERM)
+              psutil_proc.wait(timeout=3)
+            except (psutil.TimeoutExpired, Exception):
+              # Force kill if doesn't exit
+              os.kill(proc.proc.pid, signal.SIGKILL)
+              psutil_proc.wait(timeout=2)
+        except psutil.NoSuchProcess:
+          pass
+    except Exception as e:
+      cloudlog.error(f"pytest_sessionfinish: error cleaning up {name}: {e}")
+  
+  # Also clean up any Xvfb processes we started
+  for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+    try:
+      if proc.info['name'] == 'Xvfb':
+        cmdline = ' '.join(proc.info['cmdline'] or [])
+        if ':99' in cmdline:  # Our display
+          cloudlog.info("pytest_sessionfinish: killing Xvfb on display :99")
+          proc.kill()
+          proc.wait(timeout=2)
+    except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+      pass
