@@ -184,6 +184,12 @@ class DynamicExperimentalController:
       alpha=1.05,
       smoothing_factor=0.6
     )
+    self._disengage_prob_future_filter = SmoothKalmanFilter(
+      measurement_noise=0.12,
+      process_noise=0.08,
+      alpha=1.03,
+      smoothing_factor=0.75
+    )
     self._has_lead_filtered = False
     self._has_slow_down = False
     self._has_slowness = False
@@ -250,6 +256,10 @@ class DynamicExperimentalController:
       # Use the earliest brake disengage probability as a proxy for immediate stop intent
       brake_prob = float(md.meta.disengagePredictions.brakeDisengageProbs[0])
       self._disengage_prob_filter.add_data(brake_prob)
+
+      # Use the maximum probability across the future horizon for proactive stop detection
+      max_brake_prob = float(max(md.meta.disengagePredictions.brakeDisengageProbs))
+      self._disengage_prob_future_filter.add_data(max_brake_prob)
 
     # Slow down detection
     self._calculate_slow_down(md)
@@ -322,14 +332,17 @@ class DynamicExperimentalController:
     # Incorporate Model Uncertainty and Disengage Probs into urgency
     uncertainty_filtered = self._uncertainty_filter.get_value() or 0.0
     brake_prob_filtered = self._disengage_prob_filter.get_value() or 0.0
+    future_brake_prob_filtered = self._disengage_prob_future_filter.get_value() or 0.0
 
     # Uncertainty in trajectory (xStd) above 10m is highly indicative of a blocked path
     uncertainty_urgency = min(1.0, max(0.0, (uncertainty_filtered - 4.0) / 12.0))
     # Brake disengage probability - any prob over 0.1 indicates the car might want to stop soon
     brake_prob_urgency = min(1.0, brake_prob_filtered * 2.0)
+    # Future brake intent - slightly lower weight but earlier detection
+    future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
     # Combine with current urgency - take max of the metrics
-    combined_urgency = max(urgency, uncertainty_urgency, brake_prob_urgency)
+    combined_urgency = max(urgency, uncertainty_urgency, brake_prob_urgency, future_brake_urgency)
 
     # Apply filtering but with less smoothing for stops
     self._slow_down_filter.add_data(combined_urgency)

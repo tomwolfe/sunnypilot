@@ -26,12 +26,26 @@ class LatControlNeural(LatControl):
       fallback_torque = self.torque_from_lateral_accel(desired_lateral_accel, self.CP.lateralTuning.torque)
 
       # Use torque directly from the neural model if available
-      # Blend based on uncertainty: 0.0 (certain) -> torque_neural, > threshold (uncertain) -> fallback_torque
-      # Standard deviation of 0.5 meters is used as a threshold for high uncertainty
+      # Gated approach:
+      # 1. Full neural authority when uncertainty is low (< GATED_THRESHOLD)
+      # 2. Linear blend to fallback between GATED_THRESHOLD and UNCERTAINTY_THRESHOLD
+      # 3. Safety gate: If neural torque is significantly different from kinematic expected torque,
+      #    increase blend towards fallback for safety.
+      GATED_THRESHOLD = 0.15
       UNCERTAINTY_THRESHOLD = 0.5
-      blend_factor = np.clip(lateral_uncertainty / UNCERTAINTY_THRESHOLD, 0.0, 1.0)
 
       if torque_neural != 0.0:
+        # Initial blend factor based on model uncertainty
+        blend_factor = np.clip((lateral_uncertainty - GATED_THRESHOLD) / (UNCERTAINTY_THRESHOLD - GATED_THRESHOLD), 0.0, 1.0)
+
+        # Safety Sanity Check: If neural torque exceeds fallback by a large margin, it might be a hallucination.
+        # We allow more divergence at low speeds, but tighten at high speeds.
+        torque_diff = abs(torque_neural - fallback_torque)
+        allowed_diff = 0.3 + 0.2 * max(0, 1.0 - CS.vEgo / 20.0)
+        if torque_diff > allowed_diff:
+          safety_blend = np.clip((torque_diff - allowed_diff) / 0.2, 0.0, 1.0)
+          blend_factor = max(blend_factor, safety_blend)
+
         output_torque = (1.0 - blend_factor) * torque_neural + blend_factor * fallback_torque
       else:
         output_torque = fallback_torque
