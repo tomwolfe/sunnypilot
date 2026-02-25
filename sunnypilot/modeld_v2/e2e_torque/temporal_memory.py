@@ -222,6 +222,7 @@ class TransformerXLMemory:
         else:
             combined = segment
 
+        seg_len = segment.shape[-2] if segment.ndim > 2 else len(segment)
         combined_len = combined.shape[-2] if combined.ndim > 2 else len(combined)
 
         # Compute Q, K, V

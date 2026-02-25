@@ -345,6 +345,10 @@ class MultiModalLatentFusion:
         modalities = []
         attention_weights = []
 
+        # Extract dimensions from vision_latent
+        batch_size = vision_latent.shape[0] if vision_latent.ndim > 2 else 1
+        feature_dim = vision_latent.shape[-1]
+
         if self.enable_radar and radar_state is not None:
             radar_features = self._radar_to_features(radar_state)
             radar_latent = np.dot(radar_features, self._radar_projection)

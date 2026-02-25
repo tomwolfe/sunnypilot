@@ -73,7 +73,7 @@ class ShadowModeTrainer:
 
   def collect_disengagement_data(self):
     """
-    Identifies segments where human torque/accel diverged significantly 
+    Identifies segments where human torque/accel diverged significantly
     from model predictions.
     """
     if not os.path.exists(self.buffer.save_path):

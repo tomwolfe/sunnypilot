@@ -349,9 +349,11 @@ class ModelQuantizer:
             for layer in layers:
                 config = self.quantizer.get_config(layer)
                 if config:
-                    print(f"  {layer}: {config.precision} "
-                          f"[{config.clip_min:.3f}, {config.clip_max:.3f}] "
-                          f"scale={config.scale:.6f}")
+                    print(
+                        f"  {layer}: {config.precision} "
+                        f"[{config.clip_min:.3f}, {config.clip_max:.3f}] "
+                        f"scale={config.scale:.6f}"
+                    )
 
     def quantize_forward(self,
                         layer_name: str,

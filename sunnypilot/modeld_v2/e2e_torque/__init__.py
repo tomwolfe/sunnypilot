@@ -31,6 +31,7 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.multimodal_latent_fusion import (
 from openpilot.sunnypilot.modeld_v2.e2e_torque.world_model import (
     WorldModel,
     WorldState,
+    MPPIResult,
 )
 
 from openpilot.sunnypilot.modeld_v2.e2e_torque.dynamic_delay import (

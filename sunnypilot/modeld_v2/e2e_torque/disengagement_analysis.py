@@ -646,37 +646,37 @@ class DisengagementAnalyzer:
         # Planning issues
         if reason_counts.get('planning', 0) > len(self.events) * 0.3:
             recommendations.append(
-                ("High rate of planning disengagements. Consider reducing E2E blend weight "
-                 "or improving cost function.")
+                "High rate of planning disengagements. Consider reducing E2E blend weight "
+                "or improving cost function."
             )
 
         # Perception issues
         if reason_counts.get('perception', 0) > len(self.events) * 0.2:
             recommendations.append(
-                ("Perception failures detected. Review radar/vision fusion and "
-                 "occlusion handling in temporal memory.")
+                "Perception failures detected. Review radar/vision fusion and "
+                "occlusion handling in temporal memory."
             )
 
         # Control issues
         if reason_counts.get('control', 0) > len(self.events) * 0.2:
             recommendations.append(
-                ("Control issues detected. Consider tuning neural observer or "
-                 "adjusting torque rate limits.")
+                "Control issues detected. Consider tuning neural observer or "
+                "adjusting torque rate limits."
             )
 
         # Comfort issues
         if reason_counts.get('comfort', 0) > len(self.events) * 0.15:
             recommendations.append(
-                ("Comfort complaints. Review cost function comfort weights and "
-                 "consider smoother trajectory generation.")
+                "Comfort complaints. Review cost function comfort weights and "
+                "consider smoother trajectory generation."
             )
 
         # High speed disengagements
         high_speed_events = [e for e in self.events if e.vehicle_speed > 25.0]
         if len(high_speed_events) > len(self.events) * 0.3:
             recommendations.append(
-                ("Many disengagements at high speed. Consider more conservative "
-                 "planning at speeds > 25 m/s.")
+                "Many disengagements at high speed. Consider more conservative "
+                "planning at speeds > 25 m/s."
             )
 
         return recommendations
