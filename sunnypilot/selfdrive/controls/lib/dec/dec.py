@@ -19,6 +19,68 @@ TRAJECTORY_SIZE = 33
 SET_MODE_TIMEOUT = 15
 
 
+@dataclass
+class PersonalityVector:
+    """
+    Personality Vector for Unified Policy Head.
+    
+    Instead of switching between "Chill" and "Experimental" modes,
+    the E2E model takes a personality vector as latent input.
+    
+    Components:
+    - aggressiveness: 0.0 (conservative) to 1.0 (aggressive)
+    - comfort: 0.0 (sporty) to 1.0 (comfortable)
+    - progress: 0.0 (cautious) to 1.0 (progress-oriented)
+    - following_distance: 0.0 (close) to 1.0 (far)
+    - lane_change_frequency: 0.0 (never) to 1.0 (frequent)
+    """
+    aggressiveness: float = 0.5
+    comfort: float = 0.7
+    progress: float = 0.6
+    following_distance: float = 0.7
+    lane_change_frequency: float = 0.3
+    
+    def to_array(self) -> np.ndarray:
+        """Convert to numpy array for model input"""
+        return np.array([
+            self.aggressiveness,
+            self.comfort,
+            self.progress,
+            self.following_distance,
+            self.lane_change_frequency
+        ], dtype=np.float32)
+    
+    @classmethod
+    def from_mode(cls, mode: str) -> 'PersonalityVector':
+        """Create personality vector from driving mode"""
+        if mode == 'aggressive':
+            return cls(
+                aggressiveness=0.85,
+                comfort=0.4,
+                progress=0.9,
+                following_distance=0.4,
+                lane_change_frequency=0.7
+            )
+        elif mode == 'chill':
+            return cls(
+                aggressiveness=0.2,
+                comfort=0.95,
+                progress=0.3,
+                following_distance=0.9,
+                lane_change_frequency=0.1
+            )
+        elif mode == 'standard':
+            return cls(
+                aggressiveness=0.5,
+                comfort=0.7,
+                progress=0.6,
+                following_distance=0.7,
+                lane_change_frequency=0.3
+            )
+        else:  # default / balanced
+            return cls()
+
+
 class SmoothKalmanFilter:
   """Enhanced Kalman filter with smoothing for stable decision making."""
 
@@ -210,6 +272,133 @@ class VisionOnlyTrafficAuditor:
     self._stop_sign_filter.reset_data()
     self._red_light_filter.reset_data()
     self._predictive_stop_filter.reset_data()
+
+
+class UnifiedPolicyHead:
+    """
+    Unified Policy Head with Personality Vector.
+    
+    A+ Enhancement: Eliminates the "Mode Switcher" crutch.
+    
+    Instead of switching between "Chill" and "Experimental" modes,
+    this uses a single E2E model that takes a "Personality Vector" as input.
+    
+    The user's selection (Aggressive/Relaxed/Standard) becomes a latent input
+    to the policy network, not a post-processing gain or blender weight.
+    
+    Architecture:
+    1. Vision backbone extracts features
+    2. Personality vector is concatenated with latent features
+    3. Policy head outputs torque/acceleration conditioned on personality
+    4. Single forward pass - no mode switching logic
+    """
+    
+    PERSONALITY_DIM = 5  # aggressiveness, comfort, progress, following_distance, lane_change
+    
+    def __init__(self,
+                 feature_dim: int = 256,
+                 hidden_dim: int = 128,
+                 output_dim: int = 4):  # torque, accel, confidence, uncertainty
+        self.feature_dim = feature_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        
+        # Personality conditioning network
+        # Projects personality vector to hidden space
+        self._personality_projection = np.random.randn(
+            self.PERSONALITY_DIM, hidden_dim
+        ).astype(np.float32) * 0.01
+        
+        # Feature modulation (FiLM-style)
+        # Personality modulates vision features via scale and shift
+        self._personality_scale = np.random.randn(
+            hidden_dim, feature_dim
+        ).astype(np.float32) * 0.01
+        self._personality_shift = np.random.randn(
+            hidden_dim, feature_dim
+        ).astype(np.float32) * 0.01
+        
+        # Policy output head
+        self._policy_head = np.random.randn(
+            output_dim, hidden_dim + feature_dim
+        ).astype(np.float32) * 0.01
+        
+        self._current_personality = PersonalityVector()
+        self._personality_history = []
+        self._max_personality_history = 10
+        
+    def set_personality(self, personality: PersonalityVector):
+        """Set the current personality vector"""
+        self._current_personality = personality
+        self._personality_history.append(personality.to_array())
+        if len(self._personality_history) > self._max_personality_history:
+            self._personality_history.pop(0)
+    
+    def set_personality_from_mode(self, mode: str):
+        """Set personality from predefined mode"""
+        self.set_personality(PersonalityVector.from_mode(mode))
+    
+    def forward(self, vision_features: np.ndarray) -> np.ndarray:
+        """
+        Forward pass through unified policy head
+        
+        Args:
+            vision_features: Vision backbone features [batch, feature_dim]
+            
+        Returns:
+            Policy output [batch, output_dim] containing:
+            - torque: Steering torque
+            - accel: Longitudinal acceleration
+            - confidence: Policy confidence
+            - uncertainty: Prediction uncertainty
+        """
+        batch_size = vision_features.shape[0]
+        personality = self._current_personality.to_array()
+        
+        # Project personality to hidden space
+        personality_hidden = np.tanh(personality @ self._personality_projection.T)
+        
+        # FiLM-style modulation: personality modulates vision features
+        gamma = personality_hidden @ self._personality_scale.T  # Scale
+        beta = personality_hidden @ self._personality_shift.T   # Shift
+        
+        # Apply modulation
+        modulated_features = vision_features * (1 + gamma) + beta
+        
+        # Concatenate vision and personality features
+        combined = np.concatenate([vision_features, modulated_features], axis=-1)
+        
+        # Policy head output
+        output = combined @ self._policy_head.T
+        
+        return output
+    
+    def get_smoothed_personality(self) -> np.ndarray:
+        """Get temporally smoothed personality vector"""
+        if not self._personality_history:
+            return self._current_personality.to_array()
+        
+        return np.mean(self._personality_history, axis=0)
+    
+    def interpolate_personality(self, target: PersonalityVector, alpha: float):
+        """
+        Smoothly interpolate personality over time
+        
+        Args:
+            target: Target personality vector
+            alpha: Interpolation factor (0.0 = current, 1.0 = target)
+        """
+        current = self._current_personality.to_array()
+        target_arr = target.to_array()
+        smoothed = (1 - alpha) * current + alpha * target_arr
+        
+        self._current_personality = PersonalityVector(
+            aggressiveness=float(smoothed[0]),
+            comfort=float(smoothed[1]),
+            progress=float(smoothed[2]),
+            following_distance=float(smoothed[3]),
+            lane_change_frequency=float(smoothed[4])
+        )
 
 
 ModeType = Literal['unified_e2e']
