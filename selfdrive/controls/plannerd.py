@@ -6,6 +6,16 @@ from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
+
+# A+ Enhancement: World Model-based planning
+# Replaces heuristic-based planning with learned World Model
+try:
+    from openpilot.sunnypilot.selfdrive.controls.lib.world_model_planner import WorldModelLongitudinalPlanner
+    WORLD_MODEL_ENABLED = True
+except ImportError:
+    WORLD_MODEL_ENABLED = False
+    cloudlog.warning("World Model Planner not available, using standard LongitudinalPlanner")
+
 import cereal.messaging as messaging
 
 
@@ -24,7 +34,15 @@ def main():
   gps_location_service = get_gps_location_service(params)
 
   ldw = LaneDepartureWarning()
-  longitudinal_planner = LongitudinalPlanner(CP, CP_SP)
+  
+  # A+ Enhancement: Use World Model Planner if available
+  if WORLD_MODEL_ENABLED:
+    longitudinal_planner = WorldModelLongitudinalPlanner(CP, CP_SP)
+    cloudlog.info("plannerd using World Model Planner (A+ Enhancement)")
+  else:
+    longitudinal_planner = LongitudinalPlanner(CP, CP_SP)
+    cloudlog.info("plannerd using standard LongitudinalPlanner")
+  
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance', 'longitudinalPlanSP'])
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'liveParameters', 'radarState', 'modelV2', 'selfdriveState',
                             'liveMapDataSP', 'carStateSP', gps_location_service],

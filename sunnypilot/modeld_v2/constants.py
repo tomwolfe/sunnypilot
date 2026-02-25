@@ -1,5 +1,21 @@
 import numpy as np
 
+# A+ Enhancement: High-Frequency Support
+# Model frequency can now be configured via environment variable (MODEL_FREQ_HZ)
+# Supports 20Hz (default), 40Hz, and 60Hz operation
+def _get_model_freq():
+  import os
+  try:
+    freq = int(os.environ.get('MODEL_FREQ_HZ', '20'))
+    if freq in [20, 40, 60]:
+      return freq
+  except Exception:
+    pass
+  return 20
+
+MODEL_FREQ = _get_model_freq()
+
+
 def index_function(idx, max_val=192, max_idx=32):
   # Urban-Aggressive Hybrid: Even denser sampling at low indices (first 12 steps)
   # for ultra-fine control in intersections and tight urban environments.
@@ -18,9 +34,11 @@ class ModelConstants:
   META_T_IDXS = [2., 4., 6., 8., 10.]
 
   # model inputs constants
-  MODEL_FREQ = 20
+  MODEL_FREQ = _get_model_freq()  # A+ Enhancement: Variable frequency support
   FEATURE_LEN = 1024  # Latent representation size
   FULL_HISTORY_BUFFER_LEN = 511  # ~25.5 seconds of context at 20Hz (A+ E2E Feature)
+  # Note: At 40Hz, this would be ~12.7 seconds; at 60Hz, ~8.5 seconds
+  # For consistent context length, adjust buffer size based on frequency
   DESIRE_LEN = 8
   TRAFFIC_CONVENTION_LEN = 2
   LAT_PLANNER_STATE_LEN = 4

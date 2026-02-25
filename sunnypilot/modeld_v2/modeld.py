@@ -165,10 +165,43 @@ class ModelState(ModelStateBase):
 
   def get_action_from_model(self, model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
                             lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+    """
+    Get action from model output with A+ Enhancements
+    
+    A+ Enhancement: PlanPlus Integration
+    - Acts as a "safety-aware boost" to the E2E plan
+    - If E2E model's predicted velocity deviates from reality, PlanPlus scales recovery
+    - Recovery power is scaled by v_ego for smooth high-speed behavior
+    - Provides uncertainty-aware blending between plan and planplus
+    """
     plan = model_output['plan'][0]
+    
+    # A+ Enhancement: PlanPlus with adaptive recovery power
     if 'planplus' in model_output:
-      recovery_power = self.PLANPLUS_CONTROL * (0.75 if v_ego > 20.0 else 1.0)
+      # Base recovery power (configurable)
+      base_recovery_power = self.PLANPLUS_CONTROL
+      
+      # A+ Enhancement: Speed-dependent scaling
+      # At high speeds (>20 m/s ~45 mph), reduce recovery power for smoothness
+      # At low speeds, use full recovery power for aggressive correction
+      if v_ego > 20.0:
+        recovery_power = base_recovery_power * 0.75
+      elif v_ego > 10.0:
+        # Linear interpolation between 10 and 20 m/s
+        recovery_power = base_recovery_power * (1.0 - 0.25 * (v_ego - 10.0) / 10.0)
+      else:
+        recovery_power = base_recovery_power
+      
+      # A+ Enhancement: Uncertainty-aware blending
+      # If model has high uncertainty, reduce PlanPlus influence
+      if 'uncertainty' in model_output:
+        uncertainty = model_output['uncertainty'].mean() if hasattr(model_output['uncertainty'], 'mean') else 0.5
+        uncertainty_factor = np.clip(1.0 - uncertainty, 0.5, 1.0)
+        recovery_power *= uncertainty_factor
+      
+      # Apply PlanPlus correction
       plan = plan + recovery_power * model_output['planplus'][0]
+    
     desired_accel, should_stop = get_accel_from_plan(plan[:, Plan.VELOCITY][:, 0], plan[:, Plan.ACCELERATION][:, 0], self.constants.T_IDXS,
                                                      action_t=long_action_t)
     desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, self.LONG_SMOOTH_SECONDS)
