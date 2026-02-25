@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <cmath>
 
 namespace sunnypilot {
 
@@ -25,6 +26,37 @@ struct E2EPlan {
   std::array<float, TRAJECTORY_POINTS> velocity;
   std::array<float, TRAJECTORY_POINTS> acceleration;
   float uncertainty[TRAJECTORY_POINTS];
+  float x_std[TRAJECTORY_POINTS];
+  float y_std[TRAJECTORY_POINTS];
+};
+
+class BayesianBlender {
+public:
+  BayesianBlender();
+  
+  void set_uncertainty_threshold(float low, float high);
+  void set_trust_factor(float trust);
+  
+  float compute_blend_weight(const E2EPlan& e2e_plan, float v_ego) const;
+  
+  void update_confidence(float actual_error);
+  float get_confidence() const { return confidence_; }
+  
+  static constexpr float kDefaultLowThreshold = 2.0f;
+  static constexpr float kDefaultHighThreshold = 8.0f;
+  static constexpr float kDefaultTrustFactor = 1.0f;
+  static constexpr float kMinBlendWeight = 0.0f;
+  static constexpr float kMaxBlendWeight = 1.0f;
+  
+private:
+  float low_uncertainty_threshold_;
+  float high_uncertainty_threshold_;
+  float trust_factor_;
+  float confidence_;
+  float rolling_error_;
+  size_t error_count_;
+  
+  float uncertainty_to_weight(float max_uncertainty) const;
 };
 
 class E2EPathBlender {
@@ -33,11 +65,16 @@ public:
   
   void set_recovery_power(float control);
   void set_speed_threshold(float threshold_ms);
+  void set_uncertainty_thresholds(float low, float high);
+  void set_bayesian_trust(float trust);
   
   void update_plan(const E2EPlan& e2e_plan, const E2EPlan& planplus_plan,
                    float v_ego, float* output_plan);
-                   
+                    
   float compute_recovery_power(float v_ego) const;
+  float compute_bayesian_blend_weight(const E2EPlan& e2e_plan, float v_ego) const;
+  
+  void update_model_confidence(float actual_error);
   
   static constexpr float kDefaultRecoveryControl = 1.0f;
   static constexpr float kSpeedThreshold = 20.0f;
@@ -50,6 +87,7 @@ private:
   std::array<float, TRAJECTORY_POINTS> smooth_vel_;
   float prev_accel_[TRAJECTORY_POINTS];
   float long_smooth_seconds_;
+  BayesianBlender bayesian_blender_;
   
   void blend_trajectory(const E2EPlan& e2e, const E2EPlan& planplus,
                         float blend_weight, float* output);

@@ -5,6 +5,65 @@
 
 namespace sunnypilot {
 
+BayesianBlender::BayesianBlender()
+    : low_uncertainty_threshold_(kDefaultLowThreshold),
+      high_uncertainty_threshold_(kDefaultHighThreshold),
+      trust_factor_(kDefaultTrustFactor),
+      confidence_(1.0f),
+      rolling_error_(0.0f),
+      error_count_(0) {}
+
+void BayesianBlender::set_uncertainty_threshold(float low, float high) {
+  low_uncertainty_threshold_ = low;
+  high_uncertainty_threshold_ = high;
+}
+
+void BayesianBlender::set_trust_factor(float trust) {
+  trust_factor_ = std::clamp(trust, 0.1f, 2.0f);
+}
+
+float BayesianBlender::uncertainty_to_weight(float max_uncertainty) const {
+  if (max_uncertainty <= low_uncertainty_threshold_) {
+    return kMaxBlendWeight;
+  } else if (max_uncertainty >= high_uncertainty_threshold_) {
+    return kMinBlendWeight;
+  } else {
+    float t = (max_uncertainty - low_uncertainty_threshold_) / 
+              (high_uncertainty_threshold_ - low_uncertainty_threshold_);
+    return kMaxBlendWeight - t * (kMaxBlendWeight - kMinBlendWeight);
+  }
+}
+
+float BayesianBlender::compute_blend_weight(const E2EPlan& e2e_plan, float v_ego) const {
+  float max_uncertainty = 0.0f;
+  for (size_t i = 0; i < TRAJECTORY_POINTS; ++i) {
+    float combined_std = std::sqrt(e2e_plan.x_std[i] * e2e_plan.x_std[i] + 
+                                    e2e_plan.y_std[i] * e2e_plan.y_std[i]);
+    if (combined_std > max_uncertainty) {
+      max_uncertainty = combined_std;
+    }
+  }
+  
+  float base_weight = uncertainty_to_weight(max_uncertainty);
+  
+  float speed_ms = v_ego / 3.6f;
+  float speed_factor = (speed_ms > 15.0f) ? 0.8f : 1.0f;
+  
+  float trust_weight = base_weight * trust_factor_ * speed_factor * confidence_;
+  
+  return std::clamp(trust_weight, kMinBlendWeight, kMaxBlendWeight);
+}
+
+void BayesianBlender::update_confidence(float actual_error) {
+  rolling_error_ = rolling_error_ * 0.95f + actual_error * 0.05f;
+  error_count_++;
+  
+  if (error_count_ > 10) {
+    float error_confidence = std::clamp(1.0f - rolling_error_ / 2.0f, 0.0f, 1.0f);
+    confidence_ = confidence_ * 0.9f + error_confidence * 0.1f;
+  }
+}
+
 E2EPathBlender::E2EPathBlender()
     : recovery_power_control_(kDefaultRecoveryControl),
       speed_threshold_(kSpeedThreshold),
@@ -22,17 +81,34 @@ void E2EPathBlender::set_speed_threshold(float threshold_ms) {
   speed_threshold_ = threshold_ms;
 }
 
+void E2EPathBlender::set_uncertainty_thresholds(float low, float high) {
+  bayesian_blender_.set_uncertainty_threshold(low, high);
+}
+
+void E2EPathBlender::set_bayesian_trust(float trust) {
+  bayesian_blender_.set_trust_factor(trust);
+}
+
 float E2EPathBlender::compute_recovery_power(float v_ego) const {
   float speed_ms = v_ego / 3.6f;
   float scale = (speed_ms > speed_threshold_) ? kHighSpeedScaling : 1.0f;
   return recovery_power_control_ * scale;
 }
 
+float E2EPathBlender::compute_bayesian_blend_weight(const E2EPlan& e2e_plan, float v_ego) const {
+  return bayesian_blender_.compute_blend_weight(e2e_plan, v_ego);
+}
+
+void E2EPathBlender::update_model_confidence(float actual_error) {
+  bayesian_blender_.update_confidence(actual_error);
+}
+
 void E2EPathBlender::update_plan(const E2EPlan& e2e_plan, const E2EPlan& planplus_plan,
                                  float v_ego, float* output_plan) {
+  float bayesian_weight = bayesian_blender_.compute_blend_weight(e2e_plan, v_ego);
   float recovery = compute_recovery_power(v_ego);
   
-  float blend_weight = recovery;
+  float blend_weight = bayesian_weight * recovery;
   
   blend_trajectory(e2e_plan, planplus_plan, blend_weight, output_plan);
   
