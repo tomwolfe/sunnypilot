@@ -65,6 +65,52 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque.qcom_optimization import (
     TransformerInputOptimizer
 )
 
+# Recommendation #1: MCTS Planning
+from openpilot.sunnypilot.modeld_v2.e2e_torque.mcts_planner import (
+    ContinuousMCTSPlanner,
+    MCTSIntegrationHelper,
+    MCTSNode,
+    MCTSResult
+)
+
+# Recommendation #2: Quantization
+from openpilot.sunnypilot.modeld_v2.e2e_torque.quantization import (
+    INT8Quantizer,
+    ModelQuantizer,
+    QuantizedLayer,
+    QuantizationConfig
+)
+
+# Recommendation #3: Temporal Memory
+from openpilot.sunnypilot.modeld_v2.e2e_torque.temporal_memory import (
+    TemporalMemoryModule,
+    TransformerXLMemory,
+    StateSpaceMemory,
+    MemoryState,
+    MemoryIntegrationHelper
+)
+
+# Recommendation #4: Neural Observer
+from openpilot.sunnypilot.modeld_v2.e2e_torque.neural_observer import (
+    NeuralObserver,
+    NeuralDelayObserver,
+    VehicleDynamicsObserver,
+    AdaptiveTorqueController,
+    ObserverState,
+    NeuralObserverOutput
+)
+
+# Recommendation #5: Disengagement Analysis
+from openpilot.sunnypilot.modeld_v2.e2e_torque.disengagement_analysis import (
+    DisengagementAnalyzer,
+    DisengagementEvent,
+    TelemetryRecorder,
+    DisengagementReason,
+    DisengagementIntegrationHelper,
+    WorldModelSnapshot,
+    TrajectorySnapshot
+)
+
 
 class E2EController:
     """

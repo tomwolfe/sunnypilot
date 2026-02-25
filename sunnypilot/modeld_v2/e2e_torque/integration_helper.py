@@ -105,14 +105,36 @@ from openpilot.sunnypilot.modeld_v2.e2e_torque import (
     ImaginationBuffer,
     DynamicDelayPredictor,
     DelayPrediction,
-    AdaptiveDelayFilter
+    AdaptiveDelayFilter,
+    # MCTS Planning (Recommendation #1)
+    ContinuousMCTSPlanner,
+    MCTSIntegrationHelper,
+    MCTSNode,
+    MCTSResult,
+    # Quantization (Recommendation #2)
+    INT8Quantizer,
+    ModelQuantizer,
+    QuantizedLayer,
+    QuantizationConfig,
+    # Temporal Memory (Recommendation #3)
+    TemporalMemoryModule,
+    TransformerXLMemory,
+    StateSpaceMemory,
+    # Neural Observer (Recommendation #4)
+    NeuralObserver,
+    NeuralDelayObserver,
+    VehicleDynamicsObserver,
+    # Disengagement Analysis (Recommendation #5)
+    DisengagementAnalyzer,
+    DisengagementEvent,
+    TelemetryRecorder
 )
 
 
 __all__ = [
     'E2EController',
     'E2ETorquePredictor',
-    'E2ETorqueOutput', 
+    'E2ETorqueOutput',
     'E2ETorqueSafety',
     'MultiModalLatentFusion',
     'RadarState',
@@ -127,4 +149,26 @@ __all__ = [
     'DynamicDelayPredictor',
     'DelayPrediction',
     'AdaptiveDelayFilter',
+    # MCTS Planning (Recommendation #1)
+    'ContinuousMCTSPlanner',
+    'MCTSIntegrationHelper',
+    'MCTSNode',
+    'MCTSResult',
+    # Quantization (Recommendation #2)
+    'INT8Quantizer',
+    'ModelQuantizer',
+    'QuantizedLayer',
+    'QuantizationConfig',
+    # Temporal Memory (Recommendation #3)
+    'TemporalMemoryModule',
+    'TransformerXLMemory',
+    'StateSpaceMemory',
+    # Neural Observer (Recommendation #4)
+    'NeuralObserver',
+    'NeuralDelayObserver',
+    'VehicleDynamicsObserver',
+    # Disengagement Analysis (Recommendation #5)
+    'DisengagementAnalyzer',
+    'DisengagementEvent',
+    'TelemetryRecorder',
 ]
