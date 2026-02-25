@@ -157,6 +157,14 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
                + past_rolls + future_rolls
     self._ff = self.model.evaluate(nn_input)
 
+    # E2E Torque Blending (Objective 5): Blend modular NNFF with direct E2E "policy" torque
+    if hasattr(self.model_v2, 'action') and self.model_v2.action.torque != 0:
+      model_torque = self.model_v2.action.torque
+      # We use a 25% blend of the direct E2E torque to reduce actuation lag
+      # while maintaining the stability of the modular NNFF approach.
+      e2e_weight = 0.25
+      self._ff = self._ff * (1.0 - e2e_weight) + model_torque * e2e_weight
+
     # apply friction override for cars with low NN friction response
     if self.model.friction_override:
       self._pid_log.error += get_friction(friction_input, self._lateral_accel_deadzone, FRICTION_THRESHOLD, self.lac_torque.torque_params)
