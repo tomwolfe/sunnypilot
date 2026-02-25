@@ -152,6 +152,11 @@ class ModelRenderer(Widget, ModelRendererSP):
     if ui_state.status != UIStatus.DISENGAGED:
       self._draw_lane_lines()
       self._draw_path(sm)
+      
+      # E2E Heatmap Glow: Render the attention visualizer overlay
+      # High uncertainty areas will 'glow' in Magenta/Heat colors
+      if self._path.projected_points.size > 0:
+        self.attention_visualizer.draw(self._rect, self._path.projected_points, self._attention_gradient)
 
     # if render_lead_indicator and radar_state:
     #   self._draw_lead_indicator()
@@ -224,6 +229,10 @@ class ModelRenderer(Widget, ModelRendererSP):
     self._path.projected_points = self._map_line_to_polygon(
       self._path.raw_points, y_off, self._path_offset_z, max_idx, allow_invert=False
     )
+
+    # E2E Explainability Heatmap (Objective 6): 
+    # Update the attention visualizer with uncertainty data
+    self._attention_gradient = self.attention_visualizer.update_heatmap(self._rect, self._path.projected_points, model)
 
     self._update_experimental_gradient()
 

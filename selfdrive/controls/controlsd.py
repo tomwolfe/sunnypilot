@@ -82,6 +82,20 @@ class Controls(ControlsExt):
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
     sr = max(lp.steerRatio, 0.1)
+    
+    # Live Physics Adaptation (Objective 3):
+    # We use the LongitudinalCalibrator's MAE to 're-tune' the car's physics in real-time.
+    # If the E2E model is consistently under/over-shooting (high MAE), we adjust 
+    # the stiffness factor to match the observed mechanical response.
+    if self.sm.updated['longitudinalPlanSP']:
+      lp_sp = self.sm['longitudinalPlanSP']
+      mae = lp_sp.dec.mae
+      # If MAE is low (< 0.2), we trust the physics model.
+      # As MAE increases, we apply a 'softness' factor to the stiffness to compensate 
+      # for unmodeled dynamics (tire wear, road surface, etc.)
+      adaptation_factor = np.interp(mae, [0.2, 0.8], [1.0, 0.85])
+      x *= adaptation_factor
+      
     self.VM.update_params(x, sr)
 
     steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
@@ -146,6 +160,11 @@ class Controls(ControlsExt):
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
+    # E2E Confidence-based Adaptive Weighting
+    e2e_weight = 0.0
+    if self.sm.updated['longitudinalPlanSP']:
+      e2e_weight = float(self.sm['longitudinalPlanSP'].dec.blendedWeight)
+
     actuators.curvature = self.desired_curvature
     lateral_uncertainty = float(np.mean(model_v2.position.yStd[:7])) if len(model_v2.position.yStd) > 0 else 0.0
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
@@ -153,7 +172,8 @@ class Controls(ControlsExt):
                                                        self.calibrated_pose, curvature_limited, lat_delay,
                                                        torque_neural=model_v2.action.torque,
                                                        lateral_uncertainty=lateral_uncertainty,
-                                                       actual_curvature=self.curvature)
+                                                       actual_curvature=self.curvature,
+                                                       e2e_weight=e2e_weight)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs

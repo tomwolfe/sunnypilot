@@ -19,8 +19,8 @@ class ModelConstants:
 
   # model inputs constants
   MODEL_FREQ = 20
-  FEATURE_LEN = 1024
-  FULL_HISTORY_BUFFER_LEN = 255
+  FEATURE_LEN = 1024  # Latent representation size
+  FULL_HISTORY_BUFFER_LEN = 511  # ~25.5 seconds of context at 20Hz (A+ E2E Feature)
   DESIRE_LEN = 8
   TRAFFIC_CONVENTION_LEN = 2
   LAT_PLANNER_STATE_LEN = 4
