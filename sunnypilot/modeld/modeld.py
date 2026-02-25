@@ -50,6 +50,8 @@ class FrameMeta:
     if vipc is not None:
       self.frame_id, self.timestamp_sof, self.timestamp_eof = vipc.frame_id, vipc.timestamp_sof, vipc.timestamp_eof
 
+from openpilot.sunnypilot.modeld.feature_memory import FeatureMemory
+
 class ModelState(ModelStateBase):
   frame: ModelFrame
   wide_frame: ModelFrame
@@ -78,11 +80,24 @@ class ModelState(ModelStateBase):
     self.output = np.zeros(net_output_size, dtype=np.float32)
     self.parser = Parser()
 
-    self.model = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
-    self.model.addInput("input_imgs", None)
-    self.model.addInput("big_input_imgs", None)
-    for k,v in self.inputs.items():
-      self.model.addInput(k, v)
+    # Step 4: Dynamic Model Switching
+    # We instantiate two model runners. In a full implementation, these would load different model artifacts.
+    # For now, we use the same path to establish the architecture.
+    self.model_highway = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
+    self.model_suburban = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
+    
+    # Initialize inputs for both models
+    for model in [self.model_highway, self.model_suburban]:
+      model.addInput("input_imgs", None)
+      model.addInput("big_input_imgs", None)
+      for k,v in self.inputs.items():
+        model.addInput(k, v)
+    
+    # Default to suburban model
+    self.model = self.model_suburban
+    
+    # Step 1: Transformer-based "Feature-Space" Memory
+    self.feature_memory = FeatureMemory(ModelConstants.FEATURE_LEN)
 
   def slice_outputs(self, model_outputs: np.ndarray) -> dict[str, np.ndarray]:
     parsed_model_outputs = {k: model_outputs[np.newaxis, v] for k,v in self.output_slices.items()}
@@ -91,7 +106,14 @@ class ModelState(ModelStateBase):
     return parsed_model_outputs
 
   def run(self, buf: VisionBuf, wbuf: VisionBuf, transform: np.ndarray, transform_wide: np.ndarray,
-                inputs: dict[str, np.ndarray], prepare_only: bool) -> dict[str, np.ndarray] | None:
+                inputs: dict[str, np.ndarray], prepare_only: bool, v_ego: float = 0.0) -> dict[str, np.ndarray] | None:
+    # Step 4: Dynamic Model Switching Logic
+    # Simple heuristic: Use Highway model above 20 m/s (~45 mph), Suburban otherwise.
+    if v_ego > 20.0:
+      self.model = self.model_highway
+    else:
+      self.model = self.model_suburban
+      
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire'][0] = 0
     self.inputs['desire'][:-ModelConstants.DESIRE_LEN] = self.inputs['desire'][ModelConstants.DESIRE_LEN:]
@@ -103,6 +125,7 @@ class ModelState(ModelStateBase):
         self.inputs[k][:] = inputs[k]
 
     # if getCLBuffer is not None, frame will be None
+    # We must ensure the inputs are set on the ACTIVE model
     self.model.setInputBuffer("input_imgs", self.frame.prepare(buf, transform.flatten(), self.model.getCLBuffer("input_imgs")))
     if wbuf is not None:
       self.model.setInputBuffer("big_input_imgs", self.wide_frame.prepare(wbuf, transform_wide.flatten(), self.model.getCLBuffer("big_input_imgs")))
@@ -113,8 +136,13 @@ class ModelState(ModelStateBase):
     self.model.execute()
     outputs = self.parser.parse_outputs(self.slice_outputs(self.output))
 
+    # Update Attention-based Feature Memory
+    new_hidden_state = outputs['hidden_state'][0, :]
+    self.feature_memory.add(new_hidden_state)
+    contextual_feature = self.feature_memory.get_contextual_feature(new_hidden_state)
+
     self.inputs['features_buffer'][:-ModelConstants.FEATURE_LEN] = self.inputs['features_buffer'][ModelConstants.FEATURE_LEN:]
-    self.inputs['features_buffer'][-ModelConstants.FEATURE_LEN:] = outputs['hidden_state'][0, :]
+    self.inputs['features_buffer'][-ModelConstants.FEATURE_LEN:] = contextual_feature
 
     if "lat_planner_solution" in outputs and "lat_planner_state" in self.inputs.keys():
       self.inputs['lat_planner_state'][2] = interp(DT_MDL, ModelConstants.T_IDXS, outputs['lat_planner_solution'][0, :, 2])
@@ -300,7 +328,7 @@ def main(demo=False):
       inputs['nav_instructions'] = np.zeros(ModelConstants.NAV_INSTRUCTION_LEN, dtype=np.float32)
 
     mt1 = time.perf_counter()
-    model_output = model.run(buf_main, buf_extra, model_transform_main, model_transform_extra, inputs, prepare_only)
+    model_output = model.run(buf_main, buf_extra, model_transform_main, model_transform_extra, inputs, prepare_only, v_ego=v_ego)
     mt2 = time.perf_counter()
     model_execution_time = mt2 - mt1
 

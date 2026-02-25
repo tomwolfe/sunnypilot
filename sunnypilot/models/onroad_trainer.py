@@ -49,6 +49,8 @@ def main():
   print("ShadowModeTrainer: Monitoring for disengagements with Temporal Alignment...")
 
   last_override_state = False
+  high_loss_detected = False
+  HIGH_LOSS_THRESHOLD = 0.5 # MSE threshold to trigger Sunnylink priority upload
 
   while True:
     sm.update()
@@ -92,7 +94,13 @@ def main():
             "engaged_prob": model_msg.meta.engagedProb if hasattr(model_msg, 'meta') else 0.0
           }
           
-          # 3. Add to training buffer (Pillar 1: Policy Distillation)
+          # 3. Calculate Loss (Step 2: Active Learning)
+          # If the human action diverges significantly from the model, we want this data ASAP.
+          loss = trainer.train_step(None, human_action, model_action)
+          if loss > HIGH_LOSS_THRESHOLD:
+            high_loss_detected = True
+
+          # 4. Add to training buffer (Pillar 1: Policy Distillation)
           # We provide the model inputs (context) and the human's "better" action.
           trainer.buffer.add(
             inputs=aligned_data["carState"], # In a real implementation, this would be latent features
@@ -100,13 +108,15 @@ def main():
             human_action=human_action
           )
 
-        # 4. Periodic Save
+        # 5. Periodic Save
         if len(trainer.buffer.buffer) >= 500: # Save in larger chunks
-          trainer.buffer.save_to_disk()
+          trainer.buffer.save_to_disk(priority=high_loss_detected)
+          high_loss_detected = False
           
       # Detect the end of an override to trigger a "session save"
       if last_override_state and not is_currently_overridden:
-        trainer.buffer.save_to_disk()
+        trainer.buffer.save_to_disk(priority=high_loss_detected)
+        high_loss_detected = False
         
       last_override_state = is_currently_overridden
 

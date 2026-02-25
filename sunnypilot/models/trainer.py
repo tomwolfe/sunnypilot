@@ -15,6 +15,9 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.system.hardware import TICI
 from openpilot.system.hardware.hw import Paths
 
+import shutil
+from openpilot.common.swaglog import cloudlog
+
 class DisengagementBuffer:
   """
   A circular buffer to store inputs and actions for on-device fine-tuning.
@@ -23,7 +26,9 @@ class DisengagementBuffer:
     self.capacity = capacity
     self.buffer = []
     self.save_path = os.path.join(Paths.log_root(), "shadow_mode_data")
+    self.priority_path = Paths.crash_log_root()
     os.makedirs(self.save_path, exist_ok=True)
+    os.makedirs(self.priority_path, exist_ok=True)
 
   def add(self, inputs, predicted_action, human_action):
     if len(self.buffer) >= self.capacity:
@@ -34,7 +39,7 @@ class DisengagementBuffer:
       "human_action": human_action
     })
 
-  def save_to_disk(self):
+  def save_to_disk(self, priority=False):
     if not self.buffer:
       return
     
@@ -44,6 +49,13 @@ class DisengagementBuffer:
     
     with open(full_path, "wb") as f:
       pickle.dump(self.buffer, f)
+    
+    if priority:
+      priority_filename = f"high_loss_{filename}"
+      priority_full_path = os.path.join(self.priority_path, priority_filename)
+      shutil.copy(full_path, priority_full_path)
+      print(f"ShadowModeTrainer: PRIORITY UPLOAD TRIGGERED for {priority_full_path}")
+      cloudlog.event("sunnylink_priority_upload", path=priority_full_path)
     
     self.buffer = []
     print(f"ShadowModeTrainer: Saved disengagement data to {full_path}")
