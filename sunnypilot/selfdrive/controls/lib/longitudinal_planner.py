@@ -79,7 +79,7 @@ class LongitudinalPlannerSP:
       return experimental_mode
 
     # Use continuous trust for high-level decision making
-    return experimental_mode and self.dec.blended_confidence() > 0.5
+    return experimental_mode and (self.dec.blended_confidence() > 0.5 or self.dec.mode() == 'pure_e2e')
 
   def update_targets(self, sm: messaging.SubMaster, v_ego: float, a_ego: float, v_cruise: float) -> tuple[float, float]:
     CS = sm['carState']
@@ -99,6 +99,20 @@ class LongitudinalPlannerSP:
     has_speed_limit = self.resolver.speed_limit_valid or self.resolver.speed_limit_last_valid
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
+
+    # Pure E2E Override (Pillar 1)
+    if self.dec.mode() == 'pure_e2e':
+      md = sm['modelV2']
+      if len(md.velocity.x) > 0:
+        # 100% authority to Neural Policy in high-confidence scenarios
+        self.output_v_target = min(md.velocity.x[0], v_cruise)
+        if len(md.acceleration.x) > 0:
+          self.output_a_target = md.acceleration.x[0]
+        self.source = LongitudinalPlanSource.pureE2e
+        
+        # Still apply Jerk-Limited Neural Filter for smoothness
+        self.output_a_target = self.a_filter.update(self.output_a_target, 1.0, self.calibrator.confidence)
+        return self.output_v_target, self.output_a_target
 
     targets = {
       LongitudinalPlanSource.cruise: (v_cruise, a_ego),
@@ -174,7 +188,12 @@ class LongitudinalPlannerSP:
 
     # Dynamic Experimental Control
     dec = longitudinalPlanSP.dec
-    dec.state = DecState.blended if self.dec.mode() == 'blended' else DecState.acc
+    if self.dec.mode() == 'pure_e2e':
+      dec.state = DecState.pureE2e
+    elif self.dec.mode() == 'blended':
+      dec.state = DecState.blended
+    else:
+      dec.state = DecState.acc
     dec.enabled = self.dec.enabled()
     dec.active = self.dec.active()
     dec.blendedWeight = self.dec.blended_weight()

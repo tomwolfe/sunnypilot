@@ -163,7 +163,11 @@ class Controls(ControlsExt):
     # E2E Confidence-based Adaptive Weighting
     e2e_weight = 0.0
     if self.sm.updated['longitudinalPlanSP']:
-      e2e_weight = float(self.sm['longitudinalPlanSP'].dec.blendedWeight)
+      lp_sp = self.sm['longitudinalPlanSP']
+      e2e_weight = float(lp_sp.dec.blendedWeight)
+      if lp_sp.dec.state == log.LongitudinalPlanSP.DynamicExperimentalControl.DynamicExperimentalControlState.pureE2e:
+        # Pillar 3: Boost lateral E2E weight to 100% in Pure E2E mode for Direct Torque Prediction
+        e2e_weight = 1.0
 
     actuators.curvature = self.desired_curvature
     lateral_uncertainty = float(np.mean(model_v2.position.yStd[:7])) if len(model_v2.position.yStd) > 0 else 0.0

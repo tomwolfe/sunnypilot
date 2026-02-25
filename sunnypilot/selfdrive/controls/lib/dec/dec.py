@@ -19,7 +19,7 @@ TRAJECTORY_SIZE = 33
 SET_MODE_TIMEOUT = 15
 
 # Define the valid mode types
-ModeType = Literal['acc', 'blended']
+ModeType = Literal['acc', 'blended', 'pure_e2e']
 
 
 class SmoothKalmanFilter:
@@ -80,7 +80,7 @@ class ModeTransitionManager:
 
   def __init__(self):
     self.current_mode: ModeType = 'acc'
-    self.mode_confidence = {'acc': 1.0, 'blended': 0.0}
+    self.mode_confidence = {'acc': 1.0, 'blended': 0.0, 'pure_e2e': 0.0}
     self.blended_weight = 0.0
     self.transition_timeout = 0
     self.min_mode_duration = 2
@@ -99,7 +99,7 @@ class ModeTransitionManager:
       self.current_mode = mode
       self.transition_timeout = SET_MODE_TIMEOUT
       self.mode_duration = 0
-      self.blended_weight = 1.0 if mode == 'blended' else 0.0
+      self.blended_weight = 1.0 if mode in ['blended', 'pure_e2e'] else 0.0
       return
 
     # Require minimum duration in current mode (unless emergency)
@@ -130,7 +130,7 @@ class ModeTransitionManager:
       
     # Calculate continuous blended weight (A+ Feature)
     # This blends between the current discrete mode and the target intent.
-    target_weight = 1.0 if self.current_mode == 'blended' else 0.0
+    target_weight = 1.0 if self.current_mode in ['blended', 'pure_e2e'] else 0.0
     # Add a sigmoid-based interpolation for smooth weight transitions
     self.blended_weight = 0.9 * self.blended_weight + 0.1 * target_weight
 
@@ -462,6 +462,13 @@ class DynamicExperimentalController:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
       return
 
+    # Check for Pure E2E Transition (Pillar 1)
+    # If the model is highly confident and calibrated, upgrade to pure_e2e
+    engaged_prob = self._engaged_prob_filter.get_value() or 0.0
+    if self._calibration_confidence > 0.85 and engaged_prob > 0.92:
+      self._mode_manager.request_mode('pure_e2e', confidence=0.8)
+      return
+
     # Standstill: use blended
     if self._standstill_count > 3:
       self._mode_manager.request_mode('blended', confidence=0.9)
@@ -492,6 +499,12 @@ class DynamicExperimentalController:
     # EMERGENCY: MPC FCW - immediate blended mode
     if self._has_mpc_fcw:
       self._mode_manager.request_mode('blended', confidence=1.0, emergency=True)
+      return
+
+    # Check for Pure E2E Transition (Pillar 1)
+    engaged_prob = self._engaged_prob_filter.get_value() or 0.0
+    if self._calibration_confidence > 0.85 and engaged_prob > 0.95:
+      self._mode_manager.request_mode('pure_e2e', confidence=0.8)
       return
 
     # If lead detected: usually use ACC, but allow Vision to override for imminent slow-downs

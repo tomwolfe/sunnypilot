@@ -171,8 +171,8 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
       # Instead of a fixed 25% blend, we now use the continuous confidence/weight 
       # from the Dynamic Experimental Controller (DEC). 
       # When DEC is fully in 'blended' mode (weight=1.0), we trust the model's direct torque more.
-      # We cap the maximum neural weight at 0.9 to maintain a classical safety/stability baseline.
-      e2e_weight = np.clip(self._e2e_weight, 0.1, 0.9)
+      # We allow the neural weight to reach 1.0 in high-confidence 'Pure E2E' scenarios.
+      e2e_weight = np.clip(self._e2e_weight, 0.1, 1.0)
       self._ff = self._ff * (1.0 - e2e_weight) + model_torque * e2e_weight
 
     # apply friction override for cars with low NN friction response

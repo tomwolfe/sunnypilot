@@ -206,6 +206,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     enum DynamicExperimentalControlState {
       acc @0;
       blended @1;
+      pureE2e @2;
     }
   }
 
@@ -293,6 +294,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
     sccVision @1;
     sccMap @2;
     speedLimitAssist @3;
+    pureE2e @4;
   }
 
   struct E2eAlerts {
