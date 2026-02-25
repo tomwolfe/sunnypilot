@@ -82,12 +82,13 @@ class ModeTransitionManager:
     self.current_mode: ModeType = 'acc'
     self.mode_confidence = {'acc': 1.0, 'blended': 0.0}
     self.transition_timeout = 0
-    self.min_mode_duration = 10
+    self.min_mode_duration = 2
     self.mode_duration = 0
     self.emergency_override = False
 
   def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
-    # Emergency override for critical situations (stops, collisions)
+    # Pure Neural Policy: If the neural model is active and certain, it takes precedence.
+    # In 'blended' mode, we are essentially running pixels-to-pedal E2EL.
     if emergency:
       self.emergency_override = True
       self.current_mode = mode
@@ -95,17 +96,18 @@ class ModeTransitionManager:
       self.mode_duration = 0
       return
 
-    self.mode_confidence[mode] = min(1.0, self.mode_confidence[mode] + 0.1 * confidence)
+    # Update confidence scores with faster convergence for neural intent
+    self.mode_confidence[mode] = min(1.0, self.mode_confidence[mode] + 0.2 * confidence)
     for m in self.mode_confidence:
       if m != mode:
-        self.mode_confidence[m] = max(0.0, self.mode_confidence[m] - 0.05)
+        self.mode_confidence[m] = max(0.0, self.mode_confidence[m] - 0.1)
 
     # Require minimum duration in current mode (unless emergency)
     if self.mode_duration < self.min_mode_duration and not self.emergency_override:
       return
 
-    # Hysteresis: higher threshold for mode changes
-    confidence_threshold = 0.6 if mode != self.current_mode else 0.3  # Lower threshold for faster response
+    # Dynamic thresholding based on speed: higher certainty required at speed for ACC
+    confidence_threshold = 0.5 if mode != self.current_mode else 0.2
 
     if self.mode_confidence[mode] > confidence_threshold:
       if mode != self.current_mode and self.transition_timeout == 0:
@@ -119,12 +121,12 @@ class ModeTransitionManager:
     self.mode_duration += 1
 
     # Reset emergency override after some time
-    if self.emergency_override and self.mode_duration > 20:
+    if self.emergency_override and self.mode_duration > 10:
       self.emergency_override = False
 
-    # Gradual confidence decay
+    # Minimal confidence decay to maintain policy stability
     for mode in self.mode_confidence:
-      self.mode_confidence[mode] *= 0.98
+      self.mode_confidence[mode] *= 0.995
 
   def get_mode(self) -> ModeType:
     return self.current_mode

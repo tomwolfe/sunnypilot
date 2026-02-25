@@ -40,26 +40,32 @@ class LatControlNeural(LatControl):
       UNCERTAINTY_THRESHOLD = 0.5
 
       if torque_neural != 0.0:
-        # Initial blend factor based on model uncertainty
-        blend_factor = np.clip((lateral_uncertainty - GATED_THRESHOLD) / (UNCERTAINTY_THRESHOLD - GATED_THRESHOLD), 0.0, 1.0)
+        # Variational Bayesian Blending:
+        # Instead of a hard gate, we treat the neural and kinematic torques as
+        # probability distributions and perform a variance-weighted fusion.
 
-        # UQ Envelope: Replace static allowed_diff with an uncertainty-quantified envelope.
-        # Certain (low uncertainty) -> Tight envelope (smaller allowed_diff)
-        # Uncertain (high uncertainty) -> Wide envelope (larger allowed_diff)
-        # This follows the principle: If the model is certain, the envelope is tight; if the model is uncertain, the envelope widens.
+        # 1. Neural Variance (estimated from uncertainty)
+        # We map uncertainty to a variance parameter.
+        neural_variance = np.square(lateral_uncertainty) + 0.01
+
+        # 2. Kinematic Variance (estimated based on speed and consistency)
+        # At high speeds, kinematics is highly reliable.
         # Base envelope follows speed-based heuristic, scaled by relative uncertainty.
         allowed_diff_base = 0.3 + 0.2 * max(0, 1.0 - CS.vEgo / 20.0)
-        uncertainty_scale = max(0.33, lateral_uncertainty / GATED_THRESHOLD)
-        allowed_diff = allowed_diff_base * uncertainty_scale
+        kinematic_variance = 0.05 / max(1.0, (CS.vEgo / 15.0)**2)
 
-        # Safety Sanity Check: If neural torque exceeds fallback by a large margin, it might be a hallucination.
-        # We allow more divergence at low speeds, but tighten at high speeds.
+        # 3. Dynamic Cost Sensitivity: Increase kinematic weight if neural deviates significantly
+        # This acts as an "active inference" check.
         torque_diff = abs(torque_neural - fallback_torque)
-        if torque_diff > allowed_diff:
-          safety_blend = np.clip((torque_diff - allowed_diff) / 0.2, 0.0, 1.0)
-          blend_factor = max(blend_factor, safety_blend)
+        innovation_cost = np.square(torque_diff / allowed_diff_base)
+        kinematic_variance /= (1.0 + innovation_cost)
 
-        output_torque = (1.0 - blend_factor) * (torque_neural + self.bias) + blend_factor * fallback_torque
+        # Bayesian Blend: Weights are inversely proportional to variance
+        w_neural = 1.0 / neural_variance
+        w_kinematic = 1.0 / kinematic_variance
+
+        total_weight = w_neural + w_kinematic
+        output_torque = (w_neural * (torque_neural + self.bias) + w_kinematic * fallback_torque) / total_weight
 
         # Online Learning / Residual Adaptation:
         # Update bias by comparing neural prediction to estimated required torque.

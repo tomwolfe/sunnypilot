@@ -1,7 +1,12 @@
 import numpy as np
 
 def index_function(idx, max_val=192, max_idx=32):
-  return (max_val) * ((idx/max_idx)**2)
+  # Urban-Optimized Hybrid: Denser sampling at low indices for complex urban maneuvers, 
+  # transitioning to quadratic for long-range planning.
+  if idx < 8:
+    return (max_val * 0.05) * (idx / 8.0)
+  else:
+    return (max_val * 0.05) + (max_val * 0.95) * (((idx - 8) / (max_idx - 8))**2)
 
 class ModelConstants:
   # time and distance indices
@@ -14,8 +19,8 @@ class ModelConstants:
 
   # model inputs constants
   MODEL_FREQ = 20
-  FEATURE_LEN = 512
-  FULL_HISTORY_BUFFER_LEN = 99
+  FEATURE_LEN = 1024
+  FULL_HISTORY_BUFFER_LEN = 255
   DESIRE_LEN = 8
   TRAFFIC_CONVENTION_LEN = 2
   LAT_PLANNER_STATE_LEN = 4
