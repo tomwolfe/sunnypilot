@@ -1,6 +1,6 @@
 """
 Multi-Modal Latent Fusion Module for sunnypilot
-================================================
+===============================================
 
 This module implements fusion of radar and map data directly into the 
 Transformer's latent space, enabling the E2E model to "attend" to 
@@ -9,13 +9,14 @@ sensor data beyond just vision.
 Key Features:
 - Radar state latent injection
 - OpenStreetMap data latent injection  
+- Cross-Attention Fusion (vision queries radar/map)
 - Learned feature fusion via cross-attention
 - Temporal attention over sensor modalities
 """
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 
 @dataclass
@@ -49,6 +50,181 @@ class FusionOutput:
     attention_weights_radar: Optional[np.ndarray] = None
     attention_weights_map: Optional[np.ndarray] = None
     uncertainty: float = 0.0
+
+
+class CrossAttentionFusion:
+    """
+    Cross-Attention Fusion Module
+    
+    Instead of concatenating radar/map data into the vision latent,
+    this module lets the vision transformer "query" the radar data.
+    
+    This allows the model to:
+    - Ignore vision noise (like glare) if radar provides high-confidence return
+    - Attend to specific radar detections that matter for the current context
+    - Dynamically weight between vision and radar based on confidence
+    """
+    
+    def __init__(self,
+                 vision_dim: int = 256,
+                 radar_dim: int = 32,
+                 map_dim: int = 32,
+                 num_heads: int = 4,
+                 dropout: float = 0.1):
+        self.vision_dim = vision_dim
+        self.radar_dim = radar_dim
+        self.map_dim = map_dim
+        self.num_heads = num_heads
+        self.head_dim = vision_dim // num_heads
+        
+        self._vision_to_q = np.random.randn(vision_dim, vision_dim).astype(np.float32) * 0.01
+        self._radar_to_kv = np.random.randn(radar_dim, vision_dim * 2).astype(np.float32) * 0.01
+        self._map_to_kv = np.random.randn(map_dim, vision_dim * 2).astype(np.float32) * 0.01
+        
+        self._radar_confidence_weight = 0.5
+        self._map_confidence_weight = 0.5
+        
+    def forward(self,
+                vision_latent: np.ndarray,
+                radar_features: Optional[np.ndarray] = None,
+                map_features: Optional[np.ndarray] = None,
+                radar_confidence: float = 0.5,
+                map_confidence: float = 0.5) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Cross-attention forward pass
+        
+        Args:
+            vision_latent: [batch, seq_len, vision_dim]
+            radar_features: [batch, radar_dim] or None
+            map_features: [batch, map_dim] or None
+            radar_confidence: Confidence in radar data [0, 1]
+            map_confidence: Confidence in map data [0, 1]
+            
+        Returns:
+            (fused_latent, radar_attention, map_attention)
+        """
+        batch_size, seq_len, _ = vision_latent.shape
+        
+        q = np.dot(vision_latent, self._vision_to_q)
+        q = q.reshape(batch_size, seq_len, self.num_heads, self.head_dim)
+        q = np.transpose(q, (0, 2, 1, 3))
+        
+        fused = vision_latent.copy()
+        radar_attention = np.zeros((batch_size, self.num_heads, seq_len, 1), dtype=np.float32)
+        map_attention = np.zeros((batch_size, self.num_heads, seq_len, 1), dtype=np.float32)
+        
+        if radar_features is not None:
+            kv_radar = np.dot(radar_features, self._radar_to_kv)
+            k_radar, v_radar = np.split(kv_radar, 2, axis=-1)
+            
+            k_radar = k_radar.reshape(batch_size, 1, self.num_heads, self.head_dim)
+            k_radar = np.transpose(k_radar, (0, 2, 3, 1))
+            v_radar = v_radar.reshape(batch_size, 1, self.num_heads, self.head_dim)
+            v_radar = np.transpose(v_radar, (0, 2, 1, 3))
+            
+            radar_attention = self._scaled_dot_product_attention(q, k_radar, v_radar)
+            
+            radar_contribution = self._apply_attention(vision_latent, radar_attention, v_radar)
+            fused = fused + radar_confidence * radar_contribution
+            
+        if map_features is not None:
+            kv_map = np.dot(map_features, self._map_to_kv)
+            k_map, v_map = np.split(kv_map, 2, axis=-1)
+            
+            k_map = k_map.reshape(batch_size, 1, self.num_heads, self.head_dim)
+            k_map = np.transpose(k_map, (0, 2, 3, 1))
+            v_map = v_map.reshape(batch_size, 1, self.num_heads, self.head_dim)
+            v_map = np.transpose(v_map, (0, 2, 1, 3))
+            
+            map_attention = self._scaled_dot_product_attention(q, k_map, v_map)
+            
+            map_contribution = self._apply_attention(vision_latent, map_attention, v_map)
+            fused = fused + map_confidence * map_contribution
+        
+        normalization = 1.0 + radar_confidence + map_confidence
+        fused = fused / normalization
+        
+        return fused, radar_attention, map_attention
+    
+    def _scaled_dot_product_attention(self,
+                                     q: np.ndarray,
+                                     k: np.ndarray,
+                                     v: np.ndarray) -> np.ndarray:
+        """Compute scaled dot-product attention"""
+        d_k = k.shape[-1]
+        
+        scores = np.matmul(q, k) / np.sqrt(d_k)
+        
+        attention_weights = self._softmax(scores, axis=-1)
+        
+        attention_output = np.matmul(attention_weights, v)
+        
+        return attention_output
+    
+    def _apply_attention(self,
+                        vision_latent: np.ndarray,
+                        attention: np.ndarray,
+                        value: np.ndarray) -> np.ndarray:
+        """Apply attention weights to vision latent"""
+        batch_size, seq_len, dim = vision_latent.shape
+        
+        attention_transposed = np.transpose(attention, (0, 2, 1, 3))
+        attention_flat = attention_transposed.reshape(batch_size, seq_len, dim)
+        
+        return attention_flat
+    
+    def _softmax(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
+        """Numerically stable softmax"""
+        exp_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
+    
+    def compute_modality_confidence(self,
+                                   vision_features: np.ndarray,
+                                   radar_features: Optional[np.ndarray],
+                                   map_features: Optional[np.ndarray]) -> Tuple[float, float]:
+        """
+        Compute dynamic confidence weights based on modality quality
+        
+        Returns:
+            (radar_confidence, map_confidence)
+        """
+        vision_confidence = self._estimate_feature_quality(vision_features)
+        
+        radar_confidence = 0.5
+        if radar_features is not None:
+            radar_confidence = self._estimate_radar_quality(radar_features)
+            
+        map_confidence = 0.5
+        if map_features is not None:
+            map_confidence = self._estimate_map_quality(map_features)
+        
+        return radar_confidence, map_confidence
+    
+    def _estimate_feature_quality(self, features: np.ndarray) -> float:
+        """Estimate quality of feature representation"""
+        variance = np.var(features)
+        quality = float(np.clip(variance * 10, 0, 1))
+        return quality
+    
+    def _estimate_radar_quality(self, radar_features: np.ndarray) -> float:
+        """Estimate radar detection quality"""
+        if radar_features.ndim > 1:
+            radar_features = radar_features[0]
+        
+        energy = np.linalg.norm(radar_features)
+        quality = float(np.clip(energy / 5.0, 0, 1))
+        
+        return quality
+    
+    def _estimate_map_quality(self, map_features: np.ndarray) -> float:
+        """Estimate map data quality"""
+        if map_features.ndim > 1:
+            map_features = map_features[0]
+        
+        non_zero = np.count_nonzero(map_features)
+        quality = float(np.clip(non_zero / len(map_features), 0, 1))
+        
+        return quality
 
 
 class MultiModalLatentFusion:

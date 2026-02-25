@@ -7,6 +7,7 @@ eliminating the need for MPC/PID middleman for lateral control.
 
 Key Features:
 - Direct torque output from policy model
+- GMM (Gaussian Mixture Model) multi-modal trajectory output
 - Uncertainty-aware torque blending
 - Self-healing bias correction
 - Integration with existing safety systems
@@ -14,7 +15,16 @@ Key Features:
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Tuple
+
+
+@dataclass
+class GMMOutput:
+    """Gaussian Mixture Model output for multi-modal trajectory prediction"""
+    means: np.ndarray
+    variances: np.ndarray
+    weights: np.ndarray
+    num_modes: int
 
 
 @dataclass
@@ -26,6 +36,127 @@ class E2ETorqueOutput:
     uncertainty: float
     confidence: float
     is_valid: bool
+    gmm_output: Optional[GMMOutput] = None
+    mode_selected: int = 0
+
+
+class GMMPolicyHead:
+    """
+    Gaussian Mixture Model Policy Head for Multi-Modal Trajectory Prediction
+    
+    Instead of outputting a single mean prediction, this head outputs the
+    parameters of a Gaussian Mixture Model representing multiple potential
+    trajectories (e.g., go left, go right, go straight).
+    
+    This solves the "multi-modal ambiguity" problem where averaging two paths
+    would lead the car into a divider.
+    """
+    
+    DEFAULT_NUM_MODES = 3
+    
+    def __init__(self, 
+                 num_modes: int = DEFAULT_NUM_MODES,
+                 feature_dim: int = 64):
+        self.num_modes = num_modes
+        self.feature_dim = feature_dim
+        
+        self._mean_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
+        self._log_var_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
+        self._weight_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
+        
+    def forward(self, latent_features: np.ndarray) -> GMMOutput:
+        """
+        Forward pass to generate GMM parameters
+        
+        Args:
+            latent_features: Input latent features from vision backbone [batch, feature_dim]
+            
+        Returns:
+            GMMOutput with means, variances, and mixture weights
+        """
+        batch_size = latent_features.shape[0]
+        
+        means = np.tanh(np.dot(latent_features, self._mean_proj.T))
+        
+        log_vars = np.tanh(np.dot(latent_features, self._log_var_proj.T))
+        variances = np.exp(np.clip(log_vars, -5, 2))
+        
+        weights_logits = np.dot(latent_features, self._weight_proj.T)
+        weights = self._softmax(weights_logits, axis=-1)
+        
+        return GMMOutput(
+            means=means,
+            variances=variances,
+            weights=weights,
+            num_modes=self.num_modes
+        )
+    
+    def _softmax(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
+        """Numerically stable softmax"""
+        exp_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
+    
+    def sample_from_gmm(self, gmm: GMMOutput, mode: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Sample from the GMM
+        
+        Args:
+            gmm: GMM output
+            mode: If specified, sample from this mode. Otherwise use weighted sampling.
+            
+        Returns:
+            (sample, variance)
+        """
+        if mode is None:
+            mode = np.random.choice(self.num_modes, p=gmm.weights[0])
+            
+        mean = gmm.means[0, mode]
+        var = gmm.variances[0, mode]
+        
+        sample = mean + np.random.randn_like(mean) * np.sqrt(var)
+        
+        return sample, var
+    
+    def get_best_mode(self, gmm: GMMOutput, context: Optional[dict] = None) -> int:
+        """
+        Select the best mode based on context (e.g., available lanes, obstacles)
+        
+        Args:
+            gmm: GMM output
+            context: Optional context (lane availability, obstacle positions)
+            
+        Returns:
+            Index of selected mode
+        """
+        weights = gmm.weights[0].copy()
+        
+        if context is not None:
+            lane_available = context.get('lane_available', [True] * self.num_modes)
+            for i, available in enumerate(lane_available):
+                if not available:
+                    weights[i] = 0.0
+            
+            weights = weights / (np.sum(weights) + 1e-8)
+        
+        return int(np.argmax(weights))
+    
+    def compute_mode_uncertainty(self, gmm: GMMOutput) -> float:
+        """
+        Compute overall uncertainty from GMM parameters
+        
+        Higher uncertainty when:
+        - Mixture weights are uniform (ambiguous)
+        - Individual variances are high
+        """
+        weight_entropy = -np.sum(gmm.weights[0] * np.log(gmm.weights[0] + 1e-8))
+        max_entropy = np.log(self.num_modes)
+        normalized_entropy = weight_entropy / (max_entropy + 1e-8)
+        
+        avg_variance = np.mean(gmm.variances[0])
+        
+        uncertainty = 0.5 * normalized_entropy + 0.5 * np.clip(avg_variance, 0, 1)
+        
+        return float(uncertainty)
 
 
 class E2ETorquePredictor:
@@ -39,19 +170,122 @@ class E2ETorquePredictor:
     - torque_steering: Direct steering torque (Nm)
     - torque_drive: Direct drive torque/acceleration (Nm for torque, m/s^2 for accel)
     - uncertainty: Standard deviation of the prediction
+    - gmm_output: Gaussian Mixture Model for multi-modal planning
     """
     
     def __init__(self, 
                  bias_time_constant: float = 30.0,
                  min_confidence: float = 0.3,
-                 max_torque_rate: float = 500.0):
+                 max_torque_rate: float = 500.0,
+                 enable_gmm: bool = True,
+                 gmm_num_modes: int = 3,
+                 gmm_feature_dim: int = 64):
         self.bias = 0.0
         self.bias_time_constant = bias_time_constant
         self.min_confidence = min_confidence
         self.max_torque_rate = max_torque_rate
+        self.enable_gmm = enable_gmm
         
         self._bias_filter_state = 0.0
         self._prev_torque = 0.0
+        
+        if self.enable_gmm:
+            self.gmm_head = GMMPolicyHead(
+                num_modes=gmm_num_modes,
+                feature_dim=gmm_feature_dim
+            )
+    
+    def process_gmm_output(self,
+                          latent_features: np.ndarray,
+                          context: Optional[dict] = None,
+                          apply_bias: bool = True) -> E2ETorqueOutput:
+        """
+        Process GMM output for multi-modal torque prediction
+        
+        Args:
+            latent_features: Latent features from vision backbone
+            context: Context for mode selection (lane availability, obstacles)
+            apply_bias: Whether to apply bias correction
+            
+        Returns:
+            E2ETorqueOutput with GMM metadata
+        """
+        if not self.enable_gmm or latent_features is None:
+            return E2ETorqueOutput(
+                torque=0.0, torque_steering=0.0, torque_drive=0.0,
+                uncertainty=1.0, confidence=0.0, is_valid=False
+            )
+        
+        gmm_output = self.gmm_head.forward(latent_features)
+        
+        selected_mode = self.gmm_head.get_best_mode(gmm_output, context)
+        
+        torque, variance = self.gmm_head.sample_from_gmm(gmm_output, mode=selected_mode)
+        
+        if apply_bias:
+            torque = torque + self.bias
+        
+        uncertainty = self.gmm_head.compute_mode_uncertainty(gmm_output)
+        
+        torque_scalar = float(torque[0]) if torque.ndim > 0 else float(torque)
+        
+        torque_rate = abs(torque_scalar - self._prev_torque)
+        if torque_rate > self.max_torque_rate:
+            torque_scalar = self._prev_torque + np.sign(torque_scalar - self._prev_torque) * self.max_torque_rate
+            
+        self._prev_torque = torque_scalar
+        
+        confidence = self._uncertainty_to_confidence(uncertainty)
+        
+        return E2ETorqueOutput(
+            torque=torque_scalar,
+            torque_steering=torque_scalar,
+            torque_drive=float(torque[1]) if torque.ndim > 0 and len(torque) > 1 else 0.0,
+            uncertainty=uncertainty,
+            confidence=confidence,
+            is_valid=True,
+            gmm_output=gmm_output,
+            mode_selected=selected_mode
+        )
+    
+    def get_all_modes(self,
+                     latent_features: np.ndarray,
+                     apply_bias: bool = True) -> List[E2ETorqueOutput]:
+        """
+        Get torque outputs for all GMM modes (for trajectory evaluation)
+        
+        Returns:
+            List of E2ETorqueOutput, one per mode
+        """
+        if not self.enable_gmm:
+            return []
+        
+        gmm_output = self.gmm_head.forward(latent_features)
+        
+        outputs = []
+        for mode in range(gmm_output.num_modes):
+            torque, variance = self.gmm_head.sample_from_gmm(gmm_output, mode=mode)
+            
+            if apply_bias:
+                torque = torque + self.bias
+                
+            torque_scalar = float(torque[0]) if torque.ndim > 0 else float(torque)
+            
+            uncertainty = float(variance)
+            confidence = self._uncertainty_to_confidence(uncertainty)
+            
+            outputs.append(E2ETorqueOutput(
+                torque=torque_scalar,
+                torque_steering=torque_scalar,
+                torque_drive=float(torque[1]) if torque.ndim > 0 and len(torque) > 1 else 0.0,
+                uncertainty=uncertainty,
+                confidence=confidence,
+                is_valid=True,
+                gmm_output=gmm_output,
+                mode_selected=mode
+            ))
+        
+        return outputs
         
     def compute_torque_from_accel(self, 
                                    desired_accel: float,

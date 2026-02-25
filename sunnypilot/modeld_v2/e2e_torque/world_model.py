@@ -1,6 +1,6 @@
 """
 World Model for Closed-Loop Simulation in sunnypilot
-======================================================
+=====================================================
 
 This module implements a learned simulator (World Model) where the E2E agent 
 can "dream" potential outcomes before taking an action.
@@ -10,6 +10,7 @@ Key Features:
 - Trajectory rollout simulation
 - Uncertainty-aware planning
 - Imagination-based safety checks
+- Dyna-style learning (imagined + real experiences)
 - Closed-loop training from actual outcomes
 """
 
@@ -64,6 +65,192 @@ class Experience:
     cost: float
 
 
+@dataclass
+class ModelError:
+    """Stores prediction error for model learning"""
+    state_error: float
+    dynamics_error: float
+    timestamp: float
+
+
+class DynaLearningModule:
+    """
+    Dyna-Style Learning Module
+    
+    Implements the Dyna architecture where:
+    1. The agent learns from real experiences (direct RL)
+    2. The agent also learns from imagined experiences (model-based RL)
+    3. When imagination deviates from reality, the model is updated
+    
+    This enables the World Model to "learn from its mistakes" by:
+    - Recording imagination-reality discrepancies
+    - Using model errors to update dynamics model
+    - Prioritizing learning from high-error scenarios
+    """
+    
+    def __init__(self,
+                 model_dim: int = 128,
+                 learning_rate: float = 0.001,
+                 imagination_weight: float = 0.5,
+                 error_threshold: float = 0.3):
+        self.model_dim = model_dim
+        self.learning_rate = learning_rate
+        self.imagination_weight = imagination_weight
+        self.error_threshold = error_threshold
+        
+        self._dynamics_model = np.random.randn(model_dim, model_dim * 2).astype(np.float32) * 0.01
+        self._model_bias = np.zeros(model_dim, dtype=np.float32)
+        
+        self._error_history: deque = deque(maxlen=1000)
+        self._imagined_experiences: deque = deque(maxlen=5000)
+        
+        self._total_imagination_steps = 0
+        self._total_real_steps = 0
+        
+    def compute_imagination_error(self,
+                                   imagined_next: WorldState,
+                                   actual_next: WorldState) -> ModelError:
+        """
+        Compute error between imagined and actual outcomes
+        
+        Returns:
+            ModelError with state and dynamics errors
+        """
+        imagined_latent = self._state_to_latent(imagined_next)
+        actual_latent = self._state_to_latent(actual_next)
+        
+        state_error = float(np.mean(np.abs(imagined_latent - actual_latent)))
+        
+        imagined_pos_error = np.linalg.norm(
+            imagined_next.position[:2] - actual_next.position[:2]
+        )
+        imagined_vel_error = np.linalg.norm(
+            imagined_next.velocity[:2] - actual_next.velocity[:2]
+        )
+        
+        dynamics_error = float(imagined_pos_error + imagined_vel_error)
+        
+        error = ModelError(
+            state_error=state_error,
+            dynamics_error=dynamics_error,
+            timestamp=0.0
+        )
+        
+        self._error_history.append(error)
+        
+        return error
+    
+    def should_update_model(self) -> bool:
+        """Check if model should be updated based on recent errors"""
+        if len(self._error_history) < 10:
+            return False
+            
+        recent_errors = [e.dynamics_error for e in list(self._error_history)[-10:]]
+        avg_error = np.mean(recent_errors)
+        
+        return avg_error > self.error_threshold
+    
+    def update_dynamics_model(self,
+                             real_experiences: List[Experience],
+                             imagined_experiences: List[Experience]):
+        """
+        Update dynamics model using both real and imagined experiences
+        
+        Uses gradient-like update to minimize prediction error
+        """
+        if not real_experiences and not imagined_experiences:
+            return
+            
+        combined_experiences = real_experiences.copy()
+        
+        imagined_sample = list(imagined_experiences)[-len(real_experiences):]
+        combined_experiences.extend(imagined_sample)
+        
+        gradients = np.zeros_like(self._dynamics_model)
+        
+        for exp in combined_experiences:
+            state_latent = self._state_to_latent(exp.state)
+            actual_next_latent = self._state_to_latent(exp.next_state)
+            
+            combined = np.concatenate([state_latent, exp.action])
+            predicted_next = np.tanh(np.dot(combined, self._dynamics_model.T) + self._model_bias)
+            
+            error = actual_next_latent - predicted_next
+            
+            gradients += np.outer(error, combined)
+        
+        gradients /= len(combined_experiences)
+        
+        self._dynamics_model += self.learning_rate * gradients
+        
+        self._model_bias *= (1 - self.learning_rate)
+        
+    def generate_imagined_experience(self,
+                                   initial_state: WorldState,
+                                   action: np.ndarray,
+                                   predicted_next: WorldState,
+                                   actual_next: Optional[WorldState] = None) -> Experience:
+        """
+        Generate imagined experience from model rollouts
+        
+        If actual_next is provided, computes the imagination error
+        """
+        reward = self._compute_imagined_reward(initial_state, predicted_next, action)
+        
+        experience = Experience(
+            state=initial_state,
+            action=action,
+            next_state=predicted_next,
+            reward=reward,
+            done=False,
+            cost=0.0
+        )
+        
+        self._imagined_experiences.append(experience)
+        self._total_imagination_steps += 1
+        
+        if actual_next is not None:
+            self.compute_imagination_error(predicted_next, actual_next)
+        
+        return experience
+    
+    def _compute_imagined_reward(self,
+                                state: WorldState,
+                                next_state: WorldState,
+                                action: np.ndarray) -> float:
+        """Compute reward for imagined trajectory"""
+        progress = next_state.position[0] - state.position[0]
+        speed = np.linalg.norm(next_state.velocity[:2])
+        
+        lane_deviation = abs(next_state.position[1]) - abs(state.position[1])
+        
+        reward = progress + speed * 0.1 - abs(lane_deviation) * 0.5
+        
+        return float(reward)
+    
+    def _state_to_latent(self, state: WorldState) -> np.ndarray:
+        """Convert WorldState to latent representation"""
+        latent = np.zeros(self.model_dim, dtype=np.float32)
+        
+        latent[0:3] = state.position[:3]
+        latent[3:6] = state.velocity[:3]
+        latent[6] = state.heading
+        latent[7] = state.lane_position
+        latent[8] = state.uncertainty
+        
+        return latent
+    
+    def get_model_uncertainty(self) -> float:
+        """Get current model uncertainty based on recent errors"""
+        if not self._error_history:
+            return 0.5
+            
+        recent_errors = [e.dynamics_error for e in list(self._error_history)[-20:]]
+        uncertainty = float(np.clip(np.mean(recent_errors) / 10.0, 0, 1))
+        
+        return uncertainty
+
+
 class ExperienceReplayBuffer:
     """
     Experience replay buffer for world model training.
@@ -99,7 +286,7 @@ class CostFunction:
     """
     
     def __init__(self):
-        self weights = {
+        self.weights = {
             'progress': 0.5,
             'speed': 0.3,
             'comfort': 0.2,
