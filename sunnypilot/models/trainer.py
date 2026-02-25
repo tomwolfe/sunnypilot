@@ -8,11 +8,8 @@ See the LICENSE.md file in the root directory for more details.
 import os
 import numpy as np
 import pickle
-from tinygrad.tensor import Tensor
-from tinygrad.nn.optim import Adam
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
-from openpilot.system.hardware import TICI
 from openpilot.system.hardware.hw import Paths
 
 import shutil
@@ -42,21 +39,21 @@ class DisengagementBuffer:
   def save_to_disk(self, priority=False):
     if not self.buffer:
       return
-    
+
     timestamp = int(np.round(np.datetime64('now').astype(float) * 1e3))
     filename = f"disengagement_{timestamp}.pkl"
     full_path = os.path.join(self.save_path, filename)
-    
+
     with open(full_path, "wb") as f:
       pickle.dump(self.buffer, f)
-    
+
     if priority:
       priority_filename = f"high_loss_{filename}"
       priority_full_path = os.path.join(self.priority_path, priority_filename)
       shutil.copy(full_path, priority_full_path)
       print(f"ShadowModeTrainer: PRIORITY UPLOAD TRIGGERED for {priority_full_path}")
       cloudlog.event("sunnylink_priority_upload", path=priority_full_path)
-    
+
     self.buffer = []
     print(f"ShadowModeTrainer: Saved disengagement data to {full_path}")
 
@@ -84,7 +81,7 @@ class ShadowModeTrainer:
     files = sorted([f for f in os.listdir(self.buffer.save_path) if f.endswith(".pkl")])
     if not files:
       return []
-    
+
     data = []
     for f in files:
       try:
@@ -107,30 +104,30 @@ class ShadowModeTrainer:
     v_ego = human_action.get("v_ego", 0.0)
     # Estimate accel: gas is positive, brake is negative
     human_accel = (human_action.get("gas", 0.0) * 3.0) - (human_action.get("brake", 0.0) * 5.0)
-    
+
     # 2. Predicted Action Analysis
     pred_path = predicted_action.get("path", [])
-    
+
     # Calculate Pred Accel from path (Simplified: look at first few points)
     if len(pred_path) >= 2:
       # Assume path[0] is current pos, path[1] is pos at t=0.2s
-      pred_accel = (pred_path[1] - pred_path[0]) / (0.2**2) 
+      pred_accel = (pred_path[1] - pred_path[0]) / (0.2**2)
     else:
       pred_accel = 0.0
 
     # 3. Policy Loss (MSE)
     # The model should mimic the human
     policy_loss = (pred_accel - human_accel)**2
-    
+
     # 4. Neural Guardrail Loss (Pillar 5: Safety Gap)
     # If the model predicts an accel that is physically dangerous, add a massive penalty.
     guardrail_loss = 0.0
     if pred_accel < self.min_accel:
       # Excessive deceleration penalty
       guardrail_loss = (pred_accel - self.min_accel)**2 * 10.0 # High weight for safety
-    
+
     total_loss = policy_loss + guardrail_loss
-    
+
     return float(total_loss)
 
   def run_batch_tuning(self):
@@ -146,7 +143,7 @@ class ShadowModeTrainer:
     for sample in data:
       loss = self.train_step(sample["inputs"], sample["human_action"], sample["predicted_action"])
       total_l += loss
-    
+
     print(f"ShadowModeTrainer: Batch Tuning Complete. Average Loss: {total_l/len(data):.4f}")
     self.save_delta_weights()
 

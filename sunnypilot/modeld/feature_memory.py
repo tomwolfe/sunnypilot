@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Optional, Any
 
 
 @dataclass
@@ -40,11 +40,11 @@ class FeatureMemory:
         self.W_q = np.eye(feature_len, dtype=np.float32)
         self.W_k = np.eye(feature_len, dtype=np.float32)
         self.W_v = np.eye(feature_len, dtype=np.float32)
-        
+
         # OSM-specific attention bias projections
         self.W_osm_key = np.random.randn(10, feature_len).astype(np.float32) * 0.01
         self.W_osm_value = np.random.randn(10, feature_len).astype(np.float32) * 0.01
-        
+
         # Attention bias scaling factors
         self.osm_attention_scale = 0.5
         self.stop_sign_attention_boost = 2.0
@@ -65,7 +65,7 @@ class FeatureMemory:
         self.history.append(feature.copy())
         self.osm_history.append(osm_embedding)
 
-    def add_with_osm(self, feature: np.ndarray, osm_data: Dict[str, Any]):
+    def add_with_osm(self, feature: np.ndarray, osm_data: dict[str, Any]):
         """
         Add feature with OSM data extracted from liveMapDataSP
         
@@ -76,24 +76,24 @@ class FeatureMemory:
         osm_embedding = self._parse_osm_embedding(osm_data)
         self.add(feature, osm_embedding)
 
-    def _parse_osm_embedding(self, osm_data: Dict[str, Any]) -> OSMEmbedding:
+    def _parse_osm_embedding(self, osm_data: dict[str, Any]) -> OSMEmbedding:
         """Parse liveMapDataSP message into OSM embedding"""
         road_type = osm_data.get('roadType', 0)
         speed_limit = osm_data.get('speedLimit', 0.0)
         curvature = osm_data.get('curvature', 0.0)
-        
+
         turn_state = osm_data.get('turnState', {})
         intersection_type = turn_state.get('type', 0)
         distance_to_intersection = turn_state.get('distance', 1000.0)
-        
+
         is_highway = road_type in (1, 2)
         is_urban = road_type in (4, 5) or speed_limit < 50
-        
+
         stop_sign_present = osm_data.get('hasStopSign', False)
         traffic_light_present = osm_data.get('hasTrafficLight', False)
-        
+
         lane_count = osm_data.get('laneCount', 2)
-        
+
         return OSMEmbedding(
             road_type=road_type,
             speed_limit=speed_limit,
@@ -107,8 +107,8 @@ class FeatureMemory:
             distance_to_intersection=distance_to_intersection
         )
 
-    def get_contextual_feature(self, current_feature: np.ndarray, 
-                               osm_context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def get_contextual_feature(self, current_feature: np.ndarray,
+                               osm_context: Optional[dict[str, Any]] = None) -> np.ndarray:
         """
         Computes a contextual feature using Scaled Dot-Product Attention with OSM bias.
         
@@ -154,7 +154,7 @@ class FeatureMemory:
         # Residual Connection
         return (current_feature + context_vector) / 2.0
 
-    def _compute_osm_attention_bias(self, osm_context: Optional[Dict[str, Any]]) -> Optional[np.ndarray]:
+    def _compute_osm_attention_bias(self, osm_context: Optional[dict[str, Any]]) -> Optional[np.ndarray]:
         """
         Compute attention bias from OSM context
         
@@ -166,38 +166,38 @@ class FeatureMemory:
         """
         if not self.osm_history or osm_context is None:
             return None
-        
+
         current_osm = self._parse_osm_embedding(osm_context)
         n_history = len(self.history)
-        
+
         bias = np.zeros(n_history, dtype=np.float32)
-        
+
         # Stop sign: attend to recent braking-related features
         if current_osm.stop_sign_present:
             for i in range(n_history):
                 if self.osm_history[i] and self.osm_history[i].stop_sign_present:
                     bias[i] += self.stop_sign_attention_boost
-        
+
         # Intersection: attend to features near intersections
         if current_osm.intersection_type > 0 and current_osm.distance_to_intersection < 50:
             distance_factor = 1.0 - (current_osm.distance_to_intersection / 50.0)
             for i in range(n_history):
                 if self.osm_history[i] and self.osm_history[i].intersection_type > 0:
                     bias[i] += self.intersection_attention_boost * distance_factor
-        
+
         # Highway: attend to high-speed features
         if current_osm.is_highway:
             for i in range(n_history):
                 if self.osm_history[i] and self.osm_history[i].is_highway:
                     bias[i] += self.osm_attention_scale
-        
+
         # Urban: attend to low-speed, high-curvature features
         if current_osm.is_urban:
             for i in range(n_history):
                 if self.osm_history[i] and self.osm_history[i].is_urban:
                     bias[i] += self.osm_attention_scale
-        
+
         # Scale the overall bias
         bias = bias * self.osm_attention_scale
-        
+
         return bias

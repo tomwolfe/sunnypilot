@@ -195,7 +195,7 @@ Export('messaging')
 
 
 # Build other submodules
-SConscript(['panda/SConscript'])
+# SConscript(['panda/SConscript'])  # Skipped for macOS CI tests - Panda not needed
 
 # Build rednose library
 SConscript(['rednose/SConscript'])

@@ -10,7 +10,7 @@ import numpy as np
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.constants import WMACConstants
-from typing import Literal, Optional
+from typing import Literal
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -39,7 +39,7 @@ class PersonalityVector:
     progress: float = 0.6
     following_distance: float = 0.7
     lane_change_frequency: float = 0.3
-    
+
     def to_array(self) -> np.ndarray:
         """Convert to numpy array for model input"""
         return np.array([
@@ -49,7 +49,7 @@ class PersonalityVector:
             self.following_distance,
             self.lane_change_frequency
         ], dtype=np.float32)
-    
+
     @classmethod
     def from_mode(cls, mode: str) -> 'PersonalityVector':
         """Create personality vector from driving mode"""
@@ -292,9 +292,9 @@ class UnifiedPolicyHead:
     3. Policy head outputs torque/acceleration conditioned on personality
     4. Single forward pass - no mode switching logic
     """
-    
+
     PERSONALITY_DIM = 5  # aggressiveness, comfort, progress, following_distance, lane_change
-    
+
     def __init__(self,
                  feature_dim: int = 256,
                  hidden_dim: int = 128,
@@ -302,13 +302,13 @@ class UnifiedPolicyHead:
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
-        
+
         # Personality conditioning network
         # Projects personality vector to hidden space
         self._personality_projection = np.random.randn(
             self.PERSONALITY_DIM, hidden_dim
         ).astype(np.float32) * 0.01
-        
+
         # Feature modulation (FiLM-style)
         # Personality modulates vision features via scale and shift
         self._personality_scale = np.random.randn(
@@ -317,27 +317,27 @@ class UnifiedPolicyHead:
         self._personality_shift = np.random.randn(
             hidden_dim, feature_dim
         ).astype(np.float32) * 0.01
-        
+
         # Policy output head
         self._policy_head = np.random.randn(
             output_dim, hidden_dim + feature_dim
         ).astype(np.float32) * 0.01
-        
+
         self._current_personality = PersonalityVector()
         self._personality_history = []
         self._max_personality_history = 10
-        
+
     def set_personality(self, personality: PersonalityVector):
         """Set the current personality vector"""
         self._current_personality = personality
         self._personality_history.append(personality.to_array())
         if len(self._personality_history) > self._max_personality_history:
             self._personality_history.pop(0)
-    
+
     def set_personality_from_mode(self, mode: str):
         """Set personality from predefined mode"""
         self.set_personality(PersonalityVector.from_mode(mode))
-    
+
     def forward(self, vision_features: np.ndarray) -> np.ndarray:
         """
         Forward pass through unified policy head
@@ -354,32 +354,32 @@ class UnifiedPolicyHead:
         """
         batch_size = vision_features.shape[0]
         personality = self._current_personality.to_array()
-        
+
         # Project personality to hidden space
         personality_hidden = np.tanh(personality @ self._personality_projection.T)
-        
+
         # FiLM-style modulation: personality modulates vision features
         gamma = personality_hidden @ self._personality_scale.T  # Scale
         beta = personality_hidden @ self._personality_shift.T   # Shift
-        
+
         # Apply modulation
         modulated_features = vision_features * (1 + gamma) + beta
-        
+
         # Concatenate vision and personality features
         combined = np.concatenate([vision_features, modulated_features], axis=-1)
-        
+
         # Policy head output
         output = combined @ self._policy_head.T
-        
+
         return output
-    
+
     def get_smoothed_personality(self) -> np.ndarray:
         """Get temporally smoothed personality vector"""
         if not self._personality_history:
             return self._current_personality.to_array()
-        
+
         return np.mean(self._personality_history, axis=0)
-    
+
     def interpolate_personality(self, target: PersonalityVector, alpha: float):
         """
         Smoothly interpolate personality over time
@@ -391,7 +391,7 @@ class UnifiedPolicyHead:
         current = self._current_personality.to_array()
         target_arr = target.to_array()
         smoothed = (1 - alpha) * current + alpha * target_arr
-        
+
         self._current_personality = PersonalityVector(
             aggressiveness=float(smoothed[0]),
             comfort=float(smoothed[1]),
@@ -426,28 +426,28 @@ class UnifiedE2EPolicy:
   - E2E not confident OR unsafe → Clip to safety limits, execute
   - E2E completely failed → Fallback to classical control
   """
-  
+
   CONFIDENCE_THRESHOLD_HIGH = 0.85
   CONFIDENCE_THRESHOLD_LOW = 0.50
   SAFETY_CLIP_ENABLED = True
-  
+
   URGENCY_CURVE_THRESHOLD = 0.7
   URGENCY_HARD_BRAKE_THRESHOLD = 0.9
-  
+
   def __init__(self):
     self.current_mode: ModeType = 'unified_e2e'
     self.e2e_confidence = 0.0
     self.safety_clip_level = SafetyClipLevel.NONE
     self.fallback_active = False
     self.emergency_override = False
-    
+
     self._clip_torque_max = 2.0
     self._clip_accel_min = -4.0
     self._clip_accel_max = 2.5
-    
+
     self._confidence_history = []
     self._max_history = 30
-    
+
   def update_confidence(self, model_confidence: float, calibration_confidence: float,
                        engaged_prob: float) -> None:
     """Update E2E confidence based on model and calibration factors."""
@@ -456,7 +456,7 @@ class UnifiedE2EPolicy:
     if len(self._confidence_history) > self._max_history:
       self._confidence_history.pop(0)
     self.e2e_confidence = sum(self._confidence_history) / len(self._confidence_history)
-  
+
   def compute_safety_clip(self, urgency: float, predicted_trajectory_valid: bool,
                          road_edge_clear: bool) -> SafetyClipLevel:
     """
@@ -467,25 +467,25 @@ class UnifiedE2EPolicy:
     """
     if not self.SAFETY_CLIP_ENABLED:
       return SafetyClipLevel.NONE
-    
+
     if not predicted_trajectory_valid:
       return SafetyClipLevel.HARD
-    
+
     if urgency > self.URGENCY_HARD_BRAKE_THRESHOLD:
       return SafetyClipLevel.HARD
-    
+
     if urgency > self.URGENCY_CURVE_THRESHOLD and not road_edge_clear:
       return SafetyClipLevel.MEDIUM
-    
+
     if urgency > self.URGENCY_CURVE_THRESHOLD:
       return SafetyClipLevel.LIGHT
-    
+
     if not road_edge_clear:
       return SafetyClipLevel.LIGHT
-    
+
     return SafetyClipLevel.NONE
-  
-  def apply_safety_clip(self, torque: float, accel: float, 
+
+  def apply_safety_clip(self, torque: float, accel: float,
                        clip_level: SafetyClipLevel) -> tuple[float, float]:
     """
     Apply hard-limit clipping to E2E outputs.
@@ -495,29 +495,29 @@ class UnifiedE2EPolicy:
     """
     clipped_torque = torque
     clipped_accel = accel
-    
+
     torque_max = 2.0
     accel_max = 2.5
-    
+
     if clip_level >= SafetyClipLevel.LIGHT:
       torque_max = 1.5
       accel_max = 2.0
-    
+
     if clip_level >= SafetyClipLevel.MEDIUM:
       torque_max = 1.0
       accel_max = 1.5
-    
+
     if clip_level >= SafetyClipLevel.HARD:
       torque_max = 0.5
       accel_max = 0.5
       clipped_accel = min(clipped_accel, self._clip_accel_min + 1.0)
-    
+
     clipped_torque = max(-torque_max, min(torque_max, clipped_torque))
     clipped_accel = max(self._clip_accel_min, min(accel_max, clipped_accel))
-    
+
     self.safety_clip_level = clip_level
     return clipped_torque, clipped_accel
-  
+
   def should_fallback(self) -> bool:
     """Determine if we should fall back to classical control."""
     if self.emergency_override:
@@ -527,40 +527,40 @@ class UnifiedE2EPolicy:
     if self.safety_clip_level >= SafetyClipLevel.HARD:
       return True
     return False
-  
+
   def get_mode(self) -> ModeType:
     return self.current_mode
-  
+
   def get_confidence(self) -> float:
     return self.e2e_confidence
-  
+
   def get_clip_level(self) -> SafetyClipLevel:
     return self.safety_clip_level
-  
+
   def is_fallback_active(self) -> bool:
     return self.fallback_active
 
 
 class ModeTransitionManager:
   """Simplified transition manager for backward compatibility - delegates to UnifiedE2EPolicy."""
-  
+
   def __init__(self):
     self._unified_policy = UnifiedE2EPolicy()
     self.mode_duration = 0
-    
+
   def request_mode(self, mode: ModeType, confidence: float = 1.0, emergency: bool = False):
     pass
-    
+
   def update(self):
     self.mode_duration += 1
-    
+
   def get_mode(self) -> ModeType:
     return self._unified_policy.get_mode()
-  
+
   def get_weight(self) -> float:
     return 1.0 if self._unified_policy.e2e_confidence > 0.5 else 0.0
-    
-  @property  
+
+  @property
   def mode_confidence(self):
     return {'unified_e2e': self._unified_policy.get_confidence()}
 
@@ -798,7 +798,7 @@ class DynamicExperimentalController:
     v_ego = self._v_ego_kph / 3.6
     dist_comfortable = (v_ego**2) / (2 * 2.5)
     dist_hard = (v_ego**2) / (2 * 4.0)
-    
+
     kinematic_urgency = 0.0
     if self._trajectory_valid and v_ego > 3.0:
       if self._endpoint_x < dist_hard:
@@ -822,7 +822,7 @@ class DynamicExperimentalController:
     future_brake_urgency = min(1.0, future_brake_prob_filtered * 1.5)
 
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
-    
+
     hard_brake_urgency = 1.0 if self._hard_brake_predicted else 0.0
 
     vision_traffic_urgency = 0.0
@@ -832,7 +832,7 @@ class DynamicExperimentalController:
     intents = np.array([urgency, uncertainty_urgency, brake_prob_urgency,
                         future_brake_urgency, velocity_urgency, curve_urgency,
                         hard_brake_urgency, kinematic_urgency, vision_traffic_urgency])
-    
+
     weights = np.ones_like(intents)
     weights[:6] *= (0.5 + 0.5 * engaged_prob) * self._calibration_confidence
     weights[6] = 1.0
@@ -849,55 +849,55 @@ class DynamicExperimentalController:
     model_confidence = self._uncertainty_filter.get_confidence()
     dynamic_threshold = WMACConstants.SLOW_DOWN_PROB * (1.2 - 0.4 * model_confidence)
     dynamic_threshold *= (1.5 - 0.5 * self._calibration_confidence)
-    
+
     self._has_slow_down = urgency_filtered > dynamic_threshold
     self._urgency = urgency_filtered
 
   def _radarless_mode(self) -> None:
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
     road_edge_clear = self._vision_traffic_detection.signal_type == 'none'
-    
+
     self._unified_policy.update_confidence(
       self._uncertainty_filter.get_confidence(),
       self._calibration_confidence,
       engaged_prob
     )
-    
+
     clip_level = self._unified_policy.compute_safety_clip(
       self._urgency,
       self._trajectory_valid,
       road_edge_clear
     )
-    
+
     if self._has_mpc_fcw or self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
       if self._vision_traffic_detection.probability > 0.6:
         self._unified_policy.emergency_override = True
-    
+
     self._unified_policy.fallback_active = self._unified_policy.should_fallback()
 
   def _radar_mode(self) -> None:
     engaged_prob = self._engaged_prob_filter.get_value() or 0.0
     road_edge_clear = self._vision_traffic_detection.signal_type == 'none'
-    
+
     self._unified_policy.update_confidence(
       self._uncertainty_filter.get_confidence(),
       self._calibration_confidence,
       engaged_prob
     )
-    
+
     clip_level = self._unified_policy.compute_safety_clip(
       self._urgency,
       self._trajectory_valid,
       road_edge_clear
     )
-    
+
     if self._has_mpc_fcw:
       self._unified_policy.emergency_override = True
-    
+
     if self._vision_traffic_detection.signal_type in ('stop_sign', 'red_light'):
       if self._vision_traffic_detection.probability > 0.55:
         self._unified_policy.emergency_override = True
-    
+
     self._unified_policy.fallback_active = self._unified_policy.should_fallback()
 
   def update(self, sm: messaging.SubMaster) -> None:

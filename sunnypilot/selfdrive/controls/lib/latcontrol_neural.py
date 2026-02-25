@@ -39,14 +39,12 @@ class LatControlNeural(LatControl):
       # 2. Linear blend to fallback between GATED_THRESHOLD and UNCERTAINTY_THRESHOLD
       # 3. Safety gate: If neural torque is significantly different from kinematic expected torque,
       #    increase blend towards fallback for safety.
-      GATED_THRESHOLD = 0.15
-      UNCERTAINTY_THRESHOLD = 0.5
 
       if torque_neural != 0.0:
         # Neural Authority Dominance:
         # Instead of blending based on fixed certainty, we adopt an "Optimistic Neural" stance.
         # We assume the model is correct unless it violates high-confidence physical constraints.
-        
+
         # 1. Neural Weight from Latent Uncertainty
         # Using a softer sigmoid to allow more "neural character" even at moderate uncertainty.
         sigmoid_center = 0.55  # Increased from 0.35 to keep neural active longer
@@ -58,7 +56,7 @@ class LatControlNeural(LatControl):
         # We calculate the "allowed" deviation from physics. In pure E2E, this envelope is wide.
         # It narrows only at very high speeds or high lateral G-loads.
         lat_g = abs(actual_curvature * CS.vEgo ** 2)
-        constraint_tightness = interp(lat_g, [0.0, 3.0, 5.0], [0.1, 0.4, 0.8])
+        constraint_tightness = np.interp(lat_g, [0.0, 3.0, 5.0], [0.1, 0.4, 0.8])
         allowed_diff = (0.5 + 0.5 * max(0, 1.0 - CS.vEgo / 25.0)) * (1.0 - constraint_tightness)
 
         # 3. Direct Neural Drive with Bayesian Guarding:
@@ -66,10 +64,10 @@ class LatControlNeural(LatControl):
         # We only blend back to kinematics if the model deviates beyond physical plausibility.
         torque_diff = abs(torque_neural - fallback_torque)
         out_of_bounds = max(0.0, (torque_diff - allowed_diff) / 0.2)
-        
+
         # Final Blend Weight: Mix neural intent with safety-bound out_of_bounds
         w_final_neural = w_neural_gated * (1.0 - min(1.0, out_of_bounds))
-        
+
         # Apply Self-Healing Bias to the Neural signal
         output_torque = w_final_neural * (torque_neural + self.bias) + (1.0 - w_final_neural) * fallback_torque
 

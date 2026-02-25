@@ -22,12 +22,18 @@ std::string random_bytes(int size) {
 
 TEST_CASE("util::read_file") {
   SECTION("read /proc/version") {
+    // Skip on macOS - Linux-specific
+    #ifdef __linux__
     std::string ret = util::read_file("/proc/version");
     REQUIRE(ret.find("Linux version") != std::string::npos);
+    #endif
   }
   SECTION("read from sysfs") {
+    // Skip on macOS - Linux-specific
+    #ifdef __linux__
     std::string ret = util::read_file("/sys/power/wakeup_count");
     REQUIRE(!ret.empty());
+    #endif
   }
   SECTION("read file") {
     char filename[] = "/tmp/test_read_XXXXXX";
@@ -69,10 +75,13 @@ TEST_CASE("util::file_exists") {
     REQUIRE(!util::file_exists(fn + "/nonexistent"));
   }
   SECTION("file has no access permissions") {
+    // Skip on macOS - /proc/kmsg is Linux-specific
+    #ifdef __linux__
     std::string fn = "/proc/kmsg";
     std::ifstream f(fn);
     REQUIRE(f.good() == false);
     REQUIRE(util::file_exists(fn));
+    #endif
   }
   ::remove(filename);
 }

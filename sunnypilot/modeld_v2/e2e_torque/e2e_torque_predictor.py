@@ -22,7 +22,7 @@ Improvements for "Perfect Grade" E2E:
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional
 from collections import deque
 
 
@@ -47,21 +47,21 @@ class VehicleResponseModel:
     lag_time_constant: float = 0.2
     deadzone: float = 0.05
     saturation_torque: float = 2.0
-    
+
     # Online adaptation
     adaptive_gain: float = 1.0
     gain_learning_rate: float = 0.001
-    
+
     # History for system identification
     command_history: deque = None
     response_history: deque = None
-    
+
     def __post_init__(self):
         if self.command_history is None:
             self.command_history = deque(maxlen=100)
         if self.response_history is None:
             self.response_history = deque(maxlen=100)
-    
+
     def predict_response(self, torque_command: float, v_ego: float) -> float:
         """
         Predict actual lateral acceleration from torque command
@@ -76,22 +76,22 @@ class VehicleResponseModel:
         # Apply deadzone
         if abs(torque_command) < self.deadzone:
             return 0.0
-        
+
         # Speed-dependent gain
         speed_factor = 1.0 + 0.1 * (v_ego / 20.0)
-        
+
         # Apply adaptive gain
         effective_gain = self.gain * self.adaptive_gain * speed_factor
-        
+
         # Simple first-order lag model
         lat_accel = torque_command * effective_gain
-        
+
         # Saturation
         max_accel = 3.0  # m/s^2
         lat_accel = np.clip(lat_accel, -max_accel, max_accel)
-        
+
         return lat_accel
-    
+
     def update_from_observation(self,
                                 torque_command: float,
                                 actual_lat_accel: float,
@@ -106,26 +106,26 @@ class VehicleResponseModel:
         """
         if v_ego < 5.0:  # Don't learn at low speeds
             return
-        
+
         self.command_history.append(torque_command)
         self.response_history.append(actual_lat_accel)
-        
+
         if len(self.command_history) < 20:
             return
-        
+
         # Simple recursive least squares for gain adaptation
         commands = np.array(self.command_history)
         responses = np.array(self.response_history)
-        
+
         # Avoid division by zero
         command_var = np.var(commands)
         if command_var < 0.01:
             return
-        
+
         # Estimate optimal gain
         optimal_gain = np.cov(commands, responses)[0, 1] / (command_var + 1e-6)
         optimal_gain = np.clip(optimal_gain, 0.5, 2.0)
-        
+
         # Smooth update
         self.adaptive_gain = (1 - self.gain_learning_rate) * self.adaptive_gain + \
                             self.gain_learning_rate * optimal_gain
@@ -142,7 +142,7 @@ class E2ETorqueOutput:
     is_valid: bool
     gmm_output: Optional[GMMOutput] = None
     mode_selected: int = 0
-    
+
     # A+ Enhancement: Direct control outputs
     direct_torque_command: float = 0.0  # Raw torque from model
     direct_accel_command: float = 0.0   # Raw acceleration from model
@@ -161,19 +161,19 @@ class GMMPolicyHead:
     This solves the "multi-modal ambiguity" problem where averaging two paths
     would lead the car into a divider.
     """
-    
+
     DEFAULT_NUM_MODES = 3
-    
-    def __init__(self, 
+
+    def __init__(self,
                  num_modes: int = DEFAULT_NUM_MODES,
                  feature_dim: int = 64):
         self.num_modes = num_modes
         self.feature_dim = feature_dim
-        
+
         self._mean_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
         self._log_var_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
         self._weight_proj = np.random.randn(num_modes, feature_dim).astype(np.float32) * 0.01
-        
+
     def forward(self, latent_features: np.ndarray) -> GMMOutput:
         """
         Forward pass to generate GMM parameters
@@ -185,28 +185,28 @@ class GMMPolicyHead:
             GMMOutput with means, variances, and mixture weights
         """
         batch_size = latent_features.shape[0]
-        
+
         means = np.tanh(np.dot(latent_features, self._mean_proj.T))
-        
+
         log_vars = np.tanh(np.dot(latent_features, self._log_var_proj.T))
         variances = np.exp(np.clip(log_vars, -5, 2))
-        
+
         weights_logits = np.dot(latent_features, self._weight_proj.T)
         weights = self._softmax(weights_logits, axis=-1)
-        
+
         return GMMOutput(
             means=means,
             variances=variances,
             weights=weights,
             num_modes=self.num_modes
         )
-    
+
     def _softmax(self, x: np.ndarray, axis: int = -1) -> np.ndarray:
         """Numerically stable softmax"""
         exp_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
         return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
-    
-    def sample_from_gmm(self, gmm: GMMOutput, mode: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+
+    def sample_from_gmm(self, gmm: GMMOutput, mode: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
         """
         Sample from the GMM
         
@@ -219,14 +219,14 @@ class GMMPolicyHead:
         """
         if mode is None:
             mode = np.random.choice(self.num_modes, p=gmm.weights[0])
-            
+
         mean = gmm.means[0, mode]
         var = gmm.variances[0, mode]
-        
+
         sample = mean + np.random.randn_like(mean) * np.sqrt(var)
-        
+
         return sample, var
-    
+
     def get_best_mode(self, gmm: GMMOutput, context: Optional[dict] = None) -> int:
         """
         Select the best mode based on context (e.g., available lanes, obstacles)
@@ -239,17 +239,17 @@ class GMMPolicyHead:
             Index of selected mode
         """
         weights = gmm.weights[0].copy()
-        
+
         if context is not None:
             lane_available = context.get('lane_available', [True] * self.num_modes)
             for i, available in enumerate(lane_available):
                 if not available:
                     weights[i] = 0.0
-            
+
             weights = weights / (np.sum(weights) + 1e-8)
-        
+
         return int(np.argmax(weights))
-    
+
     def compute_mode_uncertainty(self, gmm: GMMOutput) -> float:
         """
         Compute overall uncertainty from GMM parameters
@@ -261,11 +261,11 @@ class GMMPolicyHead:
         weight_entropy = -np.sum(gmm.weights[0] * np.log(gmm.weights[0] + 1e-8))
         max_entropy = np.log(self.num_modes)
         normalized_entropy = weight_entropy / (max_entropy + 1e-8)
-        
+
         avg_variance = np.mean(gmm.variances[0])
-        
+
         uncertainty = 0.5 * normalized_entropy + 0.5 * np.clip(avg_variance, 0, 1)
-        
+
         return float(uncertainty)
 
 
@@ -281,7 +281,7 @@ class ClosedLoopDirectController:
     
     This achieves the "Perfect Grade" requirement for Direct Control Prediction.
     """
-    
+
     def __init__(self,
                  vehicle_model: Optional[VehicleResponseModel] = None,
                  learning_enabled: bool = True,
@@ -291,34 +291,34 @@ class ClosedLoopDirectController:
         self.learning_enabled = learning_enabled
         self.feedforward_enabled = feedforward_enabled
         self.lag_compensation_enabled = lag_compensation_enabled
-        
+
         # Feedforward compensation terms
         self.road_grade_compensation = 0.0
         self.crosswind_compensation = 0.0
         self.tire_friction_estimate = 1.0
-        
+
         # Lag compensation
         self.phase_lead_compensator = 0.0
         self.lag_estimate_sec = 0.2
-        
+
         # Integral term for steady-state error correction
         self.integral_error = 0.0
         self.integral_gain = 0.01
         self.integral_clamp = 0.5
-        
+
         # Derivative term for damping
         self.prev_error = 0.0
         self.derivative_gain = 0.05
-        
+
         # History for adaptive control
         self.error_history = deque(maxlen=50)
         self.command_history = deque(maxlen=50)
-        
+
     def compute_direct_torque(self,
                               desired_lat_accel: float,
                               v_ego: float,
                               actual_lat_accel: float = 0.0,
-                              dt: float = 0.05) -> Tuple[float, Dict[str, float]]:
+                              dt: float = 0.05) -> tuple[float, dict[str, float]]:
         """
         Compute direct torque command using closed-loop control
         
@@ -332,22 +332,22 @@ class ClosedLoopDirectController:
             (torque_command, debug_info)
         """
         debug_info = {}
-        
+
         # Feedforward term: predict torque needed for desired acceleration
         if self.feedforward_enabled:
             # Inverse model: what torque gives us desired_lat_accel?
             ff_torque = self._inverse_vehicle_model(desired_lat_accel, v_ego)
         else:
             ff_torque = 0.0
-        
+
         # Feedback term: PID correction based on tracking error
         fb_torque = 0.0
         if actual_lat_accel != 0.0:
             error = desired_lat_accel - actual_lat_accel
-            
+
             # Proportional
             fb_torque += error * 0.5
-            
+
             # Integral
             self.integral_error = np.clip(
                 self.integral_error + error * dt,
@@ -355,12 +355,12 @@ class ClosedLoopDirectController:
                 self.integral_clamp
             )
             fb_torque += self.integral_error * self.integral_gain
-            
+
             # Derivative
             derivative = (error - self.prev_error) / dt
             fb_torque += derivative * self.derivative_gain
             self.prev_error = error
-        
+
         # Lag compensation: phase lead to counteract actuator lag
         lag_compensation = 0.0
         if self.lag_compensation_enabled and v_ego > 5.0:
@@ -369,25 +369,25 @@ class ClosedLoopDirectController:
                 prev_command = self.command_history[-1]
                 command_derivative = (ff_torque - prev_command) / dt
                 lag_compensation = command_derivative * self.lag_estimate_sec * 0.3
-        
+
         # Total torque command
         torque_command = ff_torque + fb_torque + lag_compensation
-        
+
         # Apply road grade and crosswind compensation
         if self.feedforward_enabled:
             torque_command += self.road_grade_compensation
             torque_command += self.crosswind_compensation
-        
+
         # Store history
         self.command_history.append(torque_command)
         self.error_history.append(desired_lat_accel - actual_lat_accel if actual_lat_accel != 0.0 else 0.0)
-        
+
         # Online learning: update vehicle model
         if self.learning_enabled and actual_lat_accel != 0.0:
             self.vehicle_model.update_from_observation(
                 torque_command, actual_lat_accel, v_ego
             )
-        
+
         debug_info = {
             'feedforward_torque': ff_torque,
             'feedback_torque': fb_torque,
@@ -396,9 +396,9 @@ class ClosedLoopDirectController:
             'adaptive_gain': self.vehicle_model.adaptive_gain,
             'total_torque': torque_command
         }
-        
+
         return torque_command, debug_info
-    
+
     def _inverse_vehicle_model(self, desired_lat_accel: float, v_ego: float) -> float:
         """
         Inverse of vehicle response model: compute torque needed for desired acceleration
@@ -413,16 +413,16 @@ class ClosedLoopDirectController:
         # Account for speed-dependent gain
         speed_factor = 1.0 + 0.1 * (v_ego / 20.0)
         effective_gain = self.vehicle_model.gain * self.vehicle_model.adaptive_gain * speed_factor
-        
+
         # Inverse: torque = accel / gain
         torque = desired_lat_accel / (effective_gain + 1e-6)
-        
+
         # Account for deadzone
         if abs(torque) < self.vehicle_model.deadzone:
             torque = np.sign(torque) * self.vehicle_model.deadzone if abs(torque) > 0.01 else 0.0
-        
+
         return torque
-    
+
     def update_compensation(self,
                            road_grade: float = 0.0,
                            crosswind: float = 0.0,
@@ -437,10 +437,10 @@ class ClosedLoopDirectController:
         """
         # Road grade compensation (gravity effect on steering)
         self.road_grade_compensation = road_grade * 50.0  # Nm per radian
-        
+
         # Crosswind compensation
         self.crosswind_compensation = crosswind * 0.01  # Nm per Newton
-        
+
         # Tire friction affects overall gain
         self.tire_friction_estimate = np.clip(tire_friction, 0.5, 1.5)
 
@@ -487,7 +487,7 @@ class E2ETorquePredictor:
                 num_modes=gmm_num_modes,
                 feature_dim=gmm_feature_dim
             )
-        
+
         # A+ Enhancement: Closed-loop direct controller
         self.enable_closed_loop = enable_closed_loop
         if self.enable_closed_loop:
@@ -497,7 +497,7 @@ class E2ETorquePredictor:
             )
         else:
             self.direct_controller = None
-    
+
     def process_gmm_output(self,
                           latent_features: np.ndarray,
                           context: Optional[dict] = None,
@@ -518,28 +518,28 @@ class E2ETorquePredictor:
                 torque=0.0, torque_steering=0.0, torque_drive=0.0,
                 uncertainty=1.0, confidence=0.0, is_valid=False
             )
-        
+
         gmm_output = self.gmm_head.forward(latent_features)
-        
+
         selected_mode = self.gmm_head.get_best_mode(gmm_output, context)
-        
+
         torque, variance = self.gmm_head.sample_from_gmm(gmm_output, mode=selected_mode)
-        
+
         if apply_bias:
             torque = torque + self.bias
-        
+
         uncertainty = self.gmm_head.compute_mode_uncertainty(gmm_output)
-        
+
         torque_scalar = float(torque[0]) if torque.ndim > 0 else float(torque)
-        
+
         torque_rate = abs(torque_scalar - self._prev_torque)
         if torque_rate > self.max_torque_rate:
             torque_scalar = self._prev_torque + np.sign(torque_scalar - self._prev_torque) * self.max_torque_rate
-            
+
         self._prev_torque = torque_scalar
-        
+
         confidence = self._uncertainty_to_confidence(uncertainty)
-        
+
         return E2ETorqueOutput(
             torque=torque_scalar,
             torque_steering=torque_scalar,
@@ -550,10 +550,10 @@ class E2ETorquePredictor:
             gmm_output=gmm_output,
             mode_selected=selected_mode
         )
-    
+
     def get_all_modes(self,
                      latent_features: np.ndarray,
-                     apply_bias: bool = True) -> List[E2ETorqueOutput]:
+                     apply_bias: bool = True) -> list[E2ETorqueOutput]:
         """
         Get torque outputs for all GMM modes (for trajectory evaluation)
         
@@ -562,21 +562,21 @@ class E2ETorquePredictor:
         """
         if not self.enable_gmm:
             return []
-        
+
         gmm_output = self.gmm_head.forward(latent_features)
-        
+
         outputs = []
         for mode in range(gmm_output.num_modes):
             torque, variance = self.gmm_head.sample_from_gmm(gmm_output, mode=mode)
-            
+
             if apply_bias:
                 torque = torque + self.bias
-                
+
             torque_scalar = float(torque[0]) if torque.ndim > 0 else float(torque)
-            
+
             uncertainty = float(variance)
             confidence = self._uncertainty_to_confidence(uncertainty)
-            
+
             outputs.append(E2ETorqueOutput(
                 torque=torque_scalar,
                 torque_steering=torque_scalar,
@@ -587,10 +587,10 @@ class E2ETorquePredictor:
                 gmm_output=gmm_output,
                 mode_selected=mode
             ))
-        
+
         return outputs
-        
-    def compute_torque_from_accel(self, 
+
+    def compute_torque_from_accel(self,
                                    desired_accel: float,
                                    v_ego: float,
                                    torque_from_lateral_accel_fn=None) -> float:
@@ -603,8 +603,8 @@ class E2ETorquePredictor:
             desired_lat_accel = desired_accel * 0.0
             return torque_from_lateral_accel_fn(desired_lat_accel)
         return desired_accel * 1000.0
-        
-    def update_bias(self, actual_curvature: float, v_ego: float, 
+
+    def update_bias(self, actual_curvature: float, v_ego: float,
                    torque_neural: float, speed_threshold: float = 10.0,
                    dt: float = 0.05):
         """
@@ -615,14 +615,14 @@ class E2ETorquePredictor:
         """
         if v_ego < speed_threshold:
             return
-            
+
         estimated_actual_torque = self._estimate_required_torque(actual_curvature, v_ego)
-        
+
         if estimated_actual_torque is not None:
             bias_update = estimated_actual_torque - torque_neural
             alpha = dt / self.bias_time_constant
             self.bias = self.bias * (1 - alpha) + bias_update * alpha
-            
+
     def _estimate_required_torque(self, curvature: float, v_ego: float) -> Optional[float]:
         """
         Estimate the actual required torque based on observed vehicle response
@@ -631,11 +631,11 @@ class E2ETorquePredictor:
         """
         if curvature == 0.0 or v_ego == 0.0:
             return None
-            
+
         lateral_accel = curvature * (v_ego ** 2)
         return lateral_accel * 50.0
-        
-    def process_raw_output(self, 
+
+    def process_raw_output(self,
                           torque_output: np.ndarray,
                           uncertainty_output: Optional[np.ndarray] = None,
                           apply_bias: bool = True) -> E2ETorqueOutput:
@@ -655,24 +655,24 @@ class E2ETorquePredictor:
                 torque=0.0, torque_steering=0.0, torque_drive=0.0,
                 uncertainty=1.0, confidence=0.0, is_valid=False
             )
-            
+
         torque = float(torque_output[0, 0] if torque_output.ndim > 1 else torque_output[0])
-        
+
         if apply_bias:
             torque = torque + self.bias
-            
+
         uncertainty = 0.1
         if uncertainty_output is not None:
             uncertainty = float(uncertainty_output[0, 0] if uncertainty_output.ndim > 1 else uncertainty_output[0])
-            
+
         confidence = self._uncertainty_to_confidence(uncertainty)
-        
+
         torque_rate = abs(torque - self._prev_torque)
         if torque_rate > self.max_torque_rate:
             torque = self._prev_torque + np.sign(torque - self._prev_torque) * self.max_torque_rate
-            
+
         self._prev_torque = torque
-        
+
         return E2ETorqueOutput(
             torque=torque,
             torque_steering=torque,
@@ -681,11 +681,11 @@ class E2ETorquePredictor:
             confidence=confidence,
             is_valid=True
         )
-        
+
     def _uncertainty_to_confidence(self, uncertainty: float) -> float:
         """Convert uncertainty to confidence score [0, 1]"""
         return float(np.clip(1.0 - uncertainty / 2.0, 0.0, 1.0))
-        
+
     def blend_with_fallback(self,
                            e2e_torque: float,
                            fallback_torque: float,
@@ -705,12 +705,12 @@ class E2ETorquePredictor:
             return blend_weight * e2e_torque + (1 - blend_weight) * fallback_torque
         else:
             return fallback_torque
-    
+
     def compute_closed_loop_torque(self,
                                    desired_lat_accel: float,
                                    v_ego: float,
                                    actual_lat_accel: float,
-                                   dt: float = 0.05) -> Tuple[float, Dict[str, float]]:
+                                   dt: float = 0.05) -> tuple[float, dict[str, float]]:
         """
         A+ Enhancement: Compute direct torque using closed-loop controller
         
@@ -729,11 +729,11 @@ class E2ETorquePredictor:
         if not self.enable_closed_loop or self.direct_controller is None:
             # Fallback to traditional method
             return self.compute_torque_from_accel(desired_lat_accel, v_ego), {}
-        
+
         return self.direct_controller.compute_direct_torque(
             desired_lat_accel, v_ego, actual_lat_accel, dt
         )
-    
+
     def update_vehicle_compensation(self,
                                    road_grade: float = 0.0,
                                    crosswind: float = 0.0,
@@ -750,8 +750,8 @@ class E2ETorquePredictor:
             self.direct_controller.update_compensation(
                 road_grade, crosswind, tire_friction
             )
-    
-    def get_vehicle_learning_status(self) -> Dict[str, float]:
+
+    def get_vehicle_learning_status(self) -> dict[str, float]:
         """
         Get status of vehicle response learning
         
@@ -760,7 +760,7 @@ class E2ETorquePredictor:
         """
         if self.direct_controller is None:
             return {'enabled': False}
-        
+
         return {
             'enabled': True,
             'adaptive_gain': self.direct_controller.vehicle_model.adaptive_gain,
@@ -776,7 +776,7 @@ class E2ETorqueSafety:
     
     Provides hardware-level safety checking of neural network torque outputs
     """
-    
+
     def __init__(self,
                  max_steering_torque: float = 300.0,
                  max_torque_rate: float = 500.0,
@@ -784,12 +784,12 @@ class E2ETorqueSafety:
         self.max_steering_torque = max_steering_torque
         self.max_torque_rate = max_torque_rate
         self.latency_threshold_ms = latency_threshold_ms
-        
+
         self._prev_torque = 0.0
         self._consecutive_failures = 0
         self._safety_state = "nominal"
-        
-    def validate_torque(self, 
+
+    def validate_torque(self,
                        torque: float,
                        curvature_estimate: float = 0.0,
                        v_ego: float = 0.0) -> tuple[bool, str]:
@@ -803,13 +803,13 @@ class E2ETorqueSafety:
             self._consecutive_failures += 1
             self._safety_state = "torque_exceeded"
             return False, f"Torque {torque} exceeds max {self.max_steering_torque}"
-            
+
         torque_rate = abs(torque - self._prev_torque)
         if torque_rate > self.max_torque_rate:
             self._consecutive_failures += 1
             self._safety_state = "rate_exceeded"
             return False, f"Torque rate {torque_rate} exceeds max"
-            
+
         if v_ego > 0:
             expected_lat_accel = abs(curvature_estimate) * (v_ego ** 2)
             actual_lat_accel = abs(torque) / 50.0
@@ -817,14 +817,14 @@ class E2ETorqueSafety:
                 self._consecutive_failures += 1
                 self._safety_state = "physics_violation"
                 return False, "Torque violates physics constraints"
-                
+
         self._consecutive_failures = max(0, self._consecutive_failures - 1)
         if self._consecutive_failures == 0:
             self._safety_state = "nominal"
-            
+
         self._prev_torque = torque
         return True, "ok"
-        
+
     def get_safety_state(self) -> str:
         """Get current safety state"""
         return self._safety_state

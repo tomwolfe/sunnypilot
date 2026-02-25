@@ -20,7 +20,7 @@ Improvements for "Perfect Grade" E2E:
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, Any
 from collections import deque
 from enum import IntEnum
 import time
@@ -50,38 +50,38 @@ class DisengagementEvent:
     timestamp: float
     reason: DisengagementReason
     severity: float  # 0.0-1.0, how abrupt was the disengagement?
-    
+
     # Context at time of disengagement
     v_ego: float
     steering_angle: float
     torque_command: float
     model_confidence: float
     model_uncertainty: float
-    
+
     # E2E specific
     e2e_active: bool
     e2e_mode: str
     e2e_torque_command: float
     e2e_confidence: float
-    
+
     # Environment
     has_lead: bool
     lead_distance: float
     lane_curvature: float
     road_type: str  # highway, urban, residential
-    
+
     # Tags for training
-    tags: List[str] = field(default_factory=list)
-    
+    tags: list[str] = field(default_factory=list)
+
     # Upload priority (higher = more important for training)
     upload_priority: float = 0.5
-    
+
     # Segment metadata
     segment_id: str = ""
     start_frame: int = 0
     end_frame: int = 0
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
             'timestamp': self.timestamp,
@@ -106,9 +106,9 @@ class DisengagementEvent:
             'start_frame': self.start_frame,
             'end_frame': self.end_frame
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DisengagementEvent':
+    def from_dict(cls, data: dict[str, Any]) -> 'DisengagementEvent':
         """Create from dictionary"""
         return cls(
             timestamp=data['timestamp'],
@@ -149,47 +149,47 @@ class TriggerBasedFirehose:
     4. Model is retrained on failure cases
     5. System improves and avoids similar failures
     """
-    
+
     # Time window to capture before/after disengagement (seconds)
     PRE_DISENGAGEMENT_WINDOW = 5.0
     POST_DISENGAGEMENT_WINDOW = 3.0
-    
+
     # Thresholds for disengagement detection
     STEER_OVERRIDE_THRESHOLD = 5.0  # Nm
     BRAKE_OVERRIDE_THRESHOLD = 0.3  # pedal position
     GAS_OVERRIDE_THRESHOLD = 0.3    # pedal position
-    
+
     # Priority multipliers
     PRIORITY_E2E_FAILURE = 2.0      # E2E-specific failures get 2x priority
     PRIORITY_HIGH_SEVERITY = 1.5    # Severe disengagements get 1.5x
     PRIORITY_RARE_SCENARIO = 1.3    # Rare scenarios get 1.3x
-    
+
     def __init__(self,
                  enable_auto_tagging: bool = True,
                  enable_priority_scoring: bool = True,
                  max_events_buffer: int = 1000):
         self.enable_auto_tagging = enable_auto_tagging
         self.enable_priority_scoring = enable_priority_scoring
-        
+
         # Event buffer for recent disengagements
         self.events_buffer: deque = deque(maxlen=max_events_buffer)
-        
+
         # Context history for capturing pre-disengagement data
         self.context_history: deque = deque(maxlen=200)  # 10 seconds at 20Hz
-        
+
         # Statistics
         self.total_disengagements = 0
         self.e2e_disengagements = 0
         self.uploaded_events = 0
-        
+
         # Scenario frequency tracking (for rare scenario detection)
-        self.scenario_counts: Dict[str, int] = {}
-        
+        self.scenario_counts: dict[str, int] = {}
+
         # Current segment tracking
         self.current_segment_id = ""
         self.current_frame = 0
         self.last_disengagement_time = 0.0
-    
+
     def update_context(self,
                       timestamp: float,
                       v_ego: float,
@@ -227,10 +227,10 @@ class TriggerBasedFirehose:
             'road_type': road_type,
             'frame': self.current_frame
         }
-        
+
         self.context_history.append(context)
         self.current_frame += 1
-    
+
     def detect_disengagement(self,
                             timestamp: float,
                             user_steer_override: bool,
@@ -270,9 +270,9 @@ class TriggerBasedFirehose:
             return DisengagementReason.EXCESSIVE_ACCEL
         elif collision_risk > 0.7:
             return DisengagementReason.COLLISION_RISK
-        
+
         return None
-    
+
     def create_disengagement_event(self,
                                    reason: DisengagementReason,
                                    timestamp: float) -> DisengagementEvent:
@@ -288,23 +288,23 @@ class TriggerBasedFirehose:
         """
         # Find context at disengagement time
         disengage_context = self._find_context_at_time(timestamp)
-        
+
         if disengage_context is None:
             # Use most recent context if exact match not found
             disengage_context = self.context_history[-1] if self.context_history else {}
-        
+
         # Calculate severity based on vehicle state
         severity = self._calculate_severity(
             disengage_context,
             reason
         )
-        
+
         # Generate tags
         tags = self._generate_tags(reason, disengage_context)
-        
+
         # Determine road type
         road_type = disengage_context.get('road_type', 'unknown')
-        
+
         # Create event
         event = DisengagementEvent(
             timestamp=timestamp,
@@ -328,36 +328,36 @@ class TriggerBasedFirehose:
             start_frame=max(0, disengage_context.get('frame', 0) - int(self.PRE_DISENGAGEMENT_WINDOW * 20)),
             end_frame=disengage_context.get('frame', 0) + int(self.POST_DISENGAGEMENT_WINDOW * 20)
         )
-        
+
         # Calculate upload priority
         event.upload_priority = self._calculate_upload_priority(event)
-        
+
         # Update statistics
         self.total_disengagements += 1
         if event.e2e_active:
             self.e2e_disengagements += 1
-        
+
         # Track scenario frequency
         scenario_key = f"{road_type}_{reason.name}"
         self.scenario_counts[scenario_key] = self.scenario_counts.get(scenario_key, 0) + 1
-        
+
         # Store event
         self.events_buffer.append(event)
         self.last_disengagement_time = timestamp
-        
+
         return event
-    
-    def _find_context_at_time(self, timestamp: float) -> Optional[Dict[str, Any]]:
+
+    def _find_context_at_time(self, timestamp: float) -> Optional[dict[str, Any]]:
         """Find context closest to given timestamp"""
         if not self.context_history:
             return None
-        
+
         # Binary search could be used for large buffers, but linear is fine for 200 items
         closest = min(self.context_history,
                      key=lambda c: abs(c.get('timestamp', timestamp) - timestamp))
         return closest
-    
-    def _calculate_severity(self, context: Dict[str, Any], reason: DisengagementReason) -> float:
+
+    def _calculate_severity(self, context: dict[str, Any], reason: DisengagementReason) -> float:
         """
         Calculate severity of disengagement (0.0-1.0)
         
@@ -368,66 +368,66 @@ class TriggerBasedFirehose:
         - Dangerous scenarios
         """
         severity = 0.3  # Base severity
-        
+
         # Speed factor
         v_ego = context.get('v_ego', 0.0)
         if v_ego > 20:  # > 72 km/h
             severity += 0.2
         elif v_ego > 10:  # > 36 km/h
             severity += 0.1
-        
+
         # Uncertainty factor
         uncertainty = context.get('model_uncertainty', 0.0)
         if uncertainty > 0.8:
             severity += 0.2
         elif uncertainty > 0.5:
             severity += 0.1
-        
+
         # Reason-specific severity
         if reason in (DisengagementReason.COLLISION_RISK, DisengagementReason.LANE_DEVIATION):
             severity += 0.3
         elif reason in (DisengagementReason.EXCESSIVE_ACCEL, DisengagementReason.USER_OVERRIDE_STEER):
             severity += 0.2
-        
+
         return min(severity, 1.0)
-    
-    def _generate_tags(self, reason: DisengagementReason, context: Dict[str, Any]) -> List[str]:
+
+    def _generate_tags(self, reason: DisengagementReason, context: dict[str, Any]) -> list[str]:
         """Generate descriptive tags for the disengagement"""
         tags = []
-        
+
         # E2E-specific tags
         if context.get('e2e_active', False):
             tags.append('e2e_active')
             tags.append(f"e2e_mode_{context.get('e2e_mode', 'unknown')}")
-        
+
         # Road type tags
         road_type = context.get('road_type', 'unknown')
         tags.append(road_type)
-        
+
         # Speed tags
         v_ego = context.get('v_ego', 0.0)
         if v_ego > 25:
             tags.append('high_speed')
         elif v_ego < 5:
             tags.append('low_speed')
-        
+
         # Reason tags
         tags.append(reason.name.lower())
-        
+
         # Traffic tags
         if context.get('has_lead', False):
             tags.append('has_lead')
             lead_dist = context.get('lead_distance', 0.0)
             if lead_dist < 10:
                 tags.append('close_lead')
-        
+
         # Curvature tags
         curvature = context.get('lane_curvature', 0.0)
         if abs(curvature) > 0.01:
             tags.append('curve')
-        
+
         return tags
-    
+
     def _calculate_upload_priority(self, event: DisengagementEvent) -> float:
         """
         Calculate upload priority (0.0-1.0)
@@ -440,36 +440,36 @@ class TriggerBasedFirehose:
         """
         if not self.enable_priority_scoring:
             return 0.5
-        
+
         priority = 0.3  # Base priority
-        
+
         # E2E failure bonus
         if event.e2e_active:
             priority *= self.PRIORITY_E2E_FAILURE
-        
+
         # Severity bonus
         if event.severity > 0.7:
             priority *= self.PRIORITY_HIGH_SEVERITY
-        
+
         # Rare scenario bonus
         scenario_key = f"{event.road_type}_{event.reason.name}"
         scenario_count = self.scenario_counts.get(scenario_key, 0)
         if scenario_count <= 2:
             priority *= self.PRIORITY_RARE_SCENARIO
-        
+
         # Uncertainty bonus
         if event.model_uncertainty > 0.7:
             priority *= 1.2
-        
+
         # Confidence mismatch bonus (high confidence but disengaged)
         if event.e2e_confidence > 0.8:
             priority *= 1.3
-        
+
         return min(priority, 1.0)
-    
+
     def get_events_for_upload(self,
                              max_events: int = 10,
-                             min_priority: float = 0.5) -> List[DisengagementEvent]:
+                             min_priority: float = 0.5) -> list[DisengagementEvent]:
         """
         Get events prioritized for upload
         
@@ -485,32 +485,32 @@ class TriggerBasedFirehose:
             e for e in self.events_buffer
             if e.upload_priority >= min_priority
         ]
-        
+
         # Sort by priority (descending)
         sorted_events = sorted(eligible_events,
                               key=lambda e: e.upload_priority,
                               reverse=True)
-        
+
         return sorted_events[:max_events]
-    
+
     def mark_event_uploaded(self, event: DisengagementEvent):
         """Mark an event as successfully uploaded"""
         self.uploaded_events += 1
         # Could add 'uploaded' tag to event for tracking
-    
-    def get_statistics(self) -> Dict[str, Any]:
+
+    def get_statistics(self) -> dict[str, Any]:
         """Get statistics about disengagements"""
         e2e_rate = 0.0
         if self.total_disengagements > 0:
             e2e_rate = self.e2e_disengagements / self.total_disengagements
-        
+
         # Get most common scenarios
         sorted_scenarios = sorted(
             self.scenario_counts.items(),
             key=lambda x: x[1],
             reverse=True
         )[:5]
-        
+
         return {
             'total_disengagements': self.total_disengagements,
             'e2e_disengagements': self.e2e_disengagements,
@@ -520,23 +520,23 @@ class TriggerBasedFirehose:
             'most_common_scenarios': sorted_scenarios,
             'avg_priority': float(np.mean([e.upload_priority for e in self.events_buffer])) if self.events_buffer else 0.0
         }
-    
+
     def export_events_to_json(self, filepath: str, min_priority: float = 0.5):
         """Export events to JSON file for upload"""
         events = self.get_events_for_upload(min_priority=min_priority)
-        
+
         data = {
             'version': 1,
             'export_timestamp': time.time(),
             'statistics': self.get_statistics(),
             'events': [e.to_dict() for e in events]
         }
-        
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
-        
+
         return len(events)
-    
+
     def set_current_segment(self, segment_id: str):
         """Set current segment ID for tagging"""
         self.current_segment_id = segment_id

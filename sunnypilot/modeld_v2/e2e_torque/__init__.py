@@ -219,11 +219,11 @@ class E2EController:
         map_data = self.latent_buffer.get_recent_map(1)[0] if self.latent_buffer else None
 
         output = self.fusion.fuse(vision_latent, radar, map_data)
-        
+
         # Apply OSM attention bias if available
         if osm_context and hasattr(self.fusion, 'apply_osm_bias'):
             output = self.fusion.apply_osm_bias(output, osm_context)
-        
+
         return output
 
     def predict_torque(self,
@@ -240,12 +240,12 @@ class E2EController:
         output = self.torque_predictor.process_raw_output(
             torque_output, uncertainty_output
         )
-        
+
         # Apply personality conditioning if GMM is enabled
         if self.gmm_head and hasattr(output, 'gmm_output'):
             # Personality would modulate the GMM selection
             pass
-        
+
         return output
 
     def validate_torque(self, torque: float, curvature: float = 0.0,

@@ -168,8 +168,8 @@ class NeuralNetworkLateralControl(LatControlTorqueExtBase):
     if hasattr(self.model_v2, 'action') and self.model_v2.action.torque != 0:
       model_torque = self.model_v2.action.torque
       # Dynamic Bayesian Intent Fusion:
-      # Instead of a fixed 25% blend, we now use the continuous confidence/weight 
-      # from the Dynamic Experimental Controller (DEC). 
+      # Instead of a fixed 25% blend, we now use the continuous confidence/weight
+      # from the Dynamic Experimental Controller (DEC).
       # When DEC is fully in 'blended' mode (weight=1.0), we trust the model's direct torque more.
       # We allow the neural weight to reach 1.0 in high-confidence 'Pure E2E' scenarios.
       e2e_weight = np.clip(self._e2e_weight, 0.1, 1.0)

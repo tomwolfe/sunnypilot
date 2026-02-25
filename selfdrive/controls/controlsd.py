@@ -82,20 +82,20 @@ class Controls(ControlsExt):
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
     sr = max(lp.steerRatio, 0.1)
-    
+
     # Live Physics Adaptation (Objective 3):
     # We use the LongitudinalCalibrator's MAE to 're-tune' the car's physics in real-time.
-    # If the E2E model is consistently under/over-shooting (high MAE), we adjust 
+    # If the E2E model is consistently under/over-shooting (high MAE), we adjust
     # the stiffness factor to match the observed mechanical response.
     if self.sm.updated['longitudinalPlanSP']:
       lp_sp = self.sm['longitudinalPlanSP']
       mae = lp_sp.dec.mae
       # If MAE is low (< 0.2), we trust the physics model.
-      # As MAE increases, we apply a 'softness' factor to the stiffness to compensate 
+      # As MAE increases, we apply a 'softness' factor to the stiffness to compensate
       # for unmodeled dynamics (tire wear, road surface, etc.)
       adaptation_factor = np.interp(mae, [0.2, 0.8], [1.0, 0.85])
       x *= adaptation_factor
-      
+
     self.VM.update_params(x, sr)
 
     steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
@@ -146,11 +146,11 @@ class Controls(ControlsExt):
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    
+
     # Longitudinal Neural Intent
     accel_neural = float(model_v2.plan.acceleration[0]) if len(model_v2.plan.acceleration) > 0 else 0.0
     longitudinal_uncertainty = float(model_v2.position.xStd[0]) if len(model_v2.position.xStd) > 0 else 0.0
-    
+
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits,
                                             accel_neural=accel_neural, longitudinal_uncertainty=longitudinal_uncertainty))
 

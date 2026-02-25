@@ -7,8 +7,11 @@ See the LICENSE.md file in the root directory for more details.
 
 from cereal import messaging, custom
 from opendbc.car import structs
+import numpy as np
 from openpilot.common.constants import CV
+from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
+from openpilot.selfdrive.modeld.constants import DT_MDL
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_calibrator import LongitudinalCalibrator
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
@@ -45,7 +48,7 @@ class JerkLimitedNeuralFilter:
     # for human-like smoothness.
     is_braking = a_target < -0.5
     jerk_limit = self.jerk_limit_base * (self.braking_jerk_factor if is_braking else 1.0)
-    
+
     # Scale jerk limit slightly with trust to allow more responsive E2E maneuvers
     # but restrict it if calibration confidence is low (MAE is high)
     jerk_limit *= (0.8 + 0.4 * e2e_trust * calibration_confidence)
@@ -109,7 +112,7 @@ class LongitudinalPlannerSP:
         if len(md.acceleration.x) > 0:
           self.output_a_target = md.acceleration.x[0]
         self.source = LongitudinalPlanSource.pureE2e
-        
+
         # Still apply Jerk-Limited Neural Filter for smoothness
         self.output_a_target = self.a_filter.update(self.output_a_target, 1.0, self.calibrator.confidence)
         return self.output_v_target, self.output_a_target
@@ -125,23 +128,23 @@ class LongitudinalPlannerSP:
     # If in E2E mode, we treat the speed limit as a "soft" feature rather than a hard constraint.
     # We blend the SLA target with the model's predicted trajectory endpoint velocity.
     e2e_trust = self.dec.blended_confidence() if self.dec.active() else float(sm['selfdriveState'].experimentalMode)
-    
+
     if e2e_trust > 0.3 and (self.sla.is_active or self.scc.vision.is_active):
       md = sm['modelV2']
       if len(md.velocity.x) > 0:
         v_model = md.velocity.x[0]
-        
+
         # Determine the "suggested" target from heuristics (SLA or Vision Curve Control)
         # We take the minimum of the two as the "Heuristic Suggestion"
-        v_heuristic = min(self.sla.output_v_target, 
+        v_heuristic = min(self.sla.output_v_target,
                           self.scc.vision.output_v_target if self.scc.vision.is_active else float('inf'))
-        
+
         # Bayesian blending: favor the model if uncertainty is low or trust is high
         # We use a dynamic blend factor that scales with our continuous trust in the neural model
         # AND the calibration confidence.
         blend_factor = 0.5 + 0.4 * e2e_trust * self.calibrator.confidence
         v_cruise_neural = v_model * blend_factor + v_heuristic * (1.0 - blend_factor)
-        
+
         # Update the dominant heuristic source with our blended neural target
         if self.source == LongitudinalPlanSource.speedLimitAssist:
           targets[LongitudinalPlanSource.speedLimitAssist] = (v_cruise_neural, self.sla.output_a_target)
@@ -158,7 +161,7 @@ class LongitudinalPlannerSP:
 
   def update(self, sm: messaging.SubMaster) -> None:
     self.events_sp.clear()
-    
+
     # Update Neural Calibration
     md = sm['modelV2']
     if len(md.velocity.x) > 1:
@@ -170,7 +173,7 @@ class LongitudinalPlannerSP:
     self.dec._calibration_mae = self.calibrator.mae
     self.dec._calibration_uncertainty_offset = self.calibrator.calibrated_uncertainty_offset
     self.dec._calibration_confidence = self.calibrator.confidence
-    
+
     self.dec.update(sm)
 
     self.e2e_alerts_helper.update(sm, self.events_sp)
@@ -243,7 +246,7 @@ class LongitudinalPlannerSP:
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
 
-    # Navigation Intent Fusion: 
+    # Navigation Intent Fusion:
     # Translates map/vision curve control slowing into a 'Soft Intent' for the E2E model.
     nav_intent = 0.0
     v_ego = sm['carState'].vEgo
@@ -254,7 +257,7 @@ class LongitudinalPlannerSP:
       # 1.0 intent at 5m/s (18km/h) or greater delta
       if v_target_min < v_ego:
         nav_intent = np.clip((v_ego - v_target_min) / 5.0, 0.0, 1.0)
-    
+
     longitudinalPlanSP.navigationIntent = float(nav_intent)
 
     pm.send('longitudinalPlanSP', plan_sp_send)

@@ -7,7 +7,6 @@ See the LICENSE.md file in the root directory for more details.
 import numpy as np
 import pyray as rl
 from dataclasses import dataclass, field
-from typing import Optional
 from openpilot.system.ui.lib.shader_polygon import draw_polygon
 
 

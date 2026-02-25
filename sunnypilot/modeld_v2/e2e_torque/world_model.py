@@ -22,8 +22,8 @@ Improvements for "Perfect Grade" E2E:
 """
 
 import numpy as np
-from dataclasses import dataclass, field
-from typing import Optional, List, Tuple, Dict, Any
+from dataclasses import dataclass
+from typing import Optional, Any
 from collections import deque
 
 # Import MCTS planner for A+ enhancement
@@ -45,7 +45,7 @@ class WorldState:
     acceleration: np.ndarray
     heading: float
     lane_position: float
-    objects: List[Dict[str, Any]]
+    objects: list[dict[str, Any]]
     uncertainty: float
 
 
@@ -63,7 +63,7 @@ class TrajectoryPrediction:
 @dataclass
 class SimulationResult:
     """Result of world model simulation"""
-    trajectories: List[TrajectoryPrediction]
+    trajectories: list[TrajectoryPrediction]
     chosen_trajectory_idx: int
     expected_outcome: WorldState
     uncertainty_map: np.ndarray
@@ -87,7 +87,7 @@ class MPPIResult:
     """Result from MPPI optimization"""
     optimal_action: np.ndarray
     optimal_trajectory: TrajectoryPrediction
-    all_trajectories: List[TrajectoryPrediction]
+    all_trajectories: list[TrajectoryPrediction]
     action_weights: np.ndarray
     expected_cost: float
     entropy: float
@@ -116,7 +116,7 @@ class DynaLearningModule:
     - Using model errors to update dynamics model
     - Prioritizing learning from high-error scenarios
     """
-    
+
     def __init__(self,
                  model_dim: int = 128,
                  learning_rate: float = 0.001,
@@ -126,16 +126,16 @@ class DynaLearningModule:
         self.learning_rate = learning_rate
         self.imagination_weight = imagination_weight
         self.error_threshold = error_threshold
-        
+
         self._dynamics_model = np.random.randn(model_dim, model_dim * 2).astype(np.float32) * 0.01
         self._model_bias = np.zeros(model_dim, dtype=np.float32)
-        
+
         self._error_history: deque = deque(maxlen=1000)
         self._imagined_experiences: deque = deque(maxlen=5000)
-        
+
         self._total_imagination_steps = 0
         self._total_real_steps = 0
-        
+
     def compute_imagination_error(self,
                                    imagined_next: WorldState,
                                    actual_next: WorldState) -> ModelError:
@@ -147,41 +147,41 @@ class DynaLearningModule:
         """
         imagined_latent = self._state_to_latent(imagined_next)
         actual_latent = self._state_to_latent(actual_next)
-        
+
         state_error = float(np.mean(np.abs(imagined_latent - actual_latent)))
-        
+
         imagined_pos_error = np.linalg.norm(
             imagined_next.position[:2] - actual_next.position[:2]
         )
         imagined_vel_error = np.linalg.norm(
             imagined_next.velocity[:2] - actual_next.velocity[:2]
         )
-        
+
         dynamics_error = float(imagined_pos_error + imagined_vel_error)
-        
+
         error = ModelError(
             state_error=state_error,
             dynamics_error=dynamics_error,
             timestamp=0.0
         )
-        
+
         self._error_history.append(error)
-        
+
         return error
-    
+
     def should_update_model(self) -> bool:
         """Check if model should be updated based on recent errors"""
         if len(self._error_history) < 10:
             return False
-            
+
         recent_errors = [e.dynamics_error for e in list(self._error_history)[-10:]]
         avg_error = np.mean(recent_errors)
-        
+
         return avg_error > self.error_threshold
-    
+
     def update_dynamics_model(self,
-                             real_experiences: List[Experience],
-                             imagined_experiences: List[Experience]):
+                             real_experiences: list[Experience],
+                             imagined_experiences: list[Experience]):
         """
         Update dynamics model using both real and imagined experiences
         
@@ -189,31 +189,31 @@ class DynaLearningModule:
         """
         if not real_experiences and not imagined_experiences:
             return
-            
+
         combined_experiences = real_experiences.copy()
-        
+
         imagined_sample = list(imagined_experiences)[-len(real_experiences):]
         combined_experiences.extend(imagined_sample)
-        
+
         gradients = np.zeros_like(self._dynamics_model)
-        
+
         for exp in combined_experiences:
             state_latent = self._state_to_latent(exp.state)
             actual_next_latent = self._state_to_latent(exp.next_state)
-            
+
             combined = np.concatenate([state_latent, exp.action])
             predicted_next = np.tanh(np.dot(combined, self._dynamics_model.T) + self._model_bias)
-            
+
             error = actual_next_latent - predicted_next
-            
+
             gradients += np.outer(error, combined)
-        
+
         gradients /= len(combined_experiences)
-        
+
         self._dynamics_model += self.learning_rate * gradients
-        
+
         self._model_bias *= (1 - self.learning_rate)
-        
+
     def generate_imagined_experience(self,
                                    initial_state: WorldState,
                                    action: np.ndarray,
@@ -225,7 +225,7 @@ class DynaLearningModule:
         If actual_next is provided, computes the imagination error
         """
         reward = self._compute_imagined_reward(initial_state, predicted_next, action)
-        
+
         experience = Experience(
             state=initial_state,
             action=action,
@@ -234,15 +234,15 @@ class DynaLearningModule:
             done=False,
             cost=0.0
         )
-        
+
         self._imagined_experiences.append(experience)
         self._total_imagination_steps += 1
-        
+
         if actual_next is not None:
             self.compute_imagination_error(predicted_next, actual_next)
-        
+
         return experience
-    
+
     def _compute_imagined_reward(self,
                                 state: WorldState,
                                 next_state: WorldState,
@@ -250,33 +250,33 @@ class DynaLearningModule:
         """Compute reward for imagined trajectory"""
         progress = next_state.position[0] - state.position[0]
         speed = np.linalg.norm(next_state.velocity[:2])
-        
+
         lane_deviation = abs(next_state.position[1]) - abs(state.position[1])
-        
+
         reward = progress + speed * 0.1 - abs(lane_deviation) * 0.5
-        
+
         return float(reward)
-    
+
     def _state_to_latent(self, state: WorldState) -> np.ndarray:
         """Convert WorldState to latent representation"""
         latent = np.zeros(self.model_dim, dtype=np.float32)
-        
+
         latent[0:3] = state.position[:3]
         latent[3:6] = state.velocity[:3]
         latent[6] = state.heading
         latent[7] = state.lane_position
         latent[8] = state.uncertainty
-        
+
         return latent
-    
+
     def get_model_uncertainty(self) -> float:
         """Get current model uncertainty based on recent errors"""
         if not self._error_history:
             return 0.5
-            
+
         recent_errors = [e.dynamics_error for e in list(self._error_history)[-20:]]
         uncertainty = float(np.clip(np.mean(recent_errors) / 10.0, 0, 1))
-        
+
         return uncertainty
 
 
@@ -285,25 +285,25 @@ class ExperienceReplayBuffer:
     Experience replay buffer for world model training.
     Stores actual outcomes to learn dynamics model.
     """
-    
+
     def __init__(self, capacity: int = 10000):
         self.capacity = capacity
         self.buffer = deque(maxlen=capacity)
         self.priorities = deque(maxlen=capacity)
-    
+
     def add(self, experience: Experience, priority: float = 1.0):
         """Add experience to buffer"""
         self.buffer.append(experience)
         self.priorities.append(priority)
-    
-    def sample(self, batch_size: int) -> List[Experience]:
+
+    def sample(self, batch_size: int) -> list[Experience]:
         """Sample random batch"""
         if len(self.buffer) < batch_size:
             return list(self.buffer)
-        
+
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         return [self.buffer[i] for i in indices]
-    
+
     def __len__(self):
         return len(self.buffer)
 
@@ -313,7 +313,7 @@ class CostFunction:
     Configurable cost function for trajectory evaluation.
     Allows the model to optimize for different objectives.
     """
-    
+
     def __init__(self):
         self.weights = {
             'progress': 0.5,
@@ -323,35 +323,35 @@ class CostFunction:
             'lane_penalty': -10.0,
             'uncertainty_penalty': -0.2,
         }
-    
-    def compute(self, 
+
+    def compute(self,
                 trajectory: TrajectoryPrediction,
-                context: Optional[Dict[str, Any]] = None) -> float:
+                context: Optional[dict[str, Any]] = None) -> float:
         """Compute cost for a trajectory"""
         cost = 0.0
-        
+
         if trajectory.is_collision:
             return self.weights['collision_penalty']
-        
+
         final_speed = np.linalg.norm(trajectory.velocities[-1][:2])
         progress = trajectory.positions[-1, 0] - trajectory.positions[0, 0]
-        
+
         cost += self.weights['progress'] * progress
         cost += self.weights['speed'] * final_speed
         cost += self.weights['uncertainty_penalty'] * trajectory.uncertainty
-        
+
         if context is not None:
             lane_offset = abs(trajectory.positions[-1, 1])
             road_width = context.get('road_width', 3.5)
             if lane_offset > road_width * 0.5:
                 cost += self.weights['lane_penalty'] * (lane_offset - road_width * 0.5)
-        
+
         lateral_accels = np.linalg.norm(trajectory.accelerations[:, :2], axis=1)
         max_lateral_accel = np.max(lateral_accels) if len(lateral_accels) > 0 else 0.0
         cost -= self.weights['comfort'] * max_lateral_accel
-        
+
         return cost
-    
+
     def set_weights(self, **kwargs):
         """Update cost function weights"""
         self.weights.update(kwargs)
@@ -375,7 +375,7 @@ class MPPIController:
     - Robust to local minima via stochastic sampling
     - Can incorporate complex non-differentiable cost functions
     """
-    
+
     def __init__(self,
                  num_samples: int = 256,
                  horizon_steps: int = 50,
@@ -391,18 +391,18 @@ class MPPIController:
         self.action_noise_std = action_noise_std
         self.state_dim = state_dim
         self.action_dim = action_dim
-        
+
         self._running_cost_mean = 0.0
         self._running_cost_var = 1.0
         self._iteration = 0
-        
+
         self._action_sequence_buffer = np.zeros((num_samples, horizon_steps, action_dim), dtype=np.float32)
-        
+
     def optimize(self,
                 initial_state: WorldState,
                 cost_function: CostFunction,
                 world_model: 'WorldModel',
-                context: Optional[Dict[str, Any]] = None,
+                context: Optional[dict[str, Any]] = None,
                 initial_action_sequence: Optional[np.ndarray] = None) -> MPPIResult:
         """
         Run MPPI optimization to find optimal action sequence
@@ -418,18 +418,18 @@ class MPPIController:
             MPPIResult with optimal action and metadata
         """
         action_sequences = self._sample_action_sequences(initial_action_sequence)
-        
+
         trajectories = []
         costs = np.zeros(self.num_samples, dtype=np.float32)
-        
+
         for i in range(self.num_samples):
             action_seq = action_sequences[i]
-            
+
             trajectory = self._rollout_with_actions(
                 initial_state, action_seq, world_model, context
             )
             trajectories.append(trajectory)
-            
+
             traj_pred = TrajectoryPrediction(
                 positions=trajectory.positions,
                 velocities=trajectory.velocities,
@@ -438,24 +438,24 @@ class MPPIController:
                 is_collision=trajectory.is_collision,
                 uncertainty=trajectory.uncertainty
             )
-            
+
             costs[i] = cost_function.compute(traj_pred, context)
-        
+
         costs = self._normalize_costs(costs)
-        
+
         action_weights = self._compute_action_weights(costs)
-        
+
         optimal_action = self._compute_weighted_action(action_sequences, action_weights)
-        
+
         optimal_idx = int(np.argmin(costs))
         optimal_trajectory = trajectories[optimal_idx]
-        
+
         entropy = self._compute_entropy(action_weights)
-        
+
         expected_cost = float(np.sum(action_weights * costs))
-        
+
         self._iteration += 1
-        
+
         return MPPIResult(
             optimal_action=optimal_action,
             optimal_trajectory=optimal_trajectory,
@@ -465,7 +465,7 @@ class MPPIController:
             entropy=entropy,
             convergence_iterations=self._iteration
         )
-    
+
     def _sample_action_sequences(self,
                                 initial_sequence: Optional[np.ndarray]) -> np.ndarray:
         """Sample action sequences with noise around initial or default"""
@@ -473,7 +473,7 @@ class MPPIController:
             (self.num_samples, self.horizon_steps, self.action_dim),
             dtype=np.float32
         )
-        
+
         if initial_sequence is not None and initial_sequence.shape[0] >= self.horizon_steps:
             base_sequence = initial_sequence[:self.horizon_steps].copy()
             base_sequence = np.broadcast_to(base_sequence, action_sequences.shape)
@@ -483,49 +483,49 @@ class MPPIController:
             action_sequences[:, :, 1] = np.random.uniform(0.0, 0.6, (self.num_samples, self.horizon_steps))
             action_sequences[:, :, 2] = np.random.uniform(0.0, 0.3, (self.num_samples, self.horizon_steps))
             action_sequences[:, :, 3] = 0.0
-        
+
         noise = np.random.randn(
             self.num_samples, self.horizon_steps, self.action_dim
         ).astype(np.float32) * self.action_noise_std
-        
+
         action_sequences += noise
-        
+
         action_sequences[:, :, 0] = np.clip(action_sequences[:, :, 0], -0.5, 0.5)
         action_sequences[:, :, 1] = np.clip(action_sequences[:, :, 1], 0.0, 1.0)
         action_sequences[:, :, 2] = np.clip(action_sequences[:, :, 2], 0.0, 1.0)
-        
+
         return action_sequences
-    
+
     def _rollout_with_actions(self,
                              initial_state: WorldState,
                              action_sequence: np.ndarray,
                              world_model: 'WorldModel',
-                             context: Optional[Dict[str, Any]]) -> TrajectoryPrediction:
+                             context: Optional[dict[str, Any]]) -> TrajectoryPrediction:
         """Roll out trajectory using action sequence"""
         positions = np.zeros((self.horizon_steps, 3), dtype=np.float32)
         velocities = np.zeros((self.horizon_steps, 3), dtype=np.float32)
         accelerations = np.zeros((self.horizon_steps, 3), dtype=np.float32)
         uncertainties = np.zeros(self.horizon_steps, dtype=np.float32)
-        
+
         pos = initial_state.position.copy()
         vel = initial_state.velocity.copy()
-        
+
         for t in range(self.horizon_steps):
             action = action_sequence[t]
             acc = world_model._predict_acceleration(vel, action, t, context)
-            
+
             vel = vel + acc * self.dt
             pos = pos + vel * self.dt
-            
+
             positions[t] = pos
             velocities[t] = vel
             accelerations[t] = acc
-            
+
             uncertainty = world_model._estimate_uncertainty(t, action, context)
             uncertainties[t] = uncertainty
-        
+
         is_collision = world_model._check_collision(positions, context)
-        
+
         return TrajectoryPrediction(
             positions=positions,
             velocities=velocities,
@@ -534,48 +534,48 @@ class MPPIController:
             is_collision=is_collision,
             uncertainty=float(np.mean(uncertainties))
         )
-    
+
     def _normalize_costs(self, costs: np.ndarray) -> np.ndarray:
         """Normalize costs using running statistics"""
         alpha = 0.1
         self._running_cost_mean = (1 - alpha) * self._running_cost_mean + alpha * np.mean(costs)
         self._running_cost_var = (1 - alpha) * self._running_cost_var + alpha * np.var(costs)
-        
+
         std = np.sqrt(self._running_cost_var + 1e-6)
         normalized = (costs - self._running_cost_mean) / (std + 1e-6)
-        
+
         return normalized
-    
+
     def _compute_action_weights(self, costs: np.ndarray) -> np.ndarray:
         """Compute softmax weights over costs"""
         scaled_costs = costs / self.temperature
-        
+
         min_cost = np.min(scaled_costs)
         exp_costs = np.exp(-(scaled_costs - min_cost))
-        
+
         weights = exp_costs / (np.sum(exp_costs) + 1e-8)
-        
+
         return weights
-    
+
     def _compute_weighted_action(self,
                                 action_sequences: np.ndarray,
                                 weights: np.ndarray) -> np.ndarray:
         """Compute weighted average of first actions"""
         first_actions = action_sequences[:, 0, :]
-        
+
         weighted_action = np.sum(
             weights[:, np.newaxis] * first_actions,
             axis=0
         )
-        
+
         return weighted_action.astype(np.float32)
-    
+
     def _compute_entropy(self, weights: np.ndarray) -> float:
         """Compute entropy of action distribution"""
         valid_weights = weights[weights > 1e-10]
         entropy = -np.sum(valid_weights * np.log(valid_weights))
         return float(entropy)
-    
+
     def reset(self):
         """Reset MPPI state"""
         self._running_cost_mean = 0.0
@@ -659,19 +659,19 @@ class WorldModel:
                 self.mcts_helper = None
 
         self._last_action_sequence = None
-        
+
     def _build_latent_dynamics_model(self) -> np.ndarray:
         """Build learned latent dynamics model"""
         return np.random.randn(self.hidden_dim, self.state_dim + self.action_dim).astype(np.float32) * 0.01
-    
+
     def _build_transition_network(self) -> np.ndarray:
         """Build transition dynamics model (simplified as linear + noise)"""
         return np.random.randn(self.hidden_dim, self.state_dim + self.action_dim).astype(np.float32) * 0.01
-        
+
     def _build_reward_network(self) -> np.ndarray:
         """Build reward/quality prediction model"""
         return np.random.randn(1, self.hidden_dim).astype(np.float32) * 0.01
-    
+
     def record_experience(self,
                          state: WorldState,
                          action: np.ndarray,
@@ -680,7 +680,7 @@ class WorldModel:
         """Record actual experience for training"""
         reward = self._compute_actual_reward(state, next_state, done)
         cost = self._compute_actual_cost(state, next_state, done)
-        
+
         experience = Experience(
             state=state,
             action=action,
@@ -689,15 +689,15 @@ class WorldModel:
             done=done,
             cost=cost
         )
-        
+
         priority = 1.0 if done else 0.5
         self.experience_buffer.add(experience, priority)
-        
+
         self._update_counter += 1
         if self._update_counter >= self._update_interval and self._training_enabled:
             self._train_dynamics_model()
             self._update_counter = 0
-    
+
     def _compute_actual_reward(self,
                                state: WorldState,
                                next_state: WorldState,
@@ -706,7 +706,7 @@ class WorldModel:
         progress = next_state.position[0] - state.position[0]
         speed_reward = np.linalg.norm(next_state.velocity[:2]) * 0.1
         return progress + speed_reward - (100.0 if done else 0.0)
-    
+
     def _compute_actual_cost(self,
                              state: WorldState,
                              next_state: WorldState,
@@ -714,33 +714,33 @@ class WorldModel:
         """Compute actual cost from state transition"""
         if done:
             return 100.0
-        
+
         lane_violation = abs(next_state.position[1]) - 3.5
         if lane_violation > 0:
             return lane_violation * 10.0
-        
+
         lateral_accel = np.linalg.norm(next_state.acceleration[:2])
         return lateral_accel * 0.5
-    
+
     def _train_dynamics_model(self):
         """Train latent dynamics model from experience replay"""
         if len(self.experience_buffer) < 32:
             return
-        
+
         experiences = self.experience_buffer.sample(32)
-        
+
         state_errors = []
         for exp in experiences:
             predicted_next = self._predict_latent_next(exp.state, exp.action)
             actual_next = self._state_to_latent(exp.next_state)
             error = np.mean((predicted_next - actual_next) ** 2)
             state_errors.append(error)
-        
+
         if state_errors:
             avg_error = np.mean(state_errors)
             learning_rate = 0.001
             self._latent_dynamics_model *= (1.0 - learning_rate)
-    
+
     def _state_to_latent(self, state: WorldState) -> np.ndarray:
         """Convert WorldState to latent representation"""
         latent = np.zeros(self.state_dim, dtype=np.float32)
@@ -750,23 +750,23 @@ class WorldModel:
         latent[7] = state.lane_position
         latent[8] = state.uncertainty
         return latent
-    
+
     def _predict_latent_next(self, state: WorldState, action: np.ndarray) -> np.ndarray:
         """Predict next latent state using learned dynamics"""
         state_latent = self._state_to_latent(state)
-        
+
         if len(action) < self.action_dim:
             action_padded = np.zeros(self.action_dim, dtype=np.float32)
             action_padded[:len(action)] = action
             action = action_padded
-        
+
         combined = np.concatenate([state_latent, action])
-        
+
         predicted = np.dot(combined, self._latent_dynamics_model.T)
         predicted = np.tanh(predicted)
-        
+
         return predicted
-    
+
     def set_training_enabled(self, enabled: bool):
         """Enable/disable training"""
         self._training_enabled = enabled
@@ -777,7 +777,7 @@ class WorldModel:
 
     def run_mppi_optimization(self,
                              current_state: WorldState,
-                             context: Optional[Dict[str, Any]] = None) -> MPPIResult:
+                             context: Optional[dict[str, Any]] = None) -> MPPIResult:
         """
         Run MPPI (Model Predictive Path Integral) optimization
         
@@ -796,7 +796,7 @@ class WorldModel:
         """
         if not self.enable_mppi or self.mppi_controller is None:
             raise RuntimeError("MPPI is not enabled")
-        
+
         result = self.mppi_controller.optimize(
             initial_state=current_state,
             cost_function=self.cost_function,
@@ -804,17 +804,17 @@ class WorldModel:
             context=context,
             initial_action_sequence=self._last_action_sequence
         )
-        
+
         self._last_action_sequence = np.broadcast_to(
             result.optimal_action[np.newaxis, :],
             (self._horizon_steps, self.action_dim)
         ).copy()
-        
+
         return result
 
     def optimize_trajectory_cost(self,
                                   current_state: WorldState,
-                                  context: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, float]:
+                                  context: Optional[dict[str, Any]] = None) -> tuple[np.ndarray, float]:
         """
         Optimize trajectory to minimize cost function.
         This is the "Closed-Loop Imagination" - the model dreams of possible
@@ -822,12 +822,12 @@ class WorldModel:
         """
         best_action = None
         best_cost = float('-inf')
-        
+
         candidate_actions = self._generate_candidate_actions()
-        
+
         for action in candidate_actions:
             trajectory = self._rollout_trajectory(current_state, action, context)
-            
+
             traj_pred = TrajectoryPrediction(
                 positions=trajectory.positions,
                 velocities=trajectory.velocities,
@@ -836,35 +836,35 @@ class WorldModel:
                 is_collision=trajectory.is_collision,
                 uncertainty=trajectory.uncertainty
             )
-            
+
             cost = self.cost_function.compute(traj_pred, context)
-            
+
             if cost > best_cost:
                 best_cost = cost
                 best_action = action
-        
+
         return best_action if best_action is not None else np.zeros(self.action_dim, dtype=np.float32), best_cost
-    
-    def _generate_candidate_actions(self) -> List[np.ndarray]:
+
+    def _generate_candidate_actions(self) -> list[np.ndarray]:
         """Generate candidate action sequences for planning"""
         actions = []
-        
+
         steering_values = [-0.5, -0.25, 0.0, 0.25, 0.5]
         throttle_values = [0.0, 0.3, 0.6]
         brake_values = [0.0, 0.3]
-        
+
         for steer in steering_values:
             for throttle in throttle_values:
                 for brake in brake_values:
                     action = np.array([steer, throttle, brake, 0.0], dtype=np.float32)
                     actions.append(action)
-        
+
         return actions[:self.num_rollouts]
-        
+
     def simulate(self,
                  current_state: WorldState,
-                 proposed_actions: List[np.ndarray],
-                 context: Optional[Dict[str, Any]] = None) -> SimulationResult:
+                 proposed_actions: list[np.ndarray],
+                 context: Optional[dict[str, Any]] = None) -> SimulationResult:
         """
         Run world model simulation
         
@@ -877,23 +877,23 @@ class WorldModel:
             SimulationResult with evaluated trajectories
         """
         trajectories = []
-        
+
         for action in proposed_actions:
             trajectory = self._rollout_trajectory(current_state, action, context)
             trajectories.append(trajectory)
-            
+
         collision_probs = [t.is_collision for t in trajectories]
         collision_prob = float(np.mean([float(t.is_collision) for t in trajectories]))
-        
+
         rewards = self._evaluate_trajectories(trajectories, context)
         chosen_idx = int(np.argmax(rewards))
-        
+
         is_safe = collision_prob < 0.1 and trajectories[chosen_idx].uncertainty < 0.5
-        
+
         expected_state = self._compute_expected_state(trajectories)
-        
+
         uncertainty_map = self._build_uncertainty_map(trajectories)
-        
+
         return SimulationResult(
             trajectories=trajectories,
             chosen_trajectory_idx=chosen_idx,
@@ -902,35 +902,35 @@ class WorldModel:
             collision_probability=collision_prob,
             is_safe=is_safe
         )
-        
+
     def _rollout_trajectory(self,
                           initial_state: WorldState,
                           action: np.ndarray,
-                          context: Optional[Dict[str, Any]]) -> TrajectoryPrediction:
+                          context: Optional[dict[str, Any]]) -> TrajectoryPrediction:
         """Roll out a single trajectory"""
         positions = np.zeros((self._horizon_steps, 3), dtype=np.float32)
         velocities = np.zeros((self._horizon_steps, 3), dtype=np.float32)
         accelerations = np.zeros((self._horizon_steps, 3), dtype=np.float32)
         uncertainties = np.zeros(self._horizon_steps, dtype=np.float32)
-        
+
         pos = initial_state.position.copy()
         vel = initial_state.velocity.copy()
-        
+
         for t in range(self._horizon_steps):
             acc = self._predict_acceleration(vel, action, t, context)
-            
+
             vel = vel + acc * self.DT
             pos = pos + vel * self.DT
-            
+
             positions[t] = pos
             velocities[t] = vel
             accelerations[t] = acc
-            
+
             uncertainty = self._estimate_uncertainty(t, action, context)
             uncertainties[t] = uncertainty
-            
+
         is_collision = self._check_collision(positions, context)
-        
+
         return TrajectoryPrediction(
             positions=positions,
             velocities=velocities,
@@ -939,96 +939,96 @@ class WorldModel:
             is_collision=is_collision,
             uncertainty=float(np.mean(uncertainties))
         )
-        
+
     def _predict_acceleration(self,
                              velocity: np.ndarray,
                              action: np.ndarray,
                              time_step: int,
-                             context: Optional[Dict[str, Any]]) -> np.ndarray:
+                             context: Optional[dict[str, Any]]) -> np.ndarray:
         """Predict acceleration based on current state and action"""
         acc = np.zeros(3, dtype=np.float32)
-        
+
         steering = action[0] if len(action) > 0 else 0.0
         throttle = action[1] if len(action) > 1 else 0.0
         brake = action[2] if len(action) > 2 else 0.0
-        
+
         speed = np.linalg.norm(velocity[:2])
         if speed > 0.1:
             yaw_rate = steering * speed * 0.1
             acc[0] = -velocity[1] * yaw_rate
             acc[1] = velocity[0] * yaw_rate
-            
+
         acc[0] += throttle * 2.0
         acc[2] += (throttle - brake) * 1.0
-        
+
         return acc
-        
+
     def _estimate_uncertainty(self,
                              time_step: int,
                              action: np.ndarray,
-                             context: Optional[Dict[str, Any]]) -> float:
+                             context: Optional[dict[str, Any]]) -> float:
         """Estimate uncertainty that grows with prediction horizon"""
         base_uncertainty = 0.1
         horizon_factor = time_step / self._horizon_steps
         action_magnitude = np.linalg.norm(action) if action.size > 0 else 0.0
-        
+
         uncertainty = base_uncertainty + horizon_factor * 0.5 + action_magnitude * 0.1
         return float(np.clip(uncertainty, 0.0, 1.0))
-        
-    def _check_collision(self, 
+
+    def _check_collision(self,
                         positions: np.ndarray,
-                        context: Optional[Dict[str, Any]]) -> bool:
+                        context: Optional[dict[str, Any]]) -> bool:
         """Check if trajectory collides with any objects"""
         if context is None or 'objects' not in context:
             return False
-            
+
         objects = context['objects']
         road_width = context.get('road_width', 3.5)
-        
+
         for pos in positions:
             lane_offset = abs(pos[1])
             if lane_offset > road_width:
                 return True
-                
+
             for obj in objects:
                 obj_pos = np.array([obj.get('x', 0), obj.get('y', 0)])
                 dist = np.linalg.norm(pos[:2] - obj_pos)
                 if dist < 2.0:
                     return True
-                    
+
         return False
-        
+
     def _evaluate_trajectories(self,
-                               trajectories: List[TrajectoryPrediction],
-                               context: Optional[Dict[str, Any]]) -> np.ndarray:
+                               trajectories: list[TrajectoryPrediction],
+                               context: Optional[dict[str, Any]]) -> np.ndarray:
         """Evaluate and score trajectories"""
         rewards = np.zeros(len(trajectories), dtype=np.float32)
-        
+
         for i, traj in enumerate(trajectories):
             if traj.is_collision:
                 rewards[i] = -100.0
                 continue
-                
+
             final_speed = np.linalg.norm(traj.velocities[-1][:2])
             progress = traj.positions[-1, 0] - traj.positions[0, 0]
-            
+
             reward = progress * 0.5 + final_speed * 0.3 - traj.uncertainty * 0.2
-            
+
             rewards[i] = reward
-            
+
         return rewards
-        
-    def _compute_expected_state(self, trajectories: List[TrajectoryPrediction]) -> WorldState:
+
+    def _compute_expected_state(self, trajectories: list[TrajectoryPrediction]) -> WorldState:
         """Compute expected world state from all trajectories"""
         weights = np.array([1.0 - t.uncertainty for t in trajectories])
         weights = weights / np.sum(weights)
-        
+
         final_positions = np.array([t.positions[-1] for t in trajectories])
         final_velocities = np.array([t.velocities[-1] for t in trajectories])
-        
+
         expected_pos = np.average(final_positions, weights=weights, axis=0)
         expected_vel = np.average(final_velocities, weights=weights, axis=0)
-        
+
         return WorldState(
             position=expected_pos,
             velocity=expected_vel,
@@ -1038,19 +1038,19 @@ class WorldModel:
             objects=[],
             uncertainty=float(np.mean([t.uncertainty for t in trajectories]))
         )
-        
-    def _build_uncertainty_map(self, trajectories: List[TrajectoryPrediction]) -> np.ndarray:
+
+    def _build_uncertainty_map(self, trajectories: list[TrajectoryPrediction]) -> np.ndarray:
         """Build spatial uncertainty map from trajectories"""
         positions = np.array([t.positions for t in trajectories])
-        
+
         uncertainty_map = np.std(positions, axis=0)
-        
+
         return uncertainty_map
-        
+
     def should_execute_action(self,
                              current_state: WorldState,
                              proposed_action: np.ndarray,
-                             context: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+                             context: Optional[dict[str, Any]] = None) -> tuple[bool, str]:
         """
         Determine if an action should be executed based on simulation
 
@@ -1072,10 +1072,10 @@ class WorldModel:
             return False, f"High uncertainty: {chosen_traj.uncertainty:.2f}"
 
         return True, "ok"
-    
+
     def plan_with_mcts(self,
                       current_state: WorldState,
-                      context: Optional[Dict[str, Any]] = None) -> Tuple[Optional[np.ndarray], Dict[str, Any]]:
+                      context: Optional[dict[str, Any]] = None) -> tuple[Optional[np.ndarray], dict[str, Any]]:
         """
         A+ Enhancement: Plan optimal action using MCTS
         
@@ -1101,7 +1101,7 @@ class WorldModel:
                     }
                 except Exception:
                     pass
-            
+
             # Ultimate fallback: static rollouts
             actions = self._generate_candidate_actions()
             sim_result = self.simulate(current_state, actions, context)
@@ -1110,11 +1110,11 @@ class WorldModel:
                 'method': 'static_rollout',
                 'collision_prob': sim_result.collision_probability
             }
-        
+
         # Use MCTS planning
         try:
             mcts_result = self.mcts_helper.plan(current_state, context)
-            
+
             # Extract action from MCTS result
             if hasattr(mcts_result, 'optimal_trajectory') and mcts_result.optimal_trajectory:
                 optimal_action = self._extract_action_from_trajectory(
@@ -1122,7 +1122,7 @@ class WorldModel:
                 )
             else:
                 optimal_action = np.zeros(self.action_dim, dtype=np.float32)
-            
+
             debug_info = {
                 'method': 'mcts',
                 'search_iterations': getattr(mcts_result, 'search_iterations', 0),
@@ -1132,9 +1132,9 @@ class WorldModel:
                 'search_time_ms': getattr(mcts_result, 'search_time_ms', 0.0),
                 'convergence_info': getattr(mcts_result, 'convergence_info', {})
             }
-            
+
             return optimal_action, debug_info
-            
+
         except Exception as e:
             # Fallback on MCTS failure
             print(f"MCTS planning failed: {e}")
@@ -1145,7 +1145,7 @@ class WorldModel:
                 'method': 'fallback_static',
                 'error': str(e)
             }
-    
+
     def _extract_action_from_trajectory(self,
                                        trajectory: Any) -> np.ndarray:
         """
@@ -1161,26 +1161,26 @@ class WorldModel:
             # Compute actions from trajectory kinematics
             positions = trajectory.positions
             velocities = trajectory.velocities
-            
+
             actions = np.zeros((len(positions), self.action_dim), dtype=np.float32)
-            
+
             for t in range(1, len(positions)):
                 # Estimate steering from lateral motion
                 if t > 0 and abs(velocities[t-1, 0]) > 0.1:
                     steer = (velocities[t, 1] - velocities[t-1, 1]) / (velocities[t-1, 0] * 0.1)
                     steer = np.clip(steer, -0.5, 0.5)
                     actions[t, 0] = steer
-                
+
                 # Estimate throttle/brake from acceleration
                 accel = np.linalg.norm(velocities[t, :2]) - np.linalg.norm(velocities[t-1, :2])
                 if accel > 0:
                     actions[t, 1] = np.clip(accel / 2.0, 0.0, 1.0)
                 else:
                     actions[t, 2] = np.clip(-accel / 3.0, 0.0, 1.0)
-            
+
             # Return first action
             return actions[0]
-        
+
         return np.zeros(self.action_dim, dtype=np.float32)
 
 
@@ -1188,30 +1188,30 @@ class ImaginationBuffer:
     """
     Maintains history of imagined trajectories for visualization/debugging
     """
-    
+
     def __init__(self, max_history: int = 100):
         self.max_history = max_history
-        self._imagined_trajectories: List[SimulationResult] = []
-        self._timestamps: List[float] = []
-        
+        self._imagined_trajectories: list[SimulationResult] = []
+        self._timestamps: list[float] = []
+
     def add_imagination(self, result: SimulationResult, timestamp: float = 0.0):
         """Add a simulation result"""
         self._imagined_trajectories.append(result)
         self._timestamps.append(timestamp)
-        
+
         if len(self._imagined_trajectories) > self.max_history:
             self._imagined_trajectories.pop(0)
             self._timestamps.pop(0)
-            
-    def get_recent(self, n: int = 10) -> List[SimulationResult]:
+
+    def get_recent(self, n: int = 10) -> list[SimulationResult]:
         """Get n most recent simulation results"""
         return self._imagined_trajectories[-n:] if len(self._imagined_trajectories) >= n else self._imagined_trajectories
-        
+
     def get_best_trajectory(self) -> Optional[TrajectoryPrediction]:
         """Get the best trajectory from most recent simulation"""
         if not self._imagined_trajectories:
             return None
-            
+
         result = self._imagined_trajectories[-1]
         if result.chosen_trajectory_idx < len(result.trajectories):
             return result.trajectories[result.chosen_trajectory_idx]

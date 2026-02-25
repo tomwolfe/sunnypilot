@@ -85,17 +85,17 @@ class ModelState(ModelStateBase):
     # For now, we use the same path to establish the architecture.
     self.model_highway = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
     self.model_suburban = ModelRunner(model_paths, self.output, Runtime.GPU, False, context)
-    
+
     # Initialize inputs for both models
     for model in [self.model_highway, self.model_suburban]:
       model.addInput("input_imgs", None)
       model.addInput("big_input_imgs", None)
       for k,v in self.inputs.items():
         model.addInput(k, v)
-    
+
     # Default to suburban model
     self.model = self.model_suburban
-    
+
     # Step 1: Transformer-based "Feature-Space" Memory
     self.feature_memory = FeatureMemory(ModelConstants.FEATURE_LEN)
 
@@ -113,7 +113,7 @@ class ModelState(ModelStateBase):
       self.model = self.model_highway
     else:
       self.model = self.model_suburban
-      
+
     # Model decides when action is completed, so desire input is just a pulse triggered on rising edge
     inputs['desire'][0] = 0
     self.inputs['desire'][:-ModelConstants.DESIRE_LEN] = self.inputs['desire'][ModelConstants.DESIRE_LEN:]

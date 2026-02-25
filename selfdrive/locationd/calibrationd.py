@@ -187,11 +187,11 @@ class Calibrator:
         # This allows the E2E planning to be robust against "pitch-up" under acceleration
         # or vibration-induced mounting shift.
         correction_alpha = 0.05  # 5% correction per model frame (20Hz)
-        
+
         # We only correct Pitch (1) and Roll (0), as Yaw (2) is best handled by CameraOdometry
         self.rpy[0] = (1.0 - correction_alpha) * self.rpy[0] + correction_alpha * (self.rpy[0] + road_euler[0])
         self.rpy[1] = (1.0 - correction_alpha) * self.rpy[1] + correction_alpha * (self.rpy[1] + road_euler[1])
-        
+
         # Clip to sanity limits to prevent runaway calibration
         self.rpy = sanity_clip(self.rpy)
 

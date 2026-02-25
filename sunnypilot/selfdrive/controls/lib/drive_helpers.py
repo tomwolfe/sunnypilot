@@ -17,7 +17,7 @@ def get_lag_adjusted_curvature(steer_delay, v_ego, psis, curvatures):
   if USE_DYNAMIC_DELAY_A:
     try:
       from openpilot.sunnypilot.modeld_v2.e2e_torque.dynamic_delay import DynamicDelayPredictor
-      
+
       delay_predictor = DynamicDelayPredictor()
       delay_pred = delay_predictor.predict_delay(
         current_curvature=current_curvature_desired,

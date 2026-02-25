@@ -71,12 +71,12 @@ class LongControl:
     self.long_control_state = long_control_state_trans(self.CP, self.CP_SP, active, self.long_control_state, CS.vEgo,
                                                        should_stop, CS.brakePressed,
                                                        CS.cruiseState.standstill)
-    
+
     # Neural Longitudinal Override:
     # If the model is certain (low xStd), we blend its predicted acceleration directly.
     # This allows for "smooth, human-like" braking that a simple PID often struggles with.
     use_neural = accel_neural != 0.0 and self.long_control_state in [LongCtrlState.starting, LongCtrlState.pid]
-    
+
     if self.long_control_state == LongCtrlState.off:
       self.reset()
       output_accel = 0.
@@ -96,26 +96,26 @@ class LongControl:
       # Calculate PID output as fallback
       error = a_target - CS.aEgo
       pid_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
-      
+
       if use_neural:
         # Bayesian Longitudinal Blend:
         # Scale neural authority based on uncertainty (xStd proxy)
         # 0.5m uncertainty is "perfect", 3.0m is "noisy"
-        
+
         # Online Calibration Offset:
         # Compare model's predicted acceleration to actual aEgo over a window.
         # If the model is consistently wrong, we increase the effective uncertainty.
         uncertainty_offset = self.calibrator.update(accel_neural, CS.aEgo, use_neural)
         effective_uncertainty = longitudinal_uncertainty + uncertainty_offset
-        
+
         # Dynamic Sigmoid Center: lower center at higher speeds for more caution
         # At 0 m/s: center = 1.5m
         # At 30 m/s: center = 1.0m
         sigmoid_center = float(np.interp(CS.vEgo, [0, 30], [1.5, 1.0]))
         sigmoid_steepness = 4.0
-        
+
         w_neural = 1.0 / (1.0 + np.exp(sigmoid_steepness * (effective_uncertainty - sigmoid_center)))
-        
+
         # In 'Blended' (E2E) mode, we prioritize the model's intent
         output_accel = w_neural * accel_neural + (1.0 - w_neural) * pid_accel
       else:

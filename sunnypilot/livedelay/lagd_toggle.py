@@ -12,10 +12,7 @@ from openpilot.common.params import Params
 
 import numpy as np
 from collections import deque
-from cereal import log, messaging
-from opendbc.car import structs
-from openpilot.common.params import Params
-from openpilot.common.realtime import DT_CTRL
+from cereal import messaging
 
 
 class LagdToggle:
@@ -39,11 +36,11 @@ class LagdToggle:
     self.last_execution_time = 0.0
     self.last_frame_time = 0.0
     self.computational_lag_estimate = 0.0
-    
+
     # Thermal throttling detection
     self.thermal_throttle_detected = False
     self.throttle_warning_count = 0
-    
+
     # Latency prediction filter
     self.latency_prediction_filter = deque(maxlen=20)
     self.predicted_latency = 0.0
@@ -104,18 +101,18 @@ class LagdToggle:
     """
     self.execution_time_buffer.append(execution_time_sec)
     self.frame_timestamp_buffer.append(frame_time)
-    
+
     if len(self.execution_time_buffer) < 10:
       return
-    
+
     # Compute moving average execution time
     avg_execution_time = np.mean(self.execution_time_buffer)
-    
+
     # Detect thermal throttling (sudden increase in execution time)
     if len(self.execution_time_buffer) >= 20:
       recent_avg = np.mean(list(self.execution_time_buffer)[-10:])
       older_avg = np.mean(list(self.execution_time_buffer)[-20:-10])
-      
+
       if recent_avg > older_avg * 1.2:  # 20% increase
         self.thermal_throttle_detected = True
         self.throttle_warning_count += 1
@@ -123,7 +120,7 @@ class LagdToggle:
         self.throttle_warning_count = max(0, self.throttle_warning_count - 1)
         if self.throttle_warning_count == 0:
           self.thermal_throttle_detected = False
-    
+
     # Predict next frame latency using simple linear prediction
     if len(self.execution_time_buffer) >= 5:
       recent_times = list(self.execution_time_buffer)[-5:]
@@ -132,14 +129,14 @@ class LagdToggle:
       self.predicted_latency = recent_times[-1] + avg_diff * 0.5
     else:
       self.predicted_latency = avg_execution_time
-    
+
     # Update computational lag estimate
     # Base lag + fraction of execution time (models pipeline delay)
     self.computational_lag_estimate = 0.05 + avg_execution_time * 0.3
-    
+
     self.last_execution_time = execution_time_sec
     self.last_frame_time = frame_time
-  
+
   def get_execution_time_stats(self) -> dict:
     """
     Get execution time statistics for debugging/monitoring
@@ -156,9 +153,9 @@ class LagdToggle:
         'thermal_throttle': False,
         'predicted_latency_ms': 0.0
       }
-    
+
     times_ms = np.array(self.execution_time_buffer) * 1000
-    
+
     return {
       'avg_ms': float(np.mean(times_ms)),
       'max_ms': float(np.max(times_ms)),
@@ -168,7 +165,7 @@ class LagdToggle:
       'predicted_latency_ms': float(self.predicted_latency * 1000),
       'computational_lag': float(self.computational_lag_estimate)
     }
-  
+
   def get_adaptive_latency_compensation(self) -> float:
     """
     A+ Enhancement: Get adaptive latency compensation value
@@ -181,17 +178,17 @@ class LagdToggle:
     """
     if not self.execution_time_buffer:
       return self.software_delay
-    
+
     # Use predicted latency if available, otherwise use average
     if self.predicted_latency > 0:
       compensation = self.predicted_latency
     else:
       compensation = float(np.mean(self.execution_time_buffer))
-    
+
     # Add extra compensation if thermal throttling detected
     if self.thermal_throttle_detected:
       compensation *= 1.2  # 20% extra compensation
-    
+
     return compensation
 
   def update(self, lag_msg: log.LiveDelayData) -> None:
@@ -206,10 +203,10 @@ class LagdToggle:
 
     # In LagdToggle mode, we blend the LiveDelay estimator with our dynamic torque-based estimate
     lateral_delay = lag_msg.liveDelay.lateralDelay
-    
+
     # A+ Enhancement: Add adaptive computational latency compensation
     adaptive_compensation = self.get_adaptive_latency_compensation()
-    
+
     # Blend: 70% lateral_delay, 30% dynamic torque-based, plus computational lag
     if 0.05 < self.last_dynamic_lag < 0.8:
       self.lag = 0.7 * lateral_delay + 0.3 * self.last_dynamic_lag + adaptive_compensation

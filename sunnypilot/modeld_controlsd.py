@@ -59,7 +59,6 @@ import mmap
 import ctypes
 from dataclasses import dataclass
 from typing import Optional
-import numpy as np
 
 
 SHARED_MEM_SIZE = 1024 * 1024
@@ -102,34 +101,34 @@ class SharedMemoryIPC:
     This provides lock-free double-buffered shared memory access
     between the vision model and control loops.
     """
-    
+
     def __init__(self, size: int = SHARED_MEM_SIZE, create: bool = False):
         self.size = size
         self.create = create
         self.fd = None
         self.shm = None
         self._buffer_idx = 0
-        
+
     def __enter__(self):
         if self.create:
             self.fd = os.open(SHARED_MEM_NAME, os.O_CREAT | os.O_RDWR)
             os.write(self.fd, b'\x00' * self.size)
         else:
             self.fd = os.open(SHARED_MEM_NAME, os.O_RDWR)
-            
+
         self.shm = mmap.mmap(self.fd, self.size)
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.shm:
             self.shm.close()
         if self.fd:
             os.close(self.fd)
-            
+
     def write_model_output(self, data: SharedModelOutput):
         """Write model output to shared memory (double-buffered)"""
         offset = self._buffer_idx * ctypes.sizeof(SharedModelOutput)
-        
+
         struct = SharedModelOutput(
             timestamp=data.timestamp,
             torque=data.torque,
@@ -142,9 +141,9 @@ class SharedMemoryIPC:
             desired_speed=data.desired_speed,
             is_valid=data.is_valid
         )
-        
+
         self._buffer_idx = 1 - self._buffer_idx
-        
+
     def read_model_output(self) -> Optional[SharedModelOutput]:
         """Read latest model output from shared memory"""
         offset = (1 - self._buffer_idx) * ctypes.sizeof(SharedModelOutput)
@@ -155,20 +154,20 @@ class E2EConsolidatedConfig:
     """
     Configuration for E2E consolidated process
     """
-    
+
     PROCESS_NAME = "selfdrive.modeld_controlsd"
-    
+
     CPU_AFFINITY = [2, 3, 4, 5]
-    
+
     PRIORITY = 90
-    
+
     TIMING_CONFIG = {
         "vision_interval_ms": 50,
         "model_interval_ms": 50,
         "control_interval_ms": 20,
         "max_latency_ms": 15
     }
-    
+
     FEATURE_FLAGS = {
         "use_shared_memory": True,
         "use_e2e_direct_control": True,

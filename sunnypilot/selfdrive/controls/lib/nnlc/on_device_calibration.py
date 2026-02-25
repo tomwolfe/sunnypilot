@@ -19,8 +19,8 @@ Improvements for "Perfect Grade" E2E:
 """
 
 import numpy as np
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from dataclasses import dataclass
+from typing import Optional, Any
 from collections import deque
 import json
 import os
@@ -40,29 +40,29 @@ class VehicleCalibrationParams:
     camera_pitch: float = 0.0   # radians (positive = looking down)
     camera_roll: float = 0.0    # radians
     camera_yaw: float = 0.0     # radians
-    
+
     # Steering system
     steering_ratio: float = 15.0  # steering wheel angle / wheel angle
     steering_ratio_speed_dependent: bool = False
-    
+
     # Torque constants
     wheel_torque_constant: float = 100.0  # Nm per radian curvature
     torque_scale_factor: float = 1.0      # Global torque scaling
-    
+
     # Vehicle dynamics
     mass: float = 1500.0  # kg
     wheelbase: float = 2.7  # meters
     cornering_stiffness: float = 80000.0  # N/rad
-    
+
     # Learned adaptations
     learned_torque_bias: float = 0.0  # Adaptive bias from learning
     learned_gain_factor: float = 1.0  # Adaptive gain from learning
-    
+
     # Confidence in calibration
     calibration_confidence: float = 0.0  # 0.0 (uncalibrated) to 1.0 (fully calibrated)
     calibration_miles: float = 0.0  # Miles driven during calibration
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             'camera_height': self.camera_height,
@@ -81,9 +81,9 @@ class VehicleCalibrationParams:
             'calibration_confidence': self.calibration_confidence,
             'calibration_miles': self.calibration_miles
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'VehicleCalibrationParams':
+    def from_dict(cls, data: dict[str, Any]) -> 'VehicleCalibrationParams':
         """Create from dictionary"""
         return cls(**data)
 
@@ -100,8 +100,8 @@ class CalibrationSample:
     curvature: float
     road_curvature: float
     is_valid: bool = True
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'timestamp': self.timestamp,
             'v_ego': self.v_ego,
@@ -136,25 +136,25 @@ class OnDeviceCalibrator:
     - Learns vehicle-specific torque constants
     - Self-healing: detects and corrects model drift
     """
-    
+
     # Calibration requires minimum data
     MIN_SAMPLES_FOR_CALIBRATION = 500
     MIN_CALIBRATION_MILES = 1.0
     FULL_CALIBRATION_MILES = 50.0
-    
+
     # Speed thresholds for valid calibration data
     MIN_SPEED_FOR_CALIBRATION = 10.0  # m/s (~36 km/h)
     MAX_SPEED_FOR_CALIBRATION = 35.0  # m/s (~126 km/h)
-    
+
     # Valid lateral acceleration range
     MIN_LAT_ACCEL_FOR_CALIBRATION = 0.5  # m/s^2
     MAX_LAT_ACCEL_FOR_CALIBRATION = 3.0  # m/s^2
-    
+
     # Learning parameters
     LEARNING_RATE_INITIAL = 0.01
     LEARNING_RATE_FINAL = 0.001
     MIN_SAMPLES_BUFFER = 2000
-    
+
     def __init__(self,
                  calibration_path: Optional[str] = None,
                  auto_save: bool = True,
@@ -173,37 +173,37 @@ class OnDeviceCalibrator:
         self.auto_save = auto_save
         self.enable_camera_calibration = enable_camera_calibration
         self.enable_torque_calibration = enable_torque_calibration
-        
+
         # Calibration parameters (start with defaults)
         self.params = VehicleCalibrationParams()
-        
+
         # Sample buffer for online learning
         self.sample_buffer: deque = deque(maxlen=self.MIN_SAMPLES_BUFFER)
-        
+
         # Statistics
         self.total_samples = 0
         self.valid_samples = 0
         self.calibration_updates = 0
         self.last_save_time = 0.0
         self.odometer_start = 0.0
-        
+
         # Learning state
         self.learning_active = False
         self.learning_converged = False
         self.convergence_threshold = 0.95
-        
+
         # Error tracking for convergence detection
         self.prediction_errors: deque = deque(maxlen=100)
         self.baseline_error = float('inf')
-        
+
         # Load existing calibration if available
         self.load_calibration()
-    
+
     def _default_calibration_path(self) -> str:
         """Get default calibration file path"""
         # In real implementation, this would point to params storage
         return "/data/params/d/neural_network_calibration.json"
-    
+
     def update(self,
                timestamp: float,
                v_ego: float,
@@ -233,18 +233,18 @@ class OnDeviceCalibrator:
         # Track odometer for calibration miles
         if self.odometer_start == 0.0:
             self.odometer_start = odometer
-        
+
         calibration_miles = odometer - self.odometer_start
         self.params.calibration_miles = calibration_miles
-        
+
         # Check if sample is valid for calibration
         is_valid = self._is_valid_sample(
             v_ego, lateral_accel, torque_command, curvature
         )
-        
+
         if not is_valid:
             return False
-        
+
         # Create and store sample
         sample = CalibrationSample(
             timestamp=timestamp,
@@ -257,31 +257,31 @@ class OnDeviceCalibrator:
             road_curvature=road_curvature,
             is_valid=is_valid
         )
-        
+
         self.sample_buffer.append(sample)
         self.total_samples += 1
         self.valid_samples += 1
-        
+
         # Start learning once we have enough samples
         if len(self.sample_buffer) >= self.MIN_SAMPLES_FOR_CALIBRATION:
             self.learning_active = True
-            
+
             # Perform calibration update
             self._update_calibration()
-            
+
             # Update confidence based on miles driven
             self._update_calibration_confidence(calibration_miles)
-            
+
             # Check convergence
             self._check_convergence()
-            
+
             # Auto-save periodically
             if self.auto_save and (timestamp - self.last_save_time) > 60.0:
                 self.save_calibration()
                 self.last_save_time = timestamp
-        
+
         return True
-    
+
     def _is_valid_sample(self,
                         v_ego: float,
                         lateral_accel: float,
@@ -291,30 +291,30 @@ class OnDeviceCalibrator:
         # Speed range
         if v_ego < self.MIN_SPEED_FOR_CALIBRATION or v_ego > self.MAX_SPEED_FOR_CALIBRATION:
             return False
-        
+
         # Lateral acceleration range (need some lateral dynamics)
         if abs(lateral_accel) < self.MIN_LAT_ACCEL_FOR_CALIBRATION:
             return False
-        
+
         # Avoid extreme lateral acceleration
         if abs(lateral_accel) > self.MAX_LAT_ACCEL_FOR_CALIBRATION:
             return False
-        
+
         # Torque sanity check
         if abs(torque_command) > 10.0:  # Nm
             return False
-        
+
         # Curvature sanity check
         if abs(curvature) > 0.01:  # 1/m
             return False
-        
+
         return True
-    
+
     def _update_calibration(self):
         """Update calibration parameters from collected samples"""
         if len(self.sample_buffer) < self.MIN_SAMPLES_FOR_CALIBRATION:
             return
-        
+
         # Convert to arrays for easier processing
         samples = list(self.sample_buffer)
         v_ego_arr = np.array([s.v_ego for s in samples])
@@ -322,17 +322,17 @@ class OnDeviceCalibrator:
         lat_accel_arr = np.array([s.lateral_accel for s in samples])
         curvature_arr = np.array([s.curvature for s in samples])
         steering_arr = np.array([s.steering_angle for s in samples])
-        
+
         # Update torque constant learning
         if self.enable_torque_calibration:
             self._learn_torque_constant(v_ego_arr, torque_arr, lat_accel_arr, curvature_arr)
-        
+
         # Update camera calibration
         if self.enable_camera_calibration:
             self._learn_camera_parameters(steering_arr, curvature_arr, v_ego_arr)
-        
+
         self.calibration_updates += 1
-    
+
     def _learn_torque_constant(self,
                                v_ego: np.ndarray,
                                torque: np.ndarray,
@@ -345,20 +345,20 @@ class OnDeviceCalibrator:
         """
         # Simple least squares fit
         # torque = wheel_torque_constant * curvature + bias
-        
+
         # Add small noise to avoid singular matrix
         curvature_noisy = curvature + np.random.randn(len(curvature)) * 0.0001
-        
+
         # Build design matrix
         X = np.vstack([curvature_noisy, np.ones(len(curvature_noisy))]).T
-        
+
         try:
             # Solve normal equations
             result, _, _, _ = np.linalg.lstsq(X, torque, rcond=None)
-            
+
             new_torque_constant = result[0]
             new_bias = result[1]
-            
+
             # Sanity checks
             if 50.0 < abs(new_torque_constant) < 200.0:
                 # Smooth update
@@ -371,15 +371,15 @@ class OnDeviceCalibrator:
                     (1 - alpha) * self.params.learned_torque_bias +
                     alpha * new_bias
                 )
-                
+
                 # Track prediction error
                 predicted_torque = new_torque_constant * curvature + new_bias
                 error = np.mean(np.abs(torque - predicted_torque))
                 self.prediction_errors.append(error)
-                
+
         except np.linalg.LinAlgError:
             pass  # Skip this update
-    
+
     def _learn_camera_parameters(self,
                                 steering: np.ndarray,
                                 curvature: np.ndarray,
@@ -392,25 +392,25 @@ class OnDeviceCalibrator:
         """
         # Expected relationship: steering_angle = wheelbase * curvature * steering_ratio
         # Deviation indicates camera parameter errors
-        
+
         expected_steering = self.params.wheelbase * curvature * self.params.steering_ratio
-        
+
         # Compute ratio of actual to expected
         valid_mask = np.abs(expected_steering) > 0.001
         if np.sum(valid_mask) < 10:
             return
-        
+
         ratio = np.mean(steering[valid_mask] / expected_steering[valid_mask])
-        
+
         # Adjust camera height estimate (affects perceived curvature)
         # Higher camera = curvature appears smaller
         if 0.8 < ratio < 1.2:
             alpha = self._get_learning_rate() * 0.5  # Slower learning for camera params
-            
+
             # Adjust camera height
             self.params.camera_height *= (1 + (ratio - 1.0) * alpha)
             self.params.camera_height = np.clip(self.params.camera_height, 0.8, 2.0)
-    
+
     def _get_learning_rate(self) -> float:
         """Get current learning rate based on calibration progress"""
         if self.params.calibration_confidence < 0.5:
@@ -421,7 +421,7 @@ class OnDeviceCalibrator:
                 (self.LEARNING_RATE_INITIAL - self.LEARNING_RATE_FINAL) *
                 (self.params.calibration_confidence - 0.5) / 0.5
             )
-    
+
     def _update_calibration_confidence(self, calibration_miles: float):
         """Update calibration confidence based on miles driven"""
         if calibration_miles >= self.FULL_CALIBRATION_MILES:
@@ -436,24 +436,24 @@ class OnDeviceCalibrator:
                 self.params.calibration_confidence,
                 0.9  # Cap at 0.9 until convergence check
             )
-    
+
     def _check_convergence(self):
         """Check if calibration has converged"""
         if len(self.prediction_errors) < 50:
             return
-        
+
         recent_errors = list(self.prediction_errors)[-20:]
         avg_error = np.mean(recent_errors)
-        
+
         # Update baseline error
         if self.baseline_error == float('inf'):
             self.baseline_error = avg_error
-        
+
         # Check if error has stabilized
         error_std = np.std(recent_errors)
         if error_std < self.baseline_error * 0.1:  # 10% variation
             self.learning_converged = True
-    
+
     def get_adjusted_torque(self,
                            base_torque: float,
                            v_ego: float,
@@ -471,28 +471,28 @@ class OnDeviceCalibrator:
         """
         if self.params.calibration_confidence < 0.1:
             return base_torque
-        
+
         # Apply learned torque scale
         adjusted_torque = base_torque * self.params.learned_gain_factor
-        
+
         # Add learned bias
         adjusted_torque += self.params.learned_torque_bias
-        
+
         # Speed-dependent adjustment (if steering ratio is speed-dependent)
         if self.params.steering_ratio_speed_dependent:
             speed_factor = 1.0 + 0.1 * (v_ego / 20.0)
             adjusted_torque *= speed_factor
-        
+
         # Blend based on calibration confidence
         confidence = self.params.calibration_confidence
         adjusted_torque = (
             confidence * adjusted_torque +
             (1 - confidence) * base_torque
         )
-        
+
         return adjusted_torque
-    
-    def get_calibration_status(self) -> Dict[str, Any]:
+
+    def get_calibration_status(self) -> dict[str, Any]:
         """Get current calibration status"""
         return {
             'calibration_miles': self.params.calibration_miles,
@@ -509,11 +509,11 @@ class OnDeviceCalibrator:
             'baseline_prediction_error': self.baseline_error,
             'current_prediction_error': float(np.mean(list(self.prediction_errors)[-10:])) if self.prediction_errors else 0.0
         }
-    
+
     def save_calibration(self, filepath: Optional[str] = None) -> bool:
         """Save calibration to file"""
         path = filepath or self.calibration_path
-        
+
         try:
             data = {
                 'version': 1,
@@ -526,34 +526,34 @@ class OnDeviceCalibrator:
                     'odometer_start': self.odometer_start
                 }
             }
-            
+
             # Ensure directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            
+
             with open(path, 'w') as f:
                 json.dump(data, f, indent=2)
-            
+
             return True
-            
+
         except Exception as e:
             print(f"Failed to save calibration: {e}")
             return False
-    
+
     def load_calibration(self, filepath: Optional[str] = None) -> bool:
         """Load calibration from file"""
         path = filepath or self.calibration_path
-        
+
         try:
             if not os.path.exists(path):
                 return False
-            
-            with open(path, 'r') as f:
+
+            with open(path) as f:
                 data = json.load(f)
-            
+
             # Load parameters
             if 'params' in data:
                 self.params = VehicleCalibrationParams.from_dict(data['params'])
-            
+
             # Load statistics
             if 'statistics' in data:
                 stats = data['statistics']
@@ -561,17 +561,17 @@ class OnDeviceCalibrator:
                 self.valid_samples = stats.get('valid_samples', 0)
                 self.calibration_updates = stats.get('calibration_updates', 0)
                 self.odometer_start = stats.get('odometer_start', 0.0)
-            
+
             # Mark as loaded
             if self.params.calibration_confidence > 0.1:
                 self.learning_active = True
-            
+
             return True
-            
+
         except Exception as e:
             print(f"Failed to load calibration: {e}")
             return False
-    
+
     def reset_calibration(self):
         """Reset all calibration data"""
         self.params = VehicleCalibrationParams()
@@ -583,7 +583,7 @@ class OnDeviceCalibrator:
         self.learning_converged = False
         self.prediction_errors.clear()
         self.baseline_error = float('inf')
-        
+
         if self.auto_save:
             self.save_calibration()
 

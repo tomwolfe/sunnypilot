@@ -70,7 +70,7 @@ def get_nn_model_path(CP: structs.CarParams) -> tuple[str, str, bool]:
   try:
     from .on_device_calibration import get_calibrator
     calibrator = get_calibrator()
-    
+
     # If calibration is confident (>0.8), consider it an exact match
     # regardless of fingerprint similarity
     if calibrator.params.calibration_confidence > 0.8:

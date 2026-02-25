@@ -1,5 +1,8 @@
 import numpy as np
 
+# Model time step (1 / MODEL_RUN_FREQ)
+DT_MDL = 0.05
+
 def index_function(idx, max_val=192, max_idx=32):
   return (max_val) * ((idx/max_idx)**2)
 

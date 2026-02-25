@@ -179,7 +179,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       # Aggressive (2) -> More E2E (more direct/human-like)
       personality = sm['selfdriveState'].personality
       e2e_weight = float(np.interp(float(personality.raw), [0, 1, 2], [0.25, 0.5, 0.75]))
-      
+
       output_a_target = e2e_weight * output_a_target_e2e + (1.0 - e2e_weight) * output_a_target_mpc
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
