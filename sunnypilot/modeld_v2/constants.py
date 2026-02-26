@@ -38,6 +38,7 @@ class ModelConstants:
   DESIRE_PRED_WIDTH = 8
   LAT_PLANNER_SOLUTION_WIDTH = 4
   DESIRED_CURV_WIDTH = 1
+  DIRECT_TORQUE_WIDTH = 1  # Direct torque output for E2E lateral control
 
   NUM_LANE_LINES = 4
   NUM_ROAD_EDGES = 2

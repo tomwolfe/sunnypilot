@@ -114,6 +114,9 @@ class Parser:
   def split_outputs(self, outs: dict[str, np.ndarray]) -> None:
     if 'desired_curvature' in outs:
       self.parse_mdn('desired_curvature', outs, in_N=0, out_N=0, out_shape=(SplitModelConstants.DESIRED_CURV_WIDTH,))
+    if 'direct_torque' in outs:
+      # Direct torque output for E2E lateral control - bypasses curvature→PID chain
+      self.parse_mdn('direct_torque', outs, in_N=0, out_N=0, out_shape=(SplitModelConstants.DIRECT_TORQUE_WIDTH,))
     if 'desire_pred' in outs:
       self.parse_categorical_crossentropy('desire_pred', outs, out_shape=(SplitModelConstants.DESIRE_PRED_LEN,SplitModelConstants.DESIRE_PRED_WIDTH))
     if 'desire_state' in outs:
